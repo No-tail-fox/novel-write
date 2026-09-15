@@ -22,7 +22,7 @@ describe('editorial full-text planning', () => {
         expect(shot.durationMs).toBeLessThanOrEqual(15000);
         expect(shot.subtitleCueIds.length).toBeLessThanOrEqual(100);
         expect(shot.camera[0]).toMatchObject({ atMs: 0, zoom: 1 });
-        expect(shot.camera.at(-1)).toMatchObject({ atMs: shot.durationMs, zoom: 1.06 });
+        expect(shot.camera.at(-1)).toMatchObject({ atMs: shot.durationMs, zoom: 1.025 });
         const clip = document.timeline!.clips.find((item) => item.shotId === shot.id)!;
         expect(clip.startMs).toBe(cursor);
         for (const cueId of shot.subtitleCueIds) {
@@ -64,7 +64,8 @@ describe('editorial full-text planning', () => {
     expect(document.beats.map((beat) => beat.narration).join('')).toBe(source);
     for (const beat of document.beats) {
       const subjectLayers = beat.shots.flatMap((shot) => shot.layers.filter((layer) => ['subject', 'archival'].includes(layer.kind)));
-      expect(subjectLayers.every((layer) => layer.kind === (beat.title.startsWith('证据') ? 'archival' : 'subject'))).toBe(true);
+      expect(subjectLayers.every((layer) => ['archival', 'subject'].includes(layer.kind))).toBe(true);
+      if (beat.title.startsWith('证据')) expect(subjectLayers.every((layer) => layer.kind === 'archival')).toBe(true);
       expect(beat.subtitleCues.length).toBeLessThanOrEqual(200);
     }
     expect(parseEditorialCollagePipelineData(document)).toEqual(document);

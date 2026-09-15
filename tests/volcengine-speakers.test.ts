@@ -2,6 +2,39 @@ import { describe, expect, it, vi } from 'vitest';
 import { listVolcengineSpeakers } from '@shared/volcengine-speakers';
 
 describe('volcengine speaker list', () => {
+  it('accepts the unfiltered catalog request through the production IPC contract', async () => {
+    const { ipcInputSchemas } = await import('@shared/ipc-contract');
+    const request = { accessKeyId: 'ak-test', secretAccessKey: 'sk-test', page: 1, limit: 100 };
+    expect(ipcInputSchemas['volcengine:speakers:list'].parse(request)).toEqual(request);
+  });
+  it('omits synthesis resource filters when loading the full catalog and retains the SDK string limit', async () => {
+    const fetchImpl = vi.fn(async (_url, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ Page: 1, Limit: '100' });
+      return new Response(JSON.stringify({ Result: { Speakers: [], Total: 0 } }));
+    }) as unknown as typeof fetch;
+    expect((await listVolcengineSpeakers({ accessKeyId: 'ak-test', secretAccessKey: 'sk-test' }, { fetchImpl })).status).toBe('warn');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([400, 200])('preserves structured business errors and RequestId for HTTP %s', async (status) => {
+    const result = await listVolcengineSpeakers({ accessKeyId: 'ak-test', secretAccessKey: 'sk-test' }, {
+      fetchImpl: async () => new Response(JSON.stringify({ ResponseMetadata: {
+        RequestId: 'failed-speakers', Error: { Code: 'InvalidParameter', Message: 'Invalid parameter' },
+      } }), { status }),
+    });
+    expect(result.status).toBe('fail');
+    expect(result.requestId).toBe('failed-speakers');
+    expect(result.detail).toContain('InvalidParameter');
+    expect(result.detail).toContain('failed-speakers');
+    expect(result.speakers).toEqual([]);
+  });
+
+  it('rejects invalid JSON instead of reporting an empty catalog', async () => {
+    const result = await listVolcengineSpeakers({ accessKeyId: 'ak-test', secretAccessKey: 'sk-test' }, {
+      fetchImpl: async () => new Response('<html>bad gateway</html>'),
+    });
+    expect(result.status).toBe('fail');
+  });
   it('signs and parses the ListSpeakers OpenAPI request', async () => {
     const requests: Array<{ url: string; headers: Headers; body: Record<string, unknown> }> = [];
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {

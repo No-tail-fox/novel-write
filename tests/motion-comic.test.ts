@@ -134,6 +134,18 @@ describe('motion comic domain', () => {
     expect(validateMotionComicPipeline(project)).toEqual([]);
   });
 
+  it('supports the scene-scoped shot removal signature alongside shot-id removal', () => {
+    const project = createMotionComicStarterProject(createMotionComicDraft({
+      id: 'comic-remove-compat', title: 'Removal compatibility', premise: 'A letter arrives.', now: '2026-08-18T00:00:00.000Z',
+    }), 'Episode 1');
+    const episode = project.episodes[0];
+    const scene = episode.scenes[0];
+    const shot = scene.shots[0];
+    const updated = removeMotionComicShot(project, episode.id, scene.id, shot.id);
+    expect(updated.episodes[0].scenes.flatMap((item) => item.shots).some((item) => item.id === shot.id)).toBe(false);
+    expect(() => removeMotionComicShot(project, episode.id, 'missing-scene', shot.id)).toThrow(/SHOT_MISSING/);
+  });
+
   it('accepts persisted Director Desk settings on motion-comic shots', () => {
     const project = createMotionComicStarterProject(createMotionComicDraft({
       id: 'comic-director-settings', title: '雨夜来信', premise: '一封信改变了女孩的决定。', now: '2026-08-18T00:00:00.000Z',

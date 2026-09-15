@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bell, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
+import { ArrowLeft, Bell, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
@@ -8,10 +8,12 @@ import { Button, IconButton, Toolbar, Tooltip } from '../ui';
 import type { RendererAppState as AppState } from './route-types';
 import {
   navigationItemForView,
+  navigationReturnLabel,
   newTaskPrimaryAction,
   primaryNavGroups,
   primaryNavigationGroupForView,
   secondaryNavigationItems,
+  shellBackView,
   taskWorkspaceView,
   type NavigationItem as NavItem,
 } from './navigation';
@@ -22,6 +24,7 @@ export type SaveTone = 'saved' | 'saving' | 'dirty';
 
 export function AppShell({
   activeView,
+  returnView,
   state,
   saveTone,
   isBrowserPreview,
@@ -36,6 +39,7 @@ export function AppShell({
   children,
 }: {
   activeView: ShellView;
+  returnView: ShellView;
   state: AppState;
   saveTone: SaveTone;
   isBrowserPreview: boolean;
@@ -54,6 +58,7 @@ export function AppShell({
     ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
     : '本地试用';
   const activeNav = navigationItemForView(activeView);
+  const backView = shellBackView(activeView, returnView);
   const NewTaskIcon = newTaskPrimaryAction.icon;
   const themeLabel = state.ui.theme === 'light' ? '切换深色主题' : '切换浅色主题';
   const taskOperationsView = activeView === 'queue' || activeView === 'history' || activeView === 'task-detail';
@@ -230,9 +235,22 @@ export function AppShell({
 
         <section className="content">
           <header className={taskOperationsView ? 'page-head task-operations-page-head' : 'page-head'}>
-            <div>
-              <span className="page-breadcrumb">StoryDream / {activePrimaryGroup.label}</span>
-              <h1>{activeNav.label}</h1>
+            <div className="page-head-identity">
+              {backView ? <Tooltip content={navigationReturnLabel(backView)}>
+                <IconButton
+                  className="page-back-button"
+                  variant="subtle"
+                  density="compact"
+                  label={navigationReturnLabel(backView)}
+                  icon={<ArrowLeft size={18} />}
+                  disabled={busy}
+                  onClick={() => navigate(backView)}
+                />
+              </Tooltip> : null}
+              <div className="page-head-title">
+                <span className="page-breadcrumb">StoryDream / {activePrimaryGroup.label}</span>
+                <h1>{activeNav.label}</h1>
+              </div>
             </div>
             <div className="shell-environment">
               {isBrowserPreview ? <Tooltip content="浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。"><span className="shell-preview-label" tabIndex={0}>浏览器预览</span></Tooltip> : null}

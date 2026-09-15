@@ -210,12 +210,13 @@ describe('renderer application ownership architecture', () => {
     expect(composition).not.toContain('function makeFallbackApi(');
   });
 
-  it('owns one new-task action and exactly nineteen sidebar entries', async () => {
+  it('owns one new-task action and every sidebar entry with three generation workbenches', async () => {
     const navigation = await import('../src/app/navigation');
     expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
-    expect(navigation.sidebarNavItems).toHaveLength(19);
-    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(19);
-    expect(navigation.navigationItems).toHaveLength(20);
+    expect(navigation.sidebarNavItems).toHaveLength(22);
+    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(22);
+    expect(navigation.navigationItems).toHaveLength(23);
+    expect(navigation.generationNavItems.map((item) => item.view)).toEqual(['image-lab', 'voice-lab', 'video-lab']);
     expect(navigation.navigationItemForView('task-detail')).toMatchObject({ label: '任务详情', hint: '单任务流水线' });
   });
 
@@ -323,6 +324,7 @@ describe('local tool and lab feature ownership architecture', () => {
     'src/features/labs/PersonAssetsPage.tsx',
     'src/features/labs/ImageLabPage.tsx',
     'src/features/labs/VoiceLabPage.tsx',
+    'src/features/labs/VideoLabPage.tsx',
   ];
 
   it('owns every local tool and lab page in a dedicated module', async () => {
@@ -330,7 +332,7 @@ describe('local tool and lab feature ownership architecture', () => {
     pages.forEach((page) => expect(page.length).toBeGreaterThan(0));
 
     const composition = await applicationCompositionSource();
-    for (const definition of ['function BookSelectionPage(', 'function BenchmarkImportPage(', 'function PersonAssetsPage(', 'function ImageLabPage(', 'function VoiceLabPage(']) {
+    for (const definition of ['function BookSelectionPage(', 'function BenchmarkImportPage(', 'function PersonAssetsPage(', 'function ImageLabPage(', 'function VoiceLabPage(', 'function VideoLabPage(']) {
       expect(composition).not.toContain(definition);
     }
   });
@@ -580,7 +582,7 @@ describe('renderer application composition architecture', () => {
     expect(recovery).toContain('target.location.reload();');
   });
 
-  it('lazy-loads all twenty-one route pages behind one stable content fallback', async () => {
+  it('lazy-loads all route pages behind one stable content fallback', async () => {
     const [routes, registry] = await Promise.all([
       source('src/app/AppRoutes.tsx'),
       source('src/app/route-registry.ts'),
@@ -593,9 +595,9 @@ describe('renderer application composition architecture', () => {
     expect(registry).toContain("import { lazy } from 'react'");
     expect(routes).toContain('<Suspense fallback={<RouteLoadingState />}>');
     expect(routes).toContain('</Suspense>');
-    expect(dynamicRoutes).toHaveLength(21);
-    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(21);
-    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(21);
+    expect(dynamicRoutes).toHaveLength(24);
+    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(24);
+    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(24);
     expect(`${routes}\n${registry}`).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 

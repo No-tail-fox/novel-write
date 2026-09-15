@@ -1540,6 +1540,7 @@ describe('task runner', () => {
     const draftRootDir = join(dir, 'JianyingPro Drafts');
     const mediaDir = join(dir, 'media');
     const requests: LlmJsonRequest[] = [];
+    let generatedPrompts: ImagePrompt[] = [];
 
     try {
       await db.upsertConfig({
@@ -1554,6 +1555,8 @@ describe('task runner', () => {
         speaker: 'voice',
         storyboardSceneCount: 3,
         targetLength: 900,
+        ratio: '9:16',
+        templateId: 'builtin-portrait-knowledge',
         extraRequirements: '强调女性权力转折',
         referenceImagePath: 'D:/refs/wuzetian.png',
         imagePromptReference: '参考画面：黑白近景、宫门侧光',
@@ -1597,7 +1600,10 @@ describe('task runner', () => {
       await runTask(db, task, {
         appDataDir: dir,
         llm: mockConfiguredLlm(llm),
-        generateImages: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng),
+        generateImages: async (inputScenes, prompts) => {
+          generatedPrompts = prompts;
+          return writeSceneAssets(mediaDir, inputScenes, 'png', tinyPng);
+        },
         synthesizeNarration: async (inputScenes) => writeSceneAssets(mediaDir, inputScenes, 'wav', wavTone(1200)),
         draftWriterOptions: { runBridge: fakeBridge },
       });
@@ -1623,8 +1629,12 @@ describe('task runner', () => {
       expect(imageContent).toContain('参考图路径：D:/refs/wuzetian.png');
       expect(imageContent).toContain('参考画面：黑白近景、宫门侧光');
       expect(imageContent).toContain('武则天，唐代女性政治人物。');
+      expect(imageContent).toContain('[StoryDream 模板安全构图]');
       expect(imageContent).not.toContain('{{');
       expect(snapshot).toContain('StoryDream 本地运行上下文');
+      expect(snapshot).toContain('原图约保留横向 100%、纵向 40%');
+      expect(generatedPrompts).toHaveLength(3);
+      expect(generatedPrompts.every((prompt) => prompt.prompt.includes('[StoryDream 模板安全构图]'))).toBe(true);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });
@@ -1977,6 +1987,7 @@ describe('task runner', () => {
       expect(await readFile(join(managedTaskWorkDir(dir, task), 'cover-image.png'))).toEqual(tinyPng);
       expect(draftPayloads[0].coverImagePath).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
       expect(draftMeta.draft_cover).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
+      expect((await db.listTaskSummaries()).items[0].projectCover?.path).toBe(pipeline.assets.cover[0].path);
     } finally {
       await db.close();
       await rm(dir, { recursive: true, force: true });

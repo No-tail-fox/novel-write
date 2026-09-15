@@ -18,6 +18,14 @@ describe('director batch planning', () => {
     expect(directorBatchHistoryDemand([node('voice', 'a')], [{ id: 'a', voiceGenerationCount: 0 }])).toEqual({ assets: 0, providerJobs: 0, qualityReports: 0 });
   });
 
+  it('reserves history for every generated collage layer without charging native text as an image', () => {
+    const nodes = [node('image', 'local'), node('image', 'video'), node('voice', 'local'), node('render')];
+    const shots = [{ id: 'local', imageGenerationCount: 3, voiceGenerationCount: 1 }, { id: 'video', imageGenerationCount: 1 }];
+    expect(directorBatchHistoryDemand(nodes, shots)).toEqual({ assets: 6, providerJobs: 6, qualityReports: 1 });
+    expect(directorBatchHistoryDemand([node('image', 'text')], [{ id: 'text', imageGenerationCount: 0 }])).toEqual({ assets: 0, providerJobs: 0, qualityReports: 0 });
+    expect(directorBatchHistoryDemand([node('image', 'legacy')], [{ id: 'legacy' }])).toEqual({ assets: 1, providerJobs: 1, qualityReports: 0 });
+  });
+
   it('builds the exact DAG for deterministic, living-poster, and hybrid shots', () => {
     const plan = createDirectorBatchPlan({
       scope: 'all',

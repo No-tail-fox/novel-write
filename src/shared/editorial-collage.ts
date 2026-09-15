@@ -1,4 +1,6 @@
+import { voxAnimationSchema, voxAnimationAssetIds, validateVoxAnimation, type VoxAnimation } from './vox-animation';
 import { z } from 'zod';
+import { EDITORIAL_RECIPE_IDS, type EditorialRecipeId } from './editorial-recipe-catalog';
 import { productionNarrationAlignmentEvidenceSchema } from './production-audio-alignment';
 import type { ProductionDocumentBase, ProductionSubtitleCue, ProductionTimeline } from './production-workflow';
 import { productionSubtitleCueSchema, validatePersistedSubtitleCue } from './production-subtitle-schema';
@@ -8,6 +10,8 @@ import { materializeProductionAudioClipsForShot, productionAudioFadeEnvelopeSche
 import { hashSubtitleAlignment, invalidateSubtitleAlignment, isSubtitleAlignmentValid } from './audio-alignment';
 import { EDITORIAL_MAX_DURATION_MS, planEditorialScript, type EditorialScriptDuration } from './editorial-script';
 import { MAX_PRODUCTION_HISTORY_ITEMS } from './production-history';
+import { createEditorialMotionLayers, editorialMotionDescription, selectEditorialMotionStyle, recomposeEditorialMotionLayers, type EditorialMotionStyle } from './editorial-motion';
+import { editorialContentTitle, editorialShotNarration, editorialShotTitle, normalizeEditorialStoryTitles, updateEditorialTitleLayers } from './editorial-storytelling';
 
 export const EDITORIAL_COLLAGE_TASK_TYPE = 'editorial-collage' as const;
 export const EDITORIAL_COLLAGE_PIPELINE_VERSION = 1 as const;
@@ -23,7 +27,7 @@ export const EDITORIAL_COLLAGE_STAGES = [
   'completed',
   'failed',
 ] as const;
-export const EDITORIAL_RENDER_STRATEGIES = ['deterministic-layers', 'living-poster', 'hybrid'] as const;
+export const EDITORIAL_RENDER_STRATEGIES = ['deterministic-layers', 'living-poster', 'hybrid', 'remotion'] as const;
 export const EDITORIAL_LAYER_KINDS = ['background', 'subject', 'archival', 'map', 'label', 'shape', 'texture'] as const;
 export const EDITORIAL_LAYER_SOURCES = ['generated-image', 'local-file', 'html', 'svg'] as const;
 
@@ -65,6 +69,13 @@ export interface EditorialCollageLayer {
   zIndex: number;
   visible?: boolean;
   depth: number;
+  /** Layer box as a fraction of the canvas; absent values preserve legacy full-frame layout. */
+  width?: number;
+  height?: number;
+  fit?: 'contain' | 'cover';
+  /** Accurate editorial copy is rendered by code instead of the image model. */
+  content?: { type: 'text'; text: string };
+  required?: boolean;
   prompt?: string;
   assetVersionId?: string;
   motion: EditorialLayerMotionKeyframe[];
@@ -72,15 +83,23 @@ export interface EditorialCollageLayer {
 
 export interface EditorialCollageShot {
   id: string;
+  /** Audience-facing copy, independent from the beat's outline role. Empty hides the title. */
+  title?: string;
+  motionStyle?: EditorialMotionStyle;
   beatId: string;
   durationMs: number;
   renderStrategy: EditorialRenderStrategy;
+  productionRecipe?: EditorialRecipeId;
+  lastFrameAssetVersionId?: string;
+  animation?: VoxAnimation;
   scenePrompt: string;
   motionPrompt: string;
   layers: EditorialCollageLayer[];
   camera: EditorialCameraKeyframe[];
   subtitleCueIds: string[];
   providerJobId?: string;
+  /** Composed image for the I2V chain, independent of local background/cutout assets. */
+  keyframeAssetVersionId?: string;
   videoAssetVersionId?: string;
   videoJobId?: string;
   voiceId?: string;
@@ -237,6 +256,11 @@ const layerSchema = z.object({
   zIndex: z.number().int().min(-1_000).max(1_000),
   visible: z.boolean().optional(),
   depth: finiteNumber.min(-10).max(10),
+  width: finiteNumber.min(0.01).max(4).optional(),
+  height: finiteNumber.min(0.01).max(4).optional(),
+  fit: z.enum(['contain', 'cover']).optional(),
+  content: z.object({ type: z.literal('text'), text: z.string().trim().max(512) }).strict().optional(),
+  required: z.boolean().optional(),
   prompt: boundedText().optional(),
   assetVersionId: idSchema.optional(),
   motion: z.array(layerKeyframeSchema).max(100),
@@ -244,15 +268,21 @@ const layerSchema = z.object({
 
 const shotSchema = z.object({
   id: idSchema,
+  title: z.string().max(512).optional(),
+  motionStyle: z.enum(['cutout-slide', 'focus-reveal', 'comparison', 'evidence-stack', 'path-progress']).optional(),
   beatId: idSchema,
   durationMs: nonNegativeNumber,
   renderStrategy: z.enum(EDITORIAL_RENDER_STRATEGIES),
+  productionRecipe: z.enum(EDITORIAL_RECIPE_IDS).optional(),
+  lastFrameAssetVersionId: idSchema.optional(),
+  animation: voxAnimationSchema.optional(),
   scenePrompt: boundedText(),
   motionPrompt: boundedText(),
   layers: z.array(layerSchema).max(MAX_LAYERS_PER_SHOT),
   camera: z.array(cameraKeyframeSchema).max(100),
   subtitleCueIds: z.array(idSchema).max(100),
   providerJobId: idSchema.optional(),
+  keyframeAssetVersionId: idSchema.optional(),
   videoAssetVersionId: idSchema.optional(),
   videoJobId: idSchema.optional(),
   voiceId: z.string().max(512).optional(),
@@ -444,7 +474,7 @@ export function parseEditorialCollagePipelineData(input: unknown): EditorialColl
   if (issues.length > 0) {
     throw new Error(`EDITORIAL_COLLAGE_INVALID_DATA: ${issues[0].path} ${issues[0].message}`);
   }
-  return document;
+  return normalizeEditorialStoryTitles(document);
 }
 
 export function createEditorialCollageStarterPlan(
@@ -470,46 +500,10 @@ export function createEditorialCollageStarterPlan(
         return value;
       });
     });
-    const layers: EditorialCollageLayer[] = [
-      {
-        id: `${shotId}-background`,
-        label: '纸张底板',
-        kind: 'background',
-        source: 'svg',
-        zIndex: 0,
-        depth: -0.08,
-        prompt: `editorial paper background for ${narration}`,
-        motion: [
-          { atMs: 0, x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 },
-          { atMs: durationMs, x: 0.5, y: 0.5, scale: 1.04, rotation: 0, opacity: 1 },
-        ],
-      },
-      {
-        id: `${shotId}-subject`,
-        label: plannedBeat.sectionIndex === 2 ? '证据切片' : '主体切片',
-        kind: plannedBeat.sectionIndex === 2 ? 'archival' : 'subject',
-        source: 'svg',
-        zIndex: 10,
-        depth: 0.12,
-        prompt: `cutout editorial subject for ${narration}`,
-        motion: [
-          { atMs: 0, x: index % 2 === 0 ? 0.62 : 0.38, y: 0.5, scale: 0.96, rotation: index % 2 === 0 ? -2 : 2, opacity: 0.92 },
-          { atMs: durationMs, x: 0.5, y: 0.5, scale: 1.02, rotation: 0, opacity: 1 },
-        ],
-      },
-      {
-        id: `${shotId}-label`,
-        label: plannedBeat.title,
-        kind: 'label',
-        source: 'svg',
-        zIndex: 20,
-        depth: 0.2,
-        motion: [
-          { atMs: 0, x: 0.12, y: 0.16, scale: 0.92, rotation: 0, opacity: 0 },
-          { atMs: Math.min(500, durationMs), x: 0.12, y: 0.16, scale: 1, rotation: 0, opacity: 1 },
-        ],
-      },
-    ];
+    const layers = createEditorialMotionLayers({
+      shotId, narration, title: editorialContentTitle(narration, draft.title), durationMs, ratio: draft.ratio,
+      index, evidence: plannedBeat.sectionIndex === 2,
+    });
     const beat: EditorialCollageBeat = {
       id: beatId,
       index: index + 1,
@@ -522,12 +516,12 @@ export function createEditorialCollageStarterPlan(
         beatId,
         durationMs,
         renderStrategy: 'deterministic-layers',
-        scenePrompt: `vertical editorial collage, ${narration}`,
-        motionPrompt: 'restrained parallax, cutout slide, gentle camera push',
+        scenePrompt: `${draft.ratio} editorial collage, ${narration}`,
+        motionPrompt: editorialMotionDescription(selectEditorialMotionStyle({ narration, index, evidence: plannedBeat.sectionIndex === 2 })),
         layers,
         camera: [
           { atMs: 0, x: 0.5, y: 0.5, zoom: 1 },
-          { atMs: durationMs, x: 0.5, y: 0.48, zoom: 1.06 },
+          { atMs: durationMs, x: 0.5, y: 0.49, zoom: 1.025 },
         ],
         subtitleCueIds: subtitleCues.map((cue) => cue.id),
       }],
@@ -537,6 +531,7 @@ export function createEditorialCollageStarterPlan(
     return beat;
   });
 
+  let motionIndex = 0;
   const expandedBeats = beats.map((beat, beatIndex) => {
     const sourceShot = beat.shots[0];
     const plannedShots = plan.beats[beatIndex].shots;
@@ -547,9 +542,14 @@ export function createEditorialCollageStarterPlan(
       const cues = beat.subtitleCues.slice(cueIndex, cueIndex + plannedShot.cues.length);
       cueIndex += plannedShot.cues.length;
       const narration = plannedShot.cues.map((cue) => cue.text).join('');
+      const title = editorialContentTitle(narration || beat.narration, draft.title);
+      const indexInFilm = motionIndex++;
+      const evidence = plan.beats[beatIndex].sectionIndex === 2;
+      const motionStyle = selectEditorialMotionStyle({ narration, index: indexInFilm, evidence });
       return {
-        ...shot, subtitleCueIds: cues.map((cue) => cue.id), scenePrompt: `vertical editorial collage, ${narration || beat.title}`,
-        layers: shot.layers.map((layer) => ({ ...layer, ...(layer.prompt ? { prompt: `${layer.kind === 'background' ? 'editorial paper background' : 'cutout editorial subject'} for ${narration || beat.title}` } : {}) })),
+        ...shot, title, motionStyle, subtitleCueIds: cues.map((cue) => cue.id), scenePrompt: `${draft.ratio} editorial collage, ${narration || beat.narration || draft.title}`,
+        motionPrompt: editorialMotionDescription(motionStyle),
+        layers: createEditorialMotionLayers({ shotId: id, narration: narration || beat.narration || draft.title, title, durationMs: shot.durationMs, ratio: draft.ratio, index: indexInFilm, evidence, motionStyle }),
       };
     });
     const owners = new Map(shots.flatMap((shot) => shot.subtitleCueIds.map((cueId) => [cueId, shot.id] as const)));
@@ -567,6 +567,23 @@ export function createEditorialCollageStarterPlan(
   });
 }
 
+export function setEditorialShotTitle(data: EditorialCollagePipelineData, shotId: string, title: string): EditorialCollagePipelineData {
+  return rebuildEditorialTimeline({ ...data, beats: data.beats.map((beat) => ({ ...beat, shots: beat.shots.map((shot) => shot.id !== shotId ? shot : {
+    ...shot, title, layers: updateEditorialTitleLayers(shot.layers, editorialShotTitle(data, beat, shot), title),
+  }) })) });
+}
+
+export function setEditorialShotMotionStyle(data: EditorialCollagePipelineData, shotId: string, motionStyle: EditorialMotionStyle): EditorialCollagePipelineData {
+  const index = data.beats.flatMap((beat) => beat.shots).findIndex((shot) => shot.id === shotId);
+  const result = rebuildEditorialTimeline({ ...data, beats: data.beats.map((beat) => ({ ...beat, shots: beat.shots.map((shot) => shot.id !== shotId ? shot : {
+    ...shot, motionStyle, motionPrompt: editorialMotionDescription(motionStyle),
+    layers: recomposeEditorialMotionLayers(shot.layers, { shotId, title: editorialShotTitle(data, beat, shot), narration: editorialShotNarration(beat, shot) || beat.narration, durationMs: shot.durationMs, ratio: data.ratio, index, evidence: shot.layers.some((layer) => layer.kind === 'archival'), motionStyle }),
+    ...(shot.motionStyle !== motionStyle ? { videoAssetVersionId: undefined, videoJobId: undefined } : {}),
+  }) })) });
+  if (result.beats.flatMap((beat) => beat.shots).some((shot) => shot.layers.length > MAX_LAYERS_PER_SHOT)) throw new Error('EDITORIAL_MOTION_LAYER_LIMIT: 当前自定义图层加上新动作超过 6 层，请先精简图层；已有素材和动作未修改。');
+  return result;
+}
+
 export function rebuildEditorialTimeline(data: EditorialCollagePipelineData): EditorialCollagePipelineData {
   let startMs = 0;
   const clips: ProductionTimeline['clips'] = [];
@@ -574,7 +591,7 @@ export function rebuildEditorialTimeline(data: EditorialCollagePipelineData): Ed
   for (const beat of data.beats) {
     for (const shot of beat.shots) {
       const layerAssetVersionIds = shot.layers.flatMap((layer) => layer.visible !== false && layer.assetVersionId ? [layer.assetVersionId] : []);
-      const assetVersionIds = shot.renderStrategy === 'deterministic-layers'
+      const assetVersionIds = shot.renderStrategy === 'remotion' && shot.animation ? voxAnimationAssetIds(shot.animation) : shot.renderStrategy === 'deterministic-layers'
         ? layerAssetVersionIds
         : shot.renderStrategy === 'living-poster'
           ? (shot.videoAssetVersionId ? [shot.videoAssetVersionId] : [])
@@ -586,7 +603,7 @@ export function rebuildEditorialTimeline(data: EditorialCollagePipelineData): Ed
         durationMs: shot.durationMs,
         assetVersionIds: [...new Set(assetVersionIds)],
         subtitleCueIds: [...shot.subtitleCueIds],
-        source: shot.renderStrategy === 'deterministic-layers'
+        source: shot.renderStrategy === 'deterministic-layers' || shot.renderStrategy === 'remotion'
           ? 'deterministic'
           : shot.renderStrategy === 'living-poster' ? 'ai-video' : 'mixed',
       });
@@ -879,6 +896,7 @@ export function updateEditorialCameraKeyframe(
 export function splitEditorialShot(data: EditorialCollagePipelineData, shotId: string, splitAtMs: number): EditorialCollagePipelineData {
   const location = findEditorialShot(data, shotId);
   const shot = location.shot;
+  if (shot.renderStrategy === 'remotion') throw new Error('动画模板镜头请通过复制镜头并调整时长来分段。');
   if (shot.renderStrategy === 'living-poster') throw new Error(`EDITORIAL_SPLIT_VIDEO_SHOT: ${shotId}`);
   if (!Number.isFinite(splitAtMs) || splitAtMs <= 0 || splitAtMs >= shot.durationMs) throw new Error(`EDITORIAL_SPLIT_RANGE: ${shotId}`);
   const firstId = uniqueEditorialId(`${shot.id}-a`, data.beats.flatMap((beat) => beat.shots).map((item) => item.id).filter((id) => id !== shot.id));
@@ -932,6 +950,7 @@ export function splitEditorialShot(data: EditorialCollagePipelineData, shotId: s
 export function mergeEditorialShots(data: EditorialCollagePipelineData, firstShotId: string, secondShotId: string): EditorialCollagePipelineData {
   const firstLocation = findEditorialShot(data, firstShotId);
   const secondLocation = findEditorialShot(data, secondShotId);
+  if (firstLocation.shot.renderStrategy === 'remotion' || secondLocation.shot.renderStrategy === 'remotion') throw new Error('动画模板镜头保留独立动画，生成成片时会按时间线顺序连接。');
   if (firstLocation.beat.id !== secondLocation.beat.id || secondLocation.shotIndex !== firstLocation.shotIndex + 1) {
     throw new Error(`EDITORIAL_MERGE_ADJACENT_ONLY: ${firstShotId},${secondShotId}`);
   }
@@ -1018,6 +1037,7 @@ function cloneEditorialShotForEdit(
       ...layer,
       id: `${id}-layer-${layerIndex + 1}`,
       assetVersionId: layer.assetVersionId,
+      ...(layer.content ? { content: { ...layer.content } } : {}),
       motion: sourceStartMs === undefined ? layer.motion.map((frame) => ({ ...frame, atMs: Math.min(durationMs, Math.round(frame.atMs * scale)) })) : sliceEditorialFrames(layer.motion, sourceStartMs, sourceStartMs + durationMs, { atMs: 0, x: .5, y: .5, scale: 1, rotation: 0, opacity: 1 }),
     })),
   };
@@ -1148,6 +1168,11 @@ export function validateEditorialCollagePipeline(
       const imageJob = shot.providerJobId ? jobs.get(shot.providerJobId) : undefined;
       const videoJob = shot.videoJobId ? jobs.get(shot.videoJobId) : undefined;
       const videoAsset = shot.videoAssetVersionId ? assets.get(shot.videoAssetVersionId) : undefined;
+      const keyframeAsset = shot.keyframeAssetVersionId ? assets.get(shot.keyframeAssetVersionId) : undefined;
+      if (shot.keyframeAssetVersionId && !keyframeAsset) issues.push({ path: `${shotPath}.keyframeAssetVersionId`, message: 'Shot keyframe asset does not exist.' });
+      if (keyframeAsset && keyframeAsset.kind !== 'image') issues.push({ path: `${shotPath}.keyframeAssetVersionId`, message: 'Shot keyframe asset must be an image.' });
+      const lastFrame = shot.lastFrameAssetVersionId ? assets.get(shot.lastFrameAssetVersionId) : undefined;
+      if (shot.lastFrameAssetVersionId && (!lastFrame || lastFrame.kind !== 'image')) issues.push({ path: `${shotPath}.lastFrameAssetVersionId`, message: 'Shot last frame must reference an existing image.' });
       const voiceAsset = shot.voiceAssetVersionId ? assets.get(shot.voiceAssetVersionId) : undefined;
       if (shot.providerJobId && !imageJob) issues.push({ path: `${shotPath}.providerJobId`, message: 'Shot provider job does not exist.' });
       if (imageJob && (imageJob.nodeId !== shot.id || imageJob.capability !== 'text-to-image')) {
@@ -1165,8 +1190,12 @@ export function validateEditorialCollagePipeline(
       if (shot.voiceAssetVersionId && !voiceAsset) issues.push({ path: `${shotPath}.voiceAssetVersionId`, message: 'Shot voice asset does not exist.' });
       if (voiceAsset && voiceAsset.kind !== 'audio') issues.push({ path: `${shotPath}.voiceAssetVersionId`, message: 'Shot voice asset must be audio.' });
       if (shot.layers.length > MAX_LAYERS_PER_SHOT) issues.push({ path: `${shotPath}.layers`, message: `A shot can contain at most ${MAX_LAYERS_PER_SHOT} layers.` });
-      const requiresLayers = shot.renderStrategy !== 'living-poster';
-      const requiresVideo = shot.renderStrategy !== 'deterministic-layers';
+      const requiresLayers = shot.renderStrategy !== 'living-poster' && shot.renderStrategy !== 'remotion';
+      if (ready && shot.renderStrategy === 'remotion') {
+        if (!shot.animation) issues.push({path: `${shotPath}.animation`, message: '请设置镜头动画'});
+        else issues.push(...validateVoxAnimation(shot.animation, data.assets).map(message => ({path: `${shotPath}.animation`, message})));
+      }
+      const requiresVideo = shot.renderStrategy === 'living-poster' || shot.renderStrategy === 'hybrid';
       if (ready && requiresLayers && shot.layers.length < 2) issues.push({ path: `${shotPath}.layers`, message: 'A ready collage shot needs at least a background and one foreground layer.' });
       if (ready && requiresLayers && shot.camera.length === 0) issues.push({ path: `${shotPath}.camera`, message: 'A ready collage shot needs camera keyframes.' });
       if (ready && requiresVideo && !shot.videoAssetVersionId) issues.push({ path: `${shotPath}.videoAssetVersionId`, message: 'AI motion requires a generated video asset before rendering.' });
@@ -1184,7 +1213,7 @@ export function validateEditorialCollagePipeline(
         const layerAsset = layer.assetVersionId ? assets.get(layer.assetVersionId) : undefined;
         if (layer.assetVersionId && !layerAsset) issues.push({ path: `${shotPath}.layers[${layerIndex}].assetVersionId`, message: 'Layer asset version does not exist.' });
         if (layerAsset && layerAsset.kind !== 'image') issues.push({ path: `${shotPath}.layers[${layerIndex}].assetVersionId`, message: 'Visual layers must point to image assets.' });
-        if (ready && requiresLayers && layer.visible !== false && !layer.assetVersionId && layer.source !== 'svg') issues.push({ path: `${shotPath}.layers[${layerIndex}].assetVersionId`, message: 'Every generated or local layer must point to an asset version before rendering.' });
+        if (ready && requiresLayers && layer.visible !== false && layer.required !== false && !layer.assetVersionId && !layer.content) issues.push({ path: `${shotPath}.layers[${layerIndex}].assetVersionId`, message: 'Every required visible layer requires an image asset or native text content. Complete legacy placeholder layers before rendering.' });
       }
       const beatCueIds = new Set(beat.subtitleCues.map((cue) => cue.id));
       if (shot.subtitleCueIds.some((cueId) => !beatCueIds.has(cueId))) {

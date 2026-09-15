@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
+import { navigationReturnLabel } from '../../app/navigation';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { mergeDirectorSavedDocument } from '../../shared/director-document-sync';
 import { planEditorialScript } from '../../shared/editorial-script';
+import { editorialImageGenerationCount, editorialKeyframeAssetId, editorialShotImagesReady, editorialVideoFrames } from '../../shared/editorial-media';
+import { editorialRecipe } from '../../shared/editorial-recipe-catalog';
+import { applyEditorialRecipe, setEditorialLastFrame, setEditorialRecipeKeyframe } from '../../shared/editorial-recipes';
+import { EditorialRecipeInspector } from './EditorialRecipeInspector';
+import { editorialShotTitle } from '../../shared/editorial-storytelling';
 import { createProductionHistoryReservations, productionHistoryUsage, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../../shared/production-history';
 import type { ShellView } from '../../shared/types';
 import type { SettingsSection } from '../settings/SettingsPage';
@@ -24,6 +30,8 @@ import {
   editorialCameraPreset,
   type EditorialMotionEdit,
   rebuildEditorialTimeline,
+  setEditorialShotTitle,
+  setEditorialShotMotionStyle,
   splitEditorialShot,
   type EditorialCollageBeat,
   type EditorialCollagePipelineData,
@@ -47,6 +55,7 @@ import { DirectorCopyAssist, DirectorCreateWizard, DirectorProjectLoading, Direc
 import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
 import {
   applyEditorialImageRecord,
+  prepareEditorialLayerGeneration,
   applyEditorialStyleCandidateRecord,
   applyEditorialVoiceRecord,
   restoreEditorialImageVersion,
@@ -104,6 +113,7 @@ export function EditorialCollagePage({
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
   const [createSource, setCreateSource] = useState('');
+  const [createRequirements, setCreateRequirements] = useState('');
   const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
   const [createRatio, setCreateRatio] = useState<EditorialCollagePipelineData['ratio']>('16:9');
   const [createDurationMs, setCreateDurationMs] = useState<EditorialCollageStarterDurationMs>('auto');
@@ -137,11 +147,12 @@ export function EditorialCollagePage({
   });
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
   const creationDraft = useWorkspaceDraft({
-    id: 'editorial-create', label: 'VOX 新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim()),
+    id: 'editorial-create', label: 'VOX 新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim()),
     busy: projectAction.busy || copyAction.busy,
-    value: { createTitle, createSource, createRatio, createDurationMs: createDurationMs === 'auto' ? 30_000 : createDurationMs, createFullText: createDurationMs === 'auto', createStyleId, createLayoutTemplate, createMotionPreset, createVoiceId, createSubtitleStyle, createSeedLocked },
+    value: { createTitle, createSource, createRequirements, createRatio, createDurationMs: createDurationMs === 'auto' ? 30_000 : createDurationMs, createFullText: createDurationMs === 'auto', createStyleId, createLayoutTemplate, createMotionPreset, createVoiceId, createSubtitleStyle, createSeedLocked },
     restore: (draft) => {
       setCreateTitle(draft.createTitle); setCreateSource(draft.createSource); setCreateRatio(draft.createRatio); setCreateDurationMs(draft.createFullText ? 'auto' : draft.createDurationMs); setCreateStyleId(draft.createStyleId);
+      setCreateRequirements(draft.createRequirements);
       setCreateLayoutTemplate(draft.createLayoutTemplate); setCreateMotionPreset(draft.createMotionPreset); setCreateVoiceId(draft.createVoiceId);
       setCreateSubtitleStyle(draft.createSubtitleStyle); setCreateSeedLocked(draft.createSeedLocked);
     },
@@ -164,7 +175,7 @@ export function EditorialCollagePage({
       : ['failed', 'cancelled'].includes(job.status) ? total : total + job.estimatedCost, 0), [document?.providerJobs]);
   const videoProviderStatuses = useMemo(() => new Map((document?.beats ?? []).flatMap((beat) => beat.shots.map((shot) => [
     shot.id,
-    resolveDirectorVideoProviderStatus(state.config, state.secretStatus, { durationMs: shot.durationMs, committedCost: committedVideoCost }),
+    resolveDirectorVideoProviderStatus(state.config, state.secretStatus, { durationMs: shot.durationMs, committedCost: committedVideoCost, requiresLastFrame: shot.productionRecipe === 'nantian' || Boolean(shot.lastFrameAssetVersionId) }),
   ] as const))), [committedVideoCost, document?.beats, state.config, state.secretStatus]);
   const shots = useMemo(() => document ? document.beats.flatMap((beat) => beat.shots.map((shot) => directorShotFromEditorial(document, beat, shot, videoProviderStatuses.get(shot.id)))).map((shot, index) => ({ ...shot, index: index + 1 })) : [], [document, videoProviderStatuses]);
   const selectedVideoProviderStatus = videoProviderStatuses.get(selectedShotId || shots[0]?.id || '')
@@ -184,6 +195,7 @@ export function EditorialCollagePage({
       thumbnail: toLocalImageUrl(asset.localPath!),
       category: 'history' as const,
       selected: shots.some((shot) => shot.linkedAssetIds?.includes(asset.id)),
+      selectable: !asset.assetId.startsWith('shot-layer-') || asset.assetId.startsWith(`shot-layer-${selectedShotId}:`),
     }));
     const styleSamples = styleAssets.flatMap((asset) => {
       const styleId = asset.assetId.slice('style-candidate-'.length);
@@ -200,17 +212,24 @@ export function EditorialCollagePage({
       }] : [];
     });
     return [...styleSamples, ...generated];
-  }, [document, shots]);
+  }, [document, shots, selectedShotId]);
   const directorStyleCandidates = useMemo(() => (document?.styleCandidates ?? []).map((candidate) => {
     const asset = candidate.assetVersionId ? document?.assets.find((item) => item.id === candidate.assetVersionId && item.kind === 'image') : undefined;
     return { ...candidate, thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined };
   }), [document]);
   const versions = useMemo<DirectorVersion[]>(() => {
     if (!document || !selectedShotId) return [];
+    const selectedShot = document.beats.flatMap((beat) => beat.shots).find((shot) => shot.id === selectedShotId);
     const assetsByJob = new Map(document.assets.slice().reverse().map((asset) => [asset.providerJobId, asset]));
-    return document.providerJobs.filter((job) => job.nodeId === selectedShotId && job.capability === 'text-to-image' && job.status === 'completed').map((job, index) => {
+    return document.providerJobs.filter((job) => {
+      if (job.nodeId !== selectedShotId || job.capability !== 'text-to-image' || job.status !== 'completed') return false;
       const asset = assetsByJob.get(job.id);
-      return { id: asset?.id ?? job.id, label: `画面版本 ${index + 1}`, createdAt: job.updatedAt, provider: `${job.providerId} / ${job.model}`, thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined, selected: shots.find((shot) => shot.id === selectedShotId)?.linkedAssetIds?.includes(asset?.id ?? '') };
+      const layerAsset = asset?.assetId.startsWith(`shot-layer-${selectedShotId}:`);
+      return selectedShot?.renderStrategy === 'living-poster' ? !layerAsset : selectedShot?.layers.some((layer) => layer.required) ? layerAsset : true;
+    }).map((job, index) => {
+      const asset = assetsByJob.get(job.id);
+      const layer = selectedShot?.layers.find((candidate) => asset?.assetId === `shot-layer-${selectedShotId}:${candidate.id}`);
+      return { id: asset?.id ?? job.id, label: `${layer?.label ?? '关键帧'} · 版本 ${index + 1}`, createdAt: job.updatedAt, provider: `${job.providerId} / ${job.model}`, thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined, selected: shots.find((shot) => shot.id === selectedShotId)?.linkedAssetIds?.includes(asset?.id ?? '') };
     }).reverse();
   }, [document, selectedShotId, shots]);
   const jobs = useMemo<DirectorQueueItem[]>(() => (document?.providerJobs ?? []).filter((job) => job.capability === 'text-to-image' || job.capability === 'image-to-video' || job.capability === 'style-sample').slice().reverse().map((job) => {
@@ -235,7 +254,7 @@ export function EditorialCollagePage({
     if (document.selectedStyleId) completed.push('素材一致性');
     const sourceShots = document.beats.flatMap((beat) => beat.shots);
     if (sourceShots.length > 0 && sourceShots.every((shot) => {
-      const imageReady = shot.layers.some((layer) => layer.assetVersionId && document.assets.some((asset) => asset.id === layer.assetVersionId && asset.kind === 'image' && Boolean(asset.localPath)));
+      const imageReady = editorialShotImagesReady(document, shot);
       const videoReady = Boolean(shot.videoAssetVersionId
         && document.assets.some((asset) => asset.id === shot.videoAssetVersionId && asset.kind === 'video' && Boolean(asset.localPath))
         && shot.videoJobId
@@ -250,7 +269,7 @@ export function EditorialCollagePage({
   }, [document, outputAsset, qualityReview, shots]);
   const actionError = providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined;
   const actionFeedback = providerAction.feedback?.tone === 'success' ? providerAction.feedback.message : projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined;
-  const needsAiVideo = Boolean(document?.beats.some((beat) => beat.shots.some((shot) => shot.renderStrategy !== 'deterministic-layers')));
+  const needsAiVideo = Boolean(document?.beats.some((beat) => beat.shots.some((shot) => shot.renderStrategy === 'living-poster')));
   const videoUnavailable = needsAiVideo && [...videoProviderStatuses.values()].some((status) => !status.connected);
   const systemStatusSummary = resolveEditorialSystemStatus({
     actionError: Boolean(actionError),
@@ -339,6 +358,28 @@ export function EditorialCollagePage({
     return withHistoryCapacity({ assets: 1 }, () => importSoundDirect(shotId, trackType));
   }
 
+  async function importAnimationAsset(shotId: string, kind: 'image' | 'audio') {
+    await withHistoryCapacity({ assets: 1 }, async () => {
+      const projectId = documentRef.current?.id;
+      const request = projectOpenRequestRef.current;
+      const selected = kind === 'image' ? await api.selectLocalImage() : await api.importBgmAudio();
+      if (!selected) return;
+      const path = typeof selected === 'string' ? selected : selected.path;
+      const title = typeof selected === 'string' ? path.split(/[\\/]/).at(-1)! : selected.title;
+      await api.readVoxAnimationAsset(path);
+      const durationMs = kind === 'audio' ? await readDirectorSoundDuration(path) : undefined;
+      if (documentRef.current?.id !== projectId || request !== projectOpenRequestRef.current) throw new Error('项目已切换，请重新导入。');
+      const id = crypto.randomUUID(), createdAt = new Date().toISOString();
+      mutateDocument(current => {
+        const target = current.beats.flatMap(beat => beat.shots).find(shot => shot.id === shotId);
+        if (!target) throw new Error('当前镜头已移除。');
+        const next = kind === 'audio' ? addDirectorSoundClip(current, shotId, {id,title,path,durationMs:durationMs!,trackType:'music',createdAt})
+          : {...current,assets:[...current.assets,{id,assetId:id,kind:'image' as const,localPath:path,prompt:title,provider:'local-import',createdAt}]};
+        return {...next,beats:next.beats.map(beat=>({...beat,shots:beat.shots.map(shot=>shot.id!==shotId||!shot.animation?shot:{...shot,animation:{...shot.animation!,template:{...shot.animation!.template,props:{...shot.animation!.template.props,...(kind==='image'?{assetIds:[...shot.animation!.template.props.assetIds,id]}:{audioAssetId:id})}}}})}))};
+      });
+    });
+  }
+
   async function importSubtitleTimestamps(shotId: string, cueId: string) {
     await projectAction.run(async () => {
       const selected = await api.selectLocalSubtitleTimestampFile();
@@ -357,13 +398,18 @@ export function EditorialCollagePage({
     if (before && ((update.voiceId !== undefined && update.voiceId !== before.voiceId) || (update.voiceSpeed !== undefined && update.voiceSpeed !== before.voiceSpeed))) {
       mutateDocument((current) => invalidateDirectorShotSpeech(current, id));
     }
+    if (update.title !== undefined) mutateDocument((current) => setEditorialShotTitle(current, id, update.title!));
+    if (update.motionStyle !== undefined) {
+      try { mutateDocument((current) => setEditorialShotMotionStyle(current, id, update.motionStyle!)); }
+      catch (error) { projectAction.reportError(error); return; }
+    }
     mutateDocument((current) => rebuildEditorialTimeline({
       ...current,
       beats: current.beats.map((beat) => ({
         ...beat,
-        title: id === beat.shots[0]?.id && update.title !== undefined ? update.title : beat.title,
         shots: beat.shots.map((shot) => shot.id !== id ? shot : ({
           ...shot,
+          ...((update.prompt !== undefined && update.prompt !== shot.scenePrompt) || (update.motionPrompt !== undefined && update.motionPrompt !== shot.motionPrompt) || (update.durationMs !== undefined && update.durationMs !== shot.durationMs) ? { videoAssetVersionId: undefined, videoJobId: undefined } : {}),
           scenePrompt: update.prompt ?? shot.scenePrompt,
           motionPrompt: update.motionPrompt ?? shot.motionPrompt,
           durationMs: update.durationMs ?? shot.durationMs,
@@ -377,6 +423,8 @@ export function EditorialCollagePage({
           seed: update.seed ?? shot.seed,
           seedLocked: update.seedLocked ?? shot.seedLocked,
           renderStrategy: update.renderStrategy ?? shot.renderStrategy,
+          ...(update.renderStrategy && update.renderStrategy !== editorialRecipe(shot.productionRecipe)?.engine ? { productionRecipe: undefined, lastFrameAssetVersionId: undefined, videoAssetVersionId: undefined, videoJobId: undefined } : {}),
+          animation: update.animation ?? shot.animation,
         })),
       })),
     }));
@@ -530,10 +578,10 @@ export function EditorialCollagePage({
       const request = projectOpenRequestRef.current;
       setCopyAssistIntent(intent);
       try {
-        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'vox', intent, title: submitted.createTitle, copy: submitted.createSource, durationMs: submitted.createFullText ? 'auto' : submitted.createDurationMs }))
+        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'vox', intent, title: submitted.createTitle, copy: submitted.createSource, requirements: submitted.createRequirements, durationMs: submitted.createFullText ? 'auto' : submitted.createDurationMs }))
           .catch((error) => { throw normalizeDirectorCopyAssistError(error); });
         const latest = creationDraft.snapshot();
-        if (request !== projectOpenRequestRef.current || latest.createTitle !== submitted.createTitle || latest.createSource !== submitted.createSource || latest.createDurationMs !== submitted.createDurationMs || latest.createFullText !== submitted.createFullText) {
+        if (request !== projectOpenRequestRef.current || latest.createTitle !== submitted.createTitle || latest.createSource !== submitted.createSource || latest.createRequirements !== submitted.createRequirements || latest.createDurationMs !== submitted.createDurationMs || latest.createFullText !== submitted.createFullText) {
           throw new AppError('DIRECTOR_COPY_INPUT_CHANGED', '文案输入已修改，已保留当前内容。请基于当前内容重新生成。');
         }
         setCreateSource(result.copy);
@@ -689,13 +737,36 @@ export function EditorialCollagePage({
   }
 
   async function generateShot(shotId: string) {
-    const current = documentRef.current;
-    const shot = shots.find((candidate) => candidate.id === shotId);
-    if (!current || !shot) throw new Error('当前 VOX 镜头不存在。');
+    const initial = documentRef.current;
+    if (!initial) throw new Error('当前 VOX 镜头不存在。');
     if (!providerStatus.connected) throw new Error(providerStatus.unavailableReason ?? '图片服务未配置。');
-    const input = directorImageInput(current, shotId);
+    const prepared = prepareEditorialLayerGeneration(initial, shotId);
+    if (prepared !== initial) await enqueueProjectMutation(initial.id, (latest) => prepareEditorialLayerGeneration(latest, shotId));
+    const current = documentRef.current;
+    const shot = current?.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === shotId);
+    if (!current || !shot || current.id !== initial.id) throw new Error('当前 VOX 镜头不存在。');
+    if (shot.productionRecipe === 'paper-cut') {
+      if (!providerStatus.supportsReferenceImages) throw new Error('原画参考分层需要支持参考图的图片服务，请先切换图片服务。');
+      if (!current.assets.some(asset => asset.id === shot.keyframeAssetVersionId && asset.kind === 'image' && asset.localPath)) await generateShotImage(current, shotId);
+    }
+    const imageLayers = shot.layers.filter((layer) => layer.visible !== false && !layer.content && layer.source !== 'local-file');
+    const missingLayers = imageLayers.filter((layer) => !layer.assetVersionId || !current.assets.some((asset) => asset.id === layer.assetVersionId && asset.localPath));
+    const layerIds: Array<string | undefined> = shot.renderStrategy === 'living-poster' ? [undefined] : (missingLayers.length ? missingLayers : imageLayers).map((layer) => layer.id);
+    if (!layerIds.length) throw new Error('当前镜头没有需要生成的图层。');
+    let result: { thumbnail: string; provider: string } | undefined;
+    for (const layerId of layerIds) {
+      const latest = documentRef.current;
+      const latestShot = latest?.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === shotId);
+      if (!latest || latest.id !== current.id || latestShot?.renderStrategy !== shot.renderStrategy || latestShot.productionRecipe !== shot.productionRecipe || latestShot.scenePrompt !== shot.scenePrompt) throw new Error('镜头输入已修改，已生成的素材保留，请重新开始。');
+      result = await generateShotImage(latest, shotId, layerId);
+    }
+    return result!;
+  }
+
+  async function generateShotImage(current: EditorialCollagePipelineData, shotId: string, layerId?: string) {
+    const input = directorImageInput(current, shotId, layerId);
     const recordId = `director-vox-${crypto.randomUUID()}`;
-    const requestKey = `image:${shotId}`;
+    const requestKey = `image:${shotId}:${layerId ?? 'keyframe'}`;
     generationRequestsRef.current.set(requestKey, recordId);
     let generationError: unknown = null;
     try {
@@ -707,7 +778,9 @@ export function EditorialCollagePage({
         provider: providerStatus.provider,
         resolution: providerStatus.resolution,
         quality: providerStatus.quality,
-        smartMode: 'video-narration',
+        smartMode: layerId ? 'text-to-image' : 'video-narration',
+        ...(input.references.length ? { referenceImagePaths: input.references.map(reference => reference.path) } : {}),
+        ...('layerKind' in input && input.layerKind && ['subject', 'archival'].includes(input.layerKind) ? { cutout: 'green' as const } : {}),
       });
       applyState(mutation);
     } catch (error) {
@@ -873,7 +946,15 @@ export function EditorialCollagePage({
     acceptSavedDocument(saved, current);
   }
 
-  if (loadingProjectId) return <div data-editorial-collage-workbench="true"><DirectorProjectLoading mode="vox" onCancel={() => navigate?.('history')} /></div>;
+  async function exportAnimationShot(shotId:string) {
+    await persistQueueRef.current;
+    let current=documentRef.current;
+    if(!current)throw new Error('当前 VOX 项目不存在。');
+    if(dirty)current=await enqueueProjectMutation(current.id,latest=>latest);
+    return api.exportVoxAnimationShot({id:current.id,shotId,expectedUpdatedAt:current.updatedAt});
+  }
+
+  if (loadingProjectId) return <div data-editorial-collage-workbench="true"><DirectorProjectLoading mode="vox" /></div>;
 
   if (createOpen) {
     return <div data-editorial-collage-workbench="true"><DirectorCreateWizard
@@ -895,7 +976,6 @@ export function EditorialCollagePage({
       ]}
       feedback={actionFeedback}
       errorMessage={actionError}
-      onBack={() => navigate?.('new-task')}
       onStepChange={setCreateStep}
       onConfigureImage={() => openSettings?.('image', 'editorial-collage')}
       onConfigureVoice={() => openSettings?.('tts', 'editorial-collage')}
@@ -903,6 +983,16 @@ export function EditorialCollagePage({
     >
       {createStep === 0 ? <>
         <TextField label="项目标题" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：拉萨旧城的回声" />
+        <TextAreaField
+          label="AI 创作要求"
+          value={createRequirements}
+          onChange={(_, data) => { setCreateRequirements(data.value); copyAction.clearFeedback(); }}
+          placeholder="例如：面向第一次到拉萨的年轻旅行者，从一家老茶馆切入，讲清旧城生活如何变化。采用克制、有温度的纪录片口吻，突出普通人的故事，避免旅游广告腔和未经核实的数据。"
+          hint="选填 · 写下叙事角度、目标观众、表达风格，以及希望包含或避免的内容。AI 创作和 AI 修改都会参考。"
+          rows={4}
+          maxLength={8000}
+          resize="vertical"
+        />
         <div className="director-copy-field">
           <TextAreaField label="原始文案" value={createSource} onChange={(_, data) => { setCreateSource(data.value); copyAction.clearFeedback(); }} placeholder="粘贴需要拆成解释型视频的文案" resize="vertical" hint={`${createSource.length.toLocaleString('zh-CN')} 字符`} validationMessage={createPlan.error || undefined} />
           <DirectorCopyAssist
@@ -933,7 +1023,7 @@ export function EditorialCollagePage({
     </DirectorCreateWizard></div>;
   }
 
-  if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" errorMessage={actionError} returnLabel={returnView === 'projects' ? '返回项目' : '返回全部任务'} onReturnTasks={() => navigate?.(returnView)} onNewProject={startCreate} /></div>;
+  if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" errorMessage={actionError} onNewProject={startCreate} /></div>;
 
   return <div data-editorial-collage-workbench="true">
     <DirectorDeskWorkspace
@@ -1007,6 +1097,16 @@ export function EditorialCollagePage({
       onSelectStyle={selectStyle}
       onRestoreVersion={restoreVersion}
       onSelectShot={setSelectedShotId}
+      animationApi={api}
+      onImportAnimationAsset={importAnimationAsset}
+      renderShotWorkflow={(shotId, workflowBusy) => document ? <EditorialRecipeInspector key={shotId} document={document} shotId={shotId} busy={workflowBusy}
+        onRecipe={recipeId => mutateDocument(current => applyEditorialRecipe(current, shotId, recipeId))}
+        onKeyframe={assetId => mutateDocument(current => setEditorialRecipeKeyframe(current, shotId, assetId))}
+        onLastFrame={assetId => mutateDocument(current => setEditorialLastFrame(current, shotId, assetId))}
+        onImport={() => importAnimationAsset(shotId, 'image')} /> : null}
+      onExportAnimationShot={exportAnimationShot}
+      animationAssets={document.assets.flatMap(a=>(a.kind==='image'||a.kind==='audio')&&a.localPath?[{id:a.id,label:a.prompt?.slice(0,50)||a.assetId,kind:a.kind,path:a.localPath}]:[])}
+      onCancelRender={()=>api.cancelDirectorRender(document.id)}
       onUpdateShot={updateShot}
       onUpdateShotMotion={updateShotMotion}
       onUpdateSubtitleCue={(shotId, cueId, patch) => mutateDocument((current) => updateDirectorSubtitleCue(current, shotId, cueId, patch))}
@@ -1020,7 +1120,11 @@ export function EditorialCollagePage({
       onSave={() => void saveProject()}
       onNewProject={startCreate}
       historyUsage={productionHistoryUsage(document)}
-      onGenerateShot={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateShot(shotId))}
+      onGenerateShot={(shotId) => {
+        const shot = documentRef.current?.beats.flatMap((beat) => beat.shots).find((item) => item.id === shotId);
+        const count = shot ? editorialImageGenerationCount(shot, documentRef.current ?? undefined) : 1;
+        return withHistoryCapacity({ assets: count, providerJobs: count }, () => generateShot(shotId));
+      }}
       onGenerateStyleCandidate={(styleId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateStyleCandidate(styleId))}
       onProviderProfileChange={selectImageProvider}
       onGenerateVoice={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVoice(shotId))}
@@ -1032,7 +1136,7 @@ export function EditorialCollagePage({
       onOpenSettings={() => openSettings?.('image', 'editorial-collage', document.id)}
       onConfigureProvider={() => openSettings?.('image', 'editorial-collage', document.id)}
       onConfigureVideoProvider={() => openSettings?.('video', 'editorial-collage', document.id)}
-      backToTasksLabel={returnView === 'projects' ? '返回项目' : '返回全部任务'}
+      backToTasksLabel={navigationReturnLabel(returnView)}
       onBackToTasks={() => navigate?.(returnView)}
     />
     <Dialog open={sourceOpen} onOpenChange={setSourceOpen} title="剧本原稿" actions={<Button onClick={() => setSourceOpen(false)}>关闭</Button>}>
@@ -1047,7 +1151,7 @@ function formatScriptDuration(durationMs: number): string {
 }
 
 function directorShotFromEditorial(document: EditorialCollagePipelineData, beat: EditorialCollageBeat, shot: EditorialCollageBeat['shots'][number], videoProviderStatus?: DirectorVideoProviderStatus): DirectorShot {
-  const linkedAssetId = shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
+  const linkedAssetId = shot.renderStrategy === 'living-poster' ? editorialKeyframeAssetId(shot) : shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
   const asset = linkedAssetId ? document.assets.find((candidate) => candidate.id === linkedAssetId) : undefined;
   const voiceAsset = shot.voiceAssetVersionId ? document.assets.find((candidate) => candidate.id === shot.voiceAssetVersionId) : undefined;
   const audioClips: DirectorPreviewAudioClip[] = (productionAudioClipsForShot(document.timeline, shot) ?? []).flatMap((clip) => {
@@ -1062,14 +1166,22 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     : latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video');
   const previewLayers = shot.layers.map((layer) => {
     const layerAsset = layer.assetVersionId ? document.assets.find((candidate) => candidate.id === layer.assetVersionId && candidate.kind === 'image') : undefined;
-    return { id: layer.id, label: layer.label, src: layerAsset?.localPath ? toLocalImageUrl(layerAsset.localPath) : '', zIndex: layer.zIndex, visible: layer.visible, depth: layer.depth, motion: layer.motion };
+    return { id: layer.id, label: layer.label, src: layerAsset?.localPath ? toLocalImageUrl(layerAsset.localPath) : '', zIndex: layer.zIndex, visible: layer.visible, depth: layer.depth, motion: layer.motion, width: layer.width, height: layer.height, fit: layer.fit, content: layer.content, kind: layer.kind };
   });
-  const videoInputReady = Boolean(asset?.kind === 'image' && asset.localPath);
+  const videoKeyframe = document.assets.find((candidate) => candidate.id === editorialKeyframeAssetId(shot) && candidate.kind === 'image');
+  const videoFrames = editorialVideoFrames(document, shot);
+  const videoInputReady = videoFrames.ready;
+  const imageReady = editorialShotImagesReady(document, shot);
+  const shotReady = shot.renderStrategy === 'living-poster'
+    ? Boolean(videoAsset?.localPath && videoJob?.status === 'completed' && videoAsset.providerJobId === videoJob.id)
+    : imageReady;
+  const activeJob = shot.renderStrategy === 'living-poster' && videoInputReady ? videoJob : job;
   return {
     id: shot.id,
     index: beat.index,
     beatIndex: beat.index,
-    title: beat.title,
+    title: editorialShotTitle(document, beat, shot),
+    motionStyle: shot.motionStyle,
     scene: `VOX · ${beat.title.trim() || `节拍 ${beat.index}`}`,
     durationMs: shot.durationMs,
     framing: shot.layers.length > 1 ? '中景 / 叙事' : shot.subtitleCueIds.length > 0 ? '近景 / 细节' : '全景 / 建立',
@@ -1079,7 +1191,7 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     subtitle: shot.subtitleCueIds.map((id) => beat.subtitleCues.find((cue) => cue.id === id)?.text).filter(Boolean).join(' '),
     subtitleCues: shot.subtitleCueIds.flatMap((id) => beat.subtitleCues.find((cue) => cue.id === id) ?? []),
     thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined,
-    status: job?.status === 'completed' ? 'ready' : job?.status === 'running' ? 'generating' : job?.status === 'failed' ? 'failed' : 'queued',
+    status: shotReady ? 'ready' : activeJob?.status === 'running' ? 'generating' : activeJob?.status === 'failed' ? 'failed' : 'queued',
     provider: job ? `${job.providerId} / ${job.model}` : undefined,
     cost: job?.actualCost ?? job?.estimatedCost,
     voice: shot.voiceLabel,
@@ -1088,7 +1200,9 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     audioUrl: voiceAsset?.localPath ? toLocalAssetUrl(voiceAsset.localPath) : undefined,
     audioClips,
     soundClips: directorSoundClips(document, shot.id),
-    imageReady: Boolean(asset?.localPath && asset.kind === 'image'),
+    imageReady,
+    imageGenerationCount: editorialImageGenerationCount(shot, document),
+    imageUnavailableReason: imageReady ? undefined : shot.renderStrategy === 'remotion' ? '请填写动画参数并选择所需素材。' : shot.renderStrategy === 'living-poster' ? '请生成完整关键帧后再生成视频。' : '请补齐独立背景和透明主体；标签会随时间线自动绘制。已完成的图层会保留。',
     voiceReady: Boolean(voiceAsset?.localPath && voiceAsset.kind === 'audio'),
     imageFailed: job?.status === 'failed',
     voiceFailed: voiceJob?.status === 'failed',
@@ -1098,18 +1212,24 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     seed: shot.seed,
     seedLocked: shot.seedLocked,
     renderStrategy: shot.renderStrategy as DirectorShot['renderStrategy'],
+    animation: shot.animation,
     previewLayers,
     cameraKeyframes: shot.camera,
     videoInputReady,
-    videoInputUnavailableReason: videoInputReady ? undefined : '请先生成或选择一张可读取的首帧图片。',
+    videoFirstFrameReady: Boolean(videoFrames.first?.localPath),
+    videoLastFrameReady: Boolean(videoFrames.last?.localPath),
+    videoRequiresLastFrame: videoFrames.requiresLastFrame,
+    videoInputUnavailableReason: videoInputReady ? undefined : videoFrames.unavailableReason,
     videoUrl: videoAsset?.localPath ? toLocalAssetUrl(videoAsset.localPath) : undefined,
     videoJobId: shot.videoJobId,
     videoJobStatus: videoJob?.status ?? 'idle',
     videoJobError: videoJob?.error,
     videoEstimatedCost: videoJob?.actualCost ?? videoJob?.estimatedCost ?? videoProviderStatus?.estimatedCost,
-    linkedAssetIds: shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []),
+    linkedAssetIds: [...shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []), ...(shot.keyframeAssetVersionId ? [shot.keyframeAssetVersionId] : [])],
     assetVersionIds: [...new Set([
       ...shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []),
+      ...(shot.keyframeAssetVersionId ? [shot.keyframeAssetVersionId] : []),
+      ...(shot.lastFrameAssetVersionId ? [shot.lastFrameAssetVersionId] : []),
       ...(shot.videoAssetVersionId ? [shot.videoAssetVersionId] : []),
       ...(shot.voiceAssetVersionId ? [shot.voiceAssetVersionId] : []),
       ...directorSoundClips(document, shot.id).map((clip) => clip.assetVersionId),

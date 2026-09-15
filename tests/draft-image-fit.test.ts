@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { parseDraftTemplate } from '@shared/draft-template-contract';
-import { draftImageFitLabel, draftImageFitOptions, draftTemplates, normalizeDraftTemplate } from '@shared/templates';
+import { appendDraftImageCompositionGuidance, draftImageCompositionGuidance, draftImageFitLabel, draftImageFitOptions, draftTemplates, normalizeDraftTemplate } from '@shared/templates';
 import { draftImageFrameRect, draftImageMediaRect } from '../src/features/templates/DraftCanvas';
 
 describe('draft image display mode', () => {
@@ -25,7 +25,8 @@ describe('draft image display mode', () => {
   });
 
   it('keeps crop as the backward-compatible default and preserves full-image mode', () => {
-    expect(draftTemplates.every((template) => template.image.fit === 'cover')).toBe(true);
+    expect(draftTemplates.slice(0, 3).every((template) => template.image.fit === 'cover')).toBe(true);
+    expect(draftTemplates.find((template) => template.id === 'builtin-landscape-tutorial')?.image.fit).toBe('contain');
 
     const template = structuredClone(draftTemplates[1]);
     template.image.fit = 'contain';
@@ -52,5 +53,26 @@ describe('draft image display mode', () => {
     expect(source).toContain('(visible_width - area_width_px) * (0.5 - focus_x)');
     expect(source).toContain('area_left * 2 + area_width - 1 + focus_shift_x * 2 / canvas_width');
     expect(source).toContain('if image_layout["use_mask"]');
+  });
+
+  it('turns a reduced template image frame into deterministic subject-safe composition guidance', () => {
+    const template = draftTemplates.find((item) => item.id === 'builtin-portrait-knowledge')!;
+    const guidance = draftImageCompositionGuidance(template);
+
+    expect(guidance).toContain('[StoryDream 模板安全构图]');
+    expect(guidance).toContain('顶部 28%');
+    expect(guidance).toContain('宽 100%、高 40%');
+    expect(guidance).toContain('原图约保留横向 100%、纵向 40%');
+    expect(guidance).toContain('优先近景或中景');
+    expect(draftImageCompositionGuidance(draftTemplates[0])).toBe('');
+  });
+
+  it('appends template safety guidance once and leaves full-frame prompts unchanged', () => {
+    const reduced = draftTemplates.find((item) => item.id === 'builtin-landscape-split')!;
+    const first = appendDraftImageCompositionGuidance('主体站在窗前', reduced);
+    expect(first).toContain('主体站在窗前');
+    expect(appendDraftImageCompositionGuidance(first, reduced)).toBe(first);
+    expect(appendDraftImageCompositionGuidance('全屏构图', draftTemplates[0])).toBe('全屏构图');
+    expect(appendDraftImageCompositionGuidance(first, draftTemplates[0])).toBe('主体站在窗前');
   });
 });

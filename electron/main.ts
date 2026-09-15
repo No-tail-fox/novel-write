@@ -8,8 +8,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
 import { classifyBenchmarkUrl, normalizeBenchmarkSourceUrl } from '../src/shared/benchmark-monitoring';
-import { discoverDangdangBooks } from '../src/shared/book-discovery';
+import { discoverBooks } from '../src/shared/book-discovery';
 import { parseEditorialCollagePipelineData, rebuildEditorialTimeline, type EditorialCollageCreateInput, type EditorialCollagePipelineData, type EditorialCollageSaveInput } from '../src/shared/editorial-collage';
+import { buildEditorialShotVideoRequest, editorialKeyframeAssetId, editorialVideoFrames, editorialVideoPrompt } from '../src/shared/editorial-media';
+import { prepareEditorialNarrationForRender } from '../src/shared/editorial-narration-timing';
 import { motionComicReferencesImageLabRecord, parseMotionComicPipelineData, type MotionComicCreateInput, type MotionComicPipelineData, type MotionComicSaveInput } from '../src/shared/motion-comic';
 import { buildDirectorRenderScenes, directorCanvasForRatio, directorDocumentRenderFingerprint, directorNarrationAlignment, directorQualityReview, evaluateDirectorQuality, persistDirectorRenderCompletion, type DirectorRenderDocument, type DirectorGenerateShotVideoRequest, type DirectorGenerateShotVideoResult, type DirectorRenderRequest, type DirectorSubtitleRecheckRequest, type DirectorSubtitleRecheckResult, type DirectorMediaRecheckRequest, type DirectorMediaRecheckResult } from '../src/shared/director-render';
 import { evaluateDirectorVisualContinuity, productionVisualContinuityEvidenceSchema, type ProductionVisualContinuityEvidence } from '../src/shared/production-visual-continuity';
@@ -17,6 +19,8 @@ import { evaluateDirectorSubtitleLayout } from '../src/shared/production-subtitl
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
+import { removeEditorialGreenBackground } from '../src/shared/editorial-cutout';
+import { createVideoLabRuntime } from '../src/shared/video-lab-runtime';
 import { loadAiHotArchive, loadHotBoardArchive } from '../src/shared/hotboard-archive';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPathResult, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
@@ -75,6 +79,9 @@ import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import type { CreateDirectorBatchInput, DirectorBatchStatus, UpdateDirectorBatchInput } from '../src/shared/director-batch-persistence';
 import { createProductionHistoryReservations, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../src/shared/production-history';
 import { renderDirectorVideo } from './director-renderer';
+import { compileVoxCode, readVoxAsset, VoxTemplateStore } from './vox-animation-runtime';
+import { voxAnimationMessages } from '../src/shared/vox-animation-prompt';
+import { voxPropsSchema, type VoxGenerateRequest } from '../src/shared/vox-animation';
 import { hashDirectorRenderOutput } from './director-render-output';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
@@ -2093,6 +2100,20 @@ trustedHandle('image-lab:open-output-directory', async (_event, id: string) => {
 });
 trustedHandle('voice-lab:list', async (_event, request: Extract<HistoryListRequest, { family: 'voice-lab' }>) => (await getDb()).listVoiceLabRecords(request));
 trustedHandle('voice-lab:get-detail', async (_event, id: string) => (await getDb()).getVoiceLabRecordDetail(id));
+let videoLabRuntime: ReturnType<typeof createVideoLabRuntime> | undefined;
+function getVideoLabRuntime() {
+  return videoLabRuntime ??= createVideoLabRuntime({
+    rootDirectory: join(appDataDir(), 'video-lab'),
+    getConfig: async () => (await getConfigService()).getRuntimeConfig(),
+    normalizeVideo: normalizeSceneVideo,
+  });
+}
+trustedHandle('video-lab:list', async () => getVideoLabRuntime().listRecords());
+trustedHandle('video-lab:generate', async (_event, input) => getVideoLabRuntime().generate(input));
+trustedHandle('video-lab:open-output-directory', async (_event, id: string) => {
+  const directory = await getVideoLabRuntime().outputDirectory(id);
+  await openExistingDirectory(directory, (path) => shell.openPath(path), { allowedRoot: join(appDataDir(), 'video-lab') });
+});
 trustedHandle('task:archive', (_event, id: string) =>
   runHistoryGovernanceMutation('task', id, async (database) => {
     const task = await database.archiveTask(id);
@@ -2237,6 +2258,52 @@ trustedHandle('research:compose-copy', async (_event, input: ResearchCopyCompose
   return composeCopyFromSources(createConfiguredTextLlm(runtimeConfig.llm), input);
 });
 
+const voxGenerationControllers = new Map<string, AbortController>();
+const directorRenderControllers = new Map<string, AbortController>();
+const voxTemplateStore = () => new VoxTemplateStore(join(appDataDir(), 'vox-templates'));
+let sharedVoxTemplateStore: VoxTemplateStore | undefined;
+const getVoxTemplateStore = () => sharedVoxTemplateStore ??= voxTemplateStore();
+trustedHandle('vox:runtime', () => readFile(join(__dirname, 'vox-animation-runtime.js'), 'utf8'));
+trustedHandle('vox:compile', (_event, source: string) => compileVoxCode(source));
+trustedHandle('vox:asset', (_event, path: string) => readVoxAsset(path));
+trustedHandle('vox:templates-list', () => getVoxTemplateStore().list());
+trustedHandle('vox:templates-save', (_event, input) => getVoxTemplateStore().save(input));
+trustedHandle('vox:templates-delete', (_event, id: string) => getVoxTemplateStore().remove(id));
+trustedHandle('vox:cancel', (_event, id: string) => { voxGenerationControllers.get(id)?.abort(); });
+trustedHandle('director:cancel-render', (_event, id: string) => { directorRenderControllers.get(id)?.abort(); });
+trustedHandle('vox:export-shot', async (_event, input) => {
+  const database=await getDb(),task=await database.getTaskDetail(input.id);
+  if(!task||task.taskType!=='editorial-collage'||task.archivedAt)throw new Error('当前 VOX 项目不可导出。');
+  const document=parseEditorialCollagePipelineData(task.pipelineData);
+  if(document.updatedAt!==input.expectedUpdatedAt)throw new Error('项目已更新，请保存后重新导出。');
+  if(!document.beats.some(beat=>beat.shots.some(shot=>shot.id===input.shotId&&shot.renderStrategy==='remotion')))throw new Error('动画镜头不存在。');
+  if(directorRenderControllers.has(input.id))throw new Error('该项目正在渲染');
+  const controller=new AbortController();directorRenderControllers.set(input.id,controller);
+  try {
+    const target=await dialog.showSaveDialog({title:'导出当前动画镜头',defaultPath:`VOX-${input.shotId.replace(/[^a-zA-Z0-9_-]/g,'_')}.mp4`,filters:[{name:'MP4 视频',extensions:['mp4']}]});
+    if(target.canceled||!target.filePath)return false;
+    controller.signal.throwIfAborted();
+    const scenes=buildDirectorRenderScenes(document,undefined,{shotIds:[input.shotId]});
+    const result=await renderDirectorVideo({workDir:taskWorkDir(task),projectTitle:document.title,modeLabel:'VOX',ratio:document.ratio,scenes,signal:controller.signal});
+    controller.signal.throwIfAborted();
+    await copyFile(result.outputPath,target.filePath);
+    shell.showItemInFolder(target.filePath);
+    return true;
+  } finally {directorRenderControllers.delete(input.id);}
+});
+trustedHandle('vox:generate', async (_event, input: VoxGenerateRequest) => {
+  if (!input?.requestId || typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 10000) throw new Error('请填写动画需求（最多 10000 字）');
+  if (voxGenerationControllers.has(input.requestId)) throw new Error('动画请求正在运行');
+  const props = voxPropsSchema.parse(input.props);
+  const controller = new AbortController(); voxGenerationControllers.set(input.requestId, controller);
+  try {
+    const runtime = await (await getConfigService()).getRuntimeConfig();
+    const result = await createConfiguredTextLlm(runtime.llm).run({ step: 1, name: 'VOX 动画代码', messages: voxAnimationMessages({...input,props}), signal: controller.signal, maxTokens: 10000, maxRetries: 0, timeoutMs: 180000 });
+    if (controller.signal.aborted) throw new Error('动画生成已取消');
+    return compileVoxCode(result.text);
+  } finally { voxGenerationControllers.delete(input.requestId); }
+});
+
 trustedHandle('hotboard:fetch', async (_event, input) => loadHotBoardArchive(await getDb(), input));
 
 trustedHandle('hotboard:read-source', async (_event, input) => {
@@ -2255,6 +2322,11 @@ trustedHandle('hotboard:read-source', async (_event, input) => {
 trustedHandle('aihot:query', async (_event, input) => loadAiHotArchive(await getDb(), input));
 
 trustedHandle('hotboard:open-url', async (_event, url: string) => {
+  const target = assertNetworkUrl(url, 'public-research');
+  await shell.openExternal(target.href);
+});
+
+trustedHandle('provider:open-portal', async (_event, url: string) => {
   const target = assertNetworkUrl(url, 'public-research');
   await shell.openExternal(target.href);
 });
@@ -2337,6 +2409,17 @@ trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput)
         imageLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
         { ...input, id },
       );
+      if (input.cutout === 'green' && generatedRecord.status === 'generated') {
+        const source = nativeImage.createFromBuffer(await readFile(generatedRecord.imagePath));
+        if (source.isEmpty()) throw new Error('EDITORIAL_CUTOUT_INVALID_IMAGE: 无法读取生成的主体图片，请重新生成素材。');
+        const { width, height } = source.getSize();
+        const cutout = removeEditorialGreenBackground(source.toBitmap({ scaleFactor: 1 }), width, height);
+        const transparentPng = nativeImage.createFromBitmap(Buffer.from(cutout.bitmap), { width, height, scaleFactor: 1 }).toPNG();
+        if (!transparentPng.length) throw new Error('EDITORIAL_CUTOUT_ENCODE_FAILED: 无法保存透明主体素材，请重新生成。');
+        const cutoutPath = join(dirname(generatedRecord.imagePath), `${basename(generatedRecord.imagePath, extname(generatedRecord.imagePath))}.cutout.png`);
+        await writeFile(cutoutPath, transparentPng);
+        generatedRecord.imagePath = cutoutPath;
+      }
       const saved = await database.updateImageLabRecord(id, generatedRecord);
       return await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
     } catch (error) {
@@ -2427,7 +2510,7 @@ trustedHandle('ui:save-preferences', async (_event, update: UiPreferencesUpdate)
 
 trustedHandle('book-selection:list', async (_event, theme?: string) => (await getDb()).listBookSelections(theme));
 
-trustedHandle('book-selection:discover', async (_event, input: BookDiscoveryRequest) => discoverDangdangBooks(input));
+trustedHandle('book-selection:discover', async (_event, input: BookDiscoveryRequest) => discoverBooks(input));
 
 trustedHandle('book-selection:save', async (_event, input: BookSelectionInput) => (await getDb()).upsertBookSelection(input));
 
@@ -2593,10 +2676,10 @@ trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUC
   }
   const shot = document.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === input.shotId);
   if (!shot) throw new Error(`DIRECTOR_VIDEO_SHOT_NOT_FOUND: ${input.shotId}`);
-  if (shot.renderStrategy === 'deterministic-layers') {
+  if (shot.renderStrategy !== 'living-poster') {
     throw new Error('DIRECTOR_VIDEO_STRATEGY_INVALID: 请先将镜头运动引擎切换为 AI 动态海报。');
   }
-  const firstFrameAssetId = shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
+  const firstFrameAssetId = editorialKeyframeAssetId(shot);
   const firstFrameAsset = firstFrameAssetId ? document.assets.find((asset) => asset.id === firstFrameAssetId) : undefined;
   if (!firstFrameAsset || firstFrameAsset.kind !== 'image' || !firstFrameAsset.localPath?.trim()) {
     throw new Error('DIRECTOR_VIDEO_FIRST_FRAME_REQUIRED: 请先为当前镜头生成一张可用首帧。');
@@ -2608,12 +2691,14 @@ trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUC
 
   const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
   const durationSec = Math.max(1, shot.durationMs / 1000);
-  const request: VideoGenerationRequest = {
-    prompt: [shot.scenePrompt.trim(), shot.motionPrompt.trim()].filter(Boolean).join('\n'),
-    durationSec,
-    ratio: document.ratio,
-    firstFramePath: firstFrameAsset.localPath,
-  };
+  const videoFrames = editorialVideoFrames(document, shot);
+  if (!videoFrames.ready) throw new Error(`DIRECTOR_VIDEO_LAST_FRAME_REQUIRED: ${videoFrames.unavailableReason}`);
+  const lastFrameAsset = videoFrames.last;
+  if (lastFrameAsset?.localPath) {
+    const lastFrameStat = await stat(lastFrameAsset.localPath).catch(() => null);
+    if (!lastFrameStat?.isFile() || lastFrameStat.size <= 0) throw new Error('DIRECTOR_VIDEO_LAST_FRAME_MISSING: 尾帧文件不存在或为空，请重新选择。');
+  }
+  const request: VideoGenerationRequest = buildEditorialShotVideoRequest(document, shot);
   const requiredCapabilities = requiredVideoCapabilities(request);
   const committedVideoCost = document.providerJobs
     .filter((job) => job.capability === 'image-to-video')
@@ -2635,6 +2720,8 @@ trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUC
     shotId: shot.id,
     firstFrameAssetVersionId: firstFrameAsset.id,
     firstFrameSha256: firstFrameAsset.sha256,
+    lastFrameAssetVersionId: lastFrameAsset?.id,
+    lastFrameSha256: lastFrameAsset?.sha256,
     prompt: request.prompt,
     durationSec,
     ratio: request.ratio,
@@ -2699,7 +2786,11 @@ trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUC
     if (!latestTask) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${document.id}`);
     const latest = parseEditorialCollagePipelineData(latestTask.pipelineData);
     const latestShot = latest.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === shot.id);
-    if (latestShot?.videoJobId !== jobId) {
+    if (latestShot?.videoJobId !== jobId || latestShot.renderStrategy !== 'living-poster'
+      || editorialKeyframeAssetId(latestShot) !== firstFrameAsset.id
+      || latestShot.lastFrameAssetVersionId !== lastFrameAsset?.id
+      || editorialVideoPrompt(latestShot) !== request.prompt
+      || latestShot.durationMs !== shot.durationMs || latest.ratio !== document.ratio) {
       throw new Error('DIRECTOR_VIDEO_INPUT_CHANGED: 生成期间镜头已发生变化，本次结果未覆盖当前版本。');
     }
     const finishedAt = new Date().toISOString();
@@ -2715,6 +2806,7 @@ trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUC
       provider: generated.providerName,
       model: generated.model,
       license: generated.license,
+      durationMs: probe.durationMs,
       createdAt: finishedAt,
       selected: true,
       pinned: false,
@@ -2811,9 +2903,26 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
   if (task.taskType !== 'editorial-collage' && task.taskType !== 'motion-comic') {
     throw new Error('DIRECTOR_PROJECT_INVALID: 当前任务不是 VOX 或 AI 漫剧项目。');
   }
-  const document = task.taskType === 'editorial-collage'
+  let document = task.taskType === 'editorial-collage'
     ? parseEditorialCollagePipelineData(task.pipelineData)
     : parseMotionComicPipelineData(task.pipelineData);
+  if (directorRenderControllers.has(input.id)) throw new Error('该项目正在渲染');
+  const renderController = new AbortController(); directorRenderControllers.set(input.id, renderController);
+  try {
+  if (document.workflowKind === 'editorial-collage') {
+    const prepared = await prepareEditorialNarrationForRender(document, async (path) => {
+      const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: taskWorkDir(task), media_path: path, measure_audio_duration: true }, {signal:renderController.signal});
+      if (!probe.has_audio || !(Number(probe.audio_duration_ms) > 0)) throw new Error('EDITORIAL_NARRATION_DURATION_INVALID: 旁白音频无法测长，已停止导出。');
+      return Number(probe.audio_duration_ms);
+    });
+    if (prepared !== document) {
+      const saved = await database.saveEditorialCollageTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: prepared });
+      document = parseEditorialCollagePipelineData(saved.pipelineData);
+      await publishTaskUpsert(database, task.id);
+    }
+  }
+  renderController.signal.throwIfAborted();
+  } catch(error) { directorRenderControllers.delete(input.id); throw error; }
   const renderId = randomUUID();
   const startedAt = new Date().toISOString();
   const renderEpisodeId = document.workflowKind === 'motion-comic' ? (input.episodeId ?? document.activeEpisodeId) : undefined;
@@ -2827,6 +2936,7 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
       modeLabel: task.taskType === 'editorial-collage' ? 'VOX' : 'AI 漫剧',
       ratio: document.ratio,
       scenes,
+      signal: renderController.signal,
     });
     const finishedAt = new Date().toISOString();
     const sha256 = await hashDirectorRenderOutput(result.outputPath, result.sizeBytes);
@@ -2909,7 +3019,7 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
     if (generatedOutputPath) throw new Error(`DIRECTOR_RENDER_REGISTRATION_FAILED: 成片已生成于 ${generatedOutputPath}，项目登记失败：${error instanceof Error ? error.message : String(error)}`);
     await persistDirectorRenderFailure(database, document, renderId, startedAt, error, renderEpisodeId, renderFingerprint).catch(() => undefined);
     throw error;
-  }
+  } finally { directorRenderControllers.delete(input.id); }
 }));
 
 trustedHandle('director:recheck-subtitles', async (_event, input: DirectorSubtitleRecheckRequest): Promise<DirectorSubtitleRecheckResult> => {
@@ -4128,13 +4238,13 @@ trustedHandle('task:update-template', async (_event, input: { id: string; templa
   if (isHtmlVideoTask(task)) throw new Error('HTML video tasks manage their layout template in the HTML animation workspace.');
   if (!template) throw new Error(`Draft template not found: ${input.templateId}`);
   if (task.artifactStatePath) await markTaskDraftForRepack(task.artifactStatePath);
-  await database.updateTask(input.id, { templateId: template.id });
+  await database.updateTask(input.id, { templateId: template.id, ratio: template.image.ratio });
   const event = await database.addTaskEvent(input.id, {
     type: 'template_updated',
     step: null,
     agent: 'Draft',
     detail: `草稿模板已切换为“${template.name}”`,
-    dataJson: JSON.stringify({ templateId: template.id }),
+    dataJson: JSON.stringify({ templateId: template.id, ratio: template.image.ratio }),
   });
   await publishTaskEvent(event);
   return publishTaskUpsert(database, input.id);

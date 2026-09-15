@@ -10,12 +10,14 @@ export interface DirectorCopyAssistRequestInput {
   intent: DirectorCopyAssistIntent;
   title: string;
   copy: string;
+  requirements?: string;
   durationMs?: EditorialScriptDuration;
 }
 
 export function buildDirectorCopyAssistRequest(input: DirectorCopyAssistRequestInput): ResearchCopyComposeInput {
   const title = input.title.trim();
   const copy = input.copy.trim();
+  const requirements = input.requirements?.trim();
   if (input.intent === 'create' && !title) {
     throw new Error(input.mode === 'vox' ? '请先填写项目标题，再使用 AI 创作。' : '请先填写系列名称，再使用 AI 创作。');
   }
@@ -42,7 +44,11 @@ export function buildDirectorCopyAssistRequest(input: DirectorCopyAssistRequestI
 
   return {
     keyword: title || (isVox ? 'VOX 解释型视频' : 'AI 漫剧系列'),
-    extraRequirements: `${revisionRequirements}\n${formatRequirements}`,
+    extraRequirements: [
+      revisionRequirements,
+      ...(requirements ? [`用户创作方向与要求：\n${requirements}`] : []),
+      formatRequirements,
+    ].join('\n'),
     selectedSources: isRevision ? [{
       source: 'user-draft',
       title: isVox ? '当前原始文案' : '当前核心设定',

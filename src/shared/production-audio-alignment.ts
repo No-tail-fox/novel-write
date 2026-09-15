@@ -51,6 +51,8 @@ export interface ProductionNarrationAlignmentScene {
   audioAssetVersionIds: readonly string[];
   /** Effective measured duration for each source occurrence, after trims. */
   audioDurationsMs?: readonly (number | undefined)[];
+  /** Muted narration can be compared for pace without claiming audible truncation. */
+  checkSceneOverflow?: boolean;
 }
 
 function graphemeCount(text: string): number {
@@ -101,13 +103,16 @@ export function measureProductionNarrationAlignment(
     }
     const deltaMs = actualDurationMs - plannedDurationMs;
     const relativeDelta = Math.abs(deltaMs) / plannedDurationMs;
-    const mismatch = Math.abs(deltaMs) > 250 && relativeDelta > 0.15;
+    const overflowMs = scene.checkSceneOverflow === false ? 0 : actualDurationMs - scene.durationMs;
+    const mismatch = overflowMs > 40 || (Math.abs(deltaMs) > 250 && relativeDelta > 0.15);
     const actualCharactersPerSecond = count > 0 ? count / (actualDurationMs / 1000) : undefined;
     return {
       shotId: scene.id, plannedDurationMs, graphemeCount: count, actualDurationMs,
       plannedCharactersPerSecond, actualCharactersPerSecond, deltaMs, status: mismatch ? 'mismatch' : 'aligned',
       audioAssetVersionIds: ids,
-      ...(mismatch ? { detail: `实测音频比字幕规划${deltaMs > 0 ? '长' : '短'} ${Math.abs(Math.round(deltaMs))}ms，请复核切句或语速。` } : {}),
+      ...(mismatch ? { detail: overflowMs > 40
+        ? `实测音频超出镜头 ${Math.round(overflowMs)}ms，当前时间线会截掉尾音，请按旁白时长校准镜头。`
+        : `实测音频比字幕规划${deltaMs > 0 ? '长' : '短'} ${Math.abs(Math.round(deltaMs))}ms，请复核切句或语速。` } : {}),
     };
   });
   const applicable = samples.filter((sample) => sample.status !== 'not-applicable');

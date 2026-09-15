@@ -5,7 +5,7 @@ export type DirectorBatchNodeStatus = 'pending' | 'running' | 'completed' | 'fai
 export interface DirectorBatchShotState {
   id: string;
   title: string;
-  renderStrategy: 'deterministic-layers' | 'living-poster' | 'hybrid';
+  renderStrategy: 'deterministic-layers' | 'living-poster' | 'hybrid' | 'remotion';
   imageReady: boolean;
   videoReady: boolean;
   voiceReady: boolean;
@@ -45,11 +45,14 @@ export interface DirectorBatchPlanInput {
   renderFailed?: boolean;
 }
 
-export function directorBatchHistoryDemand(nodes: readonly Pick<DirectorBatchNode, 'capability' | 'shotId'>[], shots: readonly { id: string; voiceGenerationCount?: number }[]): ProductionHistoryUsage {
+export function directorBatchHistoryDemand(nodes: readonly Pick<DirectorBatchNode, 'capability' | 'shotId'>[], shots: readonly { id: string; imageGenerationCount?: number; voiceGenerationCount?: number }[]): ProductionHistoryUsage {
+  const imageCounts = new Map(shots.map((shot) => [shot.id, shot.imageGenerationCount ?? 1]));
   const voiceCounts = new Map(shots.map((shot) => [shot.id, shot.voiceGenerationCount ?? 1]));
   const demand = { assets: 0, providerJobs: 0, qualityReports: 0 };
   for (const node of nodes) {
-    const count = node.capability === 'voice' ? (voiceCounts.get(node.shotId ?? '') ?? 1) : 1;
+    const count = node.capability === 'image'
+      ? (imageCounts.get(node.shotId ?? '') ?? 1)
+      : node.capability === 'voice' ? (voiceCounts.get(node.shotId ?? '') ?? 1) : 1;
     demand.assets += count;
     demand.providerJobs += count;
     if (node.capability === 'render') demand.qualityReports += 1;
@@ -84,9 +87,9 @@ export interface DirectorBatchController {
 export function createDirectorBatchPlan(input: DirectorBatchPlanInput): DirectorBatchPlan {
   const nodes: DirectorBatchNode[] = [];
   for (const shot of input.shots) {
-    const imageRequested = input.capabilities.image && shouldPlan(input.scope, shot.imageReady, shot.imageFailed);
+    const imageRequested = shot.renderStrategy !== 'remotion' && input.capabilities.image && shouldPlan(input.scope, shot.imageReady, shot.imageFailed);
     const videoRequested = input.capabilities.video
-      && shot.renderStrategy !== 'deterministic-layers'
+      && shot.renderStrategy !== 'deterministic-layers' && shot.renderStrategy !== 'remotion'
       && shouldPlan(input.scope, shot.videoReady, shot.videoFailed);
     const imageRequiredForVideo = videoRequested && !shot.imageReady;
     const imagePlanned = imageRequested || imageRequiredForVideo;

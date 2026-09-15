@@ -37,6 +37,22 @@ describe('StoryDream Fluent UI system', () => {
     expect(slider).toContain('valueLabel !== undefined');
   });
 
+  it('shares theme tokens with portals without copying full-screen root styles', async () => {
+    const { StoryDreamProvider } = await import('../src/ui/StoryDreamProvider');
+    const { storyDreamTheme } = await import('../src/ui/theme');
+    const styles = await source('../src/styles/storydream-ui.css');
+
+    for (const theme of ['dark', 'light'] as const) {
+      const provider = StoryDreamProvider({ theme, children: null });
+      expect(provider.props.applyStylesToPortals).toBe(false);
+      expect(provider.props.theme).toBe(storyDreamTheme(theme));
+      expect(provider.props.className).toBe('storydream-provider');
+    }
+    expect(styles).toContain('[data-portal-node] *');
+    expect(styles).toContain('[data-portal-node] *::before');
+    expect(styles).toContain('[data-portal-node] *::after');
+  });
+
   it('exports the first 15 project-owned core components', async () => {
     const index = await source('../src/ui/index.ts');
     const expectedExports = [

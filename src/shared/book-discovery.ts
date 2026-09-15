@@ -1,8 +1,10 @@
+import { BOOK_SOURCES, DEFAULT_BOOK_SOURCES, bookSourceLabel } from './book-sources';
 import { benchmarkOpportunityTotal } from './benchmark-monitoring';
 import { fetchWithNetworkPolicy, type NetworkFetch, type NetworkLookup } from './network-policy';
 import type {
   BenchmarkSelectionScore,
   BookDiscoveryItem,
+  BookDiscoverySource,
   BookDiscoveryRequest,
   BookDiscoveryResult,
 } from './types';
@@ -48,45 +50,143 @@ const previewCatalog: Array<{
   { sourceId: 'preview-culture', name: '典籍里的中国', author: '有书', publisher: '天地出版社', category: '传统文化·国学', keyword: '传统文化 典籍 国学 历史', sellPoint: '从典籍故事切入传统文化，画面感和知识点兼具', audience: '喜欢历史故事与传统文化的读者' },
 ];
 
-export async function discoverDangdangBooks(
+/** Independent providers: an unavailable source never hides another source's results. */
+export async function discoverBooks(
   rawRequest: BookDiscoveryRequest,
   options: BookDiscoveryRuntimeOptions = {},
 ): Promise<BookDiscoveryResult> {
   const request = normalizeRequest(rawRequest);
-  const now = options.now ?? Date.now;
-  try {
-    const url = new URL(DANGDANG_SEARCH_URL);
-    url.searchParams.set('key', request.query);
-    url.searchParams.set('act', 'input');
+  const outcomes = await Promise.allSettled(request.sources.map(async (source) => {
+    const url = new URL(source === 'dangdang' ? DANGDANG_SEARCH_URL
+      : source === 'weread' ? 'https://weread.qq.com/web/search/global'
+      : 'https://book.douban.com/j/subject_suggest');
+    if (source === 'dangdang') {
+      url.searchParams.set('key', request.query);
+      url.searchParams.set('act', 'input');
+    } else if (source === 'weread') {
+      url.searchParams.set('keyword', request.query);
+      url.searchParams.set('count', String(request.limit));
+    } else url.searchParams.set('q', request.query);
     const response = await fetchWithNetworkPolicy(url, {
-      purpose: 'public-research',
-      fetchImpl: options.fetchImpl,
-      lookup: options.lookup,
+      purpose: 'public-research', fetchImpl: options.fetchImpl, lookup: options.lookup,
       headers: {
-        accept: 'text/html,application/xhtml+xml',
+        accept: source === 'dangdang' ? 'text/html,application/xhtml+xml' : 'application/json',
         'accept-language': 'zh-CN,zh;q=0.9',
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/136.0 Safari/537.36',
       },
-      maxBytes: 2 * 1024 * 1024,
-      timeoutMs: 20_000,
+      maxBytes: 2 * 1024 * 1024, timeoutMs: 20_000,
     });
-    if (!response.ok) throw new Error(`当当搜索返回 HTTP ${response.status}`);
-    const html = await decodeDangdangHtml(response);
-    const items = parseDangdangSearchHtml(html, request);
-    if (items.length === 0) throw new Error('当当公开搜索页没有返回可识别的图书结果');
-    return {
-      query: request.query,
-      track: request.track,
-      source: 'dangdang',
-      sourceState: 'live',
-      sourceLabel: '真实公开数据',
-      fetchedAt: now(),
-      items,
-      message: `已按当当公开搜索顺序整理 ${items.length} 本书。公开评论量不是销量，智能建议仅供选题参考。`,
-    };
-  } catch (error) {
-    return buildBookDiscoveryFallback(request, error instanceof Error ? error.message : String(error), now());
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (source === 'dangdang') {
+      const html = await decodeDangdangHtml(response);
+      const items = parseDangdangSearchHtml(html, request);
+      if (!items.length && !/没有找到|未找到|无搜索结果|没有搜索到/u.test(cleanText(html))) {
+        throw new Error('页面未返回可识别的书目，可能需要验证');
+      }
+      return items;
+    }
+    const body: unknown = await response.json();
+    return source === 'weread' ? parseWereadBooks(body, request) : parseDoubanBooks(body, request);
+  }));
+  const sources: NonNullable<BookDiscoveryResult['sources']> = outcomes.map((outcome, index) => ({
+    source: request.sources[index],
+    status: outcome.status === 'rejected' ? 'failed' : outcome.value.length ? 'ok' : 'empty',
+    count: outcome.status === 'fulfilled' ? outcome.value.length : 0,
+    message: outcome.status === 'rejected'
+      ? `暂不可用：${outcome.reason instanceof Error ? outcome.reason.message : '请求失败'}`
+      : outcome.value.length ? `找到 ${outcome.value.length} 本` : '未找到匹配书目',
+  }));
+  // Round robin preserves each provider's order and lets supplementary catalogs appear on page one.
+  const lists = outcomes.map((outcome) => outcome.status === 'fulfilled' ? outcome.value : []);
+  const items: BookDiscoveryItem[] = [];
+  const seen = new Set<string>();
+  for (let index = 0; index < request.limit && items.length < request.limit; index += 1) {
+    for (const list of lists) {
+      const item = list[index];
+      if (!item || items.length >= request.limit) continue;
+      const key = `${item.source}:${item.sourceId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
   }
+  const failed = sources.filter((source) => source.status === 'failed');
+  return {
+    query: request.query, track: request.track,
+    source: request.sources.length === 1 ? request.sources[0] : 'multiple',
+    sourceState: items.length ? 'live' : failed.length === sources.length ? 'failed' : 'empty',
+    sourceLabel: items.length ? '真实公开数据' : failed.length === sources.length ? '来源暂不可用' : '未找到书目',
+    fetchedAt: (options.now ?? Date.now)(), items, sources,
+    message: `已检索 ${sources.length} 个来源，整理 ${items.length} 条书目。${failed.length ? `${failed.map((item) => bookSourceLabel(item.source)).join('、')}暂不可用${items.length ? '，其余结果仍可使用' : '，可稍后重试或更换关键词'}。` : ''}不同来源及版本分别展示，来源内排序不代表销量。`,
+  };
+}
+
+export function discoverDangdangBooks(request: BookDiscoveryRequest, options: BookDiscoveryRuntimeOptions = {}) {
+  return discoverBooks({ ...request, sources: ['dangdang'] }, options);
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function textValue(value: unknown): string { return typeof value === 'string' ? value.trim() : ''; }
+function sourceLink(value: unknown, host: string, pathPrefix: string): string | undefined {
+  try {
+    const url = new URL(textValue(value));
+    return url.protocol === 'https:' && url.hostname === host && url.pathname.startsWith(pathPrefix) ? url.href : undefined;
+  } catch { return undefined; }
+}
+function catalogItem(source: BookDiscoverySource, id: string, name: string, rank: number, url: string, request: Required<BookDiscoveryRequest>): BookDiscoveryItem {
+  return {
+    source, sourceId: `${source}:${id}`, sourceState: 'live', sourceRank: rank,
+    rankingLabel: `${bookSourceLabel(source)}搜索第 ${rank} 位`, name, url,
+    category: request.track, keyword: buildKeywords(request.query, name),
+    sellPoint: buildSellPoint(name, request.track), audience: audienceForTrack(request.track),
+    selectionStatus: 'candidate', evidence: [], riskNote: riskForTrack(request.track),
+    opportunityScore: scoreBookOpportunity({ rank, query: request.query, title: name }),
+    note: `来源于${bookSourceLabel(source)}公开书目；来源内顺序不代表销量。`,
+  };
+}
+
+export function parseWereadBooks(body: unknown, input: BookDiscoveryRequest): BookDiscoveryItem[] {
+  const response = objectRecord(body);
+  if (!Array.isArray(response.books)) throw new Error('微信读书未返回书目列表，可能需要登录或验证');
+  const request = normalizeRequest(input);
+  const items: BookDiscoveryItem[] = [];
+  for (const entry of response.books) {
+    const book = objectRecord(objectRecord(entry).bookInfo);
+    const id = textValue(book.bookId);
+    const name = textValue(book.title);
+    const url = sourceLink(book.deepLink, 'weread.qq.com', '/book-detail');
+    if (!id || !name || !url || book.type !== 0) continue;
+    items.push({
+      ...catalogItem('weread', id, name, items.length + 1, url, request),
+      author: textValue(book.author) || undefined, publisher: textValue(book.publisher) || undefined,
+      coverUrl: normalizePublicUrl(textValue(book.cover)),
+      note: `微信读书电子书目录，仅供选题参考；纸书版本与售价需另行确认。${textValue(book.intro) ? `\n来源简介：${textValue(book.intro).slice(0, 3000)}` : ''}`,
+    });
+    if (items.length >= request.limit) break;
+  }
+  return items;
+}
+
+export function parseDoubanBooks(body: unknown, input: BookDiscoveryRequest): BookDiscoveryItem[] {
+  if (!Array.isArray(body)) throw new Error('豆瓣未返回书目列表，可能需要验证');
+  const request = normalizeRequest(input);
+  const items: BookDiscoveryItem[] = [];
+  for (const entry of body) {
+    const book = objectRecord(entry);
+    const id = textValue(book.id);
+    const name = textValue(book.title);
+    const url = sourceLink(book.url, 'book.douban.com', '/subject/');
+    if (book.type !== 'b' || !/^\d+$/u.test(id) || !name || !url) continue;
+    items.push({ ...catalogItem('douban', id, name, items.length + 1, url, request),
+      author: textValue(book.author_name) || undefined, publishDate: textValue(book.year) || undefined,
+      coverUrl: normalizePublicUrl(textValue(book.pic)),
+      note: '豆瓣书目检索建议，适合补充具体书名；未提供纸书售价和销量。',
+    });
+    if (items.length >= request.limit) break;
+  }
+  return items;
 }
 
 export function parseDangdangSearchHtml(html: string, rawRequest: BookDiscoveryRequest): BookDiscoveryItem[] {
@@ -215,10 +315,12 @@ async function decodeDangdangHtml(response: Response): Promise<string> {
 function normalizeRequest(input: BookDiscoveryRequest): Required<BookDiscoveryRequest> {
   const query = input.query.trim();
   if (!query) throw new Error('请输入选书主题或书名。');
+  if (input.sources && (!input.sources.length || input.sources.some((source) => !BOOK_SOURCES.some((item) => item.value === source)))) throw new Error('请选择有效的图书来源。');
   return {
     query,
     track: input.track?.trim() || '全部图书',
     limit: Math.min(MAX_LIMIT, Math.max(1, Math.round(input.limit ?? DEFAULT_LIMIT))),
+    sources: [...new Set(input.sources ?? DEFAULT_BOOK_SOURCES)],
   };
 }
 

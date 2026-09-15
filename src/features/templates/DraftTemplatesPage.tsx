@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type SetStateAction } from 'react';
 import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Trash2, Upload } from 'lucide-react';
 import type { AppMutationResult, DraftFontFamily, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { draftFontCssFamily, draftFontGroups, draftFontOptions, draftImageFitLabel, draftImageFitOptions, draftImageMotions, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
+import { draftFontCssFamily, draftFontGroups, draftFontOptions, draftImageFitLabel, draftImageFitOptions, draftImageMotions, draftTemplateGuides, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from '../../shared/coze-workflow-converter';
 import { useAsyncAction } from '../../ui/async-action';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
-import { Button } from '../../ui';
+import { Button, SegmentedControl } from '../../ui';
 import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { ToggleField } from '../../components/ToggleField';
@@ -18,10 +18,22 @@ import type { ApplyMutationResult, RendererAppState as AppState } from '../../ap
 import { fallbackEffectCatalog } from '../../shared/editorial-options';
 import { DRAFT_IMAGE_SCALE_MIN, DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, draftCanvasSelectionLayer, draftImageFrameRect, draftImageMediaRect, firstVisibleDraftCanvasSelection, isDraftCanvasSelectionVisible, normalizeColorInput, updateDraftImageFrameRect, updateDraftImageMediaScale, type DraftCanvasLayer, type DraftCanvasSelection } from './DraftCanvas';
 
+const guidedTemplateIds = Object.keys(draftTemplateGuides);
+function templateGalleryOrder(id: string): number {
+  const index = guidedTemplateIds.indexOf(id);
+  return index < 0 ? guidedTemplateIds.length : index;
+}
+
 export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [orientation, setOrientation] = useState<'all' | 'landscape' | 'portrait'>('all');
   const [templateDetails, setTemplateDetails] = useState<Record<string, DraftTemplate>>({});
-  const galleryTemplates = state.draftTemplates.map((template) => resolveDraftTemplateDetail(template, templateDetails[template.id]));
+  const galleryTemplates = state.draftTemplates
+    .map((template) => resolveDraftTemplateDetail(template, templateDetails[template.id]))
+    .filter((template) => orientation === 'all' || (orientation === 'landscape'
+      ? template.canvas.width > template.canvas.height
+      : template.canvas.width < template.canvas.height))
+    .sort((left, right) => templateGalleryOrder(left.id) - templateGalleryOrder(right.id));
   const [draft, setDraftState] = useState<DraftTemplate | null>(null);
   const draftRef = useRef(draft);
   const [savedDraft, setSavedDraft] = useState<DraftTemplate | null>(null);
@@ -200,7 +212,9 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
   }
 
   async function createTemplate() {
-    const base = cloneDraftTemplate(builtinDraftTemplates[0]);
+    const base = cloneDraftTemplate(orientation === 'landscape'
+      ? builtinDraftTemplates.find((template) => template.id === 'builtin-landscape-talking') ?? builtinDraftTemplates[2]
+      : builtinDraftTemplates[0]);
     const next = { ...base, id: crypto.randomUUID(), name: '新模板', isDefault: false };
     await draftTemplateAction.run(async () => {
       const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(next));
@@ -589,7 +603,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       <div className="panel-title-row draft-template-toolbar">
         <div>
           <h2>草稿模板</h2>
-          <span className="hint-text">内置模板：默认竖屏、竖屏4:3、横屏16:9；自定义模板保存在本机。</span>
+          <span className="hint-text">横屏与竖屏均有口播、科普、故事和图文版式，另有金句与教程模板；复制后可自由调整。</span>
         </div>
         <div className="button-row">
           <button className="ghost-action" type="button" onClick={() => setCozeImportOpen(true)}><Upload size={15} />导入 Coze 模板</button>
@@ -597,6 +611,17 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
         </div>
       </div>
       <InlineActionFeedback feedback={draftTemplateAction.feedback} />
+
+      <SegmentedControl
+        label="模板画幅"
+        value={orientation}
+        onChange={setOrientation}
+        options={[
+          { value: 'all', label: '全部' },
+          { value: 'landscape', label: '横屏' },
+          { value: 'portrait', label: '竖屏' },
+        ]}
+      />
 
       {cozeImportOpen ? (
         <div className="coze-template-import-backdrop" onClick={() => setCozeImportOpen(false)}>
@@ -647,15 +672,16 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       <section className="draft-template-gallery">
         {galleryTemplates.map((template) => (
           <article key={template.id} className="draft-template-card">
-            <button className="draft-template-thumb" onClick={() => openEditor(template)} type="button" aria-label={`编辑 ${template.name}`}>
-              <DraftTemplatePreview template={template} compact />
-            </button>
+            <Button className="draft-template-thumb" variant="subtle" onClick={() => openEditor(template)} type="button" aria-label={`编辑 ${template.name}`}>
+              <DraftTemplatePreview template={template} compact captionText={draftTemplateGuides[template.id]?.captionExample} />
+            </Button>
             <div className="draft-template-meta">
               <div>
                 <strong>{template.name}</strong>
-                {template.isDefault ? <small>系统默认</small> : <small>本地自定义</small>}
+                {template.isDefault ? <small>内置模板</small> : <small>本地自定义</small>}
               </div>
               <span>{template.canvas.ratio} · {template.canvas.width}x{template.canvas.height}</span>
+              {draftTemplateGuides[template.id] ? <span className="draft-template-description">{draftTemplateGuides[template.id].description}</span> : null}
               <span>图片 {template.image.ratio} · {draftImageFitLabel(template.image.fit)} · {draftImageMotions.find((option) => option.value === template.image.motion)?.label ?? template.image.animation}</span>
             </div>
             <div className={`draft-template-actions${template.isDefault ? '' : ' has-delete'}`}>
@@ -668,7 +694,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
         <button className="draft-template-card new-template-card" aria-label="从默认模板新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate} type="button">
           <Plus size={24} />
           <strong>新模板</strong>
-          <span>从默认竖屏复制一份本地配置</span>
+          <span>{orientation === 'landscape' ? '从横屏口播复制一份本地配置' : '从默认竖屏复制一份本地配置'}</span>
         </button>
       </section>
       <ConfirmDialog

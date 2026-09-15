@@ -1,5 +1,48 @@
 # 当前优先任务：StoryDream Web / Electron UI 重构（2026-09-10）
 
+## 2026-09-15 VOX 音画不同步与尾句截断
+
+- [completed] 只读核对最新真实《撒日朗》项目：第 3／4 镜分别裁掉 282／414ms，第 1／2 镜多留 1084／433ms；各镜起点偏移 0ms，属于估算时长未校准导致的截尾。
+- [completed] 新旁白按实测时长重排镜头、字幕及后续音轨；旧项目导出前按解码采样数重测并保存校准时间轴，保留本地／图生视频素材和手动裁剪。
+- [completed] 真实 2.58 秒本地样片两段声音起点偏移 0ms、最后 250ms 相关度均 >0.999；历史隔离副本四段保留全长。122 项相关回归、独立采样测长测试和生产构建通过，最终兼容测试与既有类型问题记录见实施报告。
+- 沿用用户选择：本地验收，不调用付费模型；保留工作区其他未提交改动，真实项目先只读检查。
+
+## 2026-09-15 VOX 内容标题与多种叙事动作
+
+- [completed] 分离内部节拍角色和每镜上屏标题；标题从镜头原文选取并可编辑，预览与导出统一，兼容旧项目。
+- [completed] 将单一滑入扩展为五种叙事动作，按内容选择并支持逐镜修改，保留两条生成链路和既有素材。
+- [completed] 核对短稿按句分镜、旧标题恢复、生成提示词、素材绑定和动作保存；最后两份核心测试 12 项、页面双链路 5 组、双主题双尺寸预览 12 组和最终生产构建通过。
+- [completed] 真实渲染器输出五镜头 12.5 秒 1080p 本地样片，解码抽帧验证五种不同轨迹及内容标题。报告：docs/plans/2026-09-15-vox-story-titles-and-motion.md。扩展套件的 1 项旧源码断言与全局既有类型错误单独记录，不声称全仓检查通过。
+- 本轮继续沿用用户选择：本地验证，不调用付费视频模型；不改写真实用户项目。
+
+## 2026-09-14 VOX 双链路完整实现
+
+- [completed] 保留并完善本地独立图层动画与图生视频两条链路；模型路线使用独立关键帧，切换镜头模式保留各自素材。
+- [completed] 本地按背景/主体分别生成、自动透明抠图、逐层绑定，精确文字由代码渲染；旧单图镜头可补齐素材，失败重试只补缺失层。
+- [completed] 图生视频明确元素动作和相机动作，完善素材引用与过期回包保护；关键帧完成不再标记视频已生成。
+- [completed] 最终 19 文件 176 项聚焦测试、生产构建、双主题双尺寸截图、真实页面生成/补齐/切换/重开及 4 秒本地 MP4 验收通过。类型检查存在既有 browser-fallback/storage 接口与 main.ts ratio 类型错误，详见实施报告。
+- 用户选择：新项目默认本地拼贴动画；本轮只完成两条链路和本地验收，不调用付费视频模型。实际验收未调用任何生成服务，未改写《撒日朗》项目。
+- 授权：用户明确要求两条链路都保留并按成熟方案实现，无需再次确认实施方向。保留当前工作区其他任务的未提交改动。
+
+## 2026-09-14 VOX 动画缺失调研
+
+- [completed] 核对本地生成、素材绑定和逐帧导出链路；最新真实成片《撒日朗》4 镜头均只有背景图片，主体/标签无资产，历史无图生视频任务。
+- [completed] 查阅 4 个相关 GitHub 仓库的 skill 与源码，核实图生视频、独立图层动画、降级行为及示例硬编码等限制。
+- [completed] 保存带源码引用的调研结论和修复建议至 docs/plans/2026-09-14-vox-motion-skill-research.md；本轮完成调研诊断，未修改生成实现。
+- 联网工具情况：gh 未安装、Firecrawl 未登录、CDP 未连接；已通过 GitHub 公开 API 和 raw 文件取得一手内容，无需用户配置。
+
+## 2026-09-14 VOX AI 创作要求
+
+- [completed] VOX 标题下增加可选的多行 AI 创作要求；创作/修改均读取，纳入草稿及过期响应保护。
+- [completed] 59 项聚焦测试、25 项真实组件浏览器检查、生产构建通过；确认模型提示词包含用户方向、失败可重试、草稿可恢复。深浅主题及 1440/1040/390 截图复核通过，类型检查仍只有原有缺失接口。
+
+## 2026-09-14 封面同步与火山音色列表
+
+- [completed] 项目摘要接入已有自动/手动/HTML 封面，解析相对路径并随图片修订刷新；无需重新生成已有封面。
+- [completed] 根据官方 SDK 取消加载全部音色时的合成资源筛选，保留字符串 Limit，补齐结构化错误、RequestId 和部分分页提示；未用真实 IAM 凭据在线验证。
+- [completed] 9 文件 304 项回归与生产构建通过；隔离 Electron 4 张深浅主题/1440/1040 截图、自动刷新与重载验证通过，运行错误 0。类型检查仍为原有 browser-fallback/storage 接口缺失。
+- 证据：项目卡片仅读 ordinaryCoverAsset/referenceImagePath；摘要 SQL 未选 ordinary_cover_asset_json；自动封面位于 pipeline/state.json 的 assets.cover。
+
 ## 2026-09-12 导演台生图概念方案
 
 - [completed] 读取 Product Design、ui-ux-pro-max、既有主题与工作流规范；检查项目页及导演台截图。
@@ -426,6 +469,70 @@
 - 约束：不覆盖现有技能；优先官方或可审计开源来源；避免安装与现有 `agent-reach`、`web-access` 完全重复的项目。
 - 错误：官方清单脚本访问 GitHub API 返回 HTTP 403；不重试同一路径，改用官方仓库 Git/公开网页读取。
 
+### 2026-09-13 工作区公共返回导航
+
+- [completed] 用户截图复核纠偏：此前遗漏 VOX/AI 漫剧创建页。本轮将全部 productionNavItems 接入公共返回，移除导演创建/加载/恢复状态的局部返回；沉浸导演台仍使用自身页头，外层页头按既有 CSS 隐藏。
+- [completed] 本轮 8 文件 243 项测试、生产构建通过。隔离 Electron 四种创建类型 34 张截图通过；实际 Vite 浏览器预览四页深浅主题/三尺寸 24 张截图通过，断言返回按钮坐标、36x36 尺寸和唯一入口一致。
+- [completed] 确认 HTML/MV 创建页缺少公共返回；项目列表已有持久化 session，沿用未保存拦截器。
+- [completed] 公共页头覆盖新建任务、HTML 动画、音乐 MV、普通任务详情；记录来源并避免设置往返产生自循环。
+- [completed] 生产构建、9 文件 254 项聚焦测试通过；隔离 Electron 22 张截图覆盖桌面/紧凑/手机宽度及深浅主题，来源与草稿返回验证通过。
+- [completed] 500 项目回归复测通过：15 项检查、6 张截图，分页/搜索/类型筛选/重启恢复不回退。
+- 类型检查已执行但未通过：原有 browser-fallback 缺少 updateHtmlVideoSceneStructure / updateMusicMvTask，原有 storage 测试引用未实现的 FileDatabase.updateMusicMvTask。本次未扩展这些业务接口。
+- 构建前置修复：同名 removeMotionComicShot 重复实现改为兼容三/四参数调用，保留两套已有语义并新增测试。
+- 测试错误记录：初次夹具 compositions 数量不匹配已修正；恢复原先被 CSS 隐藏的 HTML 模式工具栏；项目全量 QA 首次重启阶段路由意外变化，完整复跑通过。
+- 浏览器限制：内置浏览器不可用，用户已同意使用项目 Playwright 测试浏览器。
+
+### 2026-09-13 模板图片与文字层级
+
+- [completed] 定位图片 z-index:1、变换框 3/4，而文字外层 transform 建立 z-index:auto 层叠上下文，文字绘制和鼠标命中均落在图片之后。
+- [completed] 原始实测四类文字中心均命中 image-frame；现将图片保持在 1、变换框 2/3、文字整体 4，并隔离画布层叠上下文。
+- [completed] 深浅主题、1440x1000/1040x720、两种图片对象共 40 项鼠标检查、16 张截图通过；四类文字选中/拖动/缩放、右侧面板展开和图片自身移动/缩放正常。
+- [completed] 5 文件 215 项聚焦测试、生产构建通过；类型检查仍为此前 browser-fallback/storage 接口缺失。未改模板数据和导出配置。
+- QA 调整：默认副标题和字幕已有位置重叠，先用实际鼠标将上方字幕拖开，再单独验证各文字，未修改产品默认模板。证据 `.artifacts/draft-layer-order/`。
+
+### 2026-09-13 公共控件悬停闪屏
+
+- [completed] 返回按钮/草稿提示复现：237 帧中 112 帧被全屏浮层遮挡，根节点/路由/主题不变，导航预加载未复现闪屏。
+- [completed] Provider 设置 applyStylesToPortals=false，仅向浮层传播主题变量；减弱动态效果规则继续覆盖浮层。
+- [completed] 深浅主题、1440/1040/390 三宽度：浏览器 60 项悬停、10,550 帧；Electron 66 项悬停、13,813 帧通过，整屏遮挡/提示反复关闭/主题异常均为 0。
+- [completed] 209 项聚焦测试、生产构建、diff check 通过；菜单/未保存弹窗/键盘返回/减弱动态效果通过，补拍动画结束后的浮层截图复核正常。
+- 测试调整：浏览器模式窗体按钮被隐藏，改用可见返回按钮复现；初次计划补丁上下文不匹配，未写入后纠正。
+- Electron 首轮像素断言检测到项目列表加载动画，截图确认不是悬停闪屏；回归脚本增加列表就绪等待后再采样。
+- 本轮类型检查仍受先前记录的 browser-fallback / storage 接口缺失阻塞，无新增错误；本地 5173 已确认提供 applyStylesToPortals=false 的新代码。
+
+### 2026-09-13 素材库入口与操作反馈
+
+- [completed] 浏览器复现：主导航误入画图实验室，创建接口返回假成功且列表为空。
+- [completed] 修正默认入口与预览能力提示，禁用不支持的操作，兜住删除引用查询错误；操作反馈移至图片区前，窄窗口工具栏换行但按钮文字不拆行。
+- [completed] 217 项聚焦测试及生产构建通过；浏览器/隔离 Electron 17 张截图、真实图片创建/导入/重命名/删除/撤销/重载恢复通过。
+- [completed] 主按钮文字颜色与忙碌尺寸收尾后最终复跑通过；运行错误/付费调用均为 0，类型检查仍只有此前记录的两个接口缺失报错。未操作真实项目或素材数据。
+
+### 2026-09-13 Provider Credential Portals
+
+- [completed] Inspect selected-profile state and official console destinations; distinguish speech keys from Ark and IAM credentials.
+- [completed] Add shared settings footer links and trusted system-browser navigation without touching credentials or saving drafts.
+- [completed] Final 269 tests and production build passed. Browser/Electron click, failure/retry, selected-profile switching, draft preservation, and 12 screenshots at 1440/1040/390 passed with zero runtime errors, contrast >=4.5, and stable hover geometry.
+- [completed] Existing typecheck failures and missing music-mv:update IPC remain unchanged. User app/configuration was not restarted or modified.
+
+### 2026-09-13 LLM API Protocol Selection
+
+- [completed] Trace settings normalization, IPC, generation, model tests, and official Responses request documentation.
+- [completed] Add persistent protocol selection and real Responses text/JSON adapters; preserve custom provider identity. Frame vision and preview diagnostics also use the selected protocol.
+- [completed] Final focused regression: 14 files, 425 tests passed; production build passed. Isolated Electron and browser QA passed with 8 screenshots at 1440/1040/390 widths, both themes, zero runtime errors, and no live provider calls.
+- [completed] Recorded pre-existing validation blockers: typecheck still reports missing browser fallback/storage APIs; expanded IPC test rejects VOX beatCount/totalDurationMs. User application/configuration was not restarted or changed.
+
+### 2026-09-13 Gemini 配置 JSON 探测
+
+- [completed] 检查保存配置和服务模型清单，确认 moeapi.cloud / OpenAI 兼容 / gemini-3.7-flash-high 已正确保存。
+- [completed] 实测旧 20 与新 1024 token 请求均得到完整 JSON，本次未复现用户的偶发残缺回复；发现旧测试固定 20 token 且忽略 finish_reason。
+- [completed] 提高探测预算和超时，区分截断/空响应/无效 JSON，兼容 max_completion_tokens 和 Anthropic 工具响应；不修改正式生成参数。
+- [completed] 200 项聚焦测试、生产构建、修复后真实探测通过（4114 ms）。扩大回归 285/286，原有 music-mv:update IPC 缺失导致一项失败；类型检查仍为原有 browser-fallback/storage 接口缺失。
+
+### 2026-09-13 项目列表统一使用封面
+
+- [completed] 项目卡片优先使用正式封面，缺少正式封面时使用已有参考图兜底，保留统一占位态。
+- [completed] 封面解析、项目壳、路由测试 166 项通过，生产构建通过。
+
 ### 2026-09-12 预览优先导演台改造
 
 - [completed] 采用已选中的 Preview-first 概念方向：四阶段流程栏、左侧项目/镜头、中部大预览与胶片条、右侧上下文检查器，保留七个既有制作步骤和原业务状态。
@@ -433,3 +540,96 @@
 - [completed] Electron 窗体控制保留；保存标识只反映真实 dirty 状态；预览比例、版本、审片、导出入口继续走原有路由/状态。
 - [completed] `tests/director-preview-first.test.ts` 及相关导演台/工作区测试 8 文件 122/122 通过，`npm run typecheck` 与生产 `npm run build` 通过。
 - [completed] 生产 Electron 已覆盖本地真实媒体、空态、16:9/1:1/4:3/9:16、1536x1024/1440x1024/1040x720；最终报告 `.artifacts/storydream-web-redesign/r3-preview-first-20260912-final/report.json` 为 passed，36 张截图、运行时错误 0、付费生成调用 0。
+
+### 2026-09-14 抖音常见草稿版式
+
+- [completed] 实看抖音公开作品封面、图文和播放器预览图；来源、日期及证据范围已保存。
+- [completed] 五种 9:16 版式、默认文字分区、等比缩略图、旧库幂等补齐与用户改动保护已完成。
+- [completed] 相关回归合计 289 项通过；生产构建通过；浏览器 / 隔离 Electron 70 个画布测量及保存重载验证通过，运行时错误为 0。
+
+
+### 2026-09-14 Restore standalone generation workbenches
+- [completed] Restore always-visible image and voice generation navigation, retaining route IDs and saved records.
+- [completed] User confirmed standalone video clips. Added prompt/reference video workbench, production IPC, provider reuse and local history.
+- [completed] 267 related tests and production build passed; 12 Electron screenshots at 1440/1040, no runtime errors or paid calls. Typecheck retains pre-existing HTML/MV API/storage omissions; inventory retains three unrelated missing command entries.
+
+### 2026-09-14 B站横屏草稿模板
+- [completed] 实看 B站五个 16:9 作品的 15 张播放进度预览帧，记录标题、主体、字幕分区及来源。
+- [completed] 新增五种 1920x1080 草稿版式与全部/横屏/竖屏筛选，沿用已有库幂等补齐机制；横屏筛选下的新模板也使用横屏。
+- [completed] 修正任务切换模板时同步画幅，完成选用、导出桥接参数、保存重载及两种窗口验证。284 项测试、生产构建、浏览器和隔离 Electron QA 通过；类型检查仍为此前已记录的 HTML/MV 接口缺失。
+
+
+### 2026-09-14 Generation workbenches under assets
+- [completed] Move image, voice and video generation into the asset library navigation, preserving route IDs and functionality.
+- [completed] 171 navigation/product/parity tests passed; production build and 10 normal/compact Electron captures passed.
+
+## 2026-09-14 图文与文章创作设计
+- [completed] 梳理现有创作入口与平台表达差异，设计两类工作台。
+- [completed] 制作沿用 StoryDream 组件和主题的可交互原型与功能方案。
+- [completed] 验证桌面/紧凑布局、编辑、版本切换和本地导出，交付预览。
+- Scope: 按可交互原型＋方案交付，位于 docs/design/content-studio；生产路由、模型、数据库未接入。
+- 验证：原型类型检查与构建通过；隔离 Electron 19 项行为检查、12 次截图通过（11 个独立截图文件），覆盖 1440/1040/390 和明暗主题，零运行错误。
+- 过程问题：初始组件与 preflight 路径猜测不正确，已通过 rg 定位；原型 tsconfig 缺 CSS 类型已补齐 vite/client；内置浏览器不可用，采用隔离 Electron。QA 脚本的换行转义、Fluent 隐藏重复标签匹配与未保存刷新拦截均已修正。
+## 2026-09-15 素材库文案创作工作台
+
+- [completed] 梳理素材库导航、网页搜索、文案生成、任务创建与视频生成的数据边界。
+- [completed] 设计并实现独立文案创作工作台：来源检索、多轮精修、赛道强化、版本留痕。
+- [completed] 实现将定稿文案回传视频生成位置，并支持跳过预审。
+- [completed] 增加聚焦测试，完成类型检查、构建与正常/紧凑窗口视觉验证。
+
+### 本轮约束
+
+- 保留既有路由 ID 和其他素材工具；复用 `src/ui` 控件与语义 token。
+- 不触发真实联网搜索、付费模型或真实视频生成；验证使用隔离数据/桩。
+- 工作区已有大量用户改动，只做与文案创作链路直接相关的局部编辑。
+
+### 本轮错误
+
+| 错误 | 尝试 | 处理 |
+|---|---:|---|
+| 登记的 `C:\Users\foxnotail\.agents\skills\storydream-ui` 不存在 | 1 | 使用仓库内 `I:\opc\.agents\skills\storydream-ui`，已完整读取技能与组件契约。 |
+| `AiSourceSection` 没有 `id` 字段 | 1 | 沿用现有搜索流程的来源+网址+标题稳定键，类型检查不再出现本轮错误。 |
+| 壳层测试仍固定旧菜单/路由数量 | 1 | 将断言同步到当前真实的文案创作与既有对话工作台入口。 |
+| Codex 内置浏览器不可用 | 1 | 使用项目自带 Playwright Python + 隔离 Electron 完成截图和交互验证。 |
+
+### 验证结果
+
+- 相关回归 7 文件 241 项通过；最后合约复跑 4 文件 52 项通过。
+- `npm run build` 与 `git diff --check` 通过（仅既有 CRLF 提示）。
+- `npm run typecheck` 本轮新增错误为 0；仍被既有 browser fallback / music MV 接口缺失阻塞。
+- 隔离 Electron QA 通过：1440×900 三栏，1040×720 紧凑布局，无横向溢出、无运行时错误、付费调用 0；跳过预审实测写入 `direct-copy`。
+
+
+## 2026-09-15 Remotion 动画入口与模板扩充
+- [completed] 搜集官方模板、开源动画库、商业参考和中文制作案例，核验页面内容与许可。
+- [completed] 整理 163 条上游模板、157 张镜头配方与 40 个适配候选，明确模板/AI 代码生成入口。
+- [completed] 按本轮“现在全网搜一些”的明确请求交付研究与扩充方案；范围问题未收到回复，采用推荐项“整理清单”。4 个上游模板完成真实本地渲染。
+- 约束：保留大量既有改动；不把链接目录当作已安装模板；外部源码只在确认许可后才复用。
+- 已知网络限制：Firecrawl 未登录且匿名 IP 被拒；Exa/GitHub CLI 不在 PATH；采用公开官方页面、GitHub API、B 站 API，浏览器按可用性回退。
+## 2026-09-15 VOX 八类模板定向补充
+
+- [completed] 为纸张拼贴、证据讲解、时间叙事、对比分析、数据解释、地图叙事、原理流程、书籍推荐寻找对应源码和预览。
+- [completed] 核验新增来源的实现、许可证和可迁移范围，形成 8 类 32 项候选与 27 组来源映射。
+- [completed] 将八类与候选补入功能规划，交付来源清单、结构化 JSON 和 8 秒中文源码样片。
+- 本轮依据“这些补充，再找找有没有对应的模板”扩充规划和源码研究；页面接入状态单独标明。
+- 验证：32 项唯一 ID、8 类及来源引用检查通过；中文 UTF-8 复读通过；纸卡/连线/翻页 240 帧全解码通过，四帧联系表已实看。未改生产源码或增加主项目依赖。
+- 过程错误：CDP 超时、GitHub API TLS 失败、部分 LICENSE/配方路径 404 已记录；转向公开 HTML/raw。ffprobe 不在 PATH，使用已安装 imageio_ffmpeg 完整解码验证。Shotcraft 具体 demo 保持未实渲状态。
+## 2026-09-15 VOX Remotion 模板与 AI 动画正式接入
+
+- [completed] 核对现有项目/镜头/预览/导出架构，建立兼容旧镜头的动画持久化模型。
+- [completed] 实现八类模板及前述常用动效，提供真实参数、素材输入和确定性预览。
+- [completed] 接入 AI TSX 生成、修改、编译反馈与保存为个人模板。
+- [completed] 接入单镜头/全片导出及音频同步，完成保存重开、横竖屏、错误恢复和取消验证。
+- [completed] 完成类型检查、相关回归、生产构建与正常/紧凑窗口截图，交付可使用功能。
+- 用户已明确授权接入全部上述功能；保留工作区既有改动。只采用许可可复用源码，缺少现成模板的能力以本项目组件实现。
+
+- 验收：49 个模板 × 2 比例；正常/紧凑窗口交互与代码错误恢复通过；8 秒 1080p 192 帧 MP4 全解码；111 项相关测试通过。既有音乐 MV 接口缺失仍导致一项测试和全项目类型检查失败。构建、Electron 冒烟通过。详见 docs/research/remotion-templates-2026-09-15/implementation.md。
+
+## 2026-09-15 VOX 视频技能安装与工作台接入
+- [completed] 安装 paper-cut、vox-skill、vox-editorial、gbro-collage-broll、vox-collage-art-animation-nantian 到用户 Codex skills。
+- [completed] 增加持久化镜头制作方式，关联参考原画分层、Remotion 旁白动画、B-roll 和首尾帧拼贴。
+- [completed] 接通尾帧资产、供应商能力校验、输入变更失效与生成请求；复用现有模型与资产系统。
+- [completed] 完成聚焦测试、类型检查、构建及正常/紧凑窗口交互截图。
+- 保留所有既有工作区改动。Nantian 仅安装给用户，不将许可未明确的上游源码复制进产品；产品适配由本项目独立实现。验证使用本地桩，不触发付费模型。
+- 验收：新增 7 项单测通过；双尺寸完整页面与 5 项既有双链路流程通过；生产构建、Electron 6 项冒烟通过。首次大图调度超时后隔离重跑 21 项全部通过。旧导航数量断言和既有 Renderer/Electron/Scripts 类型错误仍在，详见 docs/plans/2026-09-15-vox-skill-integration.md。
+- 本机技能补充中文词匹配与 UTF-8 读写，隔离夹具验证不同中文词的帧号及中文输出。收尾误读双链路 report.json，已定位正确产物 result.json。

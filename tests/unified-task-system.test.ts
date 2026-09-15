@@ -55,9 +55,9 @@ describe('unified StoryDream task system', () => {
       expect(page).not.toContain('DirectorProjectLibrary');
       expect(page).toContain('useState(() => !requestedTaskId)');
       expect(page).toContain('useState(() => requestedTaskId)');
-      expect(page).toContain("onBack={() => navigate?.('new-task')}");
+      expect(page).not.toContain("onBack={() => navigate?.('new-task')}");
       expect(page).toContain("returnView = 'history'");
-      expect(page).toContain('onReturnTasks={() => navigate?.(returnView)}');
+      expect(page).not.toContain('onReturnTasks={() => navigate?.(returnView)}');
       expect(page).toContain('onBackToTasks={() => navigate?.(returnView)}');
     }
   });

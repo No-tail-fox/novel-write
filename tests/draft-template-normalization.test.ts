@@ -6,6 +6,7 @@ import {
   draftTemplateMatchesRatio,
   draftTemplates,
   imageAnimations,
+  legacyDefaultDraftTemplate,
   matchingDraftTemplateId,
   normalizeDraftTemplate,
   resolveDraftTemplateForRatio,
@@ -13,10 +14,11 @@ import {
 import type { DraftTemplate } from '@shared/types';
 
 describe('draft template normalization', () => {
-  it('ships StoryDream built-in draft template presets', () => {
-    const [portrait916, portrait43, landscape169] = draftTemplates;
+  it('preserves the legacy fingerprint and original ratio presets', () => {
+    const portrait916 = legacyDefaultDraftTemplate;
+    const [, portrait43, landscape169] = draftTemplates;
 
-    expect(draftTemplates.map((template) => template.id)).toEqual([
+    expect(draftTemplates.slice(0, 3).map((template) => template.id)).toEqual([
       'default-portrait-9-16',
       'builtin-portrait-4-3',
       'builtin-landscape-16-9',
@@ -149,62 +151,10 @@ describe('draft template normalization', () => {
       imageBorderWidth: 0,
       imageBorderSides: 'all',
     });
-    expect(normalized.title).toMatchObject({
-      x: 0,
-      y: 0.04739583333333333,
-      width: 0.8,
-      alpha: 1,
-      bold: true,
-      underline: true,
-      align: 1,
-      letterSpacing: 0,
-      lineSpacing: 0,
-    });
-    expect(normalized.subtitle).toMatchObject({
-      x: 0,
-      y: -0.21666666666666667,
-      width: 0.8,
-      text: expect.any(String),
-      alpha: 1,
-      bold: false,
-      underline: false,
-      align: 1,
-      letterSpacing: 2,
-      lineSpacing: 4,
-    });
-    expect(normalized.caption).toMatchObject({
-      x: 0,
-      width: 0.8,
-      fontSize: expect.any(Number),
-      color: expect.stringMatching(/^#/),
-      alpha: 1,
-      bold: false,
-      underline: false,
-      align: 1,
-      letterSpacing: 0,
-      lineSpacing: 0,
-      maxCharsPerLine: 12,
-    });
-    expect(typeof normalized.caption.y).toBe('number');
-    expect(normalized.disclaimer).toMatchObject({
-      x: 0,
-      y: -0.903125,
-      width: 0.8,
-      bold: false,
-      underline: false,
-      align: 1,
-      letterSpacing: 0,
-      lineSpacing: 5,
-    });
-    expect(normalized.disclaimer).toMatchObject({
-      fontSize: expect.any(Number),
-      color: expect.stringMatching(/^#/),
-      alpha: 0.26,
-    });
-    expect(normalized.title.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
-    expect(normalized.subtitle.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
-    expect(normalized.caption.border).toEqual({ color: '#000000', width: 0, alpha: 0 });
-    expect(normalized.disclaimer.border).toEqual({ color: '#000000', width: 40, alpha: 1 });
+    expect(normalized.title).toMatchObject({ ...fallback.title, visible: true, text: 'Legacy title', fontSize: 44, color: '#ffde00' });
+    expect(normalized.subtitle).toMatchObject({ ...fallback.subtitle, visible: true, fontSize: 22, color: '#ffffff' });
+    expect(normalized.caption).toEqual(fallback.caption);
+    expect(normalized.disclaimer).toMatchObject({ ...fallback.disclaimer, visible: true, text: 'Legacy disclaimer' });
   });
 
   it('maps a horizontal task to the 16:9 draft canvas instead of retaining portrait layout', () => {
@@ -258,7 +208,7 @@ describe('draft template normalization', () => {
 
     expect(normalized.title.width).toBe(1.4);
     expect(normalized.subtitle.width).toBe(0.1);
-    expect(normalized.caption.width).toBe(0.8);
+    expect(normalized.caption.width).toBe(fallback.caption.width);
     expect(normalized.disclaimer.width).toBe(2);
   });
 

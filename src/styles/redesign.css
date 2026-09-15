@@ -220,6 +220,25 @@
   display: none;
 }
 
+.page-head-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.page-head-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page-head-identity .page-back-button {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+}
+
 .app-shell[data-editorial-shell] .page-head h1 {
   font-size: 22px;
   font-weight: 600;

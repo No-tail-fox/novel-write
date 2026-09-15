@@ -400,7 +400,7 @@ describe('OpenAI-compatible LLM JSON adapter', () => {
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     expect(requests[0].url).toBe('https://llm.example/v1/chat/completions');
     expect(requests[0].auth).toBe('Bearer llm-key');
-    expect(requests[0].body).toMatchObject({ model: 'model-a', response_format: { type: 'json_object' } });
+    expect(requests[0].body).toMatchObject({ model: 'model-a', response_format: { type: 'json_object' }, max_tokens: 1024, stream: false });
   });
 
   it('passes model tests when JSON probe responses are wrapped in markdown fences', async () => {
@@ -856,7 +856,7 @@ describe('Anthropic Messages LLM JSON adapter', () => {
     expect(requests[0].version).toBe('2023-06-01');
     expect(requests[0].body).toMatchObject({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 20,
+      max_tokens: 1024,
       system: 'Return strict JSON only.',
     });
   });

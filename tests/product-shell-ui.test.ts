@@ -852,8 +852,9 @@ describe('product shell ui', () => {
       '新建任务',
       '任务队列',
       '历史任务',
-      '画图实验室',
-      '配音实验室',
+      '图片生成',
+      '配音生成',
+      '视频生成',
       '音乐 MV',
       '提示词模板',
       '草稿模板',
@@ -865,6 +866,8 @@ describe('product shell ui', () => {
 
     expect(main).toContain('primaryNavGroups.map');
     expect(main).toContain('secondaryItems.map');
+    expect(main).not.toContain('generationNavItems.map');
+    expect(shellSource).not.toContain('generationNavigationGroup');
     const groupLabels = [...navigation.matchAll(/id: '[^']+', label: '([^']+)', defaultView:/gu)].map((match) => match[1]);
     expect(groupLabels).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
     expect(main).toContain('className="trial-activation-bar"');
@@ -891,17 +894,22 @@ describe('product shell ui', () => {
     expect(taskStatusDetail({ status: 'pending', currentStep: 4 })).not.toContain('当前步骤');
   });
 
-  it('keeps the asset lab and inspiration routes in their accepted groups', async () => {
+  it('groups standalone generation under the asset library while keeping inspiration separate', async () => {
     const navigation = await navigationSourcePromise;
+    const { assetLabNavItems } = await import('../src/app/navigation');
+    const generationStart = navigation.indexOf('export const generationNavItems');
     const assetStart = navigation.indexOf('export const assetLabNavItems');
-    const assetEnd = navigation.indexOf('const inspirationNavItems');
-    const assetNav = navigation.slice(assetStart, assetEnd);
-    const inspirationStart = assetEnd;
+    const inspirationStart = navigation.indexOf('const inspirationNavItems');
+    const generationNav = navigation.slice(generationStart, assetStart);
+    const assetNav = navigation.slice(assetStart, inspirationStart);
     const inspirationEnd = navigation.indexOf('export const templateSystemNavItems');
     const inspirationNav = navigation.slice(inspirationStart, inspirationEnd);
 
-    for (const view of ['image-lab', 'voice-lab', 'person-assets']) {
-      expect(assetNav).toContain(`view: '${view}'`);
+    expect(assetNav).toContain("view: 'person-assets'");
+    expect(assetNav).toContain('...generationNavItems');
+    expect(assetLabNavItems.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab']);
+    for (const view of ['image-lab', 'voice-lab', 'video-lab']) {
+      expect(generationNav).toContain(`view: '${view}'`);
     }
     for (const view of ['music-mv', 'html-video', 'viral-analyzer', 'prompt-templates']) {
       expect(assetNav).not.toContain(`view: '${view}'`);
@@ -1143,21 +1151,24 @@ describe('product shell ui', () => {
     expect(css).toContain('--accent');
   });
 
-  it('keeps the exact twenty-one route branches in the application route owner', async () => {
+  it('keeps every route branch in the application route owner', async () => {
     const routes = (await rendererSourcesPromise).requiredFile('src/app/AppRoutes.tsx');
     const routedViews = [...routes.matchAll(/activeView === '([^']+)'/gu)].map((match) => match[1]);
     expect(routedViews).toEqual([
       'projects',
+      'conversation-workbench',
       'new-task',
       'hot-board',
       'book-selection',
       'benchmark',
       'person-assets',
+      'copy-studio',
       'queue',
       'history',
       'task-detail',
       'image-lab',
       'voice-lab',
+      'video-lab',
       'music-mv',
       'editorial-collage',
       'motion-comic',
@@ -1169,7 +1180,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(21);
+    expect(new Set(routedViews).size).toBe(24);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
@@ -1755,7 +1766,7 @@ describe('product shell ui', () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/DraftTemplatesPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const text of ['默认竖屏', '竖屏4:3', '横屏16:9', '编辑', '复制', '删除自定义模板', '新模板', '返回模板列表']) {
+    for (const text of ['口播', '科普', '故事', '金句', '图文', '编辑', '复制', '删除自定义模板', '新模板', '返回模板列表']) {
       expect(main).toContain(text);
     }
 
@@ -1868,7 +1879,7 @@ describe('product shell ui', () => {
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(appState).toContain("normalizeDraftTemplate");
-    expect(appState).toContain("draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate)");
+    expect(appState).toContain("draftTemplates: reconcileBuiltinDraftTemplates(state.draftTemplates)");
     expect(main).toContain('EditableDraftCanvas');
     expect(main).toContain('DraftCanvasLayer');
     expect(main).toContain('handleDraftCanvasPointerDown');
@@ -2690,18 +2701,20 @@ describe('product shell ui', () => {
     expect(types).toContain("'task-detail'");
     expect(main).toContain('selectedTaskId');
     expect(main).toContain('openTaskDetail');
-    expect(main).toContain("useState<ShellView>('history')");
+    expect(main).toContain("useState<ShellView>('projects')");
     expect(main).toContain('setTaskDetailReturnView(returnView)');
     expect(routes).toContain("openTaskDetail(taskId, 'projects')");
     expect(routes).toContain('returnView={taskDetailReturnView}');
-    expect(routes).toContain('close={() => navigate(taskDetailReturnView)}');
+    expect(main).toContain('returnView={taskDetailReturnView}');
     expect(routes).toContain('TaskDetailPage');
-    expect(detail).toContain('returnView: ShellView');
-    expect(detail).toContain("returnView === 'projects' ? '返回项目' : '返回历史任务'");
+    const shell = (await rendererSourcesPromise).requiredFile('src/app/AppShell.tsx');
+    expect(shell).toContain('shellBackView(activeView, returnView)');
+    expect(shell).toContain('onClick={() => navigate(backView)}');
+    expect(detail).not.toContain('task-detail-back');
     expect(detail).toContain('taskProgressStages(activeTask)');
     expect(detail).toContain('{progress.total} 步流水线');
     for (const text of ['历史任务', '任务详情', '结果', '分镜', '图片', '配音', '事件', '等待当前步骤产物落盘']) {
-      expect(`${main}\n${routes}\n${detail}\n${artifact}`).toContain(text);
+      expect(`${main}\n${routes}\n${detail}\n${artifact}\n${await navigationSourcePromise}`).toContain(text);
     }
     expect(css).toContain('.task-detail-shell');
     expect(css).toContain('.pipeline-step');
@@ -3200,7 +3213,7 @@ describe('product shell ui', () => {
 
     for (const branch of [
       "selectedProvider === 'openai'",
-      'OpenAI 兼容 LLM',
+      'label="API 协议"',
       "provider === 'gpt_image'",
       "provider === 'jimeng'",
       "provider === 'custom'",
@@ -3210,6 +3223,9 @@ describe('product shell ui', () => {
       expect(settingsOwners).toContain(branch);
     }
     expect(settingsOwners).toContain("options={['openai', 'custom', 'anthropic']}");
+    expect(settingsOwners).toContain('LLM_PROTOCOL_OPTIONS');
+    expect(settingsOwners).toContain('resolveLlmProtocol(selectedProfile)');
+    expect(settingsOwners).not.toContain('自定义接口按 /chat/completions 调用');
     expect(settingsOwners).toContain("options={['gpt_image', 'jimeng', 'custom']}");
     expect(settingsOwners).toContain("options={['volcengine', 'minimax']}");
     expect(settingsOwners).toContain('normalizeEditableConfigProviders');

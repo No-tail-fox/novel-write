@@ -9,6 +9,7 @@ import { createProjectHomeSession } from '../features/projects/project-home-sess
 
 const {
   'projects': ProjectHomePage,
+  'conversation-workbench': ConversationWorkbenchPage,
   'new-task': NewTaskPage,
   'hot-board': HotBoardPage,
   'queue': QueuePage,
@@ -19,10 +20,12 @@ const {
   'html-video': HtmlVideoPage,
   'image-lab': ImageLabPage,
   'voice-lab': VoiceLabPage,
+  'video-lab': VideoLabPage,
   'music-mv': MusicMvPage,
   'book-selection': BookSelectionPage,
   'benchmark': BenchmarkImportPage,
   'person-assets': PersonAssetsPage,
+  'copy-studio': CopyStudioPage,
   'viral-analyzer': ViralAnalyzerPage,
   'prompt-templates': PromptTemplatesPage,
   'draft-templates': DraftTemplatesPage,
@@ -100,11 +103,13 @@ export function AppRoutes({
           familyEpochs={historyFamilyEpochs}
         />
       ) : null}
-      {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
+      {activeView === 'conversation-workbench' ? <ConversationWorkbenchPage api={api} state={state} /> : null}
+      {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, 'projects')} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
       {activeView === 'hot-board' ? <HotBoardPage api={api} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
       {activeView === 'benchmark' ? <BenchmarkImportPage api={api} applyState={applyState} openTaskDetail={openTaskDetail} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'person-assets' ? <PersonAssetsPage api={api} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'copy-studio' ? <CopyStudioPage api={api} navigate={navigate} /> : null}
       {activeView === 'queue' ? <QueuePage api={api} state={state} applyState={applyState} openNewTask={() => navigate('new-task')} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'history' ? (
         <HistoryPage
@@ -115,10 +120,11 @@ export function AppRoutes({
           familyEpochs={historyFamilyEpochs}
         />
       ) : null}
-      {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} returnView={taskDetailReturnView} close={() => navigate(taskDetailReturnView)} openTemplateManager={() => navigate('draft-templates')} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} openTemplateManager={() => navigate('draft-templates')} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
-      {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'video-lab' ? <VideoLabPage api={api} state={state} openSettings={() => openSettings('video', 'video-lab')} /> : null}
+      {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, taskDetailReturnView)} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}

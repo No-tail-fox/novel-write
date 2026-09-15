@@ -3,7 +3,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 
 await mkdir('dist-electron/electron', { recursive: true });
 
-const esmRequireBanner = "import { createRequire as __storydreamCreateRequire } from 'node:module'; const require = __storydreamCreateRequire(import.meta.url);";
+const esmRequireBanner = "import { createRequire as __storydreamCreateRequire } from 'node:module'; import { fileURLToPath as __storydreamFilePath } from 'node:url'; const require = __storydreamCreateRequire(import.meta.url); const __filename = __storydreamFilePath(import.meta.url);";
 
 await build({
   entryPoints: ['electron/main.ts'],
@@ -38,3 +38,6 @@ await copyFile(
   'node_modules/@hyperframes/core/dist/hyperframe.runtime.iife.js',
   'dist-electron/electron/hyperframe.runtime.gsap.iife.js',
 );
+
+await build({entryPoints: ['src/features/vox-animation/runtime.tsx'], outfile: 'dist-electron/electron/vox-animation-runtime.js', bundle: true, platform: 'browser', format: 'iife', target: 'chrome120', define: {'process.env.NODE_ENV': '"production"'}, minify: true});
+await copyFile('src/features/vox-animation/THIRD_PARTY_NOTICES.md', 'dist-electron/electron/VOX_THIRD_PARTY_NOTICES.md');

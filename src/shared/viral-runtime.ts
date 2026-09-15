@@ -1,7 +1,8 @@
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
-import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage, type LlmJsonResult } from './llm-provider';
+import { buildResponsesRequestBody, createConfiguredJsonLlm, extractResponsesTextContent, type ConfiguredJsonLlm, type LlmMessage, type LlmJsonResult } from './llm-provider';
+import { llmEndpoint, resolveLlmProtocol } from './llm-protocol';
 import { readJsonBounded, readTextBounded } from './network-policy';
 import { redactProcessOutput, runBoundedProcess } from './process-runner';
 import { resolvePythonCommand } from './python-runtime';
@@ -493,8 +494,8 @@ async function analyzeViralFrame(
       })),
     )),
   ];
-  const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/chat/completions`;
-  const raw = await runOpenAiCompatibleVision(config, content, signal).catch((error) => {
+  const endpoint = llmEndpoint(config);
+  const raw = await runConfiguredVision(config, content, signal).catch((error) => {
     const detail = error instanceof Error ? error.message : String(error);
     if (/爆款拆解视觉模型未配置/.test(detail)) throw error;
     throw new Error(formatViralFrameAnalysisError(error, { frame, source, endpoint }));
@@ -528,29 +529,60 @@ function fallbackFrameImagePrompt(parsed: Partial<ViralFrameAnalysis>, raw: stri
     .join('，');
 }
 
-async function runOpenAiCompatibleVision(config: LlmConfig, content: unknown[], signal?: AbortSignal): Promise<string> {
+type VisionContent = { type: string; text?: string; image_url?: { url: string } };
+
+async function runConfiguredVision(config: LlmConfig, content: VisionContent[], signal?: AbortSignal): Promise<string> {
   const apiKey = config.apiKey.trim();
   const model = config.model.trim();
   if (!apiKey || !model) {
     throw new Error('爆款拆解视觉模型未配置：请在系统设置 > LLM 填写支持图片输入的 API Key 和模型后重试。');
   }
-  const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com')}/chat/completions`;
+  const endpoint = llmEndpoint(config);
+  const protocol = resolveLlmProtocol(config);
+  const system = 'Return strict JSON only. All text values must be Chinese. You analyze short-video frames for copywriting and image prompt reuse.';
+  let requestBody: Record<string, unknown> = {
+    model,
+    messages: [{ role: 'system', content: system }, { role: 'user', content }],
+    response_format: { type: 'json_object' },
+  };
+  if (protocol === 'responses') {
+    requestBody = {
+      ...buildResponsesRequestBody(config, { step: -1, name: 'viral-frame', messages: [] }, true),
+      input: [
+        { role: 'system', content: system },
+        { role: 'user', content: content.map((part) => part.type === 'image_url'
+          ? { type: 'input_image', image_url: part.image_url!.url, detail: 'auto' }
+          : { type: 'input_text', text: part.text }) },
+      ],
+    };
+  } else if (protocol === 'anthropic') {
+    requestBody = {
+      model, system, max_tokens: 4096,
+      messages: [{ role: 'user', content: content.map((part) => {
+        if (part.type !== 'image_url') return { type: 'text', text: part.text };
+        const image = /^data:([^;]+);base64,(.+)$/.exec(part.image_url!.url);
+        if (!image) throw new Error('Invalid frame image data.');
+        return { type: 'image', source: { type: 'base64', media_type: image[1], data: image[2] } };
+      }) }],
+    };
+  }
   const response = await fetchVisionWithRetries(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      ...(protocol === 'anthropic' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { Authorization: `Bearer ${apiKey}` }),
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: 'Return strict JSON only. All text values must be Chinese. You analyze short-video frames for copywriting and image prompt reuse.' },
-        { role: 'user', content },
-      ],
-      response_format: { type: 'json_object' },
-    }),
+    body: JSON.stringify(requestBody),
   }, config, signal);
   if (!response.ok) throw new Error(`Vision API error ${response.status}: ${(await readTextBounded(response, VISION_RESPONSE_MAX_BYTES)).slice(0, 300)}`);
+  if (protocol === 'responses') {
+    return extractResponsesTextContent(await readJsonBounded(response, VISION_RESPONSE_MAX_BYTES));
+  }
+  if (protocol === 'anthropic') {
+    const body = await readJsonBounded<{ content?: Array<{ type: string; text?: string }>; stop_reason?: string }>(response, VISION_RESPONSE_MAX_BYTES);
+    if (body.stop_reason === 'max_tokens') throw new Error('Vision API response truncated (max_tokens).');
+    return (body.content ?? []).filter((part) => part.type === 'text').map((part) => part.text ?? '').join('');
+  }
   const body = await readJsonBounded<{ choices?: Array<{ message?: { content?: string | null } }> }>(response, VISION_RESPONSE_MAX_BYTES);
   return body.choices?.[0]?.message?.content ?? '';
 }

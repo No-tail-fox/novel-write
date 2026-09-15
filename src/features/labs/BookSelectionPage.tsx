@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   BookOpen,
@@ -18,11 +18,13 @@ import {
 import { EmptyState } from '../../components/EmptyState';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { benchmarkOpportunityTotal, benchmarkPlatformLabel } from '../../shared/benchmark-monitoring';
+import { BOOK_SOURCES, DEFAULT_BOOK_SOURCES, bookSourceKey, bookSourceLabel } from '../../shared/book-sources';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type {
   BenchmarkOpportunityInputs,
   BenchmarkSelectionScore,
   BookDiscoveryResult,
+  BookDiscoverySource,
   BookProductInfo,
   BookSelectionIdentity,
   BookSelectionRecord,
@@ -90,6 +92,9 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
   const [inspectorTab, setInspectorTab] = useState<SelectionInspectorTab>('profile');
   const [detailOpen, setDetailOpen] = useState(false);
   const [query, setQuery] = useState<string>(defaultTrack.query);
+  const [sources, setSources] = useState<BookDiscoverySource[]>(DEFAULT_BOOK_SOURCES);
+  const requestGeneration = useRef(0);
+  const requestBusy = useRef(false);
   const [activeTrackId, setActiveTrackId] = useState<string>(defaultTrack.id);
   const [track, setTrack] = useState<string>(defaultTrack.track);
   const [listSearch, setListSearch] = useState('');
@@ -104,9 +109,9 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
   const bookAction = useAsyncAction();
   const discoveryAction = useAsyncAction();
 
-  const savedBySource = useMemo(() => new Map(records.map((record) => [record.data.sourceId || record.bookId, record])), [records]);
+  const savedBySource = useMemo(() => new Map(records.map((record) => [bookSourceKey(record.data, record.bookId), record])), [records]);
   const rankingRecords = useMemo(() => (discovery?.items ?? []).map<BookSelectionRecord>((item) => {
-    const saved = savedBySource.get(item.sourceId);
+    const saved = savedBySource.get(bookSourceKey(item));
     return saved ? {
       ...saved,
       data: {
@@ -154,22 +159,29 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
 
   useEffect(() => {
     let active = true;
-    void Promise.all([api.listBookSelections(), api.discoverBooks({ query: defaultTrack.query, track: defaultTrack.track, limit: 24 })])
-      .then(([saved, result]) => {
+    requestBusy.current = true;
+    const generation = ++requestGeneration.current;
+    void api.listBookSelections().then((saved) => { if (active) setRecords(saved); }).catch((error) => {
+      if (active) bookAction.reportError(error);
+    });
+    void api.discoverBooks({ query: defaultTrack.query, track: defaultTrack.track, limit: 24, sources: DEFAULT_BOOK_SOURCES })
+      .then((result) => {
         if (!active) return;
-        setRecords(saved);
         setDiscovery(result);
       })
       .catch((error) => {
         if (active) discoveryAction.reportError(error);
       })
       .finally(() => {
+        if (generation === requestGeneration.current) requestBusy.current = false;
         if (active) setInitialDiscoveryPending(false);
       });
     return () => {
       active = false;
+      requestGeneration.current += 1;
+      requestBusy.current = false;
     };
-  }, [api, discoveryAction.reportError]);
+  }, [api, discoveryAction.reportError, bookAction.reportError]);
 
   async function reload(preferred?: BookSelectionIdentity | null) {
     const items = await api.listBookSelections();
@@ -179,22 +191,41 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
     if (next) loadRecord(next, true);
   }
 
-  async function generateRanking(nextQuery = query, nextTrack = track) {
+  async function generateRanking(nextQuery = query, nextTrack = track, nextSources = sources) {
+    if (requestBusy.current) return;
     const normalizedQuery = nextQuery.trim();
     if (!normalizedQuery) {
       setMessage('请输入人群、主题方向或具体书名。');
       return;
     }
-    await discoveryAction.run(async () => {
-      const result = await api.discoverBooks({ query: normalizedQuery, track: nextTrack, limit: 24 });
+    if (!nextSources.length) { setMessage('请至少选择一个图书来源。'); return; }
+    requestBusy.current = true;
+    const generation = ++requestGeneration.current;
+    try { await discoveryAction.run(async () => {
+      const result = await api.discoverBooks({ query: normalizedQuery, track: nextTrack, limit: 24, sources: nextSources });
+      if (generation !== requestGeneration.current) return;
       setDiscovery(result);
       setQuery(normalizedQuery);
       setTrack(nextTrack);
       setFavoritesOnly(false);
       setCategoryFilter('all');
+      setListSearch('');
+      setPotentialFilter('all');
+      setStatusFilter('all');
       setWorkspaceTab('ranking');
       setMessage(result.message);
     }, { onError: (error) => setMessage(error.message) });
+    } finally { if (generation === requestGeneration.current) requestBusy.current = false; }
+  }
+
+  function searchFilteredTitle() {
+    setActiveTrackId('');
+    setSources([...DEFAULT_BOOK_SOURCES]);
+    void generateRanking(listSearch, '全部图书', [...DEFAULT_BOOK_SOURCES]);
+  }
+
+  function clearFilters() {
+    setListSearch(''); setCategoryFilter('all'); setPotentialFilter('all'); setStatusFilter('all'); setFavoritesOnly(false);
   }
 
   function activateQuickTrack(item: (typeof quickTracks)[number]) {
@@ -357,7 +388,7 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
   }
 
   function findSavedRecord(record: BookSelectionRecord) {
-    return records.find((item) => item.bookId === record.bookId || (record.data.sourceId && item.data.sourceId === record.data.sourceId)) ?? null;
+    return records.find((item) => identitiesEqual(record, item) || (record.data.sourceId && bookSourceKey(item.data) === bookSourceKey(record.data))) ?? null;
   }
 
   const detailRecord: BookSelectionRecord = {
@@ -376,34 +407,44 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
             <strong>从公开书目中筛出值得创作的题材</strong>
           </div>
           <span className={`selection-source-badge ${discovery?.sourceState ?? 'loading'}`} data-source-state={discovery?.sourceState ?? 'loading'}>
-            {discovery?.sourceState === 'live' ? '真实公开数据' : discovery?.sourceState === 'preview' ? '预览数据' : '正在连接当当'}
+            {discoveryBusy ? '正在检索书源' : discovery?.sourceLabel ?? '等待搜索'}
           </span>
         </div>
         <div className="selection-query-row">
           <TextField
-            label="选书主题"
+            label="书名、作者或选书主题"
             fieldClassName="selection-query-field"
             contentBefore={<Search size={16} />}
             value={query}
             placeholder="输入人群、主题方向或具体书名"
-            onChange={(_, data) => setQuery(data.value)}
+            onChange={(_, data) => { setQuery(data.value); setActiveTrackId(''); }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') void generateRanking();
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) void generateRanking(query, activeTrackId ? track : '全部图书');
             }}
           />
-          <Button variant="primary" density="spacious" icon={discoveryBusy ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />} disabled={discoveryBusy || !query.trim()} onClick={() => void generateRanking()}>
-            生成榜单
+          <Button variant="primary" density="spacious" icon={discoveryBusy ? <Loader2 className="spin" size={17} /> : <Search size={17} />} disabled={discoveryBusy || !query.trim() || !sources.length} onClick={() => void generateRanking(query, activeTrackId ? track : '全部图书')}>
+            搜索图书
           </Button>
+        </div>
+        <div className="selection-source-choices" role="group" aria-label="搜索来源">
+          <span>搜索来源</span>
+          {BOOK_SOURCES.map((source) => <CheckboxField key={source.value} label={source.label} checked={sources.includes(source.value)} disabled={discoveryBusy || (sources.length === 1 && sources[0] === source.value)} onChange={(_, data) => setSources((current) => data.checked ? [...current, source.value] : current.filter((value) => value !== source.value))} />)}
+          <small>联合搜索，保留各来源版本</small>
         </div>
         <div className="selection-track-rail" aria-label="快捷赛道">
           <span>快捷赛道</span>
           <div>
             {quickTracks.map((item) => (
-              <Button key={item.id} variant={activeTrackId === item.id ? 'primary' : 'secondary'} density="compact" onClick={() => activateQuickTrack(item)}>{item.label}</Button>
+              <Button key={item.id} variant={activeTrackId === item.id ? 'primary' : 'secondary'} density="compact" disabled={discoveryBusy} onClick={() => activateQuickTrack(item)}>{item.label}</Button>
             ))}
           </div>
         </div>
-        <p className="selection-source-note">数据来源：当当公开搜索页面。公开评论量不是销量；带货潜力、细分类和核心卖点均为智能建议，需要人工确认。</p>
+        <div className="selection-source-summary">
+        <div className="selection-source-results" aria-live="polite">
+          {!discoveryBusy && discovery?.sources?.map((item) => <span key={item.source} data-status={item.status} title={item.message}>{bookSourceLabel(item.source)} · {item.status === 'failed' ? '暂不可用' : `${item.count} 本`}</span>)}
+        </div>
+        <p className="selection-source-note">当当含商品信息，微信读书、豆瓣补充书目。评论不等于销量，潜力与卖点仅供参考；纸书售价以商品页为准。</p>
+        </div>
       </header>
 
       <div className="selection-workspace-toolbar">
@@ -412,7 +453,7 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
           value={workspaceTab}
           onChange={setWorkspaceTab}
           options={[
-            { value: 'ranking', label: '当当搜索榜', icon: <BookOpen size={14} /> },
+            { value: 'ranking', label: '图书搜索结果', icon: <BookOpen size={14} /> },
             { value: 'compare', label: `对比台 ${comparisonSelectionIds.length}/4`, icon: <GitCompareArrows size={14} /> },
             { value: 'brief', label: '创作简报', icon: <FileText size={14} /> },
           ]}
@@ -421,8 +462,8 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
           setFavoritesOnly((value) => !value);
           setWorkspaceTab('ranking');
         }}>已存书单 ({records.length})</Button>
-        <Tooltip content="重新读取当前主题的当当公开结果">
-          <IconButton label="刷新榜单" icon={<RefreshCw size={15} />} variant="subtle" density="compact" disabled={discoveryBusy} onClick={() => void generateRanking()} />
+        <Tooltip content="按所选来源重新搜索">
+          <IconButton label="刷新搜索结果" icon={<RefreshCw size={15} />} variant="subtle" density="compact" disabled={discoveryBusy} onClick={() => void generateRanking(query, activeTrackId ? track : '全部图书')} />
         </Tooltip>
         <Button variant="secondary" density="compact" icon={<Plus size={14} />} onClick={clearForm}>手动添加</Button>
       </div>
@@ -430,8 +471,9 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
       <main className="selection-main-panel">
         {workspaceTab === 'ranking' ? (
           <>
+            <div className="selection-filter-panel">
             <div className="selection-filter-row">
-              <TextField label="书名 / 作者" fieldClassName="selection-list-search" value={listSearch} placeholder="搜索书名、作者、关键词" onChange={(_, data) => setListSearch(data.value)} />
+              <TextField label="筛选当前结果" fieldClassName="selection-list-search" value={listSearch} placeholder="在已加载书目中筛选书名 / 作者" onChange={(_, data) => setListSearch(data.value)} />
               <SelectField label="分类" value={categoryFilter} options={categoryOptions} onChange={(event) => setCategoryFilter(event.target.value)} />
               <SelectField label="带货潜力" value={potentialFilter} options={[{ value: 'all', label: '全部潜力' }, { value: 'high', label: '高潜力 75+' }, { value: 'very-high', label: '极高潜力 85+' }]} onChange={(event) => setPotentialFilter(event.target.value as PotentialFilter)} />
               <SelectField label="创作状态" value={statusFilter} options={statusOptions} onChange={(event) => setStatusFilter(event.target.value as SelectionStatusFilter)} />
@@ -439,9 +481,11 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
               <span className="selection-result-count">共 {filteredRecords.length} 本 · {favoritesOnly ? '已存书单' : discovery?.query || query}</span>
             </div>
 
-            <div className="selection-ranking-table" role="table" aria-label="当当图书选品榜单">
+            {listSearch.trim() ? <div className="selection-search-suggestion"><span>这里仅筛选已加载书目。查找其他书籍：</span><Button density="compact" variant="secondary" icon={<Search size={13} />} disabled={discoveryBusy} onClick={searchFilteredTitle}>跨来源搜索“{listSearch.trim()}”</Button></div> : null}
+            </div>
+            <div className="selection-ranking-table" role="table" aria-label="多来源图书选品结果">
               <div className="selection-ranking-head" role="row">
-                <span role="columnheader">当当序</span>
+                <span role="columnheader">序号</span>
                 <span role="columnheader">书籍</span>
                 <span className="selection-col-category" role="columnheader">细分类 <em>智能</em></span>
                 <span className="selection-col-point" role="columnheader">核心卖点 <em>智能</em></span>
@@ -453,15 +497,15 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
                 <span role="columnheader">操作</span>
               </div>
               <div className="selection-ranking-body">
-                {discoveryBusy ? <div className="selection-loading-state"><Loader2 className="spin" size={22} /><span>正在读取当当公开书目并整理榜单</span></div> : null}
-                {!discoveryBusy && filteredRecords.length === 0 ? <EmptyState title={favoritesOnly ? '还没有收藏书目' : '暂无匹配图书'} action={<Button density="compact" icon={<RefreshCw size={14} />} onClick={() => void generateRanking()}>重新生成</Button>} /> : null}
+                {discoveryBusy ? <div className="selection-loading-state"><Loader2 className="spin" size={22} /><span>正在检索所选来源并整理书目</span></div> : null}
+                {!discoveryBusy && filteredRecords.length === 0 ? <EmptyState title={favoritesOnly ? '当前收藏没有匹配书目' : discovery?.sourceState === 'failed' ? '所选来源暂时不可用' : baseRecords.length ? '当前筛选没有匹配图书' : '这些来源暂无匹配图书'} action={listSearch.trim() ? <Button density="compact" icon={<Search size={14} />} onClick={searchFilteredTitle}>跨来源搜索此书</Button> : baseRecords.length || favoritesOnly ? <Button density="compact" onClick={clearFilters}>清除筛选</Button> : <Button density="compact" icon={<RefreshCw size={14} />} onClick={() => void generateRanking()}>重新搜索</Button>} /> : null}
                 {!discoveryBusy && filteredRecords.map((record, index) => {
                   const score = record.data.opportunityScore?.total ?? 0;
                   const favorite = isFavorite(findSavedRecord(record)?.data ?? record.data);
                   const comparing = comparisonSelectionIds.includes(selectionKey(record));
                   return (
                     <div key={selectionKey(record)} className="selection-ranking-row" role="row" data-source-state={record.data.sourceState ?? 'saved'}>
-                      <span className="selection-rank-cell">{record.data.sourceRank ?? index + 1}</span>
+                      <span className="selection-rank-cell">{index + 1}</span>
                       <div className="selection-book-cell">
                         <BookCover data={record.data} />
                         <Button variant="subtle" density="compact" className="selection-book-title" onClick={() => loadRecord(record)}>
@@ -553,7 +597,7 @@ export function BookSelectionPage({ api, navigate }: { api: StoryDreamApi; navig
           <div className="selection-detail-body">
             {inspectorTab === 'profile' ? (
               <div className="selection-profile-form">
-                <div className="selection-detail-source"><BookCover data={draft} variant="detail" /><div><span>{draft.source === 'dangdang' ? '当当公开书目' : '手动选品'}</span><strong>{draft.rankingLabel || '本地保存'}</strong><small>{draft.sourceState === 'preview' ? '预览数据，不代表实时榜单' : '来源字段与智能建议已分开标注'}</small></div></div>
+                <div className="selection-detail-source"><BookCover data={draft} variant="detail" /><div><span>{bookSourceLabel(draft.source)}</span><strong>{draft.rankingLabel || '本地保存'}</strong><small>{draft.sourceState === 'preview' ? '预览数据，不代表实时榜单' : '来源字段与智能建议已分开标注'}</small></div></div>
                 <TextField label="主题" value={track} placeholder="故事带货 / 健康书单" onChange={(_, data) => setTrack(data.value)} />
                 <TextField label="商品 / 书名" value={draft.name} onChange={(_, data) => updateDraft({ name: data.value })} />
                 <SelectField label="状态" value={draft.selectionStatus ?? 'candidate'} options={statusOptions.slice(1)} onChange={(event) => updateDraft({ selectionStatus: event.target.value as NonNullable<BookProductInfo['selectionStatus']> })} />
@@ -675,7 +719,7 @@ function composeCreativeBrief(theme: string, data: BookProductInfo): string {
   return [
     `选品：${data.name || '未命名'}`,
     `作者：${data.author || '待确认'}`,
-    `来源：${data.source === 'dangdang' ? `${data.rankingLabel || '当当公开书目'}${data.url ? ` · ${data.url}` : ''}` : '手动录入'}`,
+    `来源：${`${bookSourceLabel(data.source)} · ${data.rankingLabel || '本地保存'}${data.url ? ` · ${data.url}` : ''}`}`,
     `赛道：${theme || data.category || '待确认'}`,
     `机会分：${data.opportunityScore?.total ?? '待评分'}（${data.opportunityScore?.confirmed ? '人工已确认' : '智能建议'}）`,
     `目标人群：${data.audience || '待确认'}`,

@@ -201,69 +201,11 @@ describe('draft writer', () => {
           imageBorderWidth: 0,
           imageBorderSides: 'all',
         },
-        caption: {
-          visible: true,
-          fontFamily: 'system',
-          x: 0,
-          y: expect.any(Number),
-          width: 0.8,
-          alpha: expect.any(Number),
-          border: { color: '#000000', width: 0, alpha: 0 },
-          bold: expect.any(Boolean),
-          underline: expect.any(Boolean),
-          align: expect.any(Number),
-          letterSpacing: expect.any(Number),
-          lineSpacing: expect.any(Number),
-          maxCharsPerLine: expect.any(Number),
-          background: {
-            color: expect.any(String),
-            alpha: expect.any(Number),
-            roundRadius: expect.any(Number),
-          },
-        },
+        caption: draftTemplates[0].caption,
         overlays: {
-          title: {
-            x: 0,
-            y: 0.04739583333333333,
-            width: 0.8,
-            fontFamily: 'system',
-            alpha: expect.any(Number),
-            bold: expect.any(Boolean),
-            underline: true,
-            align: 1,
-            letterSpacing: 0,
-            lineSpacing: 0,
-            border: { color: '#000000', width: 40, alpha: 1 },
-          },
-          subtitle: {
-            x: 0,
-            y: -0.21666666666666667,
-            width: 0.8,
-            fontFamily: 'system',
-            text: expect.any(String),
-            alpha: expect.any(Number),
-            bold: expect.any(Boolean),
-            underline: false,
-            align: 1,
-            letterSpacing: 2,
-            lineSpacing: 4,
-            border: { color: '#000000', width: 40, alpha: 1 },
-          },
-          disclaimer: {
-            x: 0,
-            y: -0.903125,
-            width: 0.8,
-            fontSize: expect.any(Number),
-            fontFamily: 'system',
-            color: expect.any(String),
-            alpha: expect.any(Number),
-            bold: false,
-            underline: false,
-            align: 1,
-            letterSpacing: 0,
-            lineSpacing: 5,
-            border: { color: '#000000', width: 40, alpha: 1 },
-          },
+          title: { ...draftTemplates[0].title, text: 'Real Draft' },
+          subtitle: { ...draftTemplates[0].subtitle, text: 'subtitle' },
+          disclaimer: draftTemplates[0].disclaimer,
         },
         scenes: [
           {
@@ -333,6 +275,50 @@ describe('draft writer', () => {
           disclaimer: { y: draftTemplates[2].disclaimer.y, fontSize: draftTemplates[2].disclaimer.fontSize, fontFamily: draftTemplates[2].disclaimer.fontFamily },
         },
         caption: { y: draftTemplates[2].caption.y, fontSize: draftTemplates[2].caption.fontSize, fontFamily: draftTemplates[2].caption.fontFamily },
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['talking', 'split', 'documentary', 'tutorial', 'editorial'])('exports the selected landscape %s layout without substituting the legacy default', async (style) => {
+    const template = draftTemplates.find((item) => item.id === `builtin-landscape-${style}`)!;
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-landscape-preset-'));
+    try {
+      const scenes: StoryboardScene[] = [{ id: 1, cap: '先看清画面，再理解这一句讲解。', descPrompt: 'landscape scene', durationMs: 1200 }];
+      const images = await writeAssets(dir, scenes, 'png', twoByTwoPng);
+      const audioPath = join(dir, 'voice.wav');
+      await writeFile(audioPath, wavTone(1200));
+      let capturedPayload: PyJianYingBridgeInput | null = null;
+      await writeJianyingDraft({
+        workDir: dir,
+        draftRootDir: join(dir, 'drafts'),
+        title: '横屏测试',
+        cover: { title: '横屏测试', subtitle: ['不应显示的摘要'], summary: '', tags: [], comments: [] },
+        ratio: '16:9', templateId: template.id, template, scenes,
+        imagePrompts: buildImagePrompts(scenes, { inputText: 'landscape', style: 'photo-real', ratio: '16:9' }),
+        reviewedText: '', rewrittenCopy: '', generatedImages: images,
+        narrationAudio: [{ sceneId: 1, path: audioPath }], bgm: null,
+      }, {
+        runBridge: async (payload) => {
+          capturedPayload = payload;
+          await mkdir(payload.draftDir, { recursive: true });
+          const draftContentPath = join(payload.draftDir, 'draft_content.json');
+          const draftMetaPath = join(payload.draftDir, 'draft_meta_info.json');
+          await writeFile(draftContentPath, '{}', 'utf8');
+          await writeFile(draftMetaPath, '{}', 'utf8');
+          return { draftDir: payload.draftDir, draftContentPath, draftMetaPath, durationUs: payload.totalDurationUs ?? 0 };
+        },
+      });
+      expect(capturedPayload).toMatchObject({
+        canvas: { width: 1920, height: 1080, backgroundColor: template.canvas.backgroundColor },
+        imageArea: template.image,
+        caption: template.caption,
+        overlays: {
+          title: { ...template.title, text: '横屏测试' },
+          subtitle: { ...template.subtitle, text: '不应显示的摘要' },
+          disclaimer: template.disclaimer,
+        },
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

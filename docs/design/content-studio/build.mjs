@@ -1,0 +1,10 @@
+import { build } from 'esbuild';
+import { writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+const here = dirname(fileURLToPath(import.meta.url));
+const result = await build({ entryPoints: [resolve(here, 'ContentStudio.tsx')], bundle: true, write: false, outfile: 'studio.js', minify: true, format: 'iife', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, target: ['chrome120'], legalComments: 'none' });
+const js = result.outputFiles.find(f=>f.path.endsWith('.js')).text.replaceAll('</script', '<\\/script');
+const css = result.outputFiles.find(f=>f.path.endsWith('.css')).text;
+await writeFile(resolve(here, 'index.html'), `<!doctype html>\n<html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StoryDream · 图文与文章创作原型</title><style>${css}</style></head><body><div id="root"></div><script>${js}</script></body></html>`, 'utf8');
+console.log('Built docs/design/content-studio/index.html');

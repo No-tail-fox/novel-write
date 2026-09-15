@@ -241,6 +241,12 @@ export function toLocalImageUrl(path: string): string {
   return encodeURI(normalized);
 }
 
+export function projectCoverPath(task: Pick<TaskSummary, 'projectCover' | 'ordinaryCoverAsset' | 'referenceImagePath'>): string {
+  return task.projectCover?.path?.trim()
+    || (task.projectCover === undefined ? task.ordinaryCoverAsset?.path?.trim() : '')
+    || task.referenceImagePath?.trim() || '';
+}
+
 export function toLocalAssetUrl(path: string): string {
   return toLocalImageUrl(path);
 }

@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import type { AppConfig, HtmlVideoCaptionLayout, ImageLabImportInput } from './types';
+import { voxPropsSchema, voxSavedTemplateSchema } from './vox-animation';
+import { videoLabGenerateInputSchema, videoLabRecordIdSchema } from './video-lab';
+import { isProviderPortalUrl } from './provider-portals';
+import { SHELL_VIEWS, type AppConfig, type HtmlVideoCaptionLayout, type ImageLabImportInput } from './types';
 import { draftTemplateSchema } from './draft-template-contract';
 import { isSecretId, type SaveConfigInput } from './config-secrets';
 import {
@@ -169,7 +172,7 @@ const llmConfigSchema = bounded(
       name: optionalText(512),
       enabled: z.boolean().optional(),
       provider: z.string().max(128),
-      protocol: z.enum(['openai', 'anthropic']).optional(),
+      protocol: z.enum(['openai', 'responses', 'anthropic']).optional(),
       apiKey: z.string().max(MAX_IPC_TEXT),
       baseUrl: z.string().max(MAX_IPC_TEXT),
       model: z.string().max(1024),
@@ -558,7 +561,7 @@ export const providerModelListSchema = z
   .object({
     baseUrl: nonEmptyText(MAX_IPC_TEXT),
     apiKey: z.string().max(MAX_IPC_TEXT),
-    protocol: z.enum(['openai', 'anthropic']).optional(),
+    protocol: z.enum(['openai', 'responses', 'anthropic']).optional(),
     secretId: secretIdSchema.optional(),
   })
   .strict();
@@ -569,7 +572,7 @@ const volcengineSpeakerListSchema = z
     secretAccessKey: z.string().max(MAX_IPC_TEXT),
     accessKeyIdSecretId: secretIdSchema.optional(),
     secretAccessKeySecretId: secretIdSchema.optional(),
-    resourceId: z.string().max(1024),
+    resourceId: z.string().max(1024).optional(),
     voiceTypes: stringArray().optional(),
     page: nonNegativeInteger.max(100_000).optional(),
     limit: nonNegativeInteger.min(1).max(500).optional(),
@@ -633,6 +636,7 @@ const customStyleSchema = z
 const imageLabSchema = z
   .object({
     id: optionalText(256),
+    cutout: z.literal('green').optional(),
     prompt: nonEmptyText(MAX_TASK_TEXT),
     ratio: nonEmptyText(128),
     style: z.string().max(1024),
@@ -682,7 +686,7 @@ const voiceLabSchema = z
 const bookProductSchema = z
   .object({
     name: nonEmptyText(2048),
-    source: z.enum(['dangdang', 'manual']).optional(),
+    source: z.enum(['dangdang', 'weread', 'douban', 'manual']).optional(),
     sourceState: z.enum(['live', 'preview', 'saved']).optional(),
     sourceId: optionalText(256),
     sourceRank: finiteNumber.int().positive().optional(),
@@ -845,6 +849,7 @@ export const ipcInputSchemas = {
     })
     .strict(),
   'app:save-config': saveConfigInputSchema,
+  'provider:open-portal': nonEmptyText(MAX_IPC_PATH).refine(isProviderPortalUrl, 'A public provider portal URL is required.'),
   'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema, secretChanges: secretChangesSchema }).strict(),
   'ima:fetch-knowledge': z.object({ query: nonEmptyText(1024) }).strict(),
   'llm:test-config': llmConfigSchema,
@@ -895,6 +900,9 @@ export const ipcInputSchemas = {
   'voice-lab:restore': governanceIdSchema,
   'voice-lab:delete': governanceIdSchema,
   'voice-lab:get-detail': idOnlySchema,
+  'video-lab:list': z.void(),
+  'video-lab:generate': videoLabGenerateInputSchema,
+  'video-lab:open-output-directory': videoLabRecordIdSchema,
   'account:save': z
     .object({
       displayName: z.string().max(1024),
@@ -917,29 +925,7 @@ export const ipcInputSchemas = {
   'ui:save-preferences': z.union([
     z.object({ theme: z.enum(['dark', 'light']) }).strict(),
     z.object({
-      activeView: z.enum([
-        'projects',
-        'new-task',
-        'hot-board',
-        'queue',
-        'history',
-        'task-detail',
-        'editorial-collage',
-        'motion-comic',
-        'html-video',
-        'image-lab',
-        'voice-lab',
-        'music-mv',
-        'book-selection',
-        'benchmark',
-        'person-assets',
-        'viral-analyzer',
-        'prompt-templates',
-        'draft-templates',
-        'settings',
-        'account',
-        'activation',
-      ]),
+      activeView: z.enum(SHELL_VIEWS),
     }).strict(),
   ]),
   'book-selection:list': optionalThemeSchema,
@@ -947,6 +933,8 @@ export const ipcInputSchemas = {
     query: nonEmptyText(512),
     track: optionalText(256),
     limit: finiteNumber.int().min(1).max(36).optional(),
+    sources: z.array(z.enum(['dangdang', 'weread', 'douban'])).min(1).max(3)
+      .refine((values) => new Set(values).size === values.length, 'Book sources must be unique.').optional(),
   }).strict(),
   'book-selection:save': z.object({
     theme: nonEmptyText(1024),
@@ -990,6 +978,16 @@ export const ipcInputSchemas = {
   'motion-comic:create': motionComicCreateInputSchema,
   'motion-comic:save': motionComicSaveInputSchema,
   'director:render': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
+  'director:cancel-render': idSchema,
+  'vox:export-shot': z.object({id:idSchema,shotId:idSchema,expectedUpdatedAt:timestampSchema}).strict(),
+  'vox:runtime': z.void(),
+  'vox:compile': nonEmptyText(100000),
+  'vox:generate': z.object({ requestId: idSchema, prompt: nonEmptyText(10000), source: z.string().max(100000).optional(), templateId: nonEmptyText(120), props: voxPropsSchema, durationMs: finiteNumber.min(1).max(600000), ratio: z.enum(['16:9', '9:16', '1:1', '4:3', '3:4']) }).strict(),
+  'vox:cancel': idSchema,
+  'vox:asset': nonEmptyText(MAX_IPC_PATH),
+  'vox:templates-list': z.void(),
+  'vox:templates-save': voxSavedTemplateSchema,
+  'vox:templates-delete': idSchema,
   'director:recheck-subtitles': z.object({
     id: idSchema,
     reportId: idSchema,

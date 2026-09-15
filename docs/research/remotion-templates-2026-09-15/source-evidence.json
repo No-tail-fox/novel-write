@@ -1,0 +1,38 @@
+[
+  {
+    "file": ".tmp\\rve-templates-readme.md",
+    "sha256": "af37143400f61a71c232581320dcdf6137d2415350a78f70aaf4dfc5bfedd294"
+  },
+  {
+    "file": ".tmp\\rendercomp-readme.md",
+    "sha256": "7a1e75044a6a45258e30995e086dabe6405c55e785f53627311e79f1beb92718"
+  },
+  {
+    "file": ".tmp\\swiftclip-readme.md",
+    "sha256": "612b0b9603b31ba88feaffb2d55839e2987fe4c207cfeebff75d70889bb9dc73"
+  },
+  {
+    "file": ".tmp\\rendercomp-license.txt",
+    "sha256": "3e0f0f2895a6bf2b5aa9d03aa4a6b68679a7d037d54f24177f99748084a58444"
+  },
+  {
+    "file": ".tmp\\swiftclip-license.txt",
+    "sha256": "1333f6e46775240dc94f521012b407dbe4a401784cd0c0770ec940d15aa63891"
+  },
+  {
+    "file": ".tmp\\shotcraft-license.txt",
+    "sha256": "b2ce9877a55547ada9b870150664d1468ff777e67cc9888806a73927d31c5771"
+  },
+  {
+    "file": ".tmp\\onda-license.txt",
+    "sha256": "14e3fb4f73fcb5992c741492d92b98685e5dd0fd9511262b658239bb9e89ceb3"
+  },
+  {
+    "file": ".tmp\\talkcraft-readme.md",
+    "sha256": "37eb918ff7dc82751d545a3234888737f1dbd261c21b63671bebbec6a9ea2640"
+  },
+  {
+    "file": ".tmp\\remotion-ai-readme.md",
+    "sha256": "a9389c0c197c72e2b5b2f04a58bf479302e4f0078ce0205ba8a9b5d9c3fb97ab"
+  }
+]

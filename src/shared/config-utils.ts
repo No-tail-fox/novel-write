@@ -1,4 +1,5 @@
 import { defaultConfig } from './config';
+import { llmEndpoint, resolveLlmProtocol } from './llm-protocol';
 import { normalizeImageGenerationQuality } from './image-quality';
 import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 import {
@@ -36,12 +37,12 @@ const SILICONFLOW_STT_DEFAULT_MODEL = 'FunAudioLLM/SenseVoiceSmall';
 function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number): AppConfig['llm'] {
   const merged = { ...defaultConfig.llm, ...profile };
   const id = profile.id?.trim() || buildLlmProfileId(merged, index);
-  const protocol = normalizeLlmProtocol(merged);
+  const protocol = resolveLlmProtocol(merged);
   return {
     ...merged,
     id,
     name: profile.name?.trim() || defaultLlmProfileName(merged, index),
-    provider: normalizeLlmProvider(merged, protocol),
+    provider: normalizeLlmProvider(merged),
     protocol,
     enabled: Boolean(profile.enabled),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
@@ -104,18 +105,14 @@ function buildLlmProfileId(profile: AppConfig['llm'], index: number): string {
 }
 
 function defaultLlmProfileName(profile: AppConfig['llm'], index: number): string {
-  if (profile.protocol === 'anthropic' || profile.provider === 'anthropic') return 'Anthropic';
+  if (profile.provider === 'anthropic') return 'Anthropic';
   if (profile.provider === 'openai') return 'OpenAI Official';
   if (profile.baseUrl.includes('ai.input.im')) return '第三方';
   return index === 0 ? '默认配置' : `配置 ${index + 1}`;
 }
 
-function normalizeLlmProtocol(profile: Pick<AppConfig['llm'], 'provider' | 'protocol'>): AppConfig['llm']['protocol'] {
-  return profile.protocol === 'anthropic' || profile.provider === 'anthropic' ? 'anthropic' : 'openai';
-}
-
-function normalizeLlmProvider(profile: Pick<AppConfig['llm'], 'provider'>, protocol: AppConfig['llm']['protocol']): string {
-  if (protocol === 'anthropic') return 'anthropic';
+function normalizeLlmProvider(profile: Pick<AppConfig['llm'], 'provider'>): string {
+  if (profile.provider === 'anthropic') return 'anthropic';
   return profile.provider === 'openai' ? 'openai' : 'custom';
 }
 
@@ -591,10 +588,7 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
 
   if (target === 'llm') {
     const fieldsReady = Boolean(config.llm.apiKey.trim() && config.llm.model.trim());
-    const endpoint =
-      config.llm.protocol === 'anthropic'
-        ? `${normalizeBaseUrl(config.llm.baseUrl || 'https://api.anthropic.com/v1', 'https://api.anthropic.com/v1')}/messages`
-        : `${normalizeBaseUrl(config.llm.baseUrl || 'https://api.openai.com/v1')}/chat/completions`;
+    const endpoint = llmEndpoint(config.llm);
     return buildResult({
       target,
       startedAt,

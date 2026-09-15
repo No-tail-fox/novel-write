@@ -1,0 +1,10 @@
+import {build} from 'esbuild';
+import {mkdir,readFile,writeFile,copyFile} from 'node:fs/promises';
+import {compileVoxCode} from '../electron/vox-animation-runtime';
+const out='.artifacts/vox-animation-qa';await mkdir(out,{recursive:true});
+const code=compileVoxCode('import React from "react"; import {AbsoluteFill,useCurrentFrame,useVideoConfig} from "remotion"; export default function Scene({title,background,foreground}){const f=useCurrentFrame();const {width}=useVideoConfig();return <AbsoluteFill style={{background,color:foreground,justifyContent:"center",padding:"8%",fontSize:width*.065,fontFamily:"Microsoft YaHei",transform:`translateX(${Math.max(0,30-f)*8}px)`}}>{title}</AbsoluteFill>}');
+const assets=await Promise.all(['cover','page','cutout','audio'].map(async(id)=>{const ext=id==='audio'?'wav':'png';return {id,label:id,kind:id==='audio'?'audio':'image',path:`${id}.${ext}`,url:`data:${id==='audio'?'audio/wav':'image/png'};base64,${(await readFile(`${out}/${id}.${ext}`)).toString('base64')}`};}));
+await writeFile(`${out}/fixture.json`,JSON.stringify({assets,code}),'utf8');await copyFile('dist-electron/electron/vox-animation-runtime.js',`${out}/runtime.js`);
+await build({entryPoints:['tests/vox-animation.harness.tsx'],outfile:`${out}/harness.js`,bundle:true,format:'esm',platform:'browser',target:'chrome120',define:{'process.env.NODE_ENV':'"production"'},loader:{'.woff2':'file','.png':'file'},logLevel:'warning'});
+await writeFile(`${out}/index.html`,'<!doctype html><html data-theme="dark" data-theme-ready="true"><meta charset="utf-8"><link rel="icon" href="data:,"><link rel="stylesheet" href="harness.css"><div id="root"></div><script type="module" src="harness.js"></script></html>','utf8');
+console.log('Prepared VOX animation QA');

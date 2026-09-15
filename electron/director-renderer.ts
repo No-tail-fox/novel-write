@@ -16,6 +16,9 @@ import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { preflightVideoRenderDisk } from './video-render-preflight';
 import { measureDirectorSubtitleLayout, measureDirectorSubtitleVisibility, productionSubtitleSceneLayoutSchema, type ProductionSubtitleLayoutEvidence, type ProductionSubtitleSceneLayout } from '../src/shared/production-subtitle-layout';
 import { DIRECTOR_VISUAL_FPS, directorVisualCutTimes } from '../src/shared/production-visual-continuity';
+import { prepareVoxHtml, readVoxAsset } from './vox-animation-runtime';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 
 export async function renderDirectorVideo(input: {
   workDir: string;
@@ -24,13 +27,17 @@ export async function renderDirectorVideo(input: {
   ratio: string;
   scenes: readonly DirectorRenderScene[];
   sceneStarts?: ReadonlyMap<string, number>;
+  signal?: AbortSignal;
+  /** Explicit built runtime for isolated verification or embedding. */
+  animationRuntimePath?: string;
 }): Promise<DirectorRenderResult> {
+  input.signal?.throwIfAborted();
   if (input.scenes.length === 0) throw new Error('DIRECTOR_RENDER_EMPTY: 当前项目没有可渲染的镜头。');
   const canvas = directorCanvasForRatio(input.ratio);
   const fps = DIRECTOR_VISUAL_FPS;
   let stagedMediaBytes = 0;
   for (const scene of input.scenes) {
-    const paths = scene.renderStrategy === 'living-poster' ? [scene.videoPath] : scene.layers.map((layer) => layer.imagePath);
+    const paths = scene.renderStrategy === 'remotion' ? scene.animationAssets?.map(a => a.path) ?? [] : scene.renderStrategy === 'living-poster' ? [scene.videoPath] : scene.layers.map((layer) => layer.imagePath);
     for (const path of paths) {
       if (path) stagedMediaBytes += (await assertFile(path, `镜头 ${scene.index} 画面`)).size;
     }
@@ -51,6 +58,7 @@ export async function renderDirectorVideo(input: {
 
   const stagedScenes = [];
   for (const scene of input.scenes) {
+    input.signal?.throwIfAborted();
     if (scene.audioClips !== undefined) {
       for (const clip of scene.audioClips) await assertFile(clip.path, `镜头 ${scene.index} 音频片段 ${clip.id}`);
     } else {
@@ -58,7 +66,12 @@ export async function renderDirectorVideo(input: {
     }
     let representativePath = '';
     let html: string;
-    if (scene.renderStrategy === 'living-poster') {
+    if (scene.renderStrategy === 'remotion') {
+      if (!scene.animation) throw new Error('镜头缺少动画设置');
+      const assets = [];
+      for (const asset of scene.animationAssets ?? []) assets.push({ id: asset.id, label: asset.id, kind: asset.kind, url: await readVoxAsset(asset.path) });
+      html = await prepareVoxHtml(input.animationRuntimePath ?? join(dirname(fileURLToPath(import.meta.url)), 'vox-animation-runtime.js'), {animation:scene.animation,assets,audioClips:scene.audioClips,cues:scene.subtitleCues ?? (scene.caption ? [{text:scene.caption,startMs:0,endMs:scene.durationMs}] : []),width:canvas.width,height:canvas.height,fps,durationMs:scene.durationMs,subtitleStyle:scene.subtitleStyle});
+    } else if (scene.renderStrategy === 'living-poster') {
       if (!scene.videoPath) throw new Error(`DIRECTOR_RENDER_VIDEO_MISSING: 镜头 ${scene.index} 缺少 AI 动态海报视频。`);
       await assertFile(scene.videoPath, `镜头 ${scene.index} AI 动态海报`);
       const stagedVideo = join(mediaDir, `shot-${String(scene.index).padStart(3, '0')}${supportedVideoExtension(scene.videoPath)}`);
@@ -81,20 +94,22 @@ export async function renderDirectorVideo(input: {
       if (scene.layers.length === 0) throw new Error(`DIRECTOR_RENDER_LAYER_MISSING: 镜头 ${scene.index} 缺少可渲染图层。`);
       const stagedLayers: DirectorSceneHtmlLayer[] = [];
       for (const [layerIndex, layer] of scene.layers.entries()) {
-        await assertFile(layer.imagePath, `镜头 ${scene.index} 图层“${layer.label}”`);
+        const { imagePath, ...presentation } = layer;
+        if (layer.content?.type === 'text') {
+          stagedLayers.push(presentation);
+          continue;
+        }
+        if (!imagePath) throw new Error(`DIRECTOR_RENDER_LAYER_MISSING: 镜头 ${scene.index} 图层“${layer.label}”缺少图片或原生文字。`);
+        await assertFile(imagePath, `镜头 ${scene.index} 图层“${layer.label}”`);
         const stagedImage = join(
           mediaDir,
-          `shot-${String(scene.index).padStart(3, '0')}-layer-${String(layerIndex + 1).padStart(2, '0')}${supportedImageExtension(layer.imagePath)}`,
+          `shot-${String(scene.index).padStart(3, '0')}-layer-${String(layerIndex + 1).padStart(2, '0')}${supportedImageExtension(imagePath)}`,
         );
-        await copyFile(layer.imagePath, stagedImage);
+        await copyFile(imagePath, stagedImage);
         representativePath ||= stagedImage;
         stagedLayers.push({
-          id: layer.id,
-          label: layer.label,
+          ...presentation,
           imageUrl: pathToFileURL(stagedImage).toString(),
-          zIndex: layer.zIndex,
-          depth: layer.depth,
-          motion: layer.motion,
         });
       }
       html = buildDirectorSceneHtml({
@@ -154,7 +169,7 @@ export async function renderDirectorVideo(input: {
     // Until visual-only overlaps are supported, both workflows use exact cuts.
     transition: { type: 'cut', duration: 0 },
     scenes: stagedScenes,
-  });
+  }, { signal: input.signal });
   const output = await stat(result.outputPath);
   if (!output.isFile() || output.size <= 0) throw new Error('DIRECTOR_RENDER_OUTPUT_INVALID: 成片文件未正确生成。');
   const probe = await runStoryboundMediaSidecar({
@@ -165,7 +180,7 @@ export async function renderDirectorVideo(input: {
     analyze_quality: true,
     visual_continuity_points_ms: directorVisualCutTimes(input.scenes),
     visual_continuity_fps: fps,
-  });
+  }, { signal: input.signal });
   const durationMs = assertDirectorRenderProbe(probe, {
     durationMs: Math.round(totalDurationS * 1000),
     width: canvas.width,

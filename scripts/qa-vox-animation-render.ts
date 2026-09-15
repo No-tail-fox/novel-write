@@ -1,0 +1,12 @@
+import {build} from 'esbuild';
+import {writeFile,readFile,mkdir} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {createRequire} from 'node:module';
+import {runBoundedProcess} from '../src/shared/process-runner';
+const root=resolve('.'),out=join(root,'.artifacts/vox-animation-qa'),entry=join(out,'electron-entry');await mkdir(entry,{recursive:true});
+await build({entryPoints:['scripts/qa-vox-animation-render-entry.ts'],outfile:join(entry,'entry.mjs'),bundle:true,platform:'node',format:'esm',target:'node22',external:['electron'],banner:{js:"import {createRequire as __createRequire} from 'node:module';import {fileURLToPath as __filePath} from 'node:url';const require=__createRequire(import.meta.url);const __filename=__filePath(import.meta.url);const __dirname=__filename.slice(0,__filename.lastIndexOf('\\\\'));"},logLevel:'warning'});
+await writeFile(join(entry,'bootstrap.cjs'),`const {app,dialog}=require('electron');app.disableHardwareAcceleration();const fs=require('node:fs');dialog.showErrorBox=(title,message)=>{fs.writeFileSync(${JSON.stringify(join(out,'bootstrap-error.txt'))},title+'\\n'+message);app.exit(1);};import('./entry.mjs').catch(e=>dialog.showErrorBox('QA startup',e.stack||String(e)));`,'utf8');
+await writeFile(join(entry,'package.json'),JSON.stringify({name:'vox-animation-qa',version:'1.0.0',type:'module',main:'bootstrap.cjs'}),'utf8');
+const env={...process.env,STORYDREAM_VOX_RENDER_QA:JSON.stringify({root,out})};delete env.ELECTRON_RUN_AS_NODE;
+const result=await runBoundedProcess(createRequire(import.meta.url)('electron'),[entry],{cwd:root,env,timeoutMs:600000,maxStdoutBytes:1000000,maxStderrBytes:2000000});
+const report=JSON.parse(await readFile(join(out,'render-report.json'),'utf8'));console.log(JSON.stringify({status:report.status,error:report.error,stderr:result.stderr.slice(-4000)},null,2));if(result.code!==0)process.exitCode=1;

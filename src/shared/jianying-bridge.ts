@@ -579,9 +579,10 @@ def resolve_image_layout(image_area, canvas, material):
     return {
         "scale": scale,
         "transform_x": area_left * 2 + area_width - 1 + focus_shift_x * 2 / canvas_width,
-        "transform_y": area_top * 2 + area_height - 1 + focus_shift_y * 2 / canvas_height,
+        # Editor top/focus coordinates point down; Jianying clip and mask Y point up.
+        "transform_y": 1 - area_top * 2 - area_height - focus_shift_y * 2 / canvas_height,
         "mask_center_x": -focus_shift_x / scale,
-        "mask_center_y": -focus_shift_y / scale,
+        "mask_center_y": focus_shift_y / scale,
         "mask_width": mask_width,
         "mask_height": mask_height,
         "use_mask": mask_width < 0.999 or mask_height < 0.999,

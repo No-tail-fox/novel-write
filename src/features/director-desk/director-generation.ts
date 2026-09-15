@@ -1,6 +1,11 @@
 import { activeImageProfileId, activeTtsProfileId, normalizedImageProfiles, normalizedTtsProfiles } from '../../shared/provider-profile-utils';
 import type { SecretStatus } from '../../shared/config-secrets';
 import { rebuildEditorialTimeline, type EditorialCollagePipelineData } from '../../shared/editorial-collage';
+import { createEditorialMotionLayers, editorialLayerPrompt } from '../../shared/editorial-motion';
+import { editorialKeyframeAssetId, editorialNeedsLayerUpgrade } from '../../shared/editorial-media';
+import { editorialRecipe } from '../../shared/editorial-recipe-catalog';
+import { editorialShotNarration, editorialShotTitle, isEditorialStructureTitle } from '../../shared/editorial-storytelling';
+import { fitEditorialNarrationTiming } from '../../shared/editorial-narration-timing';
 import type { MotionComicPipelineData } from '../../shared/motion-comic';
 import type { ProductionAssetVersion, ProductionProviderJob, ProductionSubtitleCue } from '../../shared/production-workflow';
 import type { ProductionAudioClip } from '../../shared/production-audio';
@@ -218,7 +223,7 @@ export function resolveDirectorVideoProviderOptions(config: AppConfig, secrets: 
 export function resolveDirectorVideoProviderStatus(
   config: AppConfig,
   secrets: SecretStatus,
-  input: { durationMs: number; committedCost?: number },
+  input: { durationMs: number; committedCost?: number; requiresLastFrame?: boolean },
 ): DirectorVideoProviderStatus {
   const durationSec = Math.max(1, input.durationMs / 1000);
   const committedCost = Math.max(0, input.committedCost ?? 0);
@@ -238,7 +243,7 @@ export function resolveDirectorVideoProviderStatus(
   };
   const route = selectVideoGenerationRoute(configWithCredentialStatus, {
     durationSec,
-    requiredCapabilities: ['i2v'],
+    requiredCapabilities: input.requiresLastFrame ? ['i2v', 'first-last-frame'] : ['i2v'],
     remainingBudget,
   });
   if (route.kind === 'provider') {
@@ -259,24 +264,37 @@ export function resolveDirectorVideoProviderStatus(
     model: preferred?.model.trim() || '未配置',
     estimatedCost: Math.max(0, (preferred?.pricePerSecond ?? 0) * durationSec),
     remainingBudget,
-    unavailableReason: `${route.reason} 请在 AI 视频设置中检查凭证、I2V 能力、时长、白名单和预算。`,
+    unavailableReason: `${route.reason} 请在 AI 视频设置中检查凭证、${input.requiresLastFrame ? '首尾帧能力、' : ''}I2V 能力、时长、白名单和预算。`,
   };
 }
 
-export function directorImageInput(document: EditorialCollagePipelineData | MotionComicPipelineData, shotId: string) {
+export function directorImageInput(document: EditorialCollagePipelineData | MotionComicPipelineData, shotId: string, layerId?: string) {
   if (document.workflowKind === 'editorial-collage') {
     const beat = document.beats.find((item) => item.shots.some((shot) => shot.id === shotId));
     const shot = beat?.shots.find((item) => item.id === shotId);
     if (!shot) throw new Error('当前 VOX 镜头不存在。');
     const selectedStyle = document.styleCandidates.find((candidate) => candidate.id === document.selectedStyleId && candidate.selected);
     const stylePrompt = selectedStyle?.prompt?.trim() ? `Style baseline (${selectedStyle.label}): ${selectedStyle.prompt.trim()}.` : '';
+    const layer = layerId ? shot.layers.find((candidate) => candidate.id === layerId) : undefined;
+    if (layerId && (!layer || layer.content)) throw new Error('当前镜头中没有可生成的图片图层。');
+    const target = layer ? 'layer' as const : shot.renderStrategy === 'living-poster' || shot.productionRecipe === 'paper-cut' ? 'keyframe' as const : 'legacy' as const;
+    const layerPrompt = layer ? `${layer.prompt?.trim() || editorialLayerPrompt(layer.kind, shot.scenePrompt)}\nCurrent scene: ${shot.scenePrompt}` : shot.scenePrompt;
+    const recipe = editorialRecipe(shot.productionRecipe);
+    const hero = shot.productionRecipe === 'paper-cut' && layer ? document.assets.find(asset => asset.id === shot.keyframeAssetVersionId && asset.kind === 'image' && asset.localPath) : undefined;
+    const derivation = hero ? layer!.kind === 'background'
+      ? 'Edit the reference into a clean background plate. Remove the hero and moving props, reconstruct the exposed paper background, preserve its palette, texture, shadows and perspective. Do not leave a duplicate subject behind.'
+      : 'Isolate the requested subject from the reference. Preserve its identity, paper texture, silhouette, orientation and edge style. Output only this subject on a flat pure green field for local alpha extraction; do not include the background or duplicate subjects.' : '';
     return {
       projectId: document.id, workflowKind: document.workflowKind, ownerId: beat!.id, shotId,
+      target, layerId: layer?.id, layerKind: layer?.kind,
       ratio: document.ratio,
-      prompt: `${stylePrompt}${stylePrompt ? '\n' : ''}${shot.scenePrompt}\nLayout: ${shot.layoutTemplate ?? '对比拼贴 · 纸张撕裂'}. Motion reference: ${shot.motionPreset ?? '平移 + 缓慢推进'}. ${shot.seedLocked && shot.seed ? `Keep visual seed reference ${shot.seed}.` : ''}\nVOX documentary editorial still, preserve clean space for deterministic captions, no generated text, no watermark.`,
-      references: [] as Array<{ assetVersionId: string; path: string }>,
-      selectedAssetIds: shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []),
+      prompt: `${stylePrompt}${stylePrompt ? '\n' : ''}${layerPrompt}\n${recipe?.imagePrompt ?? ''}\n${derivation}\nLayout: ${shot.layoutTemplate ?? '对比拼贴 · 纸张撕裂'}. ${shot.seedLocked && shot.seed ? `Keep visual seed reference ${shot.seed}.` : ''}\nVOX documentary editorial ${target === 'layer' ? 'independent asset' : 'complete composed keyframe'}, preserve clean space for deterministic captions, no generated text, no watermark.`,
+      references: hero ? [{ assetVersionId: hero.id, path: hero.localPath! }] : [] as Array<{ assetVersionId: string; path: string }>,
+      selectedAssetIds: layer ? (layer.assetVersionId ? [layer.assetVersionId] : []) : target === 'keyframe' ? [editorialKeyframeAssetId(shot)].filter((id): id is string => Boolean(id)) : shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []),
       styleCandidateId: selectedStyle?.id,
+      renderStrategy: shot.renderStrategy,
+      productionRecipe: shot.productionRecipe,
+      layerPrompt: layer?.prompt,
     };
   }
   const episode = document.episodes.find((item) => item.scenes.some((scene) => scene.shots.some((shot) => shot.id === shotId)));
@@ -293,7 +311,7 @@ export function directorImageInput(document: EditorialCollagePipelineData | Moti
 export type DirectorImageInput = ReturnType<typeof directorImageInput>;
 
 export function directorImageInputMatches(document: EditorialCollagePipelineData | MotionComicPipelineData, input: DirectorImageInput): boolean {
-  try { return JSON.stringify(directorImageInput(document, input.shotId)) === JSON.stringify(input); }
+  try { return JSON.stringify(directorImageInput(document, input.shotId, 'layerId' in input ? input.layerId : undefined)) === JSON.stringify(input); }
   catch { return false; }
 }
 
@@ -457,6 +475,9 @@ export function applyEditorialImageRecord(
   isCurrentRequest = true,
 ): EditorialCollagePipelineData {
   const production = directorProductionRecord(document, shotId, record, model);
+  const layerId = expectedInput && 'layerId' in expectedInput ? expectedInput.layerId : undefined;
+  const keyframe = expectedInput && 'target' in expectedInput && expectedInput.target === 'keyframe';
+  if (layerId) production.asset.assetId = `shot-layer-${shotId}:${layerId}`;
   const matches = isCurrentRequest && (!expectedInput || (expectedInput.shotId === shotId && directorImageInputMatches(document, expectedInput)));
   const completedAsset = record.status === 'generated' ? production.asset : null;
   const generated = matches ? completedAsset : null;
@@ -469,15 +490,21 @@ export function applyEditorialImageRecord(
       ...beat,
       shots: beat.shots.map((shot) => {
         if (shot.id !== shotId || !matches) return shot;
+        if (keyframe) return {
+          ...shot, providerJobId: production.job.id,
+          keyframeAssetVersionId: generated?.id ?? shot.keyframeAssetVersionId,
+          videoAssetVersionId: generated ? undefined : shot.videoAssetVersionId,
+          videoJobId: generated ? undefined : shot.videoJobId,
+        };
         const generatedLayerIndex = shot.layers.findIndex((layer) => layer.source === 'generated-image');
-        const firstVisualLayerIndex = generatedLayerIndex >= 0
+        const firstVisualLayerIndex = layerId ? shot.layers.findIndex((layer) => layer.id === layerId) : generatedLayerIndex >= 0
           ? generatedLayerIndex
           : shot.layers.findIndex((layer) => layer.kind === 'background' || layer.kind === 'subject' || layer.kind === 'archival');
         return {
           ...shot,
           providerJobId: production.job.id,
-          videoAssetVersionId: generated ? undefined : shot.videoAssetVersionId,
-          videoJobId: generated ? undefined : shot.videoJobId,
+          videoAssetVersionId: generated && !layerId ? undefined : shot.videoAssetVersionId,
+          videoJobId: generated && !layerId ? undefined : shot.videoJobId,
           layers: generated && firstVisualLayerIndex >= 0
             ? shot.layers.map((layer, index) => index === firstVisualLayerIndex ? { ...layer, source: 'generated-image', assetVersionId: generated.id } : layer)
             : shot.layers,
@@ -487,10 +514,47 @@ export function applyEditorialImageRecord(
   });
 }
 
+/** Upgrade only the old flat-image starter, preserving its image as an I2V keyframe. */
+export function prepareEditorialLayerGeneration(document: EditorialCollagePipelineData, shotId: string): EditorialCollagePipelineData {
+  const beat = document.beats.find((item) => item.shots.some((shot) => shot.id === shotId));
+  const shot = beat?.shots.find((item) => item.id === shotId);
+  if (!beat || !shot || shot.renderStrategy !== 'deterministic-layers') return document;
+  const title = editorialShotTitle(document, beat, shot);
+  const layers = createEditorialMotionLayers({ shotId, narration: editorialShotNarration(beat, shot) || beat.narration, title, ratio: document.ratio, durationMs: shot.durationMs, index: document.beats.flatMap((item) => item.shots).findIndex((item) => item.id === shotId), motionStyle: shot.motionStyle });
+  if (!editorialNeedsLayerUpgrade(shot)) {
+    // Preserve authored scenes, but make old empty label placeholders renderable.
+    const isEmptyLabel = (layer: typeof shot.layers[number]) => layer.kind === 'label' && layer.source === 'svg' && !layer.assetVersionId && !layer.content;
+    if (!shot.layers.some(isEmptyLabel)) return document;
+    const label = layers.find((layer) => layer.content)!;
+    return rebuildEditorialTimeline({ ...document, beats: document.beats.map((item) => ({ ...item, shots: item.shots.map((candidate) => candidate.id !== shotId ? candidate : {
+      ...candidate, layers: candidate.layers.map((layer) => isEmptyLabel(layer) ? { ...layer, width: layer.width ?? label.width, height: layer.height ?? label.height, fit: 'contain' as const, content: { type: 'text' as const, text: isEditorialStructureTitle(layer.label) ? title : layer.label.trim() || title } } : layer),
+    }) })) });
+  }
+  return rebuildEditorialTimeline({
+    ...document,
+    beats: document.beats.map((item) => ({ ...item, shots: item.shots.map((candidate) => candidate.id === shotId ? {
+      ...candidate, keyframeAssetVersionId: editorialKeyframeAssetId(candidate), layers,
+    } : candidate) })),
+  });
+}
+
 export function restoreEditorialImageVersion(document: EditorialCollagePipelineData, shotId: string, versionId: string): EditorialCollagePipelineData {
   if (!document.assets.some((asset) => asset.id === versionId && asset.kind === 'image' && asset.localPath)) return document;
   const shot = document.beats.flatMap((beat) => beat.shots).find((item) => item.id === shotId);
   if (!shot) return document;
+  const asset = document.assets.find((item) => item.id === versionId)!;
+  const layerPrefix = `shot-layer-${shotId}:`;
+  const targetLayerId = asset.assetId.startsWith(layerPrefix) ? asset.assetId.slice(layerPrefix.length) : undefined;
+  if (asset.assetId.startsWith('shot-layer-') && !targetLayerId) return document;
+  const isKeyframe = asset.assetId.startsWith('shot-keyframe-') || shot.keyframeAssetVersionId === versionId;
+  if (targetLayerId || isKeyframe || shot.renderStrategy === 'living-poster') {
+    if (targetLayerId && !shot.layers.some((layer) => layer.id === targetLayerId)) return document;
+    const previousId = targetLayerId ? shot.layers.find((layer) => layer.id === targetLayerId)?.assetVersionId : editorialKeyframeAssetId(shot);
+    const next = rebuildEditorialTimeline({ ...document, beats: document.beats.map((beat) => ({ ...beat, shots: beat.shots.map((item) => item.id !== shotId ? item : targetLayerId ? {
+      ...item, layers: item.layers.map((layer) => layer.id === targetLayerId ? { ...layer, source: 'generated-image' as const, assetVersionId: versionId } : layer),
+    } : { ...item, keyframeAssetVersionId: versionId, ...(previousId === versionId ? {} : { videoAssetVersionId: undefined, videoJobId: undefined }) }) })) });
+    return { ...next, assets: reconcileRestoredImageSelection(next, previousId, versionId) };
+  }
   const generatedIndex = shot.layers.findIndex((layer) => layer.source === 'generated-image');
   const visualIndex = generatedIndex >= 0 ? generatedIndex : shot.layers.findIndex((layer) => ['background', 'subject', 'archival'].includes(layer.kind));
   if (visualIndex < 0) return document;
@@ -537,7 +601,11 @@ function reconcileRestoredImageSelection(document: EditorialCollagePipelineData 
   const referenced = new Set<string>();
   const add = (id: string | undefined) => { if (id) referenced.add(id); };
   if (document.workflowKind === 'editorial-collage') {
-    document.beats.forEach((beat) => beat.shots.forEach((shot) => shot.layers.forEach((layer) => add(layer.assetVersionId))));
+    document.beats.forEach((beat) => beat.shots.forEach((shot) => {
+      shot.layers.forEach((layer) => add(layer.assetVersionId));
+      add(shot.keyframeAssetVersionId);
+      add(shot.lastFrameAssetVersionId);
+    }));
     document.styleCandidates.forEach((candidate) => add(candidate.assetVersionId));
   } else {
     document.episodes.forEach((episode) => episode.scenes.forEach((scene) => scene.shots.forEach((shot) => {
@@ -603,7 +671,7 @@ export function applyEditorialVoiceRecord(
     && editorialVoiceInputMatches(document, expectedInput)));
   const completedAsset = record.status === 'generated' ? production.asset : null;
   const generated = matches ? completedAsset : null;
-  return rebuildEditorialTimeline({
+  const next = rebuildEditorialTimeline({
     ...document,
     assets: completedAsset ? (matches ? appendAssetVersion(document.assets, completedAsset) : [...document.assets, { ...completedAsset, selected: false }]) : document.assets,
     providerJobs: appendProviderJob(document.providerJobs, production.job),
@@ -625,6 +693,7 @@ export function applyEditorialVoiceRecord(
       } : shot),
     })),
   });
+  return generated && measuredDurationMs ? fitEditorialNarrationTiming(next, [shotId]) : next;
 }
 
 export function applyMotionComicVoiceRecord(

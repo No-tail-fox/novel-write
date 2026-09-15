@@ -11,7 +11,7 @@ import { makeLazyFallbackApi } from './lazy-browser-fallback';
 import type { RendererAppState as AppState } from "./route-types";
 import { AppRoutes } from './AppRoutes';
 import { AppShell } from './AppShell';
-import { taskWorkspaceView } from './navigation';
+import { taskWorkspaceView, workspaceReturnViewForNavigation } from './navigation';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
 import type { SettingsSection } from '../features/settings/SettingsPage';
 import { WorkspaceNavigationProvider, WorkspaceLeaveDialog, useNativeWindowLeaveGuard, useWorkspaceNavigation } from './workspace-navigation';
@@ -34,9 +34,9 @@ function AppWorkspace() {
     dispatchState({ update });
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
-  const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string } | null>(null);
+  const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string; taskReturnView: ShellView } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [taskDetailReturnView, setTaskDetailReturnView] = useState<ShellView>('history');
+  const [taskDetailReturnView, setTaskDetailReturnView] = useState<ShellView>('projects');
   const [requestedEditorialCollageTaskId, setRequestedEditorialCollageTaskId] = useState('');
   const [requestedMotionComicTaskId, setRequestedMotionComicTaskId] = useState('');
   const [requestedHtmlTaskId, setRequestedHtmlTaskId] = useState('');
@@ -574,8 +574,9 @@ function AppWorkspace() {
   }
 
   function navigateNow(view: ShellView) {
+    const from = activeViewRef.current;
     activeViewRef.current = view;
-    if (view !== 'task-detail') setTaskDetailReturnView('history');
+    setTaskDetailReturnView((current) => workspaceReturnViewForNavigation(from, view, current));
     startTransition(() => {
       setRequestedEditorialCollageTaskId('');
       setRequestedMotionComicTaskId('');
@@ -590,7 +591,7 @@ function AppWorkspace() {
 
   function openSettings(section: SettingsSection, returnView: ShellView, taskId?: string) {
     void navigation.requestLeave(() => {
-      setSettingsEntry({ section, returnView, taskId });
+      setSettingsEntry({ section, returnView, taskId, taskReturnView: taskDetailReturnView });
       navigateNow('settings');
     });
   }
@@ -599,7 +600,7 @@ function AppWorkspace() {
     const entry = settingsEntry;
     void navigation.requestLeave(async () => {
       setSettingsEntry(null);
-      if (entry?.taskId) await openTaskDetailNow(entry.taskId, entry.returnView);
+      if (entry?.taskId) await openTaskDetailNow(entry.taskId, entry.taskReturnView);
       else navigateNow(entry?.returnView ?? 'new-task');
     });
   }
@@ -686,6 +687,7 @@ function AppWorkspace() {
     <StoryDreamProvider theme={state.ui.theme}>
       <AppShell
         activeView={activeView}
+        returnView={taskDetailReturnView}
         state={state}
         saveTone={navigation.submitting ? 'saving' : navigation.dirty ? 'dirty' : saveTone}
         isBrowserPreview={isBrowserPreview}

@@ -12,18 +12,20 @@ describe('editorial workbench shell', () => {
     expect(navigation).toContain("view: 'motion-comic', label: 'AI 漫剧'");
   });
 
-  it('preserves the independent action and exact twenty-entry navigation order', async () => {
+  it('preserves the independent action and exact twenty-one-entry navigation declarations', async () => {
     const navigation = await source('../src/app/navigation.ts');
     const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
     expect(views).toEqual([
       'new-task', 'projects', 'editorial-collage', 'motion-comic', 'html-video', 'music-mv',
-      'image-lab', 'voice-lab', 'person-assets',
+      'image-lab', 'voice-lab', 'video-lab', 'person-assets',
       'hot-board', 'benchmark', 'book-selection', 'viral-analyzer',
       'prompt-templates', 'draft-templates', 'queue', 'history', 'settings', 'account', 'activation',
     ]);
-    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...primaryNavItems, ...utilityNavItems]');
+    expect(navigation).toContain('sidebarNavItems: NavigationItem[] = [...primaryNavItems, ...utilityNavItems]');
+    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems]');
     expect(navigation).toContain('export const sidebarNavGroups');
     expect(navigation).not.toContain('export const contextualToolNavItems');
+    expect(navigation).not.toContain('generationNavigationGroup');
     for (const label of ['项目', '素材库', '灵感', '模板', '任务', '设置']) expect(navigation).toContain(`label: '${label}'`);
   });
 

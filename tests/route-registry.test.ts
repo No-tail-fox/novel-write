@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { navigationItems, navigationPrimaryView, newTaskPrimaryAction, sidebarNavGroups, sidebarNavItems, taskWorkspaceView } from '../src/app/navigation';
+import { generationNavItems, navigationItemForView, navigationItems, navigationPrimaryView, newTaskPrimaryAction, primaryNavigationGroupForView, secondaryNavigationItems, sidebarNavGroups, sidebarNavItems, taskWorkspaceView } from '../src/app/navigation';
 
 const expectedViews = [
   'projects',
+  'conversation-workbench',
   'new-task',
   'hot-board',
   'queue',
@@ -14,10 +15,12 @@ const expectedViews = [
   'html-video',
   'image-lab',
   'voice-lab',
+  'video-lab',
   'music-mv',
   'book-selection',
   'benchmark',
   'person-assets',
+  'copy-studio',
   'viral-analyzer',
   'prompt-templates',
   'draft-templates',
@@ -39,6 +42,14 @@ function registryKeys(section: string): string[] {
 }
 
 describe('renderer route registry', () => {
+  it('persists every registered route through the desktop preference boundary', async () => {
+    const { ipcInputSchemas } = await import('../src/shared/ipc-contract');
+    for (const activeView of expectedViews) {
+      expect(ipcInputSchemas['ui:save-preferences'].parse({ activeView })).toEqual({ activeView });
+    }
+    expect(ipcInputSchemas['ui:save-preferences'].safeParse({ activeView: 'missing-workbench' }).success).toBe(false);
+  });
+
   it('derives ShellView from one exact runtime tuple', async () => {
     const types = await source('src/shared/types.ts');
     const tuple = types.slice(types.indexOf('export const SHELL_VIEWS'), types.indexOf('export type ShellView'));
@@ -57,21 +68,21 @@ describe('renderer route registry', () => {
     const componentSection = registry.slice(registry.indexOf('export const routeComponents'), registry.indexOf('export function preloadRoute'));
     expect(registryKeys(loaderSection)).toEqual(expectedViews);
     expect(registryKeys(componentSection)).toEqual(expectedViews);
-    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(21);
-    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(21);
+    expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(expectedViews.length);
+    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(expectedViews.length);
     expect(registry).toContain('export async function preloadRoute(view: ShellView)');
     expect(registry).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 
-  it('keeps new task separate, nineteen sidebar entries, and task detail route-only', () => {
+  it('keeps new task separate, every workbench reachable, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
     expect(sidebarNavGroups.map((group) => group.label)).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 3, 4, 2, 2, 1]);
-    expect(sidebarNavItems).toHaveLength(19);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(19);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 6, 4, 2, 2, 1]);
+    expect(sidebarNavItems).toHaveLength(22);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(22);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
-    expect(navigationItems).toHaveLength(20);
+    expect(navigationItems).toHaveLength(23);
     expect(new Set([...navigationItems.map((item) => item.view), 'task-detail'])).toEqual(new Set(expectedViews));
   });
 
@@ -83,11 +94,33 @@ describe('renderer route registry', () => {
     expect(navigationPrimaryView('motion-comic')).toBe('projects');
     expect(navigationPrimaryView('html-video')).toBe('projects');
     expect(navigationPrimaryView('music-mv')).toBe('projects');
-    expect(navigationPrimaryView('voice-lab')).toBe('image-lab');
+    expect(navigationPrimaryView('person-assets')).toBe('person-assets');
+    expect(navigationPrimaryView('conversation-workbench')).toBe('person-assets');
+    expect(navigationPrimaryView('copy-studio')).toBe('person-assets');
+    expect(navigationPrimaryView('image-lab')).toBe('person-assets');
+    expect(navigationPrimaryView('voice-lab')).toBe('person-assets');
+    expect(navigationPrimaryView('video-lab')).toBe('person-assets');
     expect(navigationPrimaryView('book-selection')).toBe('hot-board');
     expect(navigationPrimaryView('draft-templates')).toBe('prompt-templates');
     expect(navigationPrimaryView('history')).toBe('queue');
     expect(navigationPrimaryView('activation')).toBe('settings');
+  });
+
+  it('opens the asset library directly and keeps its workbenches in the secondary menu', () => {
+    const group = sidebarNavGroups.find((item) => item.id === 'assets')!;
+    expect(group.defaultView).toBe('person-assets');
+    expect(group.items[0].view).toBe(group.defaultView);
+    expect(group.items.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab']);
+    expect(secondaryNavigationItems(group).map((item) => item.view)).toEqual(['copy-studio', 'conversation-workbench', ...generationNavItems.map((item) => item.view)]);
+    expect(generationNavItems.map(({ view, label }) => ({ view, label }))).toEqual([
+      { view: 'image-lab', label: '图片生成' },
+      { view: 'voice-lab', label: '配音生成' },
+      { view: 'video-lab', label: '视频生成' },
+    ]);
+    for (const item of generationNavItems) {
+      expect(primaryNavigationGroupForView(item.view)).toBe(group);
+      expect(navigationItemForView(item.view)).toBe(item);
+    }
   });
 
   it('preloads on hover and focus while route state changes use transitions', async () => {

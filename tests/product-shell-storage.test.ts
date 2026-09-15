@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultCustomStyles } from '@shared/config';
 import { FileDatabase } from '@shared/storage';
+import { draftTemplates } from '@shared/templates';
 
 describe('product shell storage', () => {
   it('migrates a database with complete shell defaults', async () => {
@@ -45,11 +46,9 @@ describe('product shell storage', () => {
     try {
       const db = await FileDatabase.open(file);
       expect(expectedCozeIds).toHaveLength(114);
-      expect((await db.getState()).draftTemplates.map((template) => template.id)).toEqual([
-        'builtin-landscape-16-9',
-        'builtin-portrait-4-3',
-        'default-portrait-9-16',
-      ]);
+      expect((await db.getState()).draftTemplates.map((template) => template.id)).toEqual(
+        draftTemplates.map((template) => template.id).sort(),
+      );
       (db as unknown as { db: { run: (sql: string, params?: unknown[]) => void } }).db.run('INSERT INTO draft_templates (id, data, is_builtin, updated_at) VALUES (?, ?, ?, ?)', [
         expectedCozeIds[0],
         JSON.stringify({
@@ -74,9 +73,7 @@ describe('product shell storage', () => {
 
       expect(state.draftTemplates.find((template) => expectedCozeIds.includes(template.id))).toBeUndefined();
       expect(state.draftTemplates.map((template) => template.id)).toEqual([
-        'builtin-landscape-16-9',
-        'builtin-portrait-4-3',
-        'default-portrait-9-16',
+        ...draftTemplates.map((template) => template.id).sort(),
         'custom-local-draft',
       ]);
       expect(state.draftTemplates.find((template) => template.id === 'custom-local-draft')?.name).toBe('用户自己的草稿模板');
@@ -288,45 +285,15 @@ describe('product shell storage', () => {
       const hydrated = state.draftTemplates.find((template) => template.id === 'default-portrait-9-16');
 
       expect(hydrated?.image.visible).toBe(true);
-      expect(hydrated?.title).toMatchObject({
-        x: 0,
-        y: 0.04739583333333333,
-        alpha: 1,
-        bold: true,
-        underline: true,
-        align: 1,
-        letterSpacing: 0,
-        lineSpacing: 0,
-        border: { color: '#000000', width: 40, alpha: 1 },
+      expect(hydrated?.title).toEqual({
+        ...draft!.title, visible: true, text: 'Legacy Title', fontSize: 44, color: '#ffde00',
       });
-      expect(hydrated?.subtitle).toMatchObject({
-        x: 0,
-        y: -0.21666666666666667,
-        text: expect.any(String),
-        alpha: 1,
-        bold: false,
-        underline: false,
-        align: 1,
-        letterSpacing: 2,
-        lineSpacing: 4,
-        border: { color: '#000000', width: 40, alpha: 1 },
+      expect(hydrated?.subtitle).toEqual({
+        ...draft!.subtitle, visible: true, fontSize: 22, color: '#ffffff',
       });
-      expect(hydrated?.caption).toMatchObject({ x: 0 });
-      expect(typeof hydrated?.caption.y).toBe('number');
-      expect(hydrated?.disclaimer).toMatchObject({
-        x: 0,
-        y: -0.903125,
-        bold: false,
-        underline: false,
-        align: 1,
-        letterSpacing: 0,
-        lineSpacing: 5,
-        border: { color: '#000000', width: 40, alpha: 1 },
-      });
-      expect(hydrated?.disclaimer).toMatchObject({
-        fontSize: expect.any(Number),
-        color: expect.stringMatching(/^#/),
-        alpha: 0.26,
+      expect(hydrated?.caption).toEqual(draft!.caption);
+      expect(hydrated?.disclaimer).toEqual({
+        ...draft!.disclaimer, visible: true, text: 'Legacy disclaimer',
       });
 
       await reopened.close();

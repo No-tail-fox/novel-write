@@ -1,5 +1,3 @@
 declare module '*.css';
-declare module '*.png' {
-  const src: string;
-  export default src;
-}
+// Remotion supplies image module declarations and refers to this timer alias.
+type Timer = ReturnType<typeof setTimeout>;

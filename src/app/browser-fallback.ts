@@ -4,6 +4,8 @@ import { HOT_BOARD_SOURCE_ASSESSMENTS } from '../shared/hotboard-catalog';
 import { fallbackEffectCatalog, volcengineVoicePresets } from '../shared/editorial-options';
 import { resolveVolcengineTtsApiVersion } from '../shared/volcengine-tts';
 import { validateConfigTarget } from '../shared/config-utils';
+import { llmEndpoint } from '../shared/llm-protocol';
+import { isProviderPortalUrl } from '../shared/provider-portals';
 import {
   applyHtmlVideoConfigChanges,
   applyHtmlVideoSceneChanges,
@@ -700,6 +702,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async openImageLabOutputDirectory() {
       throw new Error('浏览器预览不能打开本地图片任务目录，请在 Electron 桌面端操作。');
     },
+    async listVideoLabRecords() {
+      return [];
+    },
+    async generateVideoLab() {
+      throw new Error('浏览器预览不能调用真实视频生成服务，请在 Electron 桌面端操作。');
+    },
+    async openVideoLabOutputDirectory() {
+      throw new Error('浏览器预览不能打开本地视频生成目录，请在 Electron 桌面端操作。');
+    },
     async listVoiceLabRecords(request: HistoryListInput<'voice-lab'> = {}) {
       return fallbackHistoryPage(
         'voice-lab',
@@ -779,10 +790,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       return persist({ ...read(), config: input.config });
     },
     async testLlmConfig(config) {
-      const endpoint =
-        config.protocol === 'anthropic'
-          ? `${config.baseUrl || 'https://api.anthropic.com'}/v1/messages`
-          : `${config.baseUrl || 'https://api.openai.com'}/v1/chat/completions`;
+      const endpoint = llmEndpoint(config);
       return {
         status: config.apiKey ? 'warn' : 'fail',
         detail: config.apiKey ? '浏览器预览无法调用模型测试接口，请在 Electron 桌面端测试。' : '接口密钥未填写，请先补全模型凭证。',
@@ -838,6 +846,16 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         warnings: ['浏览器预览无法直接抓取网页正文，请在 Electron 桌面端使用搜索。'],
       };
     },
+    async getVoxAnimationRuntime() { throw new Error('请在桌面版使用 Remotion 动画'); },
+    async compileVoxAnimation() { throw new Error('动画编译需要桌面版'); },
+    async generateVoxAnimation() { throw new Error('AI 动画需要桌面版'); },
+    async cancelVoxAnimation() {},
+    async readVoxAnimationAsset() { throw new Error('本地动画素材需要桌面版'); },
+    async listVoxTemplates() { return []; },
+    async saveVoxTemplate() { throw new Error('个人动画模板需要桌面版'); },
+    async deleteVoxTemplate() { throw new Error('个人动画模板需要桌面版'); },
+    async cancelDirectorRender() {},
+    async exportVoxAnimationShot() { throw new Error('动画视频导出需要桌面版'); },
     async composeResearchCopy() {
       throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
     },
@@ -882,6 +900,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       throw new Error('浏览器预览无法读取 AIHOT 实时信息，请在 Electron 桌面端使用。');
     },
     async openHotBoardUrl(url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    },
+    async openProviderPortal(url) {
+      if (!isProviderPortalUrl(url)) throw new Error('无效的服务商网址。');
       window.open(url, '_blank', 'noopener,noreferrer');
     },
     async savePromptTemplate(template: PromptTemplate) {
@@ -1055,23 +1077,23 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async listPersonAssets() {
       return [];
     },
-    async createPersonAsset(name) {
-      return { name, count: 0, dir: '', updatedAt: Date.now() };
+    async createPersonAsset() {
+      throw new Error('浏览器预览不能创建本地人物素材库，请在 Electron 桌面端操作。');
     },
-    async renamePersonAsset(_oldName, newName) {
-      return newName;
+    async renamePersonAsset() {
+      throw new Error('浏览器预览不能重命名本地人物素材库，请在 Electron 桌面端操作。');
     },
     async getPersonAssetUsage() {
-      return [];
+      throw new Error('浏览器预览不能查询本地人物素材引用，请在 Electron 桌面端操作。');
     },
     async deletePersonAsset() {
-      return { name: '', token: '', path: '', recycledAt: Date.now() };
+      throw new Error('浏览器预览不能删除本地人物素材库，请在 Electron 桌面端操作。');
     },
     async restorePersonAsset() {
       throw new Error('浏览器预览不能撤销本地人物素材删除，请在 Electron 桌面端操作。');
     },
     async importPersonAssetImages() {
-      return 0;
+      throw new Error('浏览器预览不能导入本地人物图片，请在 Electron 桌面端操作。');
     },
     async listPersonAssetImages() {
       return [];
@@ -1568,10 +1590,11 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async updateTaskTemplate(id: string, templateId: string) {
       const state = read();
-      if (!state.draftTemplates.some((template) => template.id === templateId)) {
+      const template = state.draftTemplates.find((item) => item.id === templateId);
+      if (!template) {
         throw new Error(`草稿模板不存在：${templateId}`);
       }
-      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, templateId } : task)) });
+      return persist({ ...state, tasks: state.tasks.map((task) => (task.id === id ? { ...task, templateId, ratio: template.image.ratio } : task)) });
     },
     async updateTaskBgm(id: string, bgmId: string) {
       const state = read();

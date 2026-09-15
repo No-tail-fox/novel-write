@@ -1,0 +1,457 @@
+{
+  "retrievedOn": "2026-09-15",
+  "records": [
+    {
+      "name": "paper-readme",
+      "url": "https://raw.githubusercontent.com/liangdabiao/paper-cutout-remotion/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/paper-readme.txt",
+      "sha256": "bee807918b26854b5b929c5cfe49935a95476bf9416a76f1604e42b7706fbd41",
+      "bytes": 13961
+    },
+    {
+      "name": "vox-readme",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-readme.txt",
+      "sha256": "0566da5ef1ae381d737edec4be863206a3c3097536fc78a2a54c243ccadfc4ca",
+      "bytes": 11717
+    },
+    {
+      "name": "maps",
+      "url": "https://www.remotion.dev/docs/maps",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/maps.txt",
+      "sha256": "ac168970921eeef407b3f9b903e5c0d93094fcc5d0220023ced6d133a84a0466",
+      "bytes": 132775
+    },
+    {
+      "name": "elements",
+      "url": "https://www.remotion.dev/elements",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/elements.txt",
+      "sha256": "5ce95296591991b3c302c690ef988dff60c62675790733f2bea43698e46a2438",
+      "bytes": 49657
+    },
+    {
+      "name": "search-vox",
+      "url": "https://www.bing.com/search?q=Remotion+Vox+paper+collage+template+github",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/search-vox.txt",
+      "sha256": "237e786a05df7f05cbf70c1dbc49aa380cfb0e17c4c3661b99b6e7977db15f29",
+      "bytes": 98473
+    },
+    {
+      "name": "search-book",
+      "url": "https://www.bing.com/search?q=Remotion+book+flip+template+github",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/search-book.txt",
+      "sha256": "7f53bfc822111944dafd3674e9df43b7d45e7de9c43965d101c23726794a3344",
+      "bytes": 98030
+    },
+    {
+      "name": "github-book-page",
+      "url": "https://github.com/search?q=remotion%20book&type=repositories",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/github-book-page.txt",
+      "sha256": "9ea32628f9dec2fd6644a7a7cec94731ffe64bded36d6e31806f075c9a4630e7",
+      "bytes": 271179
+    },
+    {
+      "name": "vox-license",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/LICENSE",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-license.txt",
+      "sha256": "9e9661aac2fb4dce97c71377556e3f5cd3843f649966155ee55a786dfd5be4f6",
+      "bytes": 1071
+    },
+    {
+      "name": "vox-upstream",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/UPSTREAM.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-upstream.txt",
+      "sha256": "91da823b1be156167a713da2883180d1a94bfd97562bc3913c113a88fc2c15e4",
+      "bytes": 2849
+    },
+    {
+      "name": "vox-actor",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/xingchen-vox-collage/assets/remotion-template/vox-collage/PaperActor.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-actor.txt",
+      "sha256": "6a82cf5290c2a14a3cbb984fe4d68542ad355648c461b0b2f9619c7aef3f0f4a",
+      "bytes": 1338
+    },
+    {
+      "name": "vox-arrow",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/xingchen-vox-collage/assets/remotion-template/vox-collage/DrawnArrow.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-arrow.txt",
+      "sha256": "af5e342b8529a9fc3dd6bfd4e430d84fa13bcbf304bfa58e061c349c64fdec48",
+      "bytes": 1181
+    },
+    {
+      "name": "paper-license",
+      "url": "https://raw.githubusercontent.com/liangdabiao/paper-cutout-remotion/HEAD/LICENSE",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/paper-license.txt",
+      "error": "curl: (22) The requested URL returned error: 404\r\n"
+    },
+    {
+      "name": "paper-actor",
+      "url": "https://raw.githubusercontent.com/liangdabiao/paper-cutout-remotion/HEAD/templates/remotion-project/src/cutout.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/paper-actor.txt",
+      "sha256": "a70e9ec5e8d826b70e15cb344dbcf2f36ffb309900faa87a193490a9be6d803e",
+      "bytes": 7378
+    },
+    {
+      "name": "element-map",
+      "url": "https://www.remotion.dev/elements/maps/map-flyover/",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/element-map.txt",
+      "sha256": "506b3aae926f8fdfc0142f066cfa3b4dcf3d2d5ed4c08a049bb958aa41810a6a",
+      "bytes": 340630
+    },
+    {
+      "name": "element-news",
+      "url": "https://www.remotion.dev/elements/text/news-article-highlight/",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/element-news.txt",
+      "sha256": "de4f3ba58f46b8e264c0c68801548dc7661d474bf57e6c477aad793e29921581",
+      "bytes": 119671
+    },
+    {
+      "name": "element-paper",
+      "url": "https://www.remotion.dev/elements/backgrounds/paper-texture/",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/element-paper.txt",
+      "sha256": "080344cab22399343ddb376b25cb6721a319411962a9399cddda4287dcbc7203",
+      "bytes": 52865
+    },
+    {
+      "name": "element-polaroid",
+      "url": "https://www.remotion.dev/elements/storytelling/polaroid-pictures/",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/element-polaroid.txt",
+      "sha256": "83d15fe7fbc1247227660f5d5529b22a9550c66cf66d83010fac6851d618785e",
+      "bytes": 240036
+    },
+    {
+      "name": "github-books",
+      "url": "https://api.github.com/search/repositories?q=remotion%20book&per_page=8",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/github-books.txt",
+      "error": "curl: (35) schannel: failed to receive handshake, SSL/TLS connection failed\r\n"
+    },
+    {
+      "name": "github-vox",
+      "url": "https://api.github.com/search/repositories?q=remotion%20vox&per_page=8",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/github-vox.txt",
+      "error": "curl: (35) schannel: failed to receive handshake, SSL/TLS connection failed\r\n"
+    },
+    {
+      "name": "swift-readme",
+      "url": "https://raw.githubusercontent.com/zz41354899/SwiftClip/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/swift-readme.txt",
+      "sha256": "612b0b9603b31ba88feaffb2d55839e2987fe4c207cfeebff75d70889bb9dc73",
+      "bytes": 17301
+    },
+    {
+      "name": "swift-tree",
+      "url": "https://api.github.com/repos/zz41354899/SwiftClip/git/trees/HEAD?recursive=1",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/swift-tree.txt",
+      "error": "curl: (35) schannel: failed to receive handshake, SSL/TLS connection failed\r\n"
+    },
+    {
+      "name": "shot-readme",
+      "url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/shot-readme.txt",
+      "sha256": "e8a664dfe2536971e02accbee6c0fb7a3dacb33ee67e9a023d9f0e554b5adad6",
+      "bytes": 15103
+    },
+    {
+      "name": "shot-tree",
+      "url": "https://api.github.com/repos/Vincentwei1021/video-shotcraft/git/trees/HEAD?recursive=1",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/shot-tree.txt",
+      "error": "curl: (35) schannel: failed to receive handshake, SSL/TLS connection failed\r\n"
+    },
+    {
+      "name": "remotion-license",
+      "url": "https://raw.githubusercontent.com/remotion-dev/remotion/HEAD/LICENSE.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/remotion-license.txt",
+      "sha256": "bd65083b940f61904f6ef298aade918a7cad72a3e35bc406e36fab365844b673",
+      "bytes": 2823
+    },
+    {
+      "name": "vox-manifest",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/UPSTREAM_MANIFEST.json",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-manifest.txt",
+      "sha256": "de8fae279cdedc78e96b3e242705a145eefdfd2440d08a7dadbccd79be396006",
+      "bytes": 506
+    },
+    {
+      "name": "swift-root",
+      "url": "https://raw.githubusercontent.com/zz41354899/SwiftClip/HEAD/remotion/Root.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/swift-root.txt",
+      "sha256": "ab5b438bde73851b1706777e9dd797035f5da3c5ec050a53fe12d25a802a4ce7",
+      "bytes": 7261
+    },
+    {
+      "name": "swift-catalog",
+      "url": "https://raw.githubusercontent.com/zz41354899/SwiftClip/HEAD/lib/templates.ts",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/swift-catalog.txt",
+      "sha256": "1e1f5858b9db4c138f240c943b6d8170537ff681927849790be4e6728d6195b2",
+      "bytes": 13214
+    },
+    {
+      "name": "shot-demos",
+      "url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/HEAD/demos/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/shot-demos.txt",
+      "sha256": "a29c9e0d70410852565026802e218371f300904bc7e17d73d6a12a467a432809",
+      "bytes": 7276
+    },
+    {
+      "name": "shot-index",
+      "url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/HEAD/demos/index.ts",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/shot-index.txt",
+      "error": "curl: (22) The requested URL returned error: 404\r\n"
+    },
+    {
+      "name": "vox-motion",
+      "url": "https://raw.githubusercontent.com/Phantomlau3674/voxstylehub-steven/HEAD/xingchen-vox-collage/assets/remotion-template/vox-collage/motion.ts",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vox-motion.txt",
+      "sha256": "d58b1878cf3a871ff63f8b7d3837a0ac70a0dfeb523ac76499e302947bbeb99e",
+      "bytes": 1352
+    },
+    {
+      "name": "rve-highlight",
+      "url": "https://raw.githubusercontent.com/reactvideoeditor/remotion-templates/HEAD/templates/text-highlight.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/rve-highlight.txt",
+      "sha256": "dc2a4279b8e8f1fa4e5d707f415fd1e276d978352bed5baa0fdd56f166035a37",
+      "bytes": 2475
+    },
+    {
+      "name": "rve-stack",
+      "url": "https://raw.githubusercontent.com/reactvideoeditor/remotion-templates/HEAD/templates/photo-stack.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/rve-stack.txt",
+      "sha256": "3649e1d7bd1b9f79ae2e22985c0caec148343d0dbf8dbab5856239e16352dbdf",
+      "bytes": 2378
+    },
+    {
+      "name": "rc-pageflip",
+      "url": "https://raw.githubusercontent.com/RenderComp/free-remotion-templates/HEAD/src/components/flip-page-transition/FlipPageTransition.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/rc-pageflip.txt",
+      "sha256": "522b2230ddc49b30ca4b06d1478c6ce0474637c53b4385e23976193e83a6a704",
+      "bytes": 7905
+    },
+    {
+      "name": "vellum-readme",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-readme.txt",
+      "sha256": "e5408fc8e427af8776ae7d4eeaf213d9555e8ed774b802d403b490767a2e7adf",
+      "bytes": 5535
+    },
+    {
+      "name": "vellum-license",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/LICENSE",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-license.txt",
+      "sha256": "c89ab33888b312dd39d7a860601433cd8732f04a8312b1aa448a508a265bc9ce",
+      "bytes": 1070
+    },
+    {
+      "name": "search-vox-exact",
+      "url": "https://github.com/search?q=%22remotion%22%20%22vox%22&type=repositories",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/search-vox-exact.txt",
+      "sha256": "3885b72bd4e51cac893cd235520d4296decab06ccdf793e6f81ac93c844291cc",
+      "bytes": 267367
+    },
+    {
+      "name": "search-book-exact",
+      "url": "https://github.com/search?q=%22remotion%22%20%22book%22&type=repositories",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/search-book-exact.txt",
+      "sha256": "5e1191577a2d0ddb7871e5c6f198360f40de5c8b9988aebd2e1774056c447c31",
+      "bytes": 271873
+    },
+    {
+      "name": "swift-timeline",
+      "url": "https://raw.githubusercontent.com/zz41354899/SwiftClip/HEAD/remotion/Timeline.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/swift-timeline.txt",
+      "sha256": "b5d2dff48c18d18072e46e5dbdf2321b248934337abcce5f6aba2df5363beba0",
+      "bytes": 6436
+    },
+    {
+      "name": "swift-product",
+      "url": "https://raw.githubusercontent.com/zz41354899/SwiftClip/HEAD/remotion/ProductCard.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/swift-product.txt",
+      "sha256": "00fae9405ef1891c5db1ca9cd4b9b45ed92d4cb8315122426cc56dd14ecee30f",
+      "bytes": 2357
+    },
+    {
+      "name": "shot-paper-card",
+      "url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/HEAD/references/shots/paper-craft-moves.md",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/shot-paper-card.txt",
+      "error": "curl: (22) The requested URL returned error: 404\r\n"
+    },
+    {
+      "name": "shot-timeline-card",
+      "url": "https://raw.githubusercontent.com/Vincentwei1021/video-shotcraft/HEAD/references/shots/timeline-travel.md",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/shot-timeline-card.txt",
+      "error": "curl: (22) The requested URL returned error: 404\r\n"
+    },
+    {
+      "name": "vellum-root",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/Root.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-root.txt",
+      "sha256": "e487aa5d071525d7b3216c1fdf75b8adaa3afbd5074658e82aa4d7790f4f2b80",
+      "bytes": 2594
+    },
+    {
+      "name": "vellum-book",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/video/BookVideo.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-book.txt",
+      "sha256": "c2499e33c372cacff3c446e1b3a08e494459866026b6334bb238e949b0d7e5f8",
+      "bytes": 2314
+    },
+    {
+      "name": "vellum-project",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/examples/book-demo/project.json",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-project.txt",
+      "sha256": "ec1a55333b51b04a948c1c7c2d503807c70162390a0eb21e9432e5f5c0cbe6a1",
+      "bytes": 1352
+    },
+    {
+      "name": "reels-readme",
+      "url": "https://raw.githubusercontent.com/htlin222/vox-styled-reels/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/reels-readme.txt",
+      "sha256": "867320efe242304f560edf5c16a481505ed7672e07245e916bfb28ba9a217cf5",
+      "bytes": 4733
+    },
+    {
+      "name": "reels-license",
+      "url": "https://raw.githubusercontent.com/htlin222/vox-styled-reels/HEAD/LICENSE",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/reels-license.txt",
+      "error": "curl: (22) The requested URL returned error: 404\r\n"
+    },
+    {
+      "name": "starter-readme",
+      "url": "https://raw.githubusercontent.com/lyyilin/vox-video-starter/HEAD/README.md",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/starter-readme.txt",
+      "sha256": "3139ec462ae2fc593c8064b2f3d22920f36c93e3f188ff0df8020033cbd05b14",
+      "bytes": 7222
+    },
+    {
+      "name": "starter-license",
+      "url": "https://raw.githubusercontent.com/lyyilin/vox-video-starter/HEAD/LICENSE",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/starter-license.txt",
+      "error": "curl: (56) schannel: server closed abruptly (missing close_notify)\r\n"
+    },
+    {
+      "name": "santmun-readme",
+      "url": "https://raw.githubusercontent.com/santmun/video-vox/HEAD/README.md",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/santmun-readme.txt",
+      "error": "curl: (56) schannel: server closed abruptly (missing close_notify)\r\n"
+    },
+    {
+      "name": "santmun-license",
+      "url": "https://raw.githubusercontent.com/santmun/video-vox/HEAD/LICENSE",
+      "exitCode": 1,
+      "snapshot": ".tmp/vox-template-research/santmun-license.txt",
+      "error": "curl: (22) The requested URL returned error: 404\r\n"
+    },
+    {
+      "name": "shot-dir",
+      "url": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/shot-dir.txt",
+      "sha256": "6e80f62c36b18e89f35b6a3b91b833fbda6452f60240b7a0faae22a04d36e981",
+      "bytes": 247983
+    },
+    {
+      "name": "starter-license-raw",
+      "url": "https://github.com/lyyilin/vox-video-starter/raw/refs/heads/main/LICENSE",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/starter-license-raw.txt",
+      "sha256": "34eb04e73656db4ee3e0fbc337edaad77d1ac200b5a4f257509ab16f9c8f3a96",
+      "bytes": 1087
+    },
+    {
+      "name": "vellum-identity",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/video/components/BookIdentity.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-identity.txt",
+      "sha256": "162a6d704e19fd6b79da1b85e9e6e92afc1ea1c4a1eff68f8e8532c8a67abd56",
+      "bytes": 1628
+    },
+    {
+      "name": "vellum-schema",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/schema.ts",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-schema.txt",
+      "sha256": "bbb257763c36a303461449916702d7128da4d3bb4e6750c8bcb7280ea14cdd7c",
+      "bytes": 4622
+    },
+    {
+      "name": "vellum-background",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/video/components/BackgroundScene.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-background.txt",
+      "sha256": "f32a04c5e0d5b94d734cfda4d055fd52358b3e3a21b689b8cc1610b5ab70c039",
+      "bytes": 2850
+    },
+    {
+      "name": "vellum-captions",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/video/components/CaptionLayer.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-captions.txt",
+      "sha256": "ce8b4306e15acf8654d8aea60f90171798040e30a4d27f519c7920188b2e354a",
+      "bytes": 1178
+    },
+    {
+      "name": "vellum-texture",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/video/components/TextureLayer.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-texture.txt",
+      "sha256": "995fd502e2bf735af8af57b2771e6e2b8a920c5b0708883ce7ab0020b9d4825d",
+      "bytes": 597
+    },
+    {
+      "name": "vellum-frame",
+      "url": "https://raw.githubusercontent.com/SilentFleetKK/vellum-reel/HEAD/src/video/components/VellumFrame.tsx",
+      "exitCode": 0,
+      "snapshot": ".tmp/vox-template-research/vellum-frame.txt",
+      "sha256": "1ee2ad405224ac1f75796a99687bcaa38cb05e6331787accc9b386cad1b627d5",
+      "bytes": 1334
+    }
+  ]
+}

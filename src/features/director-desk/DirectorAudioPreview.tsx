@@ -3,6 +3,7 @@ import { productionAudioClipGainAtTime, type ProductionAudioFadeEnvelope } from 
 
 export interface DirectorPreviewAudioClip {
   id: string;
+  assetVersionId?: string;
   url: string;
   /** Project-global milliseconds, matching persisted timeline clips. */
   startMs: number;

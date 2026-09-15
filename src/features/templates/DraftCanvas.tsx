@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import type { DraftTemplate, DraftTextBorder } from '../../shared/types';
-import { draftFontCssFamily } from '../../shared/templates';
+import { draftFontCssFamily, draftTemplateGuides } from '../../shared/templates';
 
 export type DraftCanvasLayer = 'image' | 'title' | 'subtitle' | 'caption' | 'disclaimer';
 export type DraftImageEditTarget = 'image-frame' | 'image-media';
@@ -249,10 +249,10 @@ export function DraftTemplatePreview({
   captionText?: string;
   disclaimerText?: string;
 }) {
-  const titleSize = draftPreviewFontSize(template.title.fontSize, compact, 0.28, 9);
-  const subtitleSize = draftPreviewFontSize(template.subtitle.fontSize, compact, 0.28, 7);
-  const captionSize = draftPreviewFontSize(template.caption.fontSize, compact, 0.42, 7);
-  const disclaimerSize = draftPreviewFontSize(template.disclaimer.fontSize, compact, 0.42, 6);
+  const titleSize = draftPreviewFontSize(template.title.fontSize);
+  const subtitleSize = draftPreviewFontSize(template.subtitle.fontSize);
+  const captionSize = draftPreviewFontSize(template.caption.fontSize);
+  const disclaimerSize = draftPreviewFontSize(template.disclaimer.fontSize);
   return (
     <div className={compact ? 'draft-preview-mini' : 'draft-preview-large'} data-media-canvas="draft-canvas" style={draftTemplateCanvasStyle(template)}>
       <DraftFrameChrome template={template} />
@@ -320,10 +320,10 @@ export function DraftTemplatePreview({
             ...draftTextLayerStyle(template.caption, captionSize, template.caption.bold ? 700 : 500),
             backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
             borderRadius: `${template.caption.background.roundRadius * 24}px`,
-            padding: compact ? '2px 8px' : '4px 10px',
+            padding: '1.25cqw 3.125cqw',
           }}
         >
-          {captionText ?? '字幕预览'}
+          {captionText ?? draftTemplateGuides[template.id]?.captionExample ?? '字幕预览'}
         </DraftCanvasText>
       ) : null}
       {template.disclaimer.visible ? (
@@ -564,10 +564,10 @@ export function EditableDraftCanvas({
               ...draftTextLayerStyle(template.caption, draftPreviewFontSize(template.caption.fontSize), template.caption.bold ? 700 : 500),
               backgroundColor: colorWithAlpha(template.caption.background.color, template.caption.background.alpha),
               borderRadius: `${template.caption.background.roundRadius * 24}px`,
-              padding: '4px 10px',
+              padding: '1.25cqw 3.125cqw',
             }}
           >
-            字幕预览
+            {draftTemplateGuides[template.id]?.captionExample ?? '字幕预览'}
           </DraftCanvasText>
         </DraftCanvasLayerBox>
       ) : null}
@@ -910,7 +910,7 @@ export function colorWithAlpha(color: string, alpha: number): string {
 }
 
 export function draftTextStrokeStyle(border?: DraftTextBorder): React.CSSProperties {
-  if (!border || border.width <= 0 || border.alpha <= 0) return {};
+  if (!border || border.width <= 0 || border.alpha <= 0) return { WebkitTextStroke: '0px', textShadow: 'none' };
   const color = colorWithAlpha(border.color, border.alpha);
   const previewStrokeWidth = `clamp(1px, ${Number((border.width / 50).toFixed(4))}cqw, 4px)`;
   return {
@@ -937,8 +937,7 @@ export function draftTextLayerStyle(
   };
 }
 
-export function draftPreviewFontSize(fontSize: number, compact = false, compactScale = 0.28, compactMinimum = 7): React.CSSProperties['fontSize'] {
-  if (compact) return Math.max(compactMinimum, fontSize * compactScale);
+export function draftPreviewFontSize(fontSize: number): React.CSSProperties['fontSize'] {
   return `${Number((fontSize / 1.8).toFixed(4))}cqw`;
 }
 

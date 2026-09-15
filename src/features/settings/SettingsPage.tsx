@@ -21,6 +21,8 @@ import type { ApplyMutationResult, RendererAppState as AppState } from "../../ap
 import { siliconFlowSpeechToTextBaseUrl, siliconFlowSpeechToTextModels } from "../../shared/editorial-options";
 import { ImageProfileManager, LlmProfileManager, TtsProfileManager } from './ProviderProfileManagers';
 import { MinimaxCloneVoiceManager } from './MinimaxCloneVoiceManager';
+import { ProviderPortalLinks } from './ProviderPortalLinks';
+import { providerKeyPortals } from '../../shared/provider-portals';
 import {
   ConfigInput,
   ConfigNumberInput,
@@ -253,7 +255,6 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     }, { onError: (error) => setModelListStatus((current) => ({ ...current, [key]: `[fail] ${error.message}` })) });
   }
   async function refreshVolcengineSpeakers(profile: TtsProviderProfile) {
-    const volcengine = ttsProfileVolcengine(profile);
     const accessKeyIdId = profileSecretId('tts', profile.id, 'volcengine/accessKeyId');
     const secretAccessKeyId = profileSecretId('tts', profile.id, 'volcengine/secretAccessKey');
     const accessKeyId = secrets.reference(accessKeyIdId);
@@ -263,7 +264,6 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
       return;
     }
 
-    const resourceId = (volcengine.resourceId ?? '').trim() || 'seed-tts-2.0';
     const limit = 100;
     await settingsAction.run(async () => {
       setLoadingVolcengineSpeakers(true);
@@ -274,24 +274,31 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           secretAccessKey: secretAccessKey.value,
           accessKeyIdSecretId: accessKeyId.secretId,
           secretAccessKeySecretId: secretAccessKey.secretId,
-          resourceId,
           limit,
         };
         const first = await api.listVolcengineSpeakers({ ...request, page: 1 });
+        if (first.status === 'fail') {
+          setVolcengineSpeakerStatus(`[fail] ${first.detail}`);
+          return;
+        }
         let speakers = mergeVolcengineSpeakers([], first.speakers);
         const total = first.total || speakers.length;
-        if (first.status !== 'fail' && total > speakers.length) {
+        let pageError = '';
+        if (total > speakers.length) {
           const pageCount = Math.min(Math.ceil(total / limit), 20);
           for (let page = 2; page <= pageCount; page += 1) {
             const next = await api.listVolcengineSpeakers({ ...request, page });
-            if (next.status === 'fail' || !next.speakers.length) break;
+            if (next.status === 'fail') { pageError = next.detail; break; }
+            if (!next.speakers.length) break;
             speakers = mergeVolcengineSpeakers(speakers, next.speakers);
             if (speakers.length >= total) break;
           }
         }
         setVolcengineSpeakers(speakers);
         const loadedText = speakers.length > first.speakers.length ? `，已合并 ${speakers.length}/${total} 个` : '';
-        setVolcengineSpeakerStatus(`[${first.status}] ${first.detail}${loadedText}`);
+        setVolcengineSpeakerStatus(speakers.length < total
+          ? `[warn] 已加载 ${speakers.length}/${total} 个音色，列表尚未加载完整。${pageError}`
+          : `[${first.status}] ${first.detail}${loadedText}`);
       } finally {
         setLoadingVolcengineSpeakers(false);
       }
@@ -508,17 +515,18 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               models={modelLists.llm}
               loadingModels={loadingModelList === 'llm'}
               modelStatus={modelListStatus.llm}
-              saving={savingConfig}
+              saving={savingConfig || testingConfig}
               secrets={secrets}
               onChange={setSettingsDraft}
               onSelectedProfileIdChange={setSelectedLlmProfileId}
               onActivate={activateLlmProfile}
-              onClearModels={() => clearProviderModels('llm')}
+              onClearModels={() => { clearProviderModels('llm'); setConfigTestResult(''); }}
               onRefreshModels={(profile) => {
                 const secret = secrets.reference(profileSecretId('llm', profile.id, 'apiKey'));
                 return refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: secret.value, protocol: profile.protocol, secretId: secret.secretId }, profile.model);
               }}
             />
+            <ProviderPortalLinks links={providerKeyPortals('llm', selectedLlmTestConfig)} onOpen={api.openProviderPortal} />
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
@@ -541,6 +549,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               onClearModels={clearProviderModels}
               onRefreshModels={refreshProviderModels}
             />
+            <ProviderPortalLinks links={providerKeyPortals('image', selectedImageTestConfig)} onOpen={api.openProviderPortal} />
           </SettingsCard>
         ) : null}
         {section === 'video' ? (
@@ -597,6 +606,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                   ))}
                 </div>
               </Field>
+              <ProviderPortalLinks links={providerKeyPortals('video', draft)} onOpen={api.openProviderPortal} />
             </SettingsCard>
             <SettingsCard title="自动化与预算" status={draft.video.automation.mode === 'full-auto' ? '全自动' : '受控'}>
               <Segmented
@@ -645,6 +655,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               onActivate={activateTtsProfile}
               onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}
             />
+            <ProviderPortalLinks links={providerKeyPortals('tts', selectedTtsTestConfig)} onOpen={api.openProviderPortal} />
             <MinimaxCloneVoiceManager
               api={api}
               applyState={applyState}
@@ -730,6 +741,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                 onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
               />
             ) : null}
+            <ProviderPortalLinks links={providerKeyPortals('speechToText', draft)} onOpen={api.openProviderPortal} />
           </SettingsCard>
         ) : null}
         {section === 'jianying' ? (

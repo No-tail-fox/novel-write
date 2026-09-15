@@ -12,11 +12,13 @@ describe('director multi-track audio render projection', () => {
         subtitleCues: [{ id: 'cue-1', startMs: 0, endMs: 1_000, text: '对白' }],
         shots: [{
           id: 'shot-1', beatId: 'beat-1', durationMs: 1_000, renderStrategy: 'deterministic-layers', scenePrompt: 'scene', motionPrompt: 'motion',
-          layers: [{ id: 'layer', label: '画面', kind: 'background', source: 'generated-image', zIndex: 0, depth: 0, assetVersionId: 'image', motion: [{ atMs: 0, x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 }] }],
+          layers: [{ id: 'layer', label: '画面', kind: 'background', source: 'generated-image', zIndex: 0, depth: 0, assetVersionId: 'image', motion: [{ atMs: 0, x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 }] },
+            { id: 'subject-layer', label: '主体', kind: 'subject', source: 'generated-image', zIndex: 1, depth: .2, assetVersionId: 'subject', motion: [{ atMs: 0, x: .5, y: .5, scale: 1, rotation: 0, opacity: 1 }] }],
           camera: [{ atMs: 0, x: 0.5, y: 0.5, zoom: 1 }], subtitleCueIds: ['cue-1'], voiceAssetVersionId: undefined,
         }],
       }],
       assets: [{ id: 'image', assetId: 'image', kind: 'image', localPath: 'C:/image.png', createdAt: draft.createdAt },
+        { id: 'subject', assetId: 'subject', kind: 'image', localPath: 'C:/subject.png', createdAt: draft.createdAt },
         { id: 'voice', assetId: 'voice', kind: 'audio', localPath: 'C:/voice.wav', createdAt: draft.createdAt }],
       timeline: undefined,
     });

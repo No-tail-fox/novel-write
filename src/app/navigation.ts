@@ -3,6 +3,8 @@ import {
   Clapperboard,
   Circle,
   Code2,
+  MessageCircle,
+  PenLine,
   Flame,
   FlaskConical,
   History,
@@ -53,10 +55,17 @@ export const projectSectionItems: NavigationItem[] = [
   ...productionNavItems,
 ];
 
+export const generationNavItems: NavigationItem[] = [
+  { view: 'image-lab', label: '图片生成', hint: '文生图与参考图', icon: FlaskConical },
+  { view: 'voice-lab', label: '配音生成', hint: '文本配音与音色试听', icon: Mic2 },
+  { view: 'video-lab', label: '视频生成', hint: '文生视频与图生视频', icon: MonitorPlay },
+];
+
 export const assetLabNavItems: NavigationItem[] = [
-  { view: 'image-lab', label: '画图实验室', hint: '分镜图片', icon: FlaskConical },
-  { view: 'voice-lab', label: '配音实验室', hint: '音色试听', icon: Mic2 },
   { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
+  { view: 'copy-studio', label: '文案创作', hint: '搜索、精修与定稿', icon: PenLine },
+  { view: 'conversation-workbench', label: '对话工作台', hint: '讨论与产出', icon: MessageCircle },
+  ...generationNavItems,
 ];
 
 const inspirationNavItems: NavigationItem[] = [
@@ -87,7 +96,7 @@ export const utilityNavItems: NavigationItem[] = [
 
 export const primaryNavGroups: NavigationGroup[] = [
   { id: 'projects', label: '项目', defaultView: 'projects', items: projectSectionItems },
-  { id: 'assets', label: '素材库', defaultView: 'image-lab', items: assetLabNavItems },
+  { id: 'assets', label: '素材库', defaultView: 'person-assets', items: assetLabNavItems },
   { id: 'inspiration', label: '灵感', defaultView: 'hot-board', items: inspirationNavItems },
   { id: 'templates', label: '模板', defaultView: 'prompt-templates', items: templateSystemNavItems },
   { id: 'tasks', label: '任务', defaultView: 'queue', items: taskSectionItems },
@@ -100,19 +109,19 @@ export const primaryNavItems: NavigationItem[] = primaryNavGroups.flatMap((group
 export const sidebarNavGroups: NavigationGroup[] = primaryNavGroups;
 
 export const sidebarNavItems: NavigationItem[] = [...primaryNavItems, ...utilityNavItems];
-export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...primaryNavItems, ...utilityNavItems];
+export const navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems];
 export const taskDetailNavigationItem = { label: '任务详情', hint: '单任务流水线' } as const;
 
 const viewToPrimaryView: Partial<Record<ShellView, ShellView>> = {
   'new-task': 'projects',
+  'conversation-workbench': 'person-assets',
+  'copy-studio': 'person-assets',
   'task-detail': 'projects',
   'editorial-collage': 'projects',
   'motion-comic': 'projects',
   'html-video': 'projects',
   'music-mv': 'projects',
-  'image-lab': 'image-lab',
-  'voice-lab': 'image-lab',
-  'person-assets': 'image-lab',
+  'person-assets': 'person-assets',
   'hot-board': 'hot-board',
   benchmark: 'hot-board',
   'book-selection': 'hot-board',
@@ -159,10 +168,35 @@ export function taskWorkspaceView(taskType: string | null | undefined): Extract<
   return 'task-detail';
 }
 
+export function workspaceReturnViewForNavigation(from: ShellView, to: ShellView, currentReturnView: ShellView): ShellView {
+  if (to === 'new-task') return 'projects';
+  if (!productionNavItems.some((item) => item.view === to)) return currentReturnView;
+  if (from === 'projects' || from === 'new-task' || from === 'history' || from === 'queue') return from;
+  // Switching workspaces or returning from settings must not create a back-button loop.
+  if (from === 'settings' || from === 'task-detail' || productionNavItems.some((item) => item.view === from)) {
+    return currentReturnView;
+  }
+  return 'projects';
+}
+
+export function shellBackView(view: ShellView, returnView: ShellView): ShellView | null {
+  if (view === 'new-task') return 'projects';
+  if (productionNavItems.some((item) => item.view === view) || view === 'task-detail') {
+    return returnView === view ? 'projects' : returnView;
+  }
+  return null;
+}
+
+export function navigationReturnLabel(view: ShellView): string {
+  return `返回${navigationItemForView(view).label}`;
+}
+
 export function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
     projects: '继续最近项目，或按制作类型创建新的视频项目',
     'new-task': '选择制作方式，按步骤建立新的视频项目',
+    'conversation-workbench': '围绕项目资料提问，快速产出脚本、标题和分镜建议',
+    'copy-studio': '检索可信来源，经过多轮精修和赛道强化后送入视频制作',
     'hot-board': '追踪多平台实时热点，筛选后直接带入创作',
     'book-selection': '汇总对标证据与机会评分，把选品简报带入新任务',
     benchmark: '监控抖音、视频号和 B 站对标作品，筛选后进入拆解或选品',
@@ -172,6 +206,7 @@ export function pageSubtitle(view: ShellView): string {
     'task-detail': '查看单个任务的独立执行状态和流水线',
     'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
     'voice-lab': '单独试听豆包与 MiniMax 音色，保存本地试听记录',
+    'video-lab': '输入提示词或参考图，独立生成视频并保存本地记录',
     'music-mv': '按歌词节奏生成音乐 MV 分镜、字幕和剪映草稿',
     'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
     'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',

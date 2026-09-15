@@ -1,0 +1,16 @@
+{
+  "verified_on": "2026-09-15",
+  "repository": "https://github.com/Vincentwei1021/video-shotcraft",
+  "commit": "5e71af35a2daee492dd3ea93e5e8903f32dcd13c",
+  "commit_date": "2026-09-09",
+  "recipe_cards": 157,
+  "gallery_styles": 214,
+  "standalone_demo_tsx": 218,
+  "workbench_eligible_demo_components": 216,
+  "helper_tests_passed": 23,
+  "smoke_list_entries": 75,
+  "full_video_templates": 1,
+  "workbench_build": "blocked at prebuild: Windows symlink EPERM",
+  "render_verification": "not performed",
+  "media_checkout": "sparse checkout excludes media binaries"
+}

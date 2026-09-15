@@ -1,5 +1,58 @@
 # 研究发现
 
+## 2026-09-15 VOX 音画时长与截尾
+
+- 最新真实成片《撒日朗》源语音为 8280／7080／7632／10440ms，规划镜头为 9364／7513／7350／10026ms。后两镜裁掉 282／414ms；最后被裁声音为 -30.45dBFS，仍含可听语音。波形定位各镜开头偏移均为 0ms，MP4 两轨仅差约 15.45ms。
+- 生成入库使用 min(镜头规划时长, 实测语音时长)，导出混音再次限到镜头范围，字幕仍按原规划切换；质量检查同时要求超过 250ms 且 15% 才报错，漏过实际截尾。
+- 按实测语音重排单镜时长、图层与相机关键帧、句级字幕、后续镜头及附属声音偏移，留约 160ms 尾部并对齐到覆盖它的帧。精确人工／识别时间戳只平移，不假冒重新识别；手动音源裁剪保持原样。
+- 旧项目导出前重新解码所选旁白，以 16kHz 单声道 PCM 采样数测长。原 FFmpeg 日志回退只有 0.01s 精度，不能用于逐毫秒旁白校准；新增可选测长参数避免依赖 FFprobe 是否安装。
+- 导出声音超出镜头超过一帧左右（40ms）会被标记为截尾错误并阻止合格成片登记，静音轨保留语速审阅，不误报可听截尾。超过 15 秒的单段旁白要求拆镜，绝不静默裁短。
+- 实测样片两段的起点偏移为 0ms，完整音频及尾部 250ms 相关度均 >0.999；历史隔离副本四段音频全长保留，总时间轴校准为 34166ms。报告见 docs/plans/2026-09-15-vox-audio-sync.md。
+
+## 2026-09-15 VOX 内容标题与动作重复修复
+
+- 根因是分镜规划把“钩子／背景／证据／结论”等结构角色当作原生标签与常驻标题；所有主体又共用同一滑入轨迹。短稿被强分为四段还会把单句拆碎。
+- 每镜独立保存上屏标题，默认从该镜头原文提取完整分句，支持编辑或清空。旧原生角色标签加载时兼容修正，素材与手动关键帧不变；预览、导出共用标题选择逻辑。
+- 五种本地叙事动作：切片入场、聚焦揭示、证据落版、路径推进、并列对比。自动选择使用内容关键词及原文双主体识别，无匹配时轮换；并非调用模型完成导演规划。对比／多证据使用不同素材提示词和各自资产。
+- 动作切换保存既有素材，复制镜头后也能往返切换；已有图片不会因此自动变成新语义，新增主体缺图时仍须补齐。真实视频切换后保留独立关键帧，两条链路和默认本地模式均保留。
+- 实际页面检查还发现宽标题 SVG 超出图层高度遮挡人物，已增加最小尺寸约束；原生标题不再叠加同文常驻标题，VOX/SHOT 技术角标移除。
+- 本地五镜头 MP4 为 1920×1080、12.5 秒；实际解码确认五种轨迹、中文标题、字幕与音轨。夹具素材和测试音，不代表真实主题成片或模型生成质量。证据见 docs/plans/2026-09-15-vox-story-titles-and-motion.md。
+
+## 2026-09-14 VOX 双链路实施
+
+- 新本地镜头由独立背景、透明主体、原生文字构成。主体在纯绿背景单独生图后本地抠绿，校验透明比例与主体完整性；不合格明确失败。动画按镜头时长编排入场、落定、停留、离场，预览与导出使用相同坐标和文字渲染。
+- 图生视频关键帧单独存储，避免背景底板被作为完整场景送进视频模型。模式切换、图片版本恢复、保存重开均保留两套素材；异步结果校验镜头模式、提示词和所选素材。
+- 旧扁平镜头在补齐时升级为独立分层，原图作为视频关键帧保留。旧多素材镜头保留布局，补上空文字占位；不同图层按各自版本恢复，失败不覆盖已成功背景。
+- 完整页面模拟接口验收证实一次本地动作产生两次生图请求，主体独有 cutout 标记，重试只生成缺失主体；两次页面刷新恢复两条链路，无外部请求、无真实数据库写入。
+- 真正的本地渲染器输出 1920×1080、24 fps、4 秒含音轨 MP4，独立主体进入/离开位移约 469/977 像素。文字分行、透明杯柄、中文覆盖、非黑帧、音频检查通过。
+- 实施和限制见 docs/plans/2026-09-14-vox-dual-route-implementation.md；GitHub 调研报告描述的是修复前状态。
+
+## 2026-09-14 VOX 动画缺失调研
+
+- GitHub 公开检索并核对 Alisa0808/vox-director、CK42BB/vox-explainer-skill、liangdabiao/paper-cutout-remotion、Phantomlau3674/voxstylehub-steven 的 skill 与关键源码。
+- paper-cutout-remotion 的 SKILL.md 要求独立背景、后排、主体、前景；cutout.tsx 用 useCurrentFrame 驱动角色的错峰入场、位移、缩放和轻微浮动，背景推进只是辅助。
+- voxstylehub-steven 的 SKILL.md 明确禁止把扁平海报当独立物体动画、把纯缩放当镜头编排，以及仅字幕变化；精确文字、图表和证据由代码绘制，图生视频仅用于不要求精确控制的比喻镜头。
+- 本地已证实：默认图层规划存在，但单张生图只绑定首个视觉层，其他无资产的 SVG 占位层在导出时被跳过；最新成片《撒日朗》共 34.253 秒、4 镜头，实际每镜只有背景图，没有图生视频任务，HTML 与项目记录吻合。
+- vox-director 和 vox-explainer-skill 的默认流程均有真实图生视频阶段；前者另有 Ken Burns 降级脚本和仍含特定案例硬编码的本地图层实现，不能把它描述成任意主题通用全自动引擎。
+- 本地已有 living-poster 图生视频入口；hybrid 尚未完成。现有 renderer 确实逐帧 seek/capture，应优先补齐素材和动作而非误判成捕帧失败。详见 docs/plans/2026-09-14-vox-motion-skill-research.md。
+
+## 2026-09-14 VOX 创作方向
+
+- AI 创作原先仅向 buildDirectorCopyAssistRequest 传标题和时长，AI 修改另带原文；已有 research:compose-copy 支持 extraRequirements 并传入真实 LLM 用户消息，无需新增后端协议。
+- 新建 VOX 内容结构页标题下增加“AI 创作要求”（可选、多行、8000 字符），明确受众、叙事角度、风格和包含/避免内容。两种 AI 操作共同读取，与原始文案分离。
+- 要求加入 useWorkspaceDraft，只有要求也会提示保存；旧草稿缺字段使用空值。请求途中要求改变会触发既有过期结果保护，不覆盖新内容。
+- 证据 `.artifacts/director-copy/report.json`：25 项浏览器检查，含两种创作页面既有迟到响应回归及 VOX 要求传输、修改、失败重试、取消/保存/重载/步骤往返，运行错误 0、付费调用 0。
+
+## 2026-09-14 封面同步与音色列表
+
+- 封面根因：上次只接了前端字段，摘要 SQL 未包含 ordinary_cover_asset_json，自动封面位于 pipeline/state.json 的 assets.cover。因此真实项目仍显示占位。
+- 只读确认用户“抗炎……”与“武则天回宫”均已有 cover-image.png。没有修改用户数据库、图片或密钥。
+- 摘要现增加轻量 projectCover（绝对路径、文件修订值）；读取已有自动封面、手动封面，以及 HTML pipeline 投影的 coverAsset.path。分页摘要不携带完整正文或 pipelineData，缺失/损坏产物不会阻止列表加载。
+- 隔离 Electron 验证真实图片、新封面随 task delta 自动出现、同路径替换刷新缓存、重载保留、1440/1040 与深浅主题。最终证据 `.artifacts/project-cover/report.json`。
+- 官方 Python SDK 确认 ListSpeakers 的 Limit 为 str、Page 为 int、ResourceIDs/VoiceTypes 可选，响应为 Speakers/Total。来源 https://raw.githubusercontent.com/volcengine/volcengine-python-sdk/master/volcenginesdkspeechsaasprod/models/list_speakers_request.py 。
+- 设置“加载全部音色”不再强制把合成 Resource ID 用作列表筛选；显式调用仍可筛选资源，不改变合成配置。400 与 HTTP 200 中的业务错误均保留错误码和 RequestId；首批失败保留已有选项，后续失败提示部分加载。
+- 没有使用真实 IAM 凭据调用接口，不能断言历史 400 已在线复现或完全消除。官方网页静态抓取无正文，GitHub API 受共享 IP 限流，官方 SDK raw 可读。
+
 ## 2026-09-12 导演台概念设计约束
 
 - Image 2.5 已成功生成两张概念图：方案一突出大预览与右侧属性，方案二突出六镜头分镜总览；两者均符合请求尺寸且未本地缩放。生成图的中文文本存在少量字符质量风险，正式 UI 文本必须由 React/CSS 渲染，不直接使用概念图作为产品资产。
@@ -477,6 +530,72 @@
 - Firecrawl CLI 已安装但未认证，且本地缺少其引用的 `firecrawl-search` 子技能；不触发登录流程，转用可用的官方 Git 仓库与 Jina Reader。
 - `git ls-remote` 已确认 `https://github.com/openai/skills.git` 的 `main` 分支可访问，故 GitHub API 403 只影响清单接口，不阻断后续安装。
 
+## 2026-09-13 工作区公共返回导航
+
+- 用户截图指出上次修复未覆盖全部制作类型：shellBackView 刻意排除了 editorial-collage/motion-comic，而 DirectorCreateWizard 仍渲染正文返回。本轮统一采用 productionNavItems 判定，删除这些重复入口并扩大截图测试至全部四类。
+- HTML 自动/精细编辑共用外部 AppShell；MV 创建页无返回，已有 MV 项目实际进入 TaskDetailPage。
+- 返回归属 shell，可覆盖懒加载/错误/空态；移除详情内重复按钮，沿用 IconButton、Tooltip 与 navigate 的未保存拦截。
+- 导航原先把来源重置为 history；现在记录创建入口，MV 创建到详情显式传递来源，设置往返单独保留任务列表来源。
+- 实际截图发现 HTML 模式工具栏被 `.hv-studio[data-has-task="true"] .hv-studio-canvas-heading` 隐藏；恢复后必须给预览模式补齐内边距，有状态提示时独立分配行高。
+- 可视编排加载失败时直接输出 bridge 编码文本，复用 normalizeAppError 后显示可读错误并保持在预览区域内。本次空态验证不代表真实 HTML 媒体生成已验证。
+
+## 2026-09-13 模板图片与文字层级
+
+- 文字自身虽然有 z-index:2，其外层 text-layer 的 transform 创建了 z-index:auto 层叠上下文，整体仍落在图片 z-index:1 下；图片变换框 3/4 同时拦截所有文字鼠标命中。
+- 将文字外层整体设为 4、图片变换框 2/3，图片仍为 1；editable-draft-canvas 使用 isolation:isolate 约束编辑器内部层级。未修改模板预览、导出顺序或用户数据。
+- 修复前四类文字中心都命中 image-frame；修复后两种图片选中状态下文字选中、拖动、缩放及面板展开通过。原模板副标题与字幕位置重叠，QA 通过实际拖动先分开，不将文字互相重叠误判为图片遮挡。
+
+## 2026-09-13 公共控件悬停闪屏
+
+- 已在浏览器复现整屏空白：FluentProvider 默认 applyStylesToPortals=true，会将 storydream-provider 类复制给浮层。浮层 absolute/top:0/z-index:1000000 与根容器 height:100%/不透明背景组合，遮挡页面和悬停目标，导致 tooltip 显示/隐藏反复切换。
+- 修复前返回按钮 237 帧中 112 帧被全屏浮层遮挡；根节点 visibility、主题和路由始终不变。导航预加载和普通创作卡片未复现该问题。
+- 修复仅隔离 Provider 根样式，仍由 Fluent 传递 themeClassName/主题变量；reduced-motion 规则显式覆盖 data-portal-node。
+- 最终矩阵共 126 项悬停、24,363 帧，整屏遮挡/根节点隐藏/布局移动/提示反复关闭/主题变量不一致均为 0。浏览器非悬停区域像素差异为 0，Electron 最大为 0.1234%，低于 0.5% 检查阈值。
+- 证据：`.artifacts/hover-stability/before` 记录原始整屏遮挡，`browser-matrix` / `electron-matrix-final` 记录最终矩阵；`electron-overlays` 单独等待有限动画结束后复核菜单和弹窗，未关闭正常动画。
+
+## 2026-09-13 素材库入口与操作反馈
+
+- 主导航素材库 defaultView 指向 image-lab；browser-fallback 创建/重命名/删除/导入为空实现，创建成功提示后列表仍为 0，已通过实际浏览器复现。
+- 桌面端已有完整人物素材文件存储和 IPC，不建立另一套浏览器存储。预览显式提示桌面端依赖，未支持的变更接口拒绝请求。
+- deletePerson 的引用查询在异步错误处理之外，查询失败会形成无反馈操作；纳入既有 useAsyncAction 并在忙碌时锁定选择。
+- 截图发现导入状态在图库下方、紧凑工具栏会挤断按钮文字。状态和错误移至图库前，工具栏按组换行；按钮 Fluent span 显式继承控制本身文字颜色，避免旧 panel-title-row span 规则覆盖主按钮对比色。
+- 最终 217 项测试和生产构建通过；17 张浏览器/Electron 截图覆盖深浅主题及 1440/1040/390 三宽度。实际图片逐字节验证导入、重命名、撤销恢复和重载持久性，运行错误/付费调用均为 0。
+
+## 2026-09-13 Gemini 配置 JSON 探测
+
+- 本机已启用自定义 OpenAI 兼容 Gemini 档案，baseUrl 为用户指定服务，模型 gemini-3.7-flash-high 存在于实时模型列表。没有修改或输出已存密钥。
+- 两个协议的配置测试均固定 max_tokens:20 / 15 秒，忽略停止原因；OpenAI 会把不完整 JSON 提示为不遵守 JSON 模式，Anthropic 探测请求工具却只读文本。
+- 真实接口旧/新预算两次均返回 {"ok":true}、finish_reason=stop；服务返回的思考消耗分别为 81/64 tokens，代理对预算的计数不能仅按可见 JSON 推断。本次未复现原错误，不断言历史请求的根因已被实证。
+- 保留严格 JSON 解析，测试阶段使用 1024 token / 最多 60 秒（尊重更短配置超时），不自动补齐残缺 JSON，不改生产生成参数或关闭 JSON 模式。
+- 修改后的 testConfiguredLlm 经项目真实网络适配器调用同一模型，4114 ms 通过。当前配置无需替换，原始残缺响应只能判断内容不完整，不能证明模型不支持 JSON。
+- 共享探测同时支持 max_completion_tokens 去重、强制非流式响应、校验 ok:true 和 Anthropic return_json 工具输出。相关回归覆盖正常、截断、缺少闭合括号、空响应、错误标记和超时。
+
+## 2026-09-13 项目列表统一使用封面
+
+- 项目卡片原先只读取 `ordinaryCoverAsset.path`，没有生成正式封面时始终显示占位图。
+- 新增 `projectCoverPath` 统一解析正式封面与已有参考图；卡片标注 `data-cover-source`，便于后续把 HTML/MV/漫剧的专属封面接入同一解析入口。
+- 当前本地预览没有可直接复用的项目数据，已通过解析单测验证正式封面优先、参考图兜底和空态；未生成或修改用户项目封面文件。
+
+## 2026-09-13 Provider Credential Portals
+
+- Added a shared footer for LLM, image, video, TTS, and transcription settings. Links follow the currently selected profile, including inactive profiles, instead of only the active runtime supplier.
+- Volcengine speech credentials, legacy application access tokens, and IAM Access Keys are different credentials; speech links use the speech console, image access-key links use IAM, and recognized Ark video endpoints use the Ark API Key console.
+- MiniMax's old key-page URL redirects to https://platform.minimax.cn/console/access?tab=api-keys. Anthropic redirects to https://platform.claude.com/settings/keys and shows the API keys login page. SiliconFlow's official quickstart links to https://cloud.siliconflow.cn/account/ak.
+- Volcengine speech/IAM destinations reach official login flows; Ark reaches its console shell. OpenAI's API keys page is blocked with HTTP 403 in this environment, so its signed-in content was not verified. Jina anonymous reads failed; official public URLs were fetched directly without credentials or login actions.
+- Unknown custom API hosts link only to their public HTTPS origin, not guessed key paths or protocol vendors. Paths, queries, fragments, credentials, local addresses, and custom ports cannot be forwarded by the provider portal IPC boundary.
+- Desktop uses trusted provider:open-portal IPC plus the existing public URL network policy and shell.openExternal. Browser preview opens a noopener/noreferrer tab. The footer never persists settings or accesses API keys.
+- Evidence: `.artifacts/provider-portals/report.json`, 12 screenshots, no runtime errors, contrast >=4.5 and stable hover geometry; 269 focused tests and build passed. Existing typecheck and music-mv:update IPC baseline failures remain.
+
+## 2026-09-13 LLM Protocol Selection
+
+- Custom providers previously reset to Chat Completions during both settings and persisted config normalization. Supplier identity is now independent of the selected protocol; custom Anthropic remains custom.
+- Added Chat Completions (`openai`, legacy value), Responses (`responses`), and Anthropic Messages (`anthropic`). Official OpenAI also exposes Chat/Responses.
+- Responses follows the official Create Response reference: `/v1/responses`, `input`, `text.format`, `max_output_tokens`, REST message `output_text` parts, non-streaming/stateless requests. Incomplete, failed, refused, and empty results cannot become successful generation.
+- Source: https://developers.openai.com/api/reference/resources/responses/methods/create/ (fetched to `.artifacts/responses-api-reference.html`).
+- Frame vision had a separate hard-coded Chat request. It now routes Responses images as input_image and Anthropic images as base64 source blocks.
+- QA uses production IPC/config persistence and an isolated secret vault with outbound provider responses stubbed. This verifies protocol wiring, not whether moeapi.cloud supports Responses. The user's existing Chat/Gemini profile is unchanged.
+- Final evidence: `.artifacts/llm-protocol/report.json`, 8 screenshots, 425 focused tests passed, production build passed. Unrelated IPC VOX create parameter mismatch and the previously recorded typecheck failures remain.
+
 ## 2026-09-12 预览优先导演台
 
 - 选定概念图的关键不是替换媒体，而是收紧信息层级：顶部项目栏与四阶段 rail 独立，中部 preview 获得最大稳定空间，检查器只显示当前镜头上下文。
@@ -484,3 +603,94 @@
 - 真实 Electron 截图显示旧版中央滚动会因选中胶片条而把预览标题顶出视野；选中镜头后改为仅调整胶片条横向 scrollLeft。
 - 旧 QA 重载后直接查找历史按钮会失败，因为历史是“任务”主导航下的二级项；脚本现在先切换任务主入口再进入历史。
 - 竖屏预览在紧凑窗口的最小高度/宽度已提高，但保留画幅比例和可滚动检查器；空态仍不伪造媒体。
+
+### 2026-09-14 抖音草稿模板
+当前三个内置模板以比例命名；默认竖屏副标题 y=-0.21667、字幕 y=-0.21510，中心点基本重叠。SQLite 只在模板表为空时初始化，新增内置模板需要幂等补齐。工作区含用户既有未提交改动，采用局部编辑。
+
+
+### 2026-09-14 Standalone generation workbenches
+Image/voice routes and APIs are intact but only visible under the active assets group. No independent video-lab exists in current or Git history; cloud video is coupled to VOX shots. Generic video-provider.ts supports a reusable standalone backend.
+
+抖音一手视觉已查看：12 张官方作品封面、3 张作品详情预览帧。观察到上方短标题与下方字幕分离、主体面部留白、图文书名/作者/标签分段留白。并未连续播放视频，不据此宣称热度排行。证据由调研子任务保存至 tmp/douyin-template-research。
+
+
+Generation navigation now has a persistent group with image-lab, voice-lab and new video-lab. Video uses the shared provider through an independent runtime with per-record disk persistence. It does not require creating a project. No prior standalone video page was found in Git history.
+
+### 2026-09-14 草稿模板结论
+静态一手证据支持信息分区和短句呈现，五种布局为产品适配设计，不宣称抖音热门排行。新模板按 9:16 媒体任务设计，跨比例任务仍沿用既有比例匹配规则；本次没有改变 task.ratio 或媒体生成。剪映图片 Y 轴与编辑器方向相反，已补转换及上中下取景回归；无描边文字清除继承的黑色阴影，纸底样式保持干净。
+
+
+### 2026-09-14 B站横屏模板
+用户要求补充 B站风格横屏模板。当前五种新模板均为 9:16，16:9 仍只有旧基础模板。本轮保留上一轮改动，复用内置模板幂等补齐机制；新增真实 1920x1080 构图，避免把竖屏坐标机械拉宽。
+
+
+Generation workbench verification: route preference IPC had a second route allowlist; new video route now persists using shared SHELL_VIEWS. Video editor and results scroll independently so generation controls do not move preview out of view. Production QA exercises success, failed provider response, exactly-one submission per click, record reload and draft leave guard through a dummy provider response and real normalization. User confirmed standalone video clips.
+
+B站一手证据已实看：5个确认16:9作品、15张播放进度预览帧（人物口播、数码评测、左右图解、纪实、Excel教程）。主体横向展开、底部短字幕和左右图解有直接证据；书摘纸底分栏是按同样层级原则做的产品延伸，未声称照搬作者模板。参考文档 docs/plans/2026-09-14-bilibili-landscape-template-references.md。
+
+本轮横屏工作覆盖前述“跨比例任务仍沿用既有比例匹配规则”的限制：发现任务切换模板只更新 templateId，导致导出按旧 task.ratio 回退到默认模板。桌面 IPC 和浏览器实现现同时更新 templateId 与 template.image.ratio；仅将草稿打包步骤标为待更新。五种横屏模板均有选择、重载和导出参数回归，清晰教程使用 contain 保留完整图片，未验证真实用户项目的剪映编辑器播放。
+
+
+User requested all three generation tools under the asset library. Removed the independent persistent generation block; assets now contains person-assets, image-lab, voice-lab and video-lab, with shared selection and breadcrumb ownership.
+
+## 2026-09-14 图文与文章创作设计
+当前新建有五类视频流程，无图文或文章独立创作路由。沿用 StoryDream 的共享控件、Lucide 图标、语义色和三栏工作台。平台设为创作预设，内容类型设为入口。
+
+设计完成：docs/design/content-studio/design.md；交互单文件原型：docs/design/content-studio/index.html。图文分离封面文字与发布标题；文章分离标题、摘要与段落。五个平台版本互相独立，原型可手动编辑、排序、预览、浏览器保存与 HTML/Markdown 导出。
+
+公开平台依据见 docs/plans/2026-09-14-content-platform-references.md；四平台最新字数/图片数量/尺寸上限未核实，不写硬规则。头条文章与微头条分开；抖音公开资源还存在文章入口，因此内容形态与平台必须解耦。
+
+正式接入需同时增加路由、创作类型、项目筛选、IPC 枚举、storage 与重开映射；现有研究写作 API 不具备结构化页面/文章块与引用契约。文章原型是段落编辑控件，不宣称完成富文本编辑器。
+## 2026-09-15 素材库文案创作工作台
+
+- 素材库当前包含人物素材、图片生成、配音生成、视频生成；用户要求新增更完整的独立文案创作入口。
+- 仓库已有网页搜索后端、研究资料数据结构、短视频文案生成、普通视频任务预审/改写流程，可复用而非另建重复 API。
+- 用户期望的主链路是：检索信息来源并选择证据 → 形成初稿 → 几轮定向精修 → 增加特色赛道约束再修改 → 定稿回传视频生成位置。
+- “跳过预审”应属于文案定稿交接到视频制作的显式决策；其语义是已在文案工作台完成事实/风格把控，创建下游任务时从改写或后续阶段开始。
+- `storydream-ui` 要求库页面使用搜索/筛选工具栏 + 内容/检查器布局，稳定 ID 同步选择，不使用 feature 页原生表单控件。
+- 交接无需新增 IPC 或任务字段：现有 `NewTaskDraftSnapshot.values.publishMode` 已支持 `review-rewrite` / `direct-copy`，后者就是跳过预审的权威语义。
+- 文案工作台使用现有 `searchWebSources` 与 `composeResearchCopy`；精修轮次只把当前版本作为来源且关闭内置知识，避免赛道强化阶段无依据补充新事实。
+- Electron 实测布局：1440×900 为 300 / 596 / 320 三栏；1040×720 为 348 / 618 上栏加底部三段检查器，无页面或工作区横向溢出。
+
+
+## 2026-09-15 Remotion 模板初步发现
+- 官方 templates 现包含 Electron、Prompt to Motion Graphics SaaS Starter Kit、Prompt to Video、Audiogram、Music Visualization、TikTok、Code Hike、3D、Overlay 等；Watercolor Map 属于付费模板。
+- GitHub 检索发现 Vincentwei1021/video-shotcraft、reactvideoeditor/remotion-templates；描述和许可还需核验。
+- 用户希望模板与代码生成可以分开选择，原“5 个模板”不足；正在确认本轮是研究还是同时生产接入。
+
+- RVE README 81 条、RenderComp 50 条、SwiftClip 32 条，已保存结构化索引与逐项源码链接；Shotcraft HTML 实际解析 157 张卡，214 为风格/预览口径。
+- RenderComp/SwiftClip/Onda 的 MIT 与 Shotcraft 的 Apache-2.0 实际 LICENSE 已核验；RVE README 声明 MIT；Talkcraft LICENSE 要求商业授权。
+- Onda 正确 Remotion 目录迁至 remotion.onda.video，onda.video 主站是不同引擎；Bits 许可未取得，暂不列为直接复用候选。
+- 4 个 RVE 模板在 Remotion 4.0.524 真渲染通过，12 秒/360 帧/960×540；原始组件存在固定文案与像素尺寸，需要参数化。
+- 完整研究：docs/research/remotion-templates-2026-09-15/README.md；主项目页面与依赖本轮未修改。
+## 2026-09-15 VOX 定向模板补充（进行中）
+
+- 官方 Elements 当前明确列出 Notebook Paper、Paper Texture、A-to-B Map Flyover、News Article Highlight、Polaroid Pictures、Text Marker；优先核验具体组件页。
+- paper-cutout-remotion 有真实 Remotion 脚手架与 PaperActor 分层组件，但 README 没有许可说明，需另核验。voxstylehub-steven README 声明代码与原创文档采用 MIT，需读取 LICENSE 与具体组件。
+- Bing 两次多词搜索返回了相同泛 Remotion 结果，未命中书籍专用模板；转向一手仓库和具体组件，不将泛搜索当成书籍模板证据。
+- web-access 复用 Chrome 9222 后 CDP proxy 超时；继续按技能支持的 curl 读取公开原始页面。Firecrawl/Exa/GitHub CLI 在前轮已确认受认证/环境限制，不重复索要登录。
+### 本轮新确认的具体实现
+
+- `voxstylehub-steven` 的 PaperActor 和 DrawnArrow 源码可读，LICENSE 实际为 MIT；发行 manifest 指向上游 `xingchen-skill-family` 的 `v2026.07.22` / `5bebe30f8e4ac1cd4d763ac013b9d3f513a8a4f1`。上游文档中的执行规定只是研究内容，不会自动成为本项目指令。
+- 新发现 `SilentFleetKK/vellum-reel`：MIT；有 `BookVideo` / `NarrativeVideo`、28 秒 book-demo 和 32 秒 narrative-demo，正在核验 BookVideo 实际源码。比通用 ProductCard 更贴近书籍解读。
+- SwiftClip 的 Timeline 实际将 STEPS 写死，ProductCard 有文本 props 但图像只是 ShoppingBag 图标，没有真实封面输入；不能称作无需改造的书籍模板。
+- RenderComp FlipPageTransition 实际为两层页面 CSS rotateY 转场（带类型化文本/颜色 props），不是完整 3D 书本。
+- 官方 News Article Highlight 是重排文章标题文字的高亮组件，不是任意截图 OCR/自动定位；书页摘录需额外的截图标注路径。
+- 当前隔离 Remotion 4.0.524 导出 Interactive、Solid、useDelayRender、Easing.spring，最新 Elements 依赖的这些 API 已存在；不能仅因新 API 名称断言不兼容。
+- 额外查询 GitHub API 出现 TLS 握手失败；GitHub 公开仓库搜索 HTML 可读并发现了书籍源。Agent Reach 更新检查重试后网络失败。
+### VOX 模板补充最终结论
+
+- 八类映射完成，32 项为产品规划候选，不是 32 个已经安装的模板。关键新增是 VellumReel 书籍工程、官方 A-to-B Map Flyover、MIT VOX 分层组件。
+- BookIdentity 仅文字/CSS 书封，schema 当前没有真实书封字段；接入需增加 coverAsset。News Article Highlight 仅 DOM 文字高亮，截图/书页框选单独实现。
+- PaperActor / DrawnArrow / FlipPageTransition 已在当前环境完成 8 秒 240 帧全解码与视觉检查。最新报告和源码许可在 `.artifacts/remotion-check/vox-source-report.json` 与 `vox-candidates/`。
+- 原有 README 的未核实 `diagram-cascade` 已替换为实际存在的 `ring-diagram-annotation-reveal` 配方；SwiftClip Timeline/产品图参数限制也已纠正。
+
+## 2026-09-15 VOX 动画接入完成
+
+49 个参数化模板与 AI TSX 模式已接入 VOX 画面面板，支持直接导入素材、个人模板、字幕/音频时间线、单镜头及混合整片 MP4 导出。修复 iframe 恢复同一份有效代码后不再 ready、字幕未接入、模板批处理误触发生图、TypeScript 打包后 __filename 缺失等问题。证据与限制见 docs/research/remotion-templates-2026-09-15/implementation.md。
+
+VOX skills 接入：现有 VideoGenerationRequest 已支持 lastFramePath 与 first-last-frame 能力，但 VOX 页面及 IPC 未传入尾帧；可直接补齐。五个 skill 安装成功。vox-skill 词匹配仅 ASCII 需要中文适配。
+
+VOX skills 接入完成：四个镜头制作方式已持久化。Paper Cut 真正传原画参考给背景/主体生成；Nantian 的尾帧参与能力路由、请求字节、输入哈希与旧视频失效。VOX 旁白模式复用 Remotion，按词编舞使用 AI 代码及真实 cues；gbro 的视觉隐喻与组装约束进入实际图像/视频提示。
+
+两种尺寸截图实看通过：正常窗口三栏，紧凑窗口收起左栏，右侧独立滚动且主要操作保持可访问。全部截图为本地夹具，未宣称真实模型出片。技能已安装不等于上游脚本全套能在 Windows 运行，macOS Vision 限制及产品自有适配已写入交付文档。

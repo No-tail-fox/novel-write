@@ -27,7 +27,7 @@ import type {
 import { useAsyncAction } from '../../ui/async-action';
 import { Button, IconButton, SegmentedControl, SelectField, TextField, Toolbar, Tooltip } from '../../ui';
 import { createHistoryPageRequestController, useHistoryPage } from '../history/use-history-page';
-import { formatTaskOperationTime, taskHistoryTypeLabel, toLocalImageUrl } from '../tasks/task-formatters';
+import { formatTaskOperationTime, projectCoverPath, taskHistoryTypeLabel, toLocalImageUrl } from '../tasks/task-formatters';
 import { taskStatusDetail } from './project-task-status';
 import type { ProjectHomeSession, ProjectLayout, ProjectTaskType } from './project-home-session';
 import '../../styles/features/projects.css';
@@ -304,7 +304,11 @@ function ProjectCard({
   onRestore: () => void;
   onDelete: () => void;
 }) {
-  const cover = task.ordinaryCoverAsset?.path ? toLocalImageUrl(task.ordinaryCoverAsset.path) : null;
+  const coverPath = projectCoverPath(task);
+  const coverUrl = coverPath ? toLocalImageUrl(coverPath) : null;
+  const cover = coverUrl && task.projectCover?.revision
+    ? `${coverUrl}?v=${encodeURIComponent(task.projectCover.revision)}` : coverUrl;
+  const hasProjectCover = Boolean(task.projectCover || (task.projectCover === undefined && task.ordinaryCoverAsset?.path));
   const [failedCover, setFailedCover] = useState<string | null>(null);
   return (
     <article className={`project-card ${layout === 'list' ? 'project-card-list' : ''}`} data-project-id={task.id}>
@@ -317,9 +321,9 @@ function ProjectCard({
         disabled={busy}
         onClick={onOpen}
       >
-        <span className="project-card-cover">
+        <span className="project-card-cover" data-cover-source={hasProjectCover ? 'cover' : cover ? 'reference' : 'empty'}>
           {cover && cover !== failedCover
-            ? <img src={cover} alt="" loading="lazy" onError={() => setFailedCover(cover)} />
+            ? <img src={cover} alt={`${task.title || '项目'}封面`} loading="lazy" onError={() => setFailedCover(cover)} />
             : <span className="project-card-cover-empty" aria-label="暂无项目封面"><Play size={22} /></span>}
         </span>
         <span className="project-card-body">

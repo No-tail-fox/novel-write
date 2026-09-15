@@ -1,6 +1,7 @@
 import type { LlmConfig, LlmModelTestResult, ProviderModel, ProviderModelListRequest, ProviderModelListResult } from './types';
 import { fetchWithTimeout } from './http';
 import { readJsonBounded, readTextBounded, type NetworkFetch } from './network-policy';
+import { llmEndpoint, resolveLlmProtocol, type LlmProtocol } from './llm-protocol';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
 
@@ -72,10 +73,12 @@ export type AnthropicMessagesTextLlm = (request: AnthropicMessagesTextRequest) =
 
 export type ConfiguredJsonLlm =
   | { protocol: 'openai'; run: OpenAiCompatibleJsonLlm }
+  | { protocol: 'responses'; run: OpenAiCompatibleJsonLlm }
   | { protocol: 'anthropic'; run: AnthropicMessagesJsonLlm };
 
 export type ConfiguredTextLlm =
   | { protocol: 'openai'; run: OpenAiCompatibleTextLlm }
+  | { protocol: 'responses'; run: OpenAiCompatibleTextLlm }
   | { protocol: 'anthropic'; run: AnthropicMessagesTextLlm };
 
 interface AnthropicContentPart {
@@ -90,6 +93,9 @@ const LLM_RETRY_DELAYS_MS = [500, 1500];
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096;
 const ANTHROPIC_JSON_TOOL_NAME = 'return_json';
+// Thinking models and tool envelopes need more than the visible JSON's token count.
+const MODEL_TEST_MAX_TOKENS = 1024;
+const MODEL_TEST_TIMEOUT_MS = 60_000;
 
 export class LlmJsonParseError extends Error {
   constructor(
@@ -104,12 +110,14 @@ export class LlmJsonParseError extends Error {
 const LLM_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 
 export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
+  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: createResponsesJsonLlm(config) };
   return isAnthropicLlmConfig(config)
     ? { protocol: 'anthropic', run: createAnthropicMessagesJsonLlm(config) }
     : { protocol: 'openai', run: createOpenAiCompatibleJsonLlm(config) };
 }
 
 export function createConfiguredTextLlm(config: LlmConfig): ConfiguredTextLlm {
+  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: createResponsesTextLlm(config) };
   return isAnthropicLlmConfig(config)
     ? { protocol: 'anthropic', run: createAnthropicMessagesTextLlm(config) }
     : { protocol: 'openai', run: createOpenAiCompatibleTextLlm(config) };
@@ -238,7 +246,79 @@ export function createAnthropicMessagesTextLlm(config: LlmConfig): AnthropicMess
   };
 }
 
-async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleJsonRequest): Promise<Response> {
+interface ResponsesBody {
+  id?: string;
+  status?: string;
+  error?: { message?: string } | null;
+  incomplete_details?: { reason?: string } | null;
+  output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string; refusal?: string }> }>;
+}
+
+function responsesText(body: ResponsesBody): string {
+  return (body.output ?? []).filter((item) => item.type === 'message')
+    .flatMap((item) => item.content ?? [])
+    .filter((part) => part.type === 'output_text' && typeof part.text === 'string')
+    .map((part) => part.text).join('');
+}
+
+function responsesProblem(body: ResponsesBody): Pick<LlmModelTestResult, 'status' | 'detail'> | null {
+  if (body.error || body.status === 'failed') {
+    return { status: 'fail', detail: `Responses API 请求失败：${body.error?.message || body.status}` };
+  }
+  if (body.status === 'incomplete' || body.incomplete_details) {
+    const reason = body.incomplete_details?.reason || 'incomplete';
+    return { status: 'warn', detail: reason === 'max_output_tokens'
+      ? `Responses API 回复达到输出上限而被截断（${reason}），请检查模型的思考预算或服务端输出限制。`
+      : `Responses API 回复未完成（${reason}）。` };
+  }
+  if (body.status && body.status !== 'completed') {
+    return { status: 'fail', detail: `Responses API 未返回最终结果（${body.status}）。` };
+  }
+  const refusal = (body.output ?? []).flatMap((item) => item.content ?? []).find((part) => part.type === 'refusal');
+  return refusal ? { status: 'warn', detail: `Responses API 拒绝回答：${refusal.refusal || 'refusal'}` } : null;
+}
+
+async function readResponsesResult(response: Response, request: BaseLlmJsonRequest | BaseLlmTextRequest, endpoint: string): Promise<LlmTextResult> {
+  if (!response.ok) {
+    throw new Error(`LLM API error (${response.status}) at step ${request.step} ${request.name} via ${endpoint}: ${await readTextBounded(response, LLM_RESPONSE_MAX_BYTES)}`);
+  }
+  const body = await readJsonBounded<ResponsesBody>(response, LLM_RESPONSE_MAX_BYTES);
+  const raw = extractResponsesTextContent(body);
+  return { text: raw, raw, requestId: body.id ?? null };
+}
+
+export function extractResponsesTextContent(body: ResponsesBody): string {
+  const problem = responsesProblem(body);
+  if (problem) throw new Error(problem.detail);
+  const raw = responsesText(body);
+  if (!raw.trim()) throw new LlmJsonParseError('Responses API returned empty content.', raw);
+  return raw;
+}
+
+export function createResponsesJsonLlm(config: LlmConfig): OpenAiCompatibleJsonLlm {
+  return async <T = unknown>(request: OpenAiCompatibleJsonRequest): Promise<LlmJsonResult<T>> => {
+    if (!config.apiKey) throw new Error('LLM API key is missing; cannot run real task content generation.');
+    const endpoint = llmEndpoint({ ...config, provider: 'custom', protocol: 'responses' });
+    const response = await fetchLlmJsonWithRetries(endpoint, config, request, buildResponsesRequestBody(config, request, request.jsonMode !== 'none' && request.jsonRoot !== 'array'));
+    const result = await readResponsesResult(response, request, endpoint);
+    try {
+      return { json: parseLlmJsonContent<T>(result.raw), raw: result.raw, requestId: result.requestId };
+    } catch {
+      throw new LlmJsonParseError(`LLM step ${request.step} ${request.name} did not return valid JSON.${formatRawPreview(result.raw)}`, result.raw);
+    }
+  };
+}
+
+export function createResponsesTextLlm(config: LlmConfig): OpenAiCompatibleTextLlm {
+  return async (request: OpenAiCompatibleTextRequest): Promise<LlmTextResult> => {
+    if (!config.apiKey) throw new Error('LLM API key is missing; cannot run real task content generation.');
+    const endpoint = llmEndpoint({ ...config, provider: 'custom', protocol: 'responses' });
+    const response = await fetchLlmTextWithRetries(endpoint, config, request, buildResponsesRequestBody(config, request, false));
+    return readResponsesResult(response, request, endpoint);
+  };
+}
+
+async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleJsonRequest, body = buildRequestBody(config, request)): Promise<Response> {
   const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
@@ -251,7 +331,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify(buildRequestBody(config, request)),
+      body: JSON.stringify(body),
     });
     if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
       return response;
@@ -285,7 +365,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
   throw new Error('Unexpected LLM retry state.');
 }
 
-async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleTextRequest): Promise<Response> {
+async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleTextRequest, body = buildTextRequestBody(config, request)): Promise<Response> {
   const maxAttempts = textRequestMaxAttempts(request);
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -300,7 +380,7 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
         },
-        body: JSON.stringify(buildTextRequestBody(config, request)),
+        body: JSON.stringify(body),
       });
       if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
         return response;
@@ -413,6 +493,34 @@ function buildTextRequestBody(config: LlmConfig, request: OpenAiCompatibleTextRe
   return body;
 }
 
+export function buildResponsesRequestBody(config: LlmConfig, request: BaseLlmTextRequest, json: boolean): Record<string, unknown> {
+  const extra = parseRequestParamsJson(config.requestParamsJson);
+  const body: Record<string, unknown> = {
+    ...extra,
+    model: config.model,
+    input: request.messages,
+    text: { ...(isRecord(extra.text) ? extra.text : {}), format: { type: json ? 'json_object' : 'text' } },
+    store: false,
+    stream: false,
+    background: false,
+  };
+  const maxTokens = request.maxTokens ?? extra.max_output_tokens ?? extra.max_completion_tokens ?? extra.max_tokens;
+  if (maxTokens !== undefined) body.max_output_tokens = maxTokens;
+  if (request.temperature !== undefined) body.temperature = request.temperature;
+  if (extra.reasoning_effort !== undefined) {
+    body.reasoning = { effort: extra.reasoning_effort, ...(isRecord(extra.reasoning) ? extra.reasoning : {}) };
+  }
+  // These tasks consume one final answer, with no tool loop or server-side conversation.
+  for (const key of ['messages', 'response_format', 'max_tokens', 'max_completion_tokens', 'reasoning_effort', 'stream_options', 'tools', 'tool_choice', 'parallel_tool_calls', 'previous_response_id', 'conversation']) {
+    delete body[key];
+  }
+  return body;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function buildAnthropicRequestBody(config: LlmConfig, request: AnthropicMessagesJsonRequest): Record<string, unknown> {
   const extra = parseRequestParamsJson(config.requestParamsJson);
   const system = request.messages
@@ -496,11 +604,56 @@ function parseRequestParamsJson(value: string | undefined): Record<string, unkno
   return parsed as Record<string, unknown>;
 }
 
+function buildModelTestBody(config: LlmConfig, protocol: LlmProtocol): Record<string, unknown> {
+  const request: LlmJsonRequest = {
+    step: 0,
+    name: 'model-test',
+    messages: [
+      { role: 'system', content: 'Return strict JSON only.' },
+      { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
+    ],
+  };
+  const body = protocol === 'anthropic' ? buildAnthropicRequestBody(config, request)
+    : protocol === 'responses' ? buildResponsesRequestBody(config, request, true) : buildRequestBody(config, request);
+  const tokenField = protocol === 'responses' ? 'max_output_tokens'
+    : protocol === 'openai' && 'max_completion_tokens' in body ? 'max_completion_tokens' : 'max_tokens';
+  delete body.max_tokens;
+  delete body.max_completion_tokens;
+  delete body.max_output_tokens;
+  delete body.stream_options;
+  return { ...body, model: config.model.trim(), stream: false, [tokenField]: MODEL_TEST_MAX_TOKENS };
+}
+
+function evaluateModelTestResponse(model: string, raw: string, latencyMs: number, stopReason?: string | null): Pick<LlmModelTestResult, 'status' | 'detail'> {
+  if (stopReason === 'length' || stopReason === 'max_tokens') {
+    return { status: 'warn', detail: `模型 ${model} 已连接，但测试回复达到输出上限而被截断（${stopReason}），暂不能确认 JSON 能力。请检查模型的思考预算或服务端输出限制。` };
+  }
+  if (!raw.trim()) {
+    return { status: 'warn', detail: `模型 ${model} 已连接，但测试回复为空${stopReason ? `（${stopReason}）` : ''}，暂不能确认 JSON 能力。` };
+  }
+  try {
+    const json = parseLlmJsonContent<unknown>(raw);
+    if (!json || typeof json !== 'object' || Array.isArray(json) || !('ok' in json) || json.ok !== true) {
+      return { status: 'warn', detail: `模型 ${model} 已返回 JSON，但未返回预期的 {"ok":true}，请检查接口响应。` };
+    }
+    return { status: 'pass', detail: `模型 ${model} 连接和 JSON 测试通过，耗时 ${latencyMs} ms。` };
+  } catch {
+    return { status: 'warn', detail: `模型 ${model} 已连接，但测试回复不是完整有效的 JSON${stopReason ? `（${stopReason}）` : ''}。响应片段：${raw.slice(0, 160)}` };
+  }
+}
+
 export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
+  return testOpenAiProtocolLlm(config, 'openai', fetchImpl);
+}
+
+export async function testResponsesLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
+  return testOpenAiProtocolLlm(config, 'responses', fetchImpl);
+}
+
+async function testOpenAiProtocolLlm(config: LlmConfig, protocol: 'openai' | 'responses', fetchImpl: typeof fetch): Promise<LlmModelTestResult> {
   const startedAt = Date.now();
   const model = config.model.trim();
-  const baseUrl = normalizeOpenAiBaseUrl(config.baseUrl || 'https://api.openai.com');
-  const endpoint = `${baseUrl}/chat/completions`;
+  const endpoint = llmEndpoint({ ...config, provider: 'custom', protocol });
   const baseResult = {
     latencyMs: 0,
     model,
@@ -525,20 +678,9 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
         },
-        body: JSON.stringify({
-          ...buildRequestBody(config, {
-            step: 0,
-            name: 'model-test',
-            messages: [
-              { role: 'system', content: 'Return strict JSON only.' },
-              { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
-            ],
-          }),
-          model,
-          max_tokens: 20,
-        }),
+        body: JSON.stringify(buildModelTestBody(config, protocol)),
       },
-      15000,
+      Math.min(config.timeoutMs ?? MODEL_TEST_TIMEOUT_MS, MODEL_TEST_TIMEOUT_MS),
     );
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
@@ -551,26 +693,26 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
       };
     }
 
-    const body = JSON.parse(bodyText) as {
-      id?: string;
-      choices?: Array<{ message?: { content?: string | null }; text?: string | null }>;
-    };
-    const raw = body.choices?.[0]?.message?.content ?? body.choices?.[0]?.text ?? '';
-    if (!raw.trim()) {
-      return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'warn', detail: `Model ${model} responded, but returned empty content.` };
-    }
-    try {
-      parseLlmJsonContent(raw);
-      return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'pass', detail: `Model ${model} is usable. Latency ${latencyMs} ms.` };
-    } catch {
+    if (protocol === 'responses') {
+      const body = JSON.parse(bodyText) as ResponsesBody;
       return {
         ...baseResult,
         latencyMs,
         requestId: body.id ?? null,
-        status: 'warn',
-        detail: `Model ${model} responded, but did not follow JSON mode: ${raw.slice(0, 160)}`,
+        ...(responsesProblem(body) ?? evaluateModelTestResponse(model, responsesText(body), latencyMs)),
       };
     }
+    const body = JSON.parse(bodyText) as {
+      id?: string;
+      choices?: Array<{ message?: { content?: string | null }; text?: string | null; finish_reason?: string | null }>;
+    };
+    const raw = body.choices?.[0]?.message?.content ?? body.choices?.[0]?.text ?? '';
+    return {
+      ...baseResult,
+      latencyMs,
+      requestId: body.id ?? null,
+      ...evaluateModelTestResponse(model, raw, latencyMs, body.choices?.[0]?.finish_reason),
+    };
   } catch (error) {
     return {
       ...baseResult,
@@ -582,6 +724,7 @@ export async function testOpenAiCompatibleLlm(config: LlmConfig, fetchImpl: type
 }
 
 export async function testConfiguredLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
+  if (resolveLlmProtocol(config) === 'responses') return testResponsesLlm(config, fetchImpl);
   return isAnthropicLlmConfig(config) ? testAnthropicMessagesLlm(config, fetchImpl) : testOpenAiCompatibleLlm(config, fetchImpl);
 }
 
@@ -615,20 +758,9 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
           'x-api-key': config.apiKey,
           'anthropic-version': ANTHROPIC_VERSION,
         },
-        body: JSON.stringify({
-          ...buildAnthropicRequestBody(config, {
-            step: 0,
-            name: 'model-test',
-            messages: [
-              { role: 'system', content: 'Return strict JSON only.' },
-              { role: 'user', content: 'Return {"ok":true} to confirm this model is usable.' },
-            ],
-          }),
-          model,
-          max_tokens: 20,
-        }),
+        body: JSON.stringify(buildModelTestBody(config, 'anthropic')),
       },
-      15000,
+      Math.min(config.timeoutMs ?? MODEL_TEST_TIMEOUT_MS, MODEL_TEST_TIMEOUT_MS),
     );
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
@@ -643,24 +775,19 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
 
     const body = JSON.parse(bodyText) as {
       id?: string;
-      content?: Array<{ type?: string; text?: string | null }>;
+      content?: AnthropicContentPart[];
+      stop_reason?: string | null;
     };
-    const raw = extractAnthropicTextContent(body);
-    if (!raw.trim()) {
-      return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'warn', detail: `Model ${model} responded, but returned empty content.` };
-    }
-    try {
-      parseLlmJsonContent(raw);
-      return { ...baseResult, latencyMs, requestId: body.id ?? null, status: 'pass', detail: `Model ${model} is usable. Latency ${latencyMs} ms.` };
-    } catch {
-      return {
-        ...baseResult,
-        latencyMs,
-        requestId: body.id ?? null,
-        status: 'warn',
-        detail: `Model ${model} responded, but did not follow JSON mode: ${raw.slice(0, 160)}`,
-      };
-    }
+    const toolUse = body.content?.find((part) => part.type === 'tool_use' && part.name === ANTHROPIC_JSON_TOOL_NAME && part.input !== undefined);
+    const raw = toolUse
+      ? typeof toolUse.input === 'string' ? toolUse.input : JSON.stringify(toolUse.input) ?? ''
+      : extractAnthropicTextContent(body);
+    return {
+      ...baseResult,
+      latencyMs,
+      requestId: body.id ?? null,
+      ...evaluateModelTestResponse(model, raw, latencyMs, body.stop_reason),
+    };
   } catch (error) {
     return {
       ...baseResult,
@@ -894,7 +1021,7 @@ function normalizeAnthropicBaseUrl(value: string): string {
 }
 
 function isAnthropicLlmConfig(config: Pick<LlmConfig, 'provider' | 'protocol'>): boolean {
-  return config.protocol === 'anthropic' || config.provider === 'anthropic';
+  return resolveLlmProtocol(config) === 'anthropic';
 }
 
 function extractAnthropicToolUseResult<T = unknown>(body: { content?: AnthropicContentPart[] }): LlmJsonResult<T> | null {

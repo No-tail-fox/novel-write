@@ -881,7 +881,9 @@ export function removeMotionComicShot(
   document: MotionComicPipelineData,
   episodeId: string,
   shotId: string,
+  sceneShotId?: string,
 ): MotionComicPipelineData {
+  if (sceneShotId !== undefined) return removeMotionComicSceneShot(document, episodeId, shotId, sceneShotId);
   let found = false;
   const episodes = document.episodes.map((episode) => {
     if (episode.id !== episodeId) return episode;
@@ -998,7 +1000,7 @@ export function appendMotionComicShot(
   };
 }
 
-export function removeMotionComicShot(
+function removeMotionComicSceneShot(
   document: MotionComicPipelineData,
   episodeId: string,
   sceneId: string,

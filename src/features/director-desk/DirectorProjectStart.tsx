@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import {
-  ArrowLeft,
   ArrowRight,
   BookOpenCheck,
   Check,
@@ -59,7 +58,6 @@ export interface DirectorCreateWizardProps {
   children: ReactNode;
   feedback?: string;
   errorMessage?: string;
-  onBack: () => void;
   onStepChange: (step: number) => void;
   onConfigureImage: () => void;
   onConfigureVoice: () => void;
@@ -80,7 +78,6 @@ export function DirectorCreateWizard({
   children,
   feedback,
   errorMessage,
-  onBack,
   onStepChange,
   onConfigureImage,
   onConfigureVoice,
@@ -91,9 +88,6 @@ export function DirectorCreateWizard({
     <div className="director-create-panel" data-director-create-wizard data-director-mode={mode}>
       <div className="director-create-page">
         <header className="director-create-header">
-          <Toolbar aria-label="视频工作流导航">
-            <Button variant="subtle" icon={<ArrowLeft size={14} />} onClick={onBack}>返回新建任务</Button>
-          </Toolbar>
           <div className="director-create-heading">
             {mode === 'vox' ? <Film size={19} /> : <BookOpenCheck size={19} />}
             <div><h2>{copy.createTitle}</h2><span>{copy.createDescription}</span></div>
@@ -138,13 +132,12 @@ export function DirectorCreateWizard({
   );
 }
 
-export function DirectorProjectLoading({ mode, onCancel }: { mode: DirectorDeskMode; onCancel: () => void }) {
+export function DirectorProjectLoading({ mode }: { mode: DirectorDeskMode }) {
   return (
     <div className="director-project-loading" role="status" aria-live="polite">
       <Loader2 className="director-spin" size={24} />
       <strong>正在恢复{mode === 'vox' ? ' VOX ' : ' AI 漫剧'}项目</strong>
       <span>正在读取镜头、版本和本地素材，完成前不会显示空白工作台。</span>
-      <Button variant="subtle" onClick={onCancel}>返回全部任务</Button>
     </div>
   );
 }
@@ -152,14 +145,10 @@ export function DirectorProjectLoading({ mode, onCancel }: { mode: DirectorDeskM
 export function DirectorProjectRecovery({
   mode,
   errorMessage,
-  returnLabel = '返回全部任务',
-  onReturnTasks,
   onNewProject,
 }: {
   mode: DirectorDeskMode;
   errorMessage?: string;
-  returnLabel?: string;
-  onReturnTasks: () => void;
   onNewProject: () => void;
 }) {
   return (
@@ -168,7 +157,6 @@ export function DirectorProjectRecovery({
       <strong>{mode === 'vox' ? '无法打开 VOX 项目' : '无法打开 AI 漫剧项目'}</strong>
       <span role={errorMessage ? 'alert' : undefined}>{errorMessage || '项目不存在、已归档或本地数据暂时不可用。'}</span>
       <Toolbar aria-label="项目恢复操作">
-        <Button variant="secondary" icon={<ArrowLeft size={14} />} onClick={onReturnTasks}>{returnLabel}</Button>
         <Button variant="primary" icon={<Plus size={14} />} onClick={onNewProject}>{mode === 'vox' ? '新建 VOX 项目' : '新建 AI 漫剧系列'}</Button>
       </Toolbar>
     </div>

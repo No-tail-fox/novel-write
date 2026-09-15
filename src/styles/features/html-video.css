@@ -1089,6 +1089,8 @@
 .hv-authoring-empty {
   min-height: 100%;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   place-content: center;
   justify-items: center;
   gap: 8px;
@@ -1703,9 +1705,13 @@
   padding: 14px 16px;
 }
 
-.hv-studio[data-has-task="true"] .hv-studio-canvas-heading,
 .hv-studio[data-has-task="true"] .hv-timeline {
   display: none;
+}
+
+.hv-studio[data-has-task="true"] .hv-studio-canvas:has(> .hv-workspace-error),
+.hv-studio[data-has-task="true"] .hv-studio-canvas:has(> .hv-workspace-status) {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .hv-studio[data-has-task="true"] .hv-studio-parameters > .field {
@@ -5918,6 +5924,10 @@
   gap: 0;
   overflow: hidden;
   padding: 0;
+}
+
+.hv-studio[data-active-tab="preview"] .hv-studio-canvas-heading {
+  padding: 12px 16px;
 }
 
 .hv-studio[data-active-tab="preview"] .hv-studio-media-canvas {

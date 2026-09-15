@@ -515,7 +515,12 @@
 .director-voice-preview audio { display: none; }
 .director-deterministic-stage { position: absolute; inset: -2%; z-index: 0; overflow: hidden; transform-origin: center; }
 .director-preview-layer { position: absolute; inset: 0; transform-origin: center; }
-.director-preview-layer > .director-media-image { position: absolute; inset: 0; }
+.director-preview-layer > .director-media-image { position: absolute; inset: 0; overflow: visible; background: transparent; }
+.director-preview-layer[data-layer-fit='contain'] > .director-media-image > img { object-fit: contain; }
+/* Match rendered media artwork; paper edges are part of the scene, independent of the app theme. */
+.director-preview-cutout > .director-media-image > img { filter: drop-shadow(calc(3 * var(--director-scene-unit)) 0 0 #fffaf0) drop-shadow(calc(-3 * var(--director-scene-unit)) 0 0 #fffaf0) drop-shadow(0 calc(3 * var(--director-scene-unit)) 0 #fffaf0) drop-shadow(0 calc(-3 * var(--director-scene-unit)) 0 #fffaf0) drop-shadow(0 calc(10 * var(--director-scene-unit)) calc(12 * var(--director-scene-unit)) rgba(0, 0, 0, .3)); }
+.director-preview-text { display: grid; place-items: center; filter: drop-shadow(0 calc(9 * var(--director-scene-unit)) 0 rgba(0, 0, 0, .17)); }
+.director-preview-text-content, .director-preview-text-content > svg { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .director-video-empty { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; color: var(--media-text); background: var(--media-bg); }
 .director-video-empty > .director-media-image { position: absolute; inset: 0; }
 .director-video-empty__scrim { position: absolute; inset: 0; background: rgba(9, 11, 12, .72); }
@@ -948,7 +953,6 @@
 
 .director-create-header,
 .director-series-header { display: grid; gap: 18px; padding: 24px clamp(22px, 5vw, 72px) 18px; border-bottom: 1px solid var(--shell-border); background: var(--shell-surface); }
-.director-create-header > .sd-toolbar { justify-content: flex-start; }
 .director-create-heading span { color: var(--shell-muted); }
 .director-start-feedback { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-left: 2px solid var(--warn); color: var(--warn); background: rgba(224, 163, 76, .06); font-size: 12px; }
 .director-start-feedback.is-success { border-left-color: var(--ok); color: var(--ok); background: rgba(101, 184, 131, .06); }

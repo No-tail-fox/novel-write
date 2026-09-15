@@ -17,6 +17,7 @@ import type {
   TaskStatus,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
+import { normalizeAppError } from '../../shared/app-error';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { SelectField } from '../../ui';
 
@@ -125,7 +126,7 @@ export function HtmlVideoAuthoringWorkspace({
       setPlayerDuration(loaded.durationSec);
     } catch (error) {
       if (request !== sourceRequest.current) return;
-      setLoadError(error instanceof Error ? error.message : String(error));
+      setLoadError(normalizeAppError(error).message);
     }
   }, [api, isBrowserPreview, sceneIndex, taskId]);
 
@@ -371,7 +372,7 @@ export function HtmlVideoAuthoringWorkspace({
               <div className="hv-authoring-lint-list">
                 {parsed.error ? <LintFinding finding={{ code: 'html_parse_error', severity: 'error', message: parsed.error }} /> : null}
                 {lintFindings.map((finding, index) => <LintFinding key={`${finding.code}-${index}`} finding={finding} />)}
-                {!lintPending && !parsed.error && lintFindings.length === 0 ? <div className="hv-authoring-lint-ok"><CheckCircle2 size={16} />通过 HyperFrames 0.7.83 检查</div> : null}
+                {!lintPending && !parsed.error && lintFindings.length === 0 ? <div className="hv-authoring-lint-ok"><CheckCircle2 size={16} />通过 HyperFrames 官方检查</div> : null}
               </div>
             </div>
           ) : null}

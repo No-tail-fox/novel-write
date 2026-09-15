@@ -24,6 +24,7 @@ import {
 } from '../shared/state-reconciliation';
 import type { DeltaViewState, HistoryRevisionLedger } from '../shared/state-delta';
 import { draftTemplates as builtinDraftTemplates, normalizeDraftTemplate } from '../shared/templates';
+import { reconcileBuiltinDraftTemplates } from '../shared/draft-template-migration';
 import type {
   AppDelta,
   AppMutationResult,
@@ -97,7 +98,7 @@ export function hydrateState(state: Partial<AppState>): AppState {
     tasks: state.tasks ?? [],
     events: state.events ?? [],
     promptTemplates: state.promptTemplates ?? initialPromptTemplates,
-    draftTemplates: (state.draftTemplates ?? builtinDraftTemplates).map(normalizeDraftTemplate),
+    draftTemplates: reconcileBuiltinDraftTemplates(state.draftTemplates),
     imageLabRecords: state.imageLabRecords ?? [],
     voiceLabRecords: state.voiceLabRecords ?? [],
     customStyles: mergeDefaultCustomStyles(state.customStyles),

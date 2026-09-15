@@ -1,5 +1,6 @@
 import { defaultConfig } from './config';
 import { normalizeAppConfig } from './config-utils';
+import { resolveLlmProtocol } from './llm-protocol';
 import { normalizeVolcengineTtsApiSettings } from './volcengine-tts';
 import type { AppConfig, ConfigTestTarget, ImageProviderProfile, TtsProviderProfile } from './types';
 
@@ -49,7 +50,7 @@ export function activeLlmProfileId(config: AppConfig): string {
 }
 
 export function editableLlmProfileProvider(profile: AppConfig['llm']): EditableLlmProvider {
-  if (profile.protocol === 'anthropic' || profile.provider === 'anthropic') return 'anthropic';
+  if (profile.provider === 'anthropic') return 'anthropic';
   return profile.provider === 'openai' ? 'openai' : 'custom';
 }
 
@@ -74,7 +75,7 @@ export function normalizeLocalLlmProfile(profile: Partial<AppConfig['llm']>, ind
     id,
     name: profile.name?.trim() || (provider === 'anthropic' ? 'Anthropic' : provider === 'openai' ? 'OpenAI Official' : index === 0 ? '第三方' : `配置 ${index + 1}`),
     provider,
-    protocol: provider === 'anthropic' ? 'anthropic' : 'openai',
+    protocol: resolveLlmProtocol(merged),
     enabled: Boolean(profile.enabled),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
   };

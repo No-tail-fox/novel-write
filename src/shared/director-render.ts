@@ -1,5 +1,7 @@
+import { validateVoxAnimation, voxAnimationAssetIds, type VoxAnimation } from './vox-animation';
 import { z } from 'zod';
-import { rebuildEditorialTimeline, type EditorialCameraKeyframe, type EditorialCollagePipelineData, type EditorialLayerMotionKeyframe } from './editorial-collage';
+import { editorialShotTitle, isEditorialStructureTitle } from './editorial-storytelling';
+import { rebuildEditorialTimeline, type EditorialCameraKeyframe, type EditorialCollagePipelineData, type EditorialCollageLayer, type EditorialLayerMotionKeyframe } from './editorial-collage';
 import type { MotionComicPipelineData } from './motion-comic';
 import type { ProductionAssetVersion, ProductionProviderJob, ProductionQualityReport, ProductionQualityManualReview, ProductionQualityRecheckScope, ProductionSubtitleCue, ProductionSubtitleToken, ProductionTimeline } from './production-workflow';
 import { isSubtitleAlignmentValid } from './audio-alignment';
@@ -69,9 +71,11 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
         beats: document.beats.map((beat) => ({
           title: beat.title, narration: beat.narration, startMs: beat.startMs,
           shots: beat.shots.map((shot) => ({
-            id: shot.id, durationMs: shot.durationMs, renderStrategy: shot.renderStrategy,
+            id: shot.id, title: shot.title, animation: shot.animation, motionStyle: shot.motionStyle, durationMs: shot.durationMs, renderStrategy: shot.renderStrategy,
             scenePrompt: shot.scenePrompt, motionPrompt: shot.motionPrompt,
             layers: shot.layers, camera: shot.camera, subtitleCueIds: shot.subtitleCueIds,
+            keyframeAssetVersionId: shot.keyframeAssetVersionId,
+            lastFrameAssetVersionId: shot.lastFrameAssetVersionId, productionRecipe: shot.productionRecipe,
             videoAssetVersionId: shot.videoAssetVersionId, videoJobId: shot.videoJobId,
             voiceAssetVersionId: shot.voiceAssetVersionId, voiceId: shot.voiceId, voiceSpeed: shot.voiceSpeed,
             layoutTemplate: shot.layoutTemplate, motionPreset: shot.motionPreset, subtitleStyle: shot.subtitleStyle,
@@ -82,6 +86,9 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
         assets: referencedRenderAssets(document, document.beats.flatMap((beat) => beat.shots.flatMap((shot) => [
           shot.voiceAssetVersionId,
           shot.videoAssetVersionId,
+          shot.keyframeAssetVersionId,
+          shot.lastFrameAssetVersionId,
+          ...(shot.animation ? voxAnimationAssetIds(shot.animation) : []),
           ...shot.layers.map((layer) => layer.assetVersionId),
           ...shot.subtitleCueIds.flatMap((id) => beat.subtitleCues.find((cue) => cue.id === id)?.audioAssetVersionId ?? []),
         ]).filter((id): id is string => Boolean(id))).concat((document.timeline?.audioClips ?? []).map((clip) => clip.assetVersionId))),
@@ -389,24 +396,31 @@ export function directorNarrationAlignment(
       ? authoredSpeech.map((clip) => clip.sourceDurationMs)
       : undefined;
     return { id: scene.id, durationMs: scene.durationMs, subtitleCues: scene.subtitleCues, audioAssetVersionIds: speechIds,
+      ...(authoredSpeech.length > 0 && authoredSpeech.every(clip => clip.muted) ? { checkSceneOverflow: false } : {}),
       ...(speechDurations ? { audioDurationsMs: speechDurations } : {}) };
   }), new Map(document.assets.map((asset) => [asset.id, asset])), measuredAt);
 }
 
-export type DirectorRenderableStrategy = 'deterministic-layers' | 'living-poster';
+export type DirectorRenderableStrategy = 'deterministic-layers' | 'living-poster' | 'remotion';
 
 export interface DirectorRenderLayer {
   id: string;
   label: string;
-  imagePath: string;
+  imagePath?: string;
   zIndex: number;
   visible?: boolean;
   depth: number;
+  kind?: EditorialCollageLayer['kind'];
+  width?: number;
+  height?: number;
+  fit?: EditorialCollageLayer['fit'];
+  content?: EditorialCollageLayer['content'];
+  required?: boolean;
   motion: EditorialLayerMotionKeyframe[];
 }
 
 export interface DirectorSceneHtmlLayer extends Omit<DirectorRenderLayer, 'imagePath'> {
-  imageUrl: string;
+  imageUrl?: string;
 }
 
 export interface DirectorRenderScene {
@@ -417,6 +431,8 @@ export interface DirectorRenderScene {
   subtitleCues?: DirectorRenderSubtitleCue[];
   durationMs: number;
   renderStrategy: DirectorRenderableStrategy;
+  animation?: VoxAnimation;
+  animationAssets?: Array<{id:string;kind:'image'|'audio';path:string}>;
   layers: DirectorRenderLayer[];
   camera: EditorialCameraKeyframe[];
   videoPath?: string;
@@ -528,6 +544,17 @@ export function buildDirectorRenderScenes(
       );
       const audioPath = authoredAudio !== undefined ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
 
+      if (shot.renderStrategy === 'remotion') {
+        if (!shot.animation) { issues.push(`${shotLabel}缺少动画设置`); return; }
+        issues.push(...validateVoxAnimation(shot.animation, document.assets).map(x => `${shotLabel}：${x}`));
+        const animationAssets = voxAnimationAssetIds(shot.animation).flatMap(id => {
+          const asset = assets.get(id); if (!asset || (asset.kind !== 'image' && asset.kind !== 'audio')) return [];
+          const path = resolveAssetPath(id, asset.kind, `${shotLabel}动画素材`); return [{id,kind:asset.kind as 'image'|'audio',path}];
+        });
+        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',animation:shot.animation,animationAssets,layers:[],camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
+        return;
+      }
+
       if (shot.renderStrategy === 'hybrid') {
         issues.push(`${shotLabel}仍使用未完成的混合渲染模式，请改用本地关键帧运动或 AI 动态海报`);
         return;
@@ -544,7 +571,7 @@ export function buildDirectorRenderScenes(
         scenes.push({
           id: shot.id,
           index,
-          title: beat.title,
+          title: editorialShotTitle(document, beat, shot),
           caption,
           subtitleCues,
           durationMs: shot.durationMs,
@@ -566,27 +593,36 @@ export function buildDirectorRenderScenes(
       const layers: DirectorRenderLayer[] = [];
       shot.layers.forEach((layer) => {
         if (layer.visible === false) return;
-        if (!layer.assetVersionId) {
-          if (layer.source !== 'svg') issues.push(`${shotLabel}的图层“${layer.label}”缺少图片资产`);
+        if (!layer.assetVersionId && !layer.content?.text.trim()) {
+          if (layer.required !== false) issues.push(`${shotLabel}的图层“${layer.label}”缺少图片资产或原生文字，请补齐分层素材后重新渲染`);
           return;
         }
-        const imagePath = resolveAssetPath(layer.assetVersionId, 'image', `${shotLabel}图层“${layer.label}”`);
-        if (!imagePath) return;
+        const imagePath = layer.content ? undefined : resolveAssetPath(layer.assetVersionId, 'image', `${shotLabel}图层“${layer.label}”`);
+        if (!layer.content && !imagePath) return;
         layers.push({
           id: layer.id,
           label: layer.label,
-          imagePath,
+          ...(imagePath ? { imagePath } : {}),
           zIndex: layer.zIndex,
           depth: layer.depth,
+          ...(layer.width !== undefined || layer.height !== undefined || layer.content ? { kind: layer.kind } : {}),
+          ...(layer.width !== undefined ? { width: layer.width } : {}),
+          ...(layer.height !== undefined ? { height: layer.height } : {}),
+          ...(layer.fit ? { fit: layer.fit } : {}),
+          ...(layer.content ? { content: { ...layer.content, text: isEditorialStructureTitle(layer.content.text) ? editorialShotTitle(document, beat, shot) : layer.content.text } } : {}),
+          ...(layer.required !== undefined ? { required: layer.required } : {}),
           motion: layer.motion.map((frame) => ({ ...frame })),
         });
       });
       if (layers.length === 0) issues.push(`${shotLabel}没有可渲染的本地图层`);
+      const independentImages = new Set(layers.flatMap((layer) => layer.imagePath ? [layer.imagePath.replaceAll('\\', '/').toLowerCase()] : []));
+      const intentionallyHiddenImage = layers.filter((layer) => layer.imagePath).length < 2 && shot.layers.some((layer) => layer.visible === false && ['background', 'subject', 'archival'].includes(layer.kind));
+      if (layers.length > 0 && independentImages.size < 2 && !intentionallyHiddenImage) issues.push(`${shotLabel}需要独立背景和主体图片，请补齐分层素材；单张海报无法产生主体独立动画`);
       if (shot.camera.length === 0) issues.push(`${shotLabel}缺少持久化相机关键帧`);
       scenes.push({
         id: shot.id,
         index,
-        title: beat.title,
+        title: editorialShotTitle(document, beat, shot),
         caption,
         subtitleCues,
         durationMs: shot.durationMs,
@@ -711,7 +747,7 @@ export function evaluateDirectorQuality(
     const label = `镜头 ${scene.index}`;
     const hasAudio = scene.audioClips !== undefined ? scene.audioClips.every((clip) => Boolean(clip.path?.trim())) : Boolean(scene.audioPath?.trim());
     if (!hasAudio) { assetIssues.push(`${label}缺少有效音频资产`); assetShotIds.add(scene.id); }
-    if (scene.renderStrategy === 'living-poster' ? !scene.videoPath?.trim() : scene.layers.length === 0) {
+    if (scene.renderStrategy === 'remotion' ? !scene.animation || validateVoxAnimation(scene.animation).length > 0 : scene.renderStrategy === 'living-poster' ? !scene.videoPath?.trim() : scene.layers.length === 0 || scene.layers.some((layer) => !layer.imagePath?.trim() && !layer.content?.text.trim())) {
       assetIssues.push(`${label}缺少有效画面资产`); assetShotIds.add(scene.id);
     }
     if (!Number.isFinite(scene.durationMs) || scene.durationMs <= 0) { assetIssues.push(`${label}时长无效`); assetShotIds.add(scene.id); }
@@ -810,10 +846,15 @@ export function evaluateDirectorQuality(
   });
 
   const narrationAlignment = directorNarrationAlignment(document, scenes, episodeId);
+  const truncatedNarration = narrationAlignment.samples.some(sample => {
+    const scene = scenes.find(candidate => candidate.id === sample.shotId);
+    return scene && (sample.actualDurationMs ?? 0) > scene.durationMs + 40
+      && (scene.audioClips === undefined || scene.audioClips.some(clip => !clip.muted && (clip.trackType === 'dialogue' || clip.trackType === 'narration')));
+  });
   checks.push({
     id: 'narration-alignment',
     label: '实际旁白时长与字幕规划可对齐',
-    severity: 'manual',
+    severity: truncatedNarration ? 'blocking' : 'manual',
     status: narrationAlignment.status === 'failed' ? 'failed' : narrationAlignment.status === 'pending' ? 'pending' : 'passed',
     ...(narrationAlignment.status === 'failed' ? { detail: narrationAlignment.samples.filter((sample) => sample.status === 'mismatch').map((sample) => `${sample.shotId}：${sample.detail || '实测音频与规划时长不一致'}`).join('；') } : narrationAlignment.status === 'pending' ? { detail: '部分旁白资产缺少实测时长，当前语速仅能作为规划值。' } : {}),
   });
@@ -962,16 +1003,23 @@ export function buildDirectorSceneHtml(input: {
   const fallbackLayers: DirectorSceneHtmlLayer[] = input.imageUrl ? [{ id: 'scene-image', label: '镜头画面', imageUrl: input.imageUrl, zIndex: 0, depth: 0, motion: [] }] : [];
   const layers = renderStrategy === 'deterministic-layers' ? (input.layers ?? fallbackLayers).filter((layer) => layer.visible !== false) : [];
   if (renderStrategy === 'deterministic-layers' && layers.length === 0) throw new Error('DIRECTOR_RENDER_IMAGE_REQUIRED: 本地关键帧镜头缺少图片图层。');
+  if (layers.some((layer) => !layer.imageUrl?.trim() && !layer.content?.text.trim())) throw new Error('DIRECTOR_RENDER_LAYER_MISSING: 图层缺少图片或原生文字，请补齐分层素材。');
   const normalizedLayers = layers.map((layer, index) => ({
     index,
     zIndex: finiteNumber(layer.zIndex, index),
     depth: finiteNumber(layer.depth, 0),
+    sized: layer.width !== undefined || layer.height !== undefined || Boolean(layer.content),
+    width: clamp(finiteNumber(layer.width ?? 1, 1), 0.01, 4),
+    height: clamp(finiteNumber(layer.height ?? 1, 1), 0.01, 4),
+    fit: layer.fit ?? 'cover',
     motion: normalizeLayerFrames(layer.motion, input.durationMs),
   }));
   const normalizedCamera = renderStrategy === 'living-poster'
     ? [{ atMs: 0, x: 0.5, y: 0.5, zoom: 1 }]
     : normalizeCameraFrames(input.camera ?? [], input.durationMs, motionPreset);
-  const layerMarkup = layers.map((layer, index) => `<img class="scene-layer" data-layer-index="${index}" src="${escapeHtml(layer.imageUrl)}" alt="" />`).join('');
+  const layerMarkup = layers.map((layer, index) => layer.content?.type === 'text'
+    ? `<div class="scene-layer scene-native-text" data-layer-index="${index}" data-layer-id="${escapeHtml(layer.id)}">${buildDirectorTextLayerSvg(layer.content.text)}</div>`
+    : `<img class="scene-layer${layer.kind === 'subject' || layer.kind === 'archival' ? ' scene-cutout' : ''}" data-layer-index="${index}" data-layer-id="${escapeHtml(layer.id)}" src="${escapeHtml(layer.imageUrl ?? '')}" alt="" />`).join('');
   const mediaMarkup = renderStrategy === 'living-poster'
     ? `<video id="scene-video" src="${escapeHtml(input.videoUrl ?? '')}" muted playsinline preload="auto"></video>`
     : layerMarkup;
@@ -987,6 +1035,9 @@ export function buildDirectorSceneHtml(input: {
     .frame.comic{inset:2%;width:96%;height:96%;border:8px solid #fff;box-sizing:border-box}
     .scene-stage{position:absolute;inset:-2%;overflow:hidden;transform-origin:center center}
     .scene-layer,#scene-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:center center;will-change:transform,opacity}
+    .scene-cutout{filter:drop-shadow(3px 0 0 #fffaf0) drop-shadow(-3px 0 0 #fffaf0) drop-shadow(0 3px 0 #fffaf0) drop-shadow(0 -3px 0 #fffaf0) drop-shadow(0 10px 12px rgba(0,0,0,.3))}
+    .scene-native-text{box-sizing:border-box;display:grid;place-items:center;filter:drop-shadow(0 9px 0 rgba(0,0,0,.17))}
+    .scene-native-text svg{width:100%;height:100%;min-width:0;min-height:0;display:block}
     #scene-video{background:#090b0c}
     .shade{position:absolute;inset:0;background:rgba(6,8,9,.16);box-shadow:inset 0 -260px 160px rgba(6,8,9,.7)}
     .meta{position:absolute;top:4.2%;left:4.2%;display:flex;gap:12px;align-items:center;font-size:22px;font-weight:700;text-shadow:0 2px 8px #000}
@@ -1006,8 +1057,8 @@ export function buildDirectorSceneHtml(input: {
   <div class="frame ${layoutClass}" data-render-strategy="${renderStrategy}">
     <div id="scene-stage" class="scene-stage">${mediaMarkup}</div>
     <div class="shade"></div>
-    <div class="meta"><b>${modeLabel}</b><span>SHOT ${shotIndex}</span></div>
-    <div class="copy"><div class="title">${title}</div>${subtitleMarkup}</div>
+    ${input.modeLabel === 'VOX' ? '' : `<div class="meta"><b>${modeLabel}</b><span>SHOT ${shotIndex}</span></div>`}
+    <div class="copy">${input.title.trim() && !(input.modeLabel === 'VOX' && layers.some((layer) => layer.content?.text.trim() === input.title.trim())) ? `<div class="title">${title}</div>` : ''}${subtitleMarkup}</div>
   </div>
   <script nonce="director-render">
     (() => {
@@ -1064,7 +1115,17 @@ export function buildDirectorSceneHtml(input: {
           const rotation = interpolate(from.rotation, to.rotation, progress);
           element.style.zIndex = String(layer.zIndex);
           element.style.opacity = String(interpolate(from.opacity, to.opacity, progress));
-          element.style.transform = 'translate3d(' + (((x - .5) * 100) + layer.depth * 3) + '%, ' + (((y - .5) * 100) + layer.depth * 1.5) + '%, 0) scale(' + scale + ') rotate(' + rotation + 'deg)';
+          if (layer.sized) {
+            element.style.inset = 'auto';
+            element.style.left = (x * 100) + '%';
+            element.style.top = (y * 100) + '%';
+            element.style.width = (layer.width * 100) + '%';
+            element.style.height = (layer.height * 100) + '%';
+            element.style.objectFit = layer.fit;
+            element.style.transform = 'translate3d(-50%, -50%, 0) scale(' + scale + ') rotate(' + rotation + 'deg)';
+          } else {
+            element.style.transform = 'translate3d(' + (((x - .5) * 100) + layer.depth * 3) + '%, ' + (((y - .5) * 100) + layer.depth * 1.5) + '%, 0) scale(' + scale + ') rotate(' + rotation + 'deg)';
+          }
         }
       };
       const seekVideo = (seconds) => {
@@ -1134,6 +1195,43 @@ export function buildDirectorSceneHtml(input: {
   </script>
 </body>
 </html>`;
+}
+
+/** Shared by browser preview and export; all copy is escaped and fitted as native SVG text. */
+export function buildDirectorTextLayerSvg(text: string, widthPx = 1000, heightPx = 280): string {
+  const width = clamp(finiteNumber(widthPx, 1000), 100, 4000);
+  const height = clamp(finiteNumber(heightPx, 280), 60, 4000);
+  const padding = Math.min(width, height) * 0.14;
+  const measure = (value: string) => Array.from(value).reduce((sum, char) => sum + (/[^\u0000-\u00ff]/u.test(char) ? 1 : /\s/u.test(char) ? 0.34 : 0.62), 0);
+  const wrap = (fontSize: number): string[] => text.split('\n').flatMap((paragraph) => {
+    const result: string[] = [];
+    let line = '';
+    for (const char of Array.from(paragraph)) {
+      if (line && measure(line + char) * fontSize > width - 2 * padding) { result.push(line); line = ''; }
+      line += char;
+    }
+    result.push(line);
+    // Balance a short trailing line; prefer a clause boundary when it fits.
+    if (result.length > 1 && measure(result.at(-1)!) < measure(result.at(-2)!) * 0.5) {
+      const chars = Array.from(result.slice(-2).join(''));
+      const capacity = (width - 2 * padding) / fontSize;
+      const breaks = chars.slice(1).map((_, index) => {
+        const before = chars.slice(0, index + 1).join('');
+        const after = chars.slice(index + 1).join('');
+        const left = measure(before);
+        const right = measure(after);
+        return { before, after, left, right, score: Math.abs(left - right) + (/[，。！？、；：,;:!?]$/u.test(before) ? -2 : 0) + (/^[，。！？、；：,;:!?]/u.test(after) ? 20 : 0) };
+      }).filter((item) => item.left <= capacity && item.right <= capacity).sort((a, b) => a.score - b.score);
+      if (breaks[0]) result.splice(-2, 2, breaks[0].before, breaks[0].after);
+    }
+    return result;
+  });
+  let fontSize = Math.min(96, height * 0.42);
+  let lines = wrap(fontSize);
+  while (fontSize > 5 && lines.length * fontSize * 1.2 > height - padding * 2) { fontSize -= 1; lines = wrap(fontSize); }
+  const lineHeight = fontSize * 1.2;
+  const firstBaseline = (height - lines.length * lineHeight) / 2 + fontSize * 0.95;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(text)}"><rect width="${width}" height="${height}" fill="#fff9e9"/><rect width="${Math.max(10, width * 0.018)}" height="${height}" fill="#e54c3f"/><text x="${width / 2}" y="${firstBaseline}" fill="#16191c" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="${fontSize}" font-weight="800" text-anchor="middle" xml:space="preserve">${lines.map((line, index) => `<tspan x="${width / 2}" dy="${index ? lineHeight : 0}">${escapeHtml(line)}</tspan>`).join('')}</text></svg>`;
 }
 
 function normalizeLayerFrames(frames: readonly EditorialLayerMotionKeyframe[], durationMs: number): EditorialLayerMotionKeyframe[] {

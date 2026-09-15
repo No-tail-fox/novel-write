@@ -47,6 +47,7 @@ const routeBehaviorEvidence: Partial<Record<ShellView | 'shell', BehaviorEvidenc
   'html-video': { disabled: 'disabled={', loading: 'Loader2', error: 'InlineActionFeedback' },
   'image-lab': { disabled: 'disabled={', loading: 'imageLabAction.busy', error: 'InlineActionFeedback' },
   'voice-lab': { disabled: 'disabled={', loading: 'Loader2', error: 'InlineActionFeedback' },
+  'video-lab': { disabled: 'disabled={', loading: 'generationBusy', error: 'submitError' },
   'music-mv': { disabled: 'disabled={', loading: 'musicAction.busy', error: 'InlineActionFeedback' },
   'book-selection': { disabled: 'disabled={', loading: 'pendingAction', error: 'InlineActionFeedback' },
   benchmark: { disabled: 'disabled={', loading: 'Loader2', error: 'InlineActionFeedback' },
@@ -97,6 +98,7 @@ function bridgeChain(...entries: Array<readonly [source: string, evidence: strin
 const productShellTest = 'tests/product-shell-ui.test.ts';
 const historyTest = 'tests/history-governance.test.ts';
 const htmlVideoStudioTest = 'tests/html-video-studio-ui.test.ts';
+const videoLabTest = 'tests/video-lab-ui.test.ts';
 
 export const rendererCommandInventory = {
   addHtmlVideoAsset: command(owner(
@@ -381,6 +383,32 @@ export const rendererCommandInventory = {
       bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onGenerateVideo={']),
     ),
   ),
+  generateVideoLab: command(
+    owner(
+      'video-lab',
+      'src/features/labs/VideoLabPage.tsx',
+      'runGeneration',
+      'onClick={() => { void generateVideo(); }}',
+      '生成视频',
+      videoLabTest,
+      undefined,
+      { disabled: 'disabled={generationBusy || pickingImage || historyLoading || Boolean(providerIssue || inputIssue)}', loading: 'generationBusy', error: 'submitError' },
+      undefined,
+      ['generateVideo', 'runGeneration'],
+    ),
+    owner(
+      'video-lab',
+      'src/features/labs/VideoLabPage.tsx',
+      'runGeneration',
+      'onClick={() => { void retryRecord(selectedRecord); }}',
+      '按原参数重试',
+      videoLabTest,
+      undefined,
+      { disabled: 'disabled={generationBusy || pickingImage}', loading: 'generationBusy', error: 'submitError' },
+      undefined,
+      ['retryRecord', 'runGeneration'],
+    ),
+  ),
   generateVoiceLabPreview: command(
     owner('voice-lab', 'src/features/labs/VoiceLabPage.tsx', 'generatePreview', 'generatePreview', '生成试听', productShellTest),
     owner(
@@ -471,6 +499,16 @@ export const rendererCommandInventory = {
     ),
   )),
   openImageLabOutputDirectory: command(owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'openImageLabOutputDirectory', 'openImageLabOutputDirectory(record)', '打开目录', productShellTest)),
+  openVideoLabOutputDirectory: command(owner(
+    'video-lab',
+    'src/features/labs/VideoLabPage.tsx',
+    'openOutputDirectory',
+    'onClick={() => { void openOutputDirectory(selectedRecord); }}',
+    '打开目录',
+    videoLabTest,
+    undefined,
+    { disabled: 'disabled={!selectedRecord.videoPath || openingDirectory}', loading: 'openingDirectory', error: 'submitError' },
+  )),
   listVolcengineSpeakers: command(
     owner('settings', 'src/features/settings/SettingsPage.tsx', 'refreshVolcengineSpeakers', 'onRefreshVolcengineSpeakers', '加载音色', productShellTest, 'src/features/settings/ProviderProfileManagers.tsx', undefined, 'src/features/settings/SettingsPage.tsx', undefined, bridgeChain(['src/features/settings/SettingsPage.tsx', 'onRefreshVolcengineSpeakers={refreshVolcengineSpeakers}'])),
     owner('voice-lab', 'src/features/labs/VoiceLabPage.tsx', 'fetchVolcengineVoiceCatalog', 'onClick={reloadVolcengineCatalog}', '重新加载豆包音色', 'tests/local-labs-ui.test.ts'),
@@ -1036,6 +1074,9 @@ export const rendererCommandInventory = {
   selectLocalImage: command(
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'selectImageLabReferenceImage', 'onClick={selectImageLabReferenceImage}', '添加参考图', productShellTest, undefined, { disabled: 'disabled={imageLabAction.busy}', loading: 'imageLabAction.busy', error: 'InlineActionFeedback' }),
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('first')", '首帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsFirstFrame}', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('last')", '尾帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsLastFrame}', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('reference')", '添加参考图', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferences || references.length >= 8}', loading: 'pickingImage', error: 'submitError' }),
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'selectTaskReferenceImage', 'onClick={selectTaskReferenceImage}', '上传主角参考图', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'addEditorReferenceImage', 'onClick={() => void addEditorReferenceImage()}', '添加参考图', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'selectDraftBackgroundImage', 'onClick={selectDraftBackgroundImage}', '浏览', productShellTest),

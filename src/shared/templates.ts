@@ -339,8 +339,8 @@ export const imageAnimations = [
   '闪光放大 II',
 ];
 
-export const draftTemplates: DraftTemplate[] = [
-  {
+// Kept as a migration fingerprint: never change this historical preset.
+export const legacyDefaultDraftTemplate: DraftTemplate = {
     id: 'default-portrait-9-16',
     name: '默认竖屏',
     isDefault: true,
@@ -352,7 +352,114 @@ export const draftTemplates: DraftTemplate[] = [
     caption: { ...captionBase, y: -0.21510416666666668 },
     disclaimer: disclaimerBase,
     audio: audioBase,
-  },
+};
+
+const portraitBase: DraftTemplate = {
+  ...structuredClone(legacyDefaultDraftTemplate),
+  name: '沉浸口播',
+  title: { ...titleBase, text: '把重点讲清楚', x: -0.08, y: -0.66, width: 0.76, fontSize: 13, color: '#FFFFFF', underline: false, align: 0, border: { color: '#000000', width: 12, alpha: 0.8 } },
+  subtitle: { ...subtitleBase, visible: false, y: -0.43, fontSize: 7, letterSpacing: 0, lineSpacing: 2 },
+  caption: { ...captionBase, x: -0.06, y: 0.48, width: 0.76, fontSize: 8, color: '#FFFFFF', maxCharsPerLine: 14, bold: true, background: { color: '#000000', alpha: 0.55, roundRadius: 0.12 } },
+  disclaimer: { ...disclaimerBase, visible: false, text: '画面含 AI 生成素材', y: 0.68, fontSize: 5, alpha: 0.7, lineSpacing: 0, border: noBorder },
+};
+
+function portraitPreset(id: string, name: string, patch: Partial<DraftTemplate>): DraftTemplate {
+  return { ...structuredClone(portraitBase), ...patch, id, name, isDefault: true };
+}
+
+// Landscape type is sized for 1920px width, with short captions below the subject.
+const landscapeBase: DraftTemplate = {
+  ...structuredClone(portraitBase),
+  id: 'builtin-landscape-talking',
+  name: '横屏口播',
+  canvas: { width: 1920, height: 1080, ratio: '16:9', backgroundColor: '#10151C', backgroundImage: '' },
+  image: { ...portraitBase.image, ratio: '16:9', animation: '无动画' },
+  title: { ...portraitBase.title, text: '把复杂问题讲明白', x: 0, y: -0.72, width: 0.84, fontSize: 6.5, border: { color: '#000000', width: 8, alpha: 0.8 } },
+  subtitle: { ...portraitBase.subtitle, y: -0.48, fontSize: 4.2, width: 0.84, border: noBorder },
+  caption: { ...portraitBase.caption, x: 0, y: 0.70, width: 0.84, fontSize: 4.2, bold: false, maxCharsPerLine: 24, background: { color: '#000000', alpha: 0.48, roundRadius: 0.1 } },
+  disclaimer: { ...portraitBase.disclaimer, y: 0.9, fontSize: 2.5, width: 0.84 },
+};
+
+function landscapePreset(id: string, name: string, patch: Partial<DraftTemplate>): DraftTemplate {
+  return { ...structuredClone(landscapeBase), ...patch, id, name, isDefault: true };
+}
+
+/** Editorial guidance lives beside presets without becoming user-saved template data. */
+export const draftTemplateGuides: Record<string, { description: string; captionExample: string }> = {
+  'default-portrait-9-16': { description: '口播 / 日常分享 · 顶部短标题，下方逐句字幕，主体留在中间。', captionExample: '先把最重要的一句话讲清楚' },
+  'builtin-portrait-knowledge': { description: '知识科普 / 观点 · 标题、画面、字幕各占一个区域。', captionExample: '一个画面，只解释一个知识点' },
+  'builtin-portrait-story': { description: '故事解说 / 纪实 · 宽画幅居中，字幕放在独立底栏。', captionExample: '故事，就从这一刻开始' },
+  'builtin-portrait-quote': { description: '情绪 / 风景 · 全屏画面配一句话，关闭常驻标题。', captionExample: '慢一点，也能看见生活的光' },
+  'builtin-portrait-editorial': { description: '读书 / 人物 / 生活 · 留白纸底、左对齐标题和独立图片区。', captionExample: '从一个细节，读懂整个故事' },
+  'builtin-landscape-talking': { description: '16:9 口播 / 访谈 · 全屏主体、左上主题、下方短句字幕。', captionExample: '先讲清楚问题，再给出你的观点' },
+  'builtin-landscape-split': { description: '16:9 知识 / 评测 · 左侧讲观点，右侧放画面，字幕独立在底部。', captionExample: '把现象和解释放在同一个画面里' },
+  'builtin-landscape-documentary': { description: '16:9 故事 / 纪实 · 宽幕画面配底栏字幕，关闭常驻标题。', captionExample: '故事的转折，往往藏在不起眼的细节里' },
+  'builtin-landscape-tutorial': { description: '16:9 录屏 / 教程 · 完整显示操作画面，上方步骤名、下方讲解。', captionExample: '跟着画面完成这一步，再进入下一步' },
+  'builtin-landscape-editorial': { description: '16:9 读书 / 人文 · 左图右文，纸底留白，短标题与图片分开。', captionExample: '换一个视角，重新理解熟悉的事物' },
+};
+
+const DRAFT_IMAGE_COMPOSITION_MARKER = '[StoryDream 模板安全构图]';
+
+/**
+ * Describes the part of a generated image that can survive the selected draft
+ * template. This is kept with template geometry so prompt generation, custom
+ * templates, preview, and Jianying export all use the same framing contract.
+ */
+export function draftImageCompositionGuidance(template: DraftTemplate): string {
+  if (!template.image.visible) return '';
+  const canvasWidth = Math.max(1, template.canvas.width);
+  const canvasHeight = Math.max(1, template.canvas.height);
+  const frameWidth = clampNumber(template.image.width, 1, 0.01, 1);
+  const frameHeight = clampNumber(template.image.height, 1, 0.01, 1);
+  const frameCoverage = frameWidth * frameHeight;
+  const sourceRatio = parseDraftRatio(template.image.ratio, canvasWidth / canvasHeight);
+  const frameRatio = (canvasWidth * frameWidth) / (canvasHeight * frameHeight);
+  const mediaScale = template.image.fit === 'contain' ? 1 : clampNumber(template.image.mediaScale, 1, 0.1, 8);
+  const visibleWidthFraction = template.image.fit === 'contain' || sourceRatio <= frameRatio
+    ? 1
+    : Math.min(1, frameRatio / sourceRatio / mediaScale);
+  const visibleHeightFraction = template.image.fit === 'contain' || sourceRatio >= frameRatio
+    ? 1
+    : Math.min(1, sourceRatio / frameRatio / mediaScale);
+  if (frameCoverage >= 0.98 && visibleWidthFraction >= 0.98 && visibleHeightFraction >= 0.98) return '';
+
+  const left = Math.round(clampNumber(template.image.left, 0, 0, 1) * 100);
+  const top = Math.round(clampNumber(template.image.top, 0, 0, 1) * 100);
+  const width = Math.round(frameWidth * 100);
+  const height = Math.round(frameHeight * 100);
+  const focusX = Math.round(clampNumber(template.image.focusX, 0.5, 0, 1) * 100);
+  const focusY = Math.round(clampNumber(template.image.focusY, 0.5, 0, 1) * 100);
+  const visibleWidth = Math.round(visibleWidthFraction * 100);
+  const visibleHeight = Math.round(visibleHeightFraction * 100);
+  const safeWidth = Math.max(20, Math.round(visibleWidthFraction * 80));
+  const safeHeight = Math.max(20, Math.round(visibleHeightFraction * 80));
+  const fitDescription = template.image.fit === 'contain'
+    ? '图片会完整缩放进框，不裁切；允许背景留白，但主体不能贴边。'
+    : `图片会裁切填满，原图约保留横向 ${visibleWidth}%、纵向 ${visibleHeight}%，裁切焦点在原图横向 ${focusX}%、纵向 ${focusY}%。`;
+  return [
+    DRAFT_IMAGE_COMPOSITION_MARKER,
+    `最终图片框位于视频画布左侧 ${left}%、顶部 ${top}%，宽 ${width}%、高 ${height}%。${fitDescription}`,
+    `按最终可见框构图：主体脸部、手部、关键动作和关键物件集中在裁切焦点周围约横向 ${safeWidth}%、纵向 ${safeHeight}% 的安全区内。优先近景或中景，四周只放可裁掉的延展背景；不要在图片中生成文字、字幕、水印、边框或重要边缘元素。`,
+  ].join('\n');
+}
+
+export function appendDraftImageCompositionGuidance(prompt: string, template?: DraftTemplate | null): string {
+  const guidance = template ? draftImageCompositionGuidance(template) : '';
+  const markerIndex = prompt.indexOf(DRAFT_IMAGE_COMPOSITION_MARKER);
+  const basePrompt = (markerIndex >= 0 ? prompt.slice(0, markerIndex) : prompt).trimEnd();
+  return guidance ? `${basePrompt}\n\n${guidance}` : basePrompt;
+}
+
+function parseDraftRatio(value: string, fallback: number): number {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/u);
+  if (!match) return fallback;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? width / height : fallback;
+}
+
+export const draftTemplates: DraftTemplate[] = [
+  structuredClone(portraitBase),
   {
     id: 'builtin-portrait-4-3',
     name: '竖屏4:3',
@@ -385,6 +492,56 @@ export const draftTemplates: DraftTemplate[] = [
     },
     audio: audioBase,
   },
+  portraitPreset('builtin-portrait-knowledge', '顶栏科普', {
+    canvas: { ...portraitBase.canvas, backgroundColor: '#101824' },
+    image: { ...portraitBase.image, top: 0.28, height: 0.40, animation: '无动画' },
+    title: { ...portraitBase.title, text: '一个问题\n讲清一个知识点', x: -0.06, y: -0.64, width: 0.78, fontSize: 13, color: '#FFD76A', align: 0, border: noBorder, lineSpacing: 2 },
+    caption: { ...portraitBase.caption, y: 0.52, fontSize: 8, bold: false, background: { color: '#101824', alpha: 0, roundRadius: 0 } },
+  }),
+  portraitPreset('builtin-portrait-story', '宽幕故事', {
+    canvas: { ...portraitBase.canvas, backgroundColor: '#080A0D' },
+    image: { ...portraitBase.image, top: 0.25, height: 0.46, animation: '无动画', motion: 'zoom_in', motionStrength: 0.35 },
+    title: { ...portraitBase.title, text: '故事从这里开始', x: 0, y: -0.65, width: 0.78, fontSize: 11, align: 1, color: '#E8DFD1', border: noBorder },
+    caption: { ...portraitBase.caption, x: 0, y: 0.54, width: 0.78, fontSize: 7.5, bold: false, maxCharsPerLine: 16, background: { color: '#080A0D', alpha: 0, roundRadius: 0 } },
+  }),
+  portraitPreset('builtin-portrait-quote', '留白金句', {
+    image: { ...portraitBase.image, animation: '无动画', motion: 'zoom_out', motionStrength: 0.25 },
+    title: { ...portraitBase.title, visible: false },
+    caption: { ...portraitBase.caption, x: -0.04, y: 0.42, fontSize: 8.5, fontFamily: '宋体', bold: false, maxCharsPerLine: 14, border: { color: '#000000', width: 10, alpha: 0.75 }, background: { color: '#000000', alpha: 0.22, roundRadius: 0 } },
+  }),
+  portraitPreset('builtin-portrait-editorial', '杂志图文', {
+    canvas: { ...portraitBase.canvas, backgroundColor: '#F0ECE3' },
+    image: { ...portraitBase.image, left: 0.08, width: 0.84, top: 0.28, height: 0.40, animation: '无动画' },
+    title: { ...portraitBase.title, text: '在日常里\n发现新的视角', x: 0, y: -0.65, width: 0.84, fontSize: 12, fontFamily: '宋体', color: '#292820', border: noBorder, lineSpacing: 3 },
+    caption: { ...portraitBase.caption, x: 0, y: 0.51, width: 0.80, fontSize: 7.5, color: '#292820', bold: false, align: 0, maxCharsPerLine: 16, background: { color: '#F0ECE3', alpha: 0, roundRadius: 0 } },
+    disclaimer: { ...portraitBase.disclaimer, color: '#625F55' },
+  }),
+  structuredClone(landscapeBase),
+  landscapePreset('builtin-landscape-split', '左右科普', {
+    canvas: { ...landscapeBase.canvas, backgroundColor: '#101C29' },
+    image: { ...landscapeBase.image, left: 0.42, width: 0.54, top: 0.10, height: 0.66 },
+    title: { ...landscapeBase.title, text: '一个问题\n分两步看清', x: -0.56, y: -0.18, width: 0.32, fontSize: 7, color: '#EAC873', lineSpacing: 3, border: noBorder },
+    caption: { ...landscapeBase.caption, y: 0.77, background: { color: '#101C29', alpha: 0, roundRadius: 0 } },
+  }),
+  landscapePreset('builtin-landscape-documentary', '横屏纪录', {
+    canvas: { ...landscapeBase.canvas, backgroundColor: '#0B0D10' },
+    image: { ...landscapeBase.image, top: 0.07, height: 0.70, motion: 'zoom_in', motionStrength: 0.2 },
+    title: { ...landscapeBase.title, visible: false },
+    caption: { ...landscapeBase.caption, y: 0.77, fontSize: 4.1, maxCharsPerLine: 26, background: { color: '#0B0D10', alpha: 0, roundRadius: 0 } },
+  }),
+  landscapePreset('builtin-landscape-tutorial', '清晰教程', {
+    canvas: { ...landscapeBase.canvas, backgroundColor: '#151A23' },
+    image: { ...landscapeBase.image, left: 0.04, width: 0.92, top: 0.16, height: 0.66, fit: 'contain' },
+    title: { ...landscapeBase.title, text: '跟着画面，完成这一步', y: -0.85, width: 0.92, fontSize: 4.8, color: '#E9F0F6', border: noBorder },
+    caption: { ...landscapeBase.caption, y: 0.83, fontSize: 3.8, maxCharsPerLine: 28, background: { color: '#151A23', alpha: 0, roundRadius: 0 } },
+  }),
+  landscapePreset('builtin-landscape-editorial', '横屏书摘', {
+    canvas: { ...landscapeBase.canvas, backgroundColor: '#F1EEE5' },
+    image: { ...landscapeBase.image, left: 0.06, width: 0.50, top: 0.08, height: 0.72 },
+    title: { ...landscapeBase.title, text: '从一段文字\n看见更大的世界', x: 0.54, y: -0.18, width: 0.32, fontSize: 6, fontFamily: '宋体', color: '#302E28', lineSpacing: 3, border: noBorder },
+    caption: { ...landscapeBase.caption, y: 0.80, fontSize: 4, color: '#302E28', background: { color: '#F1EEE5', alpha: 0, roundRadius: 0 } },
+    disclaimer: { ...landscapeBase.disclaimer, color: '#625F55' },
+  }),
 ];
 
 export function getTemplate(id = 'default-portrait-9-16'): DraftTemplate {

@@ -7,13 +7,13 @@ async function source(path: string): Promise<string> {
 }
 
 describe('director desk render strategy UI', () => {
-  it('exposes only deterministic layers and AI living poster as selectable engines', async () => {
+  it('exposes layers, AI living poster and Remotion animation engines', async () => {
     const workspace = await source('src/features/director-desk/DirectorDeskWorkspace.tsx');
 
-    expect(workspace).toContain("DIRECTOR_RENDER_STRATEGIES = ['deterministic-layers', 'living-poster']");
+    expect(workspace).toContain("DIRECTOR_RENDER_STRATEGIES = ['deterministic-layers', 'living-poster', 'remotion']");
     expect(workspace).toContain('label="镜头渲染策略"');
-    expect(workspace).toContain('本地关键帧');
-    expect(workspace).toContain('AI 动态海报');
+    expect(workspace).toContain('本地拼贴动画');
+    expect(workspace).toContain('图生视频');
     expect(workspace).toContain('旧版混合渲染模式已停用');
     expect(workspace).not.toMatch(/value=['"]hybrid['"]/u);
   });

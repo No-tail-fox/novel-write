@@ -137,7 +137,10 @@
 @media (prefers-reduced-motion: reduce) {
   .storydream-provider *,
   .storydream-provider *::before,
-  .storydream-provider *::after {
+  .storydream-provider *::after,
+  [data-portal-node] *,
+  [data-portal-node] *::before,
+  [data-portal-node] *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

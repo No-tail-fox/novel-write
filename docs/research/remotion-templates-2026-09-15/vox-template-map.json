@@ -1,0 +1,744 @@
+{
+  "verifiedOn": "2026-09-15",
+  "scope": "32 proposed StoryDream templates across eight VOX use cases; source-backed mappings, not installed templates or 32 independent upstream implementations.",
+  "sources": {
+    "rve:quote-card": {
+      "name": "Quote Card",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/quote-card.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "实渲组件"
+    },
+    "rve:photo-stack": {
+      "name": "Photo Stack",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/photo-stack.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "已读源码"
+    },
+    "rve:comparison-chart": {
+      "name": "Comparison Chart",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/comparison-chart.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "实渲组件"
+    },
+    "rve:image-comparison-slider": {
+      "name": "Image Comparison Slider",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/image-comparison-slider.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "目录已核验"
+    },
+    "rve:line-chart": {
+      "name": "Line Chart",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/line-chart.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "实渲组件"
+    },
+    "rve:pie-chart": {
+      "name": "Pie Chart",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/pie-chart.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "目录已核验"
+    },
+    "rve:progress-steps": {
+      "name": "Progress Steps",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/progress-steps.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "实渲组件"
+    },
+    "rve:animated-list": {
+      "name": "Animated List",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/animated-list.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "目录已核验"
+    },
+    "rve:image-carousel": {
+      "name": "Image Carousel",
+      "sourceUrl": "https://github.com/reactvideoeditor/remotion-templates/blob/main/templates/image-carousel.tsx",
+      "previewUrl": "https://www.reactvideoeditor.com/remotion-templates",
+      "license": "MIT (repository README declaration)",
+      "verification": "目录已核验"
+    },
+    "rendercomp:chapter-title": {
+      "name": "Chapter Title Card",
+      "sourceUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/src/components/chapter-title/ChapterTitle.tsx",
+      "previewUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/docs/thumbs/chapter-title.gif",
+      "license": "MIT (LICENSE verified)",
+      "verification": "目录已核验"
+    },
+    "rendercomp:kpi-counter": {
+      "name": "KPI Counter",
+      "sourceUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/src/components/kpi-counter/KpiCounter.tsx",
+      "previewUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/docs/thumbs/kpi-counter.gif",
+      "license": "MIT (LICENSE verified)",
+      "verification": "已读源码"
+    },
+    "rendercomp:bar-chart-anim": {
+      "name": "Animated Bar Chart",
+      "sourceUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/src/components/bar-chart-anim/BarChartAnim.tsx",
+      "previewUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/docs/thumbs/bar-chart-anim.gif",
+      "license": "MIT (LICENSE verified)",
+      "verification": "目录已核验"
+    },
+    "rendercomp:split-screen": {
+      "name": "Split Screen",
+      "sourceUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/src/components/split-screen/SplitScreen.tsx",
+      "previewUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/docs/thumbs/split-screen.gif",
+      "license": "MIT (LICENSE verified)",
+      "verification": "目录已核验"
+    },
+    "rendercomp:flip-page-transition": {
+      "name": "Page Flip",
+      "sourceUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/src/components/flip-page-transition/FlipPageTransition.tsx",
+      "previewUrl": "https://github.com/RenderComp/free-remotion-templates/blob/main/docs/thumbs/flip-page-transition.gif",
+      "license": "MIT (LICENSE verified)",
+      "verification": "实渲组件"
+    },
+    "shot:paper-craft-moves": {
+      "name": "paper-craft-moves",
+      "sourceUrl": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+      "previewUrl": "https://vincentwei1021.github.io/video-shotcraft/library.html#paper-craft-moves",
+      "license": "Apache-2.0 (LICENSE verified in previous research)",
+      "verification": "配方卡已核验，具体 demo 未实渲"
+    },
+    "shot:paper-title-card": {
+      "name": "paper-title-card",
+      "sourceUrl": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+      "previewUrl": "https://vincentwei1021.github.io/video-shotcraft/library.html#paper-title-card",
+      "license": "Apache-2.0 (LICENSE verified in previous research)",
+      "verification": "配方卡已核验，具体 demo 未实渲"
+    },
+    "shot:timeline-travel": {
+      "name": "timeline-travel",
+      "sourceUrl": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+      "previewUrl": "https://vincentwei1021.github.io/video-shotcraft/library.html#timeline-travel",
+      "license": "Apache-2.0 (LICENSE verified in previous research)",
+      "verification": "配方卡已核验，具体 demo 未实渲"
+    },
+    "shot:bezier-source-converge-merge": {
+      "name": "bezier-source-converge-merge",
+      "sourceUrl": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+      "previewUrl": "https://vincentwei1021.github.io/video-shotcraft/library.html#bezier-source-converge-merge",
+      "license": "Apache-2.0 (LICENSE verified in previous research)",
+      "verification": "配方卡已核验，具体 demo 未实渲"
+    },
+    "shot:ring-diagram-annotation-reveal": {
+      "name": "ring-diagram-annotation-reveal",
+      "sourceUrl": "https://github.com/Vincentwei1021/video-shotcraft/tree/main/references/shots",
+      "previewUrl": "https://vincentwei1021.github.io/video-shotcraft/library.html#ring-diagram-annotation-reveal",
+      "license": "Apache-2.0 (LICENSE verified in previous research)",
+      "verification": "配方卡已核验，具体 demo 未实渲"
+    },
+    "vox:actor": {
+      "name": "PaperActor",
+      "sourceUrl": "https://github.com/Phantomlau3674/voxstylehub-steven/blob/HEAD/xingchen-vox-collage/assets/remotion-template/vox-collage/PaperActor.tsx",
+      "previewUrl": "../../../.artifacts/remotion-check/vox-source-preview.mp4",
+      "license": "MIT (LICENSE verified)",
+      "verification": "本轮实渲组件"
+    },
+    "vox:arrow": {
+      "name": "DrawnArrow",
+      "sourceUrl": "https://github.com/Phantomlau3674/voxstylehub-steven/blob/HEAD/xingchen-vox-collage/assets/remotion-template/vox-collage/DrawnArrow.tsx",
+      "previewUrl": "../../../.artifacts/remotion-check/vox-source-preview.mp4",
+      "license": "MIT (LICENSE verified)",
+      "verification": "本轮实渲组件"
+    },
+    "official:news": {
+      "name": "News Article Highlight",
+      "sourceUrl": "https://www.remotion.dev/elements/text/news-article-highlight/",
+      "previewUrl": "https://www.remotion.dev/elements/text/news-article-highlight/",
+      "license": "Remotion 官方代码及依赖各自许可；非统一 MIT",
+      "verification": "页面完整源码已读，未本地实渲"
+    },
+    "official:polaroid": {
+      "name": "Polaroid Pictures",
+      "sourceUrl": "https://www.remotion.dev/elements/storytelling/polaroid-pictures/",
+      "previewUrl": "https://www.remotion.dev/elements/storytelling/polaroid-pictures/",
+      "license": "Remotion 官方代码及依赖各自许可；非统一 MIT",
+      "verification": "页面完整源码已读，未本地实渲"
+    },
+    "official:map": {
+      "name": "A-to-B Map Flyover",
+      "sourceUrl": "https://www.remotion.dev/elements/maps/map-flyover/",
+      "previewUrl": "https://www.remotion.dev/elements/maps/map-flyover/",
+      "license": "Remotion 官方代码及依赖各自许可；非统一 MIT",
+      "verification": "页面完整源码已读，未本地实渲"
+    },
+    "official:maps-guide": {
+      "name": "MapLibre / Turf 官方地图指南",
+      "sourceUrl": "https://www.remotion.dev/docs/maps",
+      "previewUrl": "https://www.remotion.dev/elements/maps/map-flyover/",
+      "license": "各代码/依赖/地图数据许可分别适用",
+      "verification": "已读指南；区域与历史变化是拟新增能力"
+    },
+    "swift:timeline": {
+      "name": "Timeline",
+      "sourceUrl": "https://github.com/zz41354899/SwiftClip/blob/HEAD/remotion/Timeline.tsx",
+      "previewUrl": "https://swift-clip.vercel.app/",
+      "license": "MIT (LICENSE verified)",
+      "verification": "已读源码；STEPS 写死"
+    },
+    "vellum:book": {
+      "name": "BookVideo / BookIdentity",
+      "sourceUrl": "https://github.com/SilentFleetKK/vellum-reel/blob/HEAD/src/video/BookVideo.tsx",
+      "previewUrl": "https://github.com/SilentFleetKK/vellum-reel#readme",
+      "license": "MIT (LICENSE verified)",
+      "verification": "已读 BookVideo、BookIdentity、schema 和示例配置，未本地实渲"
+    }
+  },
+  "items": [
+    {
+      "id": "paper-actors",
+      "category": "纸张拼贴",
+      "title": "分层纸片入场",
+      "adaptation": "组件组合",
+      "inputs": [
+        "透明主体图",
+        "背景图",
+        "层级/入场顺序"
+      ],
+      "sources": [
+        "vox:actor"
+      ],
+      "priority": "P0",
+      "note": "图层支持替换素材；原组件处理运动，纸边、投影与完整构图由包装模板提供。",
+      "installed": false
+    },
+    {
+      "id": "paper-polaroids",
+      "category": "纸张拼贴",
+      "title": "拍立得证据拼贴",
+      "adaptation": "组件适配",
+      "inputs": [
+        "图片",
+        "说明",
+        "出现顺序"
+      ],
+      "sources": [
+        "official:polaroid"
+      ],
+      "priority": "P0",
+      "note": "原版固定三张和 1480×640 布局；需列表参数、中文字体、本地素材及竖屏排版。",
+      "installed": false
+    },
+    {
+      "id": "paper-popup",
+      "category": "纸张拼贴",
+      "title": "胶带贴纸 / 立体纸卡",
+      "adaptation": "配方适配",
+      "inputs": [
+        "图片或卡片",
+        "标签"
+      ],
+      "sources": [
+        "shot:paper-craft-moves"
+      ],
+      "priority": "P1",
+      "note": "配方有 masking-tape-slap 与 popup-book-rise；后者是纸卡升起，不是连续翻书。",
+      "installed": false
+    },
+    {
+      "id": "paper-title",
+      "category": "纸张拼贴",
+      "title": "纸张标题压印",
+      "adaptation": "配方适配",
+      "inputs": [
+        "标题",
+        "强调词"
+      ],
+      "sources": [
+        "shot:paper-title-card"
+      ],
+      "priority": "P1",
+      "note": "逐词压印和重点词强调；中文应按语义片段而非英文空格分词。",
+      "installed": false
+    },
+    {
+      "id": "evidence-headline",
+      "category": "证据讲解",
+      "title": "新闻标题划重点",
+      "adaptation": "组件适配",
+      "inputs": [
+        "标题文字",
+        "强调词",
+        "来源"
+      ],
+      "sources": [
+        "official:news"
+      ],
+      "priority": "P0",
+      "note": "原版高亮的是 DOM 文字，没有截图 OCR 或自动框选。",
+      "installed": false
+    },
+    {
+      "id": "evidence-quote",
+      "category": "证据讲解",
+      "title": "引文与出处落版",
+      "adaptation": "组件适配",
+      "inputs": [
+        "引文",
+        "作者",
+        "出处"
+      ],
+      "sources": [
+        "rve:quote-card"
+      ],
+      "priority": "P0",
+      "note": "原始组件已实渲，需开放中文文案参数和最长行限制。",
+      "installed": false
+    },
+    {
+      "id": "evidence-stack",
+      "category": "证据讲解",
+      "title": "证据图片叠放",
+      "adaptation": "组件适配",
+      "inputs": [
+        "图片列表",
+        "标题",
+        "来源"
+      ],
+      "sources": [
+        "rve:photo-stack"
+      ],
+      "priority": "P0",
+      "note": "需去掉上游示例内容，来源标签与旁白时间点另接。",
+      "installed": false
+    },
+    {
+      "id": "evidence-focus",
+      "category": "证据讲解",
+      "title": "截图局部解释",
+      "adaptation": "新增组合",
+      "inputs": [
+        "截图",
+        "焦点区域",
+        "说明"
+      ],
+      "sources": [
+        "vox:arrow",
+        "vox:actor"
+      ],
+      "priority": "P1",
+      "note": "连线与入场组件可复用；截图裁剪、焦点缩放和坐标编辑需要新写。",
+      "installed": false
+    },
+    {
+      "id": "time-milestones",
+      "category": "时间叙事",
+      "title": "人物 / 事件时间线",
+      "adaptation": "组件适配",
+      "inputs": [
+        "日期",
+        "事件",
+        "说明"
+      ],
+      "sources": [
+        "swift:timeline"
+      ],
+      "priority": "P0",
+      "note": "源码含固定 STEPS 与企业示例；需改事件 props 和历史/传记样式。",
+      "installed": false
+    },
+    {
+      "id": "time-travel",
+      "category": "时间叙事",
+      "title": "沿时间轴推进",
+      "adaptation": "配方适配",
+      "inputs": [
+        "节点",
+        "节点图",
+        "停留时间"
+      ],
+      "sources": [
+        "shot:timeline-travel"
+      ],
+      "priority": "P1",
+      "note": "配方是沿横向时间线运镜；需适配内容长度及旁白停留。",
+      "installed": false
+    },
+    {
+      "id": "time-chapters",
+      "category": "时间叙事",
+      "title": "章节揭示",
+      "adaptation": "组件适配",
+      "inputs": [
+        "章节号",
+        "章节标题"
+      ],
+      "sources": [
+        "rendercomp:chapter-title"
+      ],
+      "priority": "P0",
+      "note": "按真实镜头时长设置入场和停留。",
+      "installed": false
+    },
+    {
+      "id": "time-year-counter",
+      "category": "时间叙事",
+      "title": "年代快速推进",
+      "adaptation": "新增组合",
+      "inputs": [
+        "起止年份",
+        "停顿年份"
+      ],
+      "sources": [
+        "rendercomp:kpi-counter"
+      ],
+      "priority": "P1",
+      "note": "数字组件改成整数年份，不能带千位分隔符；与事件标签组合。",
+      "installed": false
+    },
+    {
+      "id": "compare-split",
+      "category": "对比分析",
+      "title": "左右观点对照",
+      "adaptation": "组件适配",
+      "inputs": [
+        "两组图文",
+        "标签"
+      ],
+      "sources": [
+        "rendercomp:split-screen"
+      ],
+      "priority": "P0",
+      "note": "统一左右证据量，竖屏可改上下分区。",
+      "installed": false
+    },
+    {
+      "id": "compare-slider",
+      "category": "对比分析",
+      "title": "前后图片揭示",
+      "adaptation": "组件适配",
+      "inputs": [
+        "前图",
+        "后图",
+        "标签"
+      ],
+      "sources": [
+        "rve:image-comparison-slider"
+      ],
+      "priority": "P0",
+      "note": "需要两图比例与锚点一致；移动由帧驱动。",
+      "installed": false
+    },
+    {
+      "id": "compare-values",
+      "category": "对比分析",
+      "title": "两组指标比较",
+      "adaptation": "组件适配",
+      "inputs": [
+        "标签",
+        "两组数值",
+        "单位"
+      ],
+      "sources": [
+        "rve:comparison-chart"
+      ],
+      "priority": "P0",
+      "note": "原组件已实渲；需参数化并展示真实来源。",
+      "installed": false
+    },
+    {
+      "id": "compare-claims",
+      "category": "对比分析",
+      "title": "观点与反证",
+      "adaptation": "新增组合",
+      "inputs": [
+        "观点",
+        "反证",
+        "出处"
+      ],
+      "sources": [
+        "vox:actor",
+        "vox:arrow"
+      ],
+      "priority": "P1",
+      "note": "复用卡片与连线，新增先提出观点再揭示反证的时间编排。",
+      "installed": false
+    },
+    {
+      "id": "data-counter",
+      "category": "数据解释",
+      "title": "关键数字滚动",
+      "adaptation": "组件适配",
+      "inputs": [
+        "数值",
+        "单位",
+        "标签"
+      ],
+      "sources": [
+        "rendercomp:kpi-counter"
+      ],
+      "priority": "P0",
+      "note": "有类型化 props；核验极大值、小数和中文单位。",
+      "installed": false
+    },
+    {
+      "id": "data-bars",
+      "category": "数据解释",
+      "title": "柱状图比较",
+      "adaptation": "组件适配",
+      "inputs": [
+        "分类",
+        "数值",
+        "单位"
+      ],
+      "sources": [
+        "rendercomp:bar-chart-anim"
+      ],
+      "priority": "P0",
+      "note": "应根据数据确定坐标轴，不能沿用示例数值。",
+      "installed": false
+    },
+    {
+      "id": "data-line",
+      "category": "数据解释",
+      "title": "趋势线展开",
+      "adaptation": "组件适配",
+      "inputs": [
+        "时间点",
+        "数值",
+        "重点"
+      ],
+      "sources": [
+        "rve:line-chart"
+      ],
+      "priority": "P0",
+      "note": "原始组件已实渲；改为数据输入和横竖版布局。",
+      "installed": false
+    },
+    {
+      "id": "data-share",
+      "category": "数据解释",
+      "title": "占比拆解",
+      "adaptation": "组件适配",
+      "inputs": [
+        "分类",
+        "占比",
+        "说明"
+      ],
+      "sources": [
+        "rve:pie-chart"
+      ],
+      "priority": "P1",
+      "note": "校验总量，适配小扇区标签与实际单位。",
+      "installed": false
+    },
+    {
+      "id": "map-a-to-b",
+      "category": "地图叙事",
+      "title": "两地路线飞行",
+      "adaptation": "组件适配",
+      "inputs": [
+        "起终点坐标",
+        "地名",
+        "路线颜色"
+      ],
+      "sources": [
+        "official:map"
+      ],
+      "priority": "P1",
+      "note": "官方已有 origin/destination/label 参数与路径相机；地图瓦片和 worker 要纳入导出依赖。",
+      "installed": false
+    },
+    {
+      "id": "map-multi-stop",
+      "category": "地图叙事",
+      "title": "多站点行程",
+      "adaptation": "新增组合",
+      "inputs": [
+        "途经点",
+        "站名",
+        "停留时长"
+      ],
+      "sources": [
+        "official:map"
+      ],
+      "priority": "P1",
+      "note": "上游只支持两点；需要多段衔接、镜头继承与时长分配。",
+      "installed": false
+    },
+    {
+      "id": "map-region",
+      "category": "地图叙事",
+      "title": "地区聚焦与标注",
+      "adaptation": "需要新实现",
+      "inputs": [
+        "GeoJSON 区域",
+        "标注",
+        "焦点"
+      ],
+      "sources": [
+        "official:maps-guide"
+      ],
+      "priority": "P2",
+      "note": "官方指南提供地图基础；区域选择与填色模板需要新写。",
+      "installed": false
+    },
+    {
+      "id": "map-history",
+      "category": "地图叙事",
+      "title": "历史路径变化",
+      "adaptation": "需要新实现",
+      "inputs": [
+        "地图底图",
+        "路径",
+        "年代",
+        "来源"
+      ],
+      "sources": [
+        "official:maps-guide",
+        "vox:arrow"
+      ],
+      "priority": "P2",
+      "note": "没有核实到现成历史地图模板；路径和边界必须来自真实数据/用户素材。",
+      "installed": false
+    },
+    {
+      "id": "flow-steps",
+      "category": "原理流程",
+      "title": "步骤逐项推进",
+      "adaptation": "组件适配",
+      "inputs": [
+        "步骤",
+        "说明"
+      ],
+      "sources": [
+        "rve:progress-steps"
+      ],
+      "priority": "P0",
+      "note": "原组件已实渲；支持步骤数量与旁白节点。",
+      "installed": false
+    },
+    {
+      "id": "flow-converge",
+      "category": "原理流程",
+      "title": "多路信息汇合",
+      "adaptation": "配方适配",
+      "inputs": [
+        "来源节点",
+        "汇合点",
+        "标签"
+      ],
+      "sources": [
+        "shot:bezier-source-converge-merge"
+      ],
+      "priority": "P1",
+      "note": "配方以四来源节点为例，需节点数和文本参数化。",
+      "installed": false
+    },
+    {
+      "id": "flow-rings",
+      "category": "原理流程",
+      "title": "原理分层与注释",
+      "adaptation": "配方适配",
+      "inputs": [
+        "主体",
+        "分层",
+        "说明"
+      ],
+      "sources": [
+        "shot:ring-diagram-annotation-reveal"
+      ],
+      "priority": "P1",
+      "note": "适合同心层结构；不能直接冒充任意关系树组件。",
+      "installed": false
+    },
+    {
+      "id": "flow-causal",
+      "category": "原理流程",
+      "title": "因果关系连线",
+      "adaptation": "新增组合",
+      "inputs": [
+        "原因",
+        "结果",
+        "关系"
+      ],
+      "sources": [
+        "vox:arrow",
+        "vox:actor"
+      ],
+      "priority": "P0",
+      "note": "组件可实渲，自动布局与边标签需要新增。",
+      "installed": false
+    },
+    {
+      "id": "book-identity",
+      "category": "书籍推荐",
+      "title": "书籍介绍 / 封面登场",
+      "adaptation": "工程拆分",
+      "inputs": [
+        "书名",
+        "作者",
+        "封面",
+        "推荐语"
+      ],
+      "sources": [
+        "vellum:book",
+        "vox:actor"
+      ],
+      "priority": "P0",
+      "note": "VellumReel 已有文字书封、书名作者和进度；真实封面字段与图片渲染需新增。",
+      "installed": false
+    },
+    {
+      "id": "book-takeaways",
+      "category": "书籍推荐",
+      "title": "三个阅读收获",
+      "adaptation": "新增组合",
+      "inputs": [
+        "书封",
+        "三条收获"
+      ],
+      "sources": [
+        "rve:animated-list",
+        "vellum:book"
+      ],
+      "priority": "P0",
+      "note": "把列表与书籍身份组合；文案由用户/真实书籍内容提供。",
+      "installed": false
+    },
+    {
+      "id": "book-excerpt",
+      "category": "书籍推荐",
+      "title": "书摘重点揭示",
+      "adaptation": "新增组合",
+      "inputs": [
+        "摘录",
+        "页码",
+        "出处",
+        "可选内页图"
+      ],
+      "sources": [
+        "official:news",
+        "rve:quote-card"
+      ],
+      "priority": "P0",
+      "note": "纯文字摘录可复用；原始内页图上的划线需新增坐标标注。",
+      "installed": false
+    },
+    {
+      "id": "book-reading-list",
+      "category": "书籍推荐",
+      "title": "同主题书单",
+      "adaptation": "组件适配",
+      "inputs": [
+        "书封列表",
+        "书名",
+        "推荐语"
+      ],
+      "sources": [
+        "rve:image-carousel"
+      ],
+      "priority": "P1",
+      "note": "通用轮播改为书封等比完整显示，增加书名与书单数据。",
+      "installed": false
+    }
+  ]
+}

@@ -1,3 +1,19 @@
+.editorial-recipe {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--shell-border);
+}
+.editorial-recipe__hint { margin: 0; color: var(--shell-muted); font-size: 12px; line-height: 1.6; }
+.editorial-recipe__error { margin: 0; color: var(--danger); font-size: 12px; }
+.editorial-recipe__frames { display: flex; gap: 8px; min-width: 0; }
+.editorial-recipe__frames figure { flex: 1; min-width: 0; margin: 0; }
+.editorial-recipe__frames img, .editorial-recipe__empty { width: 100%; height: 68px; object-fit: contain; background: var(--shell-surface); border: 1px solid var(--shell-border); border-radius: var(--sd-radius); }
+.editorial-recipe__empty { display: grid; place-items: center; color: var(--shell-muted); font-size: 12px; }
+.editorial-recipe__frames figcaption { margin-top: 4px; color: var(--shell-muted); font-size: 11px; }
+
 .vox-workbench {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);

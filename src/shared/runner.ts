@@ -10,7 +10,7 @@ import type { FileDatabase } from './storage';
 import type { AnthropicMessagesJsonRequest, ConfiguredJsonLlm, LlmJsonResult, LlmMessage, OpenAiCompatibleJsonRequest } from './llm-provider';
 import { buildStoryboundReviewSystemPrompt, formatAiSourceContext } from './research';
 import { countVisibleCharacters, normalizeStoryboardSceneCount, normalizeTargetLength, storyboardSceneCountRange, targetWordCountRange, type TargetWordCountRange } from './content-metrics';
-import { normalizeDraftTemplate } from './templates';
+import { appendDraftImageCompositionGuidance, draftImageCompositionGuidance, normalizeDraftTemplate } from './templates';
 import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplate, selectTaskPromptTemplate, type PromptRenderContext } from './prompt-templates';
 import { defaultCustomStyles } from './config';
 import { copyPersonMaterialsForScenes } from './person-assets';
@@ -579,15 +579,20 @@ async function ensureContentArtifact(input: {
   const { db, task, options, workDir, emit, markStep, pipeline } = input;
   throwIfAborted(options.signal);
   const appState = await db.getState();
-  const subtitleMaxCharsPerLine = appState.draftTemplates.find((template) => template.id === task.templateId)?.caption.maxCharsPerLine ?? 12;
+  const selectedDraftTemplate = appState.draftTemplates.find((template) => template.id === task.templateId);
+  const subtitleMaxCharsPerLine = selectedDraftTemplate?.caption.maxCharsPerLine ?? 12;
   if (hasCompleteContentArtifact(pipeline)) {
     const artifact = hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine);
+    artifact.imagePrompts = applyTaskImagePromptContext(artifact.imagePrompts, task, selectedDraftTemplate);
+    pipeline.artifact.imagePrompts = artifact.imagePrompts;
     pipeline.artifact.subtitles = artifact.subtitles;
     await writeContentArtifacts(workDir, artifact, task);
     return;
   }
   if (hasCompleteContentData(pipeline)) {
     const artifact = hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine);
+    artifact.imagePrompts = applyTaskImagePromptContext(artifact.imagePrompts, task, selectedDraftTemplate);
+    pipeline.artifact.imagePrompts = artifact.imagePrompts;
     pipeline.artifact.subtitles = artifact.subtitles;
     await writeContentArtifacts(workDir, artifact, task);
     for (const step of [0, 1, 2, 3]) {
@@ -606,7 +611,7 @@ async function ensureContentArtifact(input: {
     throwIfAborted(options.signal);
     pipeline.artifact = {
       ...artifact,
-      imagePrompts: applyTaskReferenceImagesToPrompts(artifact.imagePrompts, task),
+      imagePrompts: applyTaskImagePromptContext(artifact.imagePrompts, task, selectedDraftTemplate),
       subtitles: buildSubtitleTrack(artifact.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine }),
       sourceContext: sourceContext ?? artifact.sourceContext,
     };
@@ -622,6 +627,7 @@ async function ensureContentArtifact(input: {
     const musicArtifact = buildMusicMvArtifact(task, sourceContext ?? undefined, input.musicMvAudioDurationMs);
     pipeline.artifact = {
       ...musicArtifact,
+      imagePrompts: applyTaskImagePromptContext(musicArtifact.imagePrompts, task, selectedDraftTemplate),
       subtitles: buildSubtitleTrack(musicArtifact.scenes, { maxCharsPerLine: subtitleMaxCharsPerLine }),
     };
     await writeContentArtifacts(workDir, hydrateArtifact(pipeline.artifact, task, subtitleMaxCharsPerLine), task);
@@ -900,7 +906,7 @@ async function ensureContentArtifact(input: {
     const batchSnapshots = sceneBatches.map((scenes, index) => {
       const batchContext = buildPromptRenderContext({ task, taskTemplate, customStyles: appState.customStyles, sourceContext, artifact: { ...pipeline.artifact, scenes } });
       const instruction = renderStepPrompt(promptTemplates, 'image-prompt', batchContext, JSON.stringify({ scenes, style: task.style, ratio: task.ratio }));
-      return buildImagePromptSnapshot(instruction, scenes, task, taskTemplate, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
+      return buildImagePromptSnapshot(instruction, scenes, task, taskTemplate, selectedDraftTemplate, index + 1, sceneBatches.length, pipeline.artifact.characterCard, rewriteContextForStep(pipeline, 3));
     });
     await db.updateTask(task.id, { step3PromptSnapshot: batchSnapshots.join('\n\n--- image prompt batch ---\n\n') });
     const imagePrompts: ImagePrompt[] = [];
@@ -918,9 +924,9 @@ async function ensureContentArtifact(input: {
         ],
       });
       requestIds.push(prompts.requestId);
-      imagePrompts.push(...normalizePrompts(prompts.json.imagePrompts, scenes, task));
+      imagePrompts.push(...normalizePrompts(prompts.json.imagePrompts, scenes, task, selectedDraftTemplate));
     }
-    pipeline.artifact.imagePrompts = normalizePrompts(imagePrompts, pipeline.artifact.scenes, task);
+    pipeline.artifact.imagePrompts = normalizePrompts(imagePrompts, pipeline.artifact.scenes, task, selectedDraftTemplate);
     await markStep(3, 'completed', { outputPath: join(workDir, '03-image-prompts.json') });
     await heartbeatTask(db, task.id, options, 3, 'LLM prompts completed');
     await emit('step_complete', 3, 'Prompt', `已生成 ${pipeline.artifact.imagePrompts.length} 条图片提示词`, { requestIds });
@@ -986,12 +992,13 @@ function extraRequirementsInstruction(task: Task, existingPrompt = ''): string {
   ].join('\n');
 }
 
-function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, taskTemplate: PromptTemplate | null, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
+function buildImagePromptSnapshot(instruction: string, scenes: StoryboardScene[], task: Task, taskTemplate: PromptTemplate | null, draftTemplate: DraftTemplate | undefined, batchIndex: number, batchCount: number, characterCard?: CharacterCard, rerunContext = ''): string {
   const style = resolveImageStyle(task.style);
   return joinPromptBlocks([
     'Image prompt instructions:',
     instruction,
     buildStoryboundImageRuntimeContext({ task, taskTemplate, style, characterCard }),
+    draftTemplate ? draftImageCompositionGuidance(draftTemplate) : '',
     taskModeInstructions(task),
     characterCard ? `Character card:\n${JSON.stringify(characterCard)}` : '',
     `Batch: ${batchIndex}/${batchCount}`,
@@ -2911,7 +2918,7 @@ function storyboardResponseDebugHint(input: unknown, raw: string): string {
   return `${keyHint}${rawPreview ? ` Raw preview: ${rawPreview}` : ''}`;
 }
 
-function normalizePrompts(input: unknown, scenes: StoryboardScene[], task: Task): ImagePrompt[] {
+function normalizePrompts(input: unknown, scenes: StoryboardScene[], task: Task, draftTemplate?: DraftTemplate): ImagePrompt[] {
   if (!Array.isArray(input) || input.length === 0) {
     throw new Error('LLM image prompt response did not include imagePrompts.');
   }
@@ -2923,7 +2930,7 @@ function normalizePrompts(input: unknown, scenes: StoryboardScene[], task: Task)
     return {
       sceneId: scene.id,
       cap: String(prompt.cap ?? scene.cap),
-      prompt: requireString(prompt.prompt, `imagePrompts[${scene.id}].prompt`),
+      prompt: appendDraftImageCompositionGuidance(requireString(prompt.prompt, `imagePrompts[${scene.id}].prompt`), draftTemplate),
       negativePrompt: String(prompt.negativePrompt ?? ''),
       style: String(prompt.style ?? task.style),
       ratio: String(prompt.ratio ?? task.ratio),
@@ -2931,6 +2938,13 @@ function normalizePrompts(input: unknown, scenes: StoryboardScene[], task: Task)
       referenceImagePaths: referenceImagePathsForPrompt(prompt.referenceImagePaths, task),
     };
   });
+}
+
+function applyTaskImagePromptContext(prompts: ImagePrompt[], task: Task, draftTemplate?: DraftTemplate): ImagePrompt[] {
+  return applyTaskReferenceImagesToPrompts(prompts, task).map((prompt) => ({
+    ...prompt,
+    prompt: appendDraftImageCompositionGuidance(prompt.prompt, draftTemplate),
+  }));
 }
 
 function applyTaskReferenceImagesToPrompts(prompts: ImagePrompt[], task: Task): ImagePrompt[] {

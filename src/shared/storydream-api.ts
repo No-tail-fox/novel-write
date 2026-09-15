@@ -1,3 +1,4 @@
+import type { VoxAnimationPayload, VoxGenerateRequest, VoxCompileResult, VoxSavedTemplate } from './vox-animation';
 import type {
   AccountProfile,
   ActivationState,
@@ -101,6 +102,7 @@ import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './e
 import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from './director-batch-persistence';
+import type { VideoLabGenerateInput, VideoLabRecord } from './video-lab';
 
 export interface LocalSubtitleTimestampFile {
   path: string;
@@ -137,6 +139,9 @@ export const INVOKE_CHANNELS = Object.freeze([
   'voice-lab:restore',
   'voice-lab:delete',
   'voice-lab:get-detail',
+  'video-lab:list',
+  'video-lab:generate',
+  'video-lab:open-output-directory',
   'prompt-template:list',
   'prompt-template:get-detail',
   'draft-template:list',
@@ -152,11 +157,14 @@ export const INVOKE_CHANNELS = Object.freeze([
   'models:list',
   'volcengine:speakers:list',
   'research:web-search',
+  'vox:runtime', 'vox:compile', 'vox:generate', 'vox:cancel', 'vox:asset', 'vox:templates-list', 'vox:templates-save', 'vox:templates-delete', 'director:cancel-render',
+  'vox:export-shot',
   'research:compose-copy',
   'hotboard:fetch',
   'hotboard:read-source',
   'aihot:query',
   'hotboard:open-url',
+  'provider:open-portal',
   'prompt-template:save',
   'prompt-template:reset',
   'custom-style:save',
@@ -324,6 +332,9 @@ export type StoryDreamApi = {
   restoreVoiceLabRecord: (id: string) => Promise<AppMutationResult>;
   deleteVoiceLabRecordPermanently: (id: string) => Promise<AppMutationResult>;
   getVoiceLabRecordDetail: (id: string) => Promise<VoiceLabRecord | null>;
+  listVideoLabRecords: () => Promise<VideoLabRecord[]>;
+  generateVideoLab: (input: VideoLabGenerateInput) => Promise<VideoLabRecord>;
+  openVideoLabOutputDirectory: (id: string) => Promise<void>;
   listPromptTemplates: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
   getPromptTemplateDetail: (id: string) => Promise<PromptTemplate | null>;
   listDraftTemplates: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
@@ -332,12 +343,23 @@ export type StoryDreamApi = {
   saveMinimaxCloneVoice: (input: MinimaxCloneVoiceInput) => Promise<AppMutationResult | null>;
   deleteMinimaxCloneVoice: (voiceId: string) => Promise<AppMutationResult | null>;
   saveConfig: (input: SaveConfigInput) => Promise<AppMutationResult | null>;
+  openProviderPortal: (url: string) => Promise<void>;
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges?: SecretChanges) => Promise<ConfigTestResult>;
   fetchImaKnowledge: (input: ImaKnowledgeRequest) => Promise<ImaKnowledgeResult>;
   testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
   listProviderModels: (request: ProviderModelListRequest) => Promise<ProviderModelListResult>;
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest) => Promise<VolcengineSpeakerListResult>;
   searchWebSources: (input: string | WebSearchRequest) => Promise<AiSourceContext>;
+  getVoxAnimationRuntime: () => Promise<string>;
+  compileVoxAnimation: (source: string) => Promise<VoxCompileResult>;
+  generateVoxAnimation: (input: VoxGenerateRequest) => Promise<VoxCompileResult>;
+  cancelVoxAnimation: (requestId: string) => Promise<void>;
+  readVoxAnimationAsset: (path: string) => Promise<string>;
+  listVoxTemplates: () => Promise<VoxSavedTemplate[]>;
+  saveVoxTemplate: (input: VoxSavedTemplate) => Promise<VoxSavedTemplate[]>;
+  deleteVoxTemplate: (id: string) => Promise<VoxSavedTemplate[]>;
+  cancelDirectorRender: (id: string) => Promise<void>;
+  exportVoxAnimationShot: (input: {id:string;shotId:string;expectedUpdatedAt:string}) => Promise<boolean>;
   composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
   fetchHotBoard: (input?: HotBoardArchiveRequest) => Promise<HotBoardArchiveResult>;
   readHotBoardSource: (input: HotBoardSourceContentInput) => Promise<HotBoardSourceContent>;

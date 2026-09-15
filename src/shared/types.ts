@@ -2,6 +2,7 @@ export type TaskStatus = 'draft' | 'pending' | 'running' | 'paused' | 'completed
 export type ThemeName = 'dark' | 'light';
 export const SHELL_VIEWS = [
   'projects',
+  'conversation-workbench',
   'new-task',
   'hot-board',
   'queue',
@@ -12,10 +13,12 @@ export const SHELL_VIEWS = [
   'html-video',
   'image-lab',
   'voice-lab',
+  'video-lab',
   'music-mv',
   'book-selection',
   'benchmark',
   'person-assets',
+  'copy-studio',
   'viral-analyzer',
   'prompt-templates',
   'draft-templates',
@@ -49,7 +52,7 @@ export interface LlmConfig {
   name?: string;
   enabled?: boolean;
   provider: string;
-  protocol?: 'openai' | 'anthropic';
+  protocol?: 'openai' | 'responses' | 'anthropic';
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -102,7 +105,7 @@ export interface VolcengineSpeakerListRequest {
   secretAccessKey: string;
   accessKeyIdSecretId?: string;
   secretAccessKeySecretId?: string;
-  resourceId: string;
+  resourceId?: string;
   voiceTypes?: string[];
   page?: number;
   limit?: number;
@@ -995,9 +998,11 @@ export interface BenchmarkSelectionEvidence {
   note: string;
 }
 
+export type BookDiscoverySource = 'dangdang' | 'weread' | 'douban';
+
 export interface BookProductInfo {
   name: string;
-  source?: 'dangdang' | 'manual';
+  source?: BookDiscoverySource | 'manual';
   sourceState?: 'live' | 'preview' | 'saved';
   sourceId?: string;
   sourceRank?: number;
@@ -1050,10 +1055,11 @@ export interface BookDiscoveryRequest {
   query: string;
   track?: string;
   limit?: number;
+  sources?: BookDiscoverySource[];
 }
 
 export interface BookDiscoveryItem extends BookProductInfo {
-  source: 'dangdang';
+  source: BookDiscoverySource;
   sourceState: 'live' | 'preview';
   sourceId: string;
   sourceRank: number;
@@ -1064,12 +1070,13 @@ export interface BookDiscoveryItem extends BookProductInfo {
 export interface BookDiscoveryResult {
   query: string;
   track: string;
-  source: 'dangdang';
-  sourceState: 'live' | 'preview';
+  source: BookDiscoverySource | 'multiple';
+  sourceState: 'live' | 'preview' | 'empty' | 'failed';
   sourceLabel: string;
   fetchedAt: number;
   items: BookDiscoveryItem[];
   message: string;
+  sources?: Array<{ source: BookDiscoverySource; status: 'ok' | 'empty' | 'failed'; count: number; message: string }>;
 }
 
 export type CreateTaskInput = Partial<
@@ -1241,6 +1248,7 @@ export type TaskSummary = Omit<
   | 'podcastSpeakers'
 > & {
   inputPreview: string;
+  projectCover?: { path: string; revision: string } | null;
 };
 
 export interface PromptTemplate {
@@ -1327,7 +1335,9 @@ export type ImageLabSummary = Omit<ImageLabRecord, 'prompt' | 'referenceImagePat
 export type ImageLabSmartMode = 'text-to-image' | 'cover' | 'blog-cover' | 'podcast-cover' | 'video-narration' | 'two-host-podcast' | 'reference-edit';
 
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
-  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>>;
+  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>> & {
+    cutout?: 'green';
+  };
 
 export type ImageLabImportInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style' | 'provider' | 'imagePath'> &
   Partial<Pick<ImageLabRecord, 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId'>>;

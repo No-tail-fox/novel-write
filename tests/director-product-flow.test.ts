@@ -17,8 +17,9 @@ describe('director product flow', () => {
     expect(vox).not.toContain('<DirectorProjectLibrary');
     expect(comic).not.toContain('<DirectorProjectLibrary');
     expect(start).not.toContain('data-director-project-library');
-    expect(vox).toContain('onReturnTasks={() => navigate?.(returnView)}');
-    expect(comic).toContain('onReturnTasks={() => navigate?.(returnView)}');
+    expect(vox).toContain('onBackToTasks={() => navigate?.(returnView)}');
+    expect(comic).toContain('onBackToTasks={() => navigate?.(returnView)}');
+    expect(start).not.toContain('onReturnTasks');
     expect(start).toContain('data-director-project-recovery');
   });
 

@@ -27,7 +27,7 @@ describe('director video page contract', () => {
       'videoProviderUnavailableReason',
       'videoJobStatus',
       'onRetryVideo',
-      '重试 AI 动态海报',
+      '重试视频生成',
       'src={selectedShot.videoUrl}',
     ]) {
       expect(workspace).toContain(marker);

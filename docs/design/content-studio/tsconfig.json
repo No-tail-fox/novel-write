@@ -1,0 +1,5 @@
+{
+  "extends": "../../../tsconfig.json",
+  "include": ["ContentStudio.tsx"],
+  "compilerOptions": { "types": ["vite/client"] }
+}

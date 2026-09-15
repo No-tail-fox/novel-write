@@ -159,7 +159,8 @@ describe('editorial collage workflow contract', () => {
     expect(starter.timeline?.durationMs).toBe(30_000);
     expect(starter.beats).toHaveLength(4);
     expect(starter.beats.flatMap((item) => item.subtitleCues).length).toBeGreaterThan(starter.beats.length);
-    expect(editorialCollageReady(starter)).toBe(true);
+    expect(editorialCollageReady(starter)).toBe(false);
+    expect(validateEditorialCollagePipeline(starter, { ready: true }).some((issue) => issue.path.endsWith('.assetVersionId'))).toBe(true);
     expect(parseEditorialCollagePipelineData(JSON.stringify(starter))).toEqual(starter);
     expect(() => parseEditorialCollagePipelineData({ ...starter, unexpected: true })).toThrow(/EDITORIAL_COLLAGE_INVALID_DATA/u);
   });

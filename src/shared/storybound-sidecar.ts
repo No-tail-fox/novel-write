@@ -138,6 +138,8 @@ export interface StoryboundProbeMediaInput {
   media_path: string;
   require_nonblack?: boolean;
   analyze_quality?: boolean;
+  /** Decode the source to count audible timeline samples, independently of container rounding. */
+  measure_audio_duration?: boolean;
   /** Cut times relative to this output, decoded at visual_continuity_fps. */
   visual_continuity_points_ms?: number[];
   visual_continuity_fps?: number;
@@ -175,6 +177,7 @@ export interface StoryboundSidecarResult {
   output_path?: string;
   source_path?: string;
   duration?: number;
+  audio_duration_ms?: number;
   has_audio?: boolean;
   has_video?: boolean;
   width?: number;
@@ -1036,6 +1039,21 @@ def probe_media(payload):
     result = {"success": True, "duration": duration}
     stream_info = media_stream_info(media_path)
     result.update(stream_info)
+    if payload.get("measure_audio_duration"):
+        if not stream_info.get("has_audio"):
+            raise ValueError("Media has no audio to measure")
+        work_dir = norm(payload["work_dir"])
+        os.makedirs(work_dir, exist_ok=True)
+        descriptor, decoded_path = tempfile.mkstemp(prefix="narration-duration-", suffix=".pcm", dir=work_dir)
+        os.close(descriptor)
+        try:
+            run_ffmpeg(["-i", media_path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", decoded_path])
+            result["audio_duration_ms"] = os.path.getsize(decoded_path) / 32.0
+            if result["audio_duration_ms"] <= 0:
+                raise ValueError("Decoded audio is empty")
+        finally:
+            if os.path.exists(decoded_path):
+                os.remove(decoded_path)
     if payload.get("analyze_quality"):
         result.update(media_quality_metrics(media_path, stream_info, duration))
     if "visual_continuity_points_ms" in payload:

@@ -24,9 +24,9 @@ describe('HyperFrames HTML animation integration', () => {
     const packageJson = JSON.parse(await source('../package.json')) as {
       devDependencies?: Record<string, string>;
     };
-    expect(packageJson.devDependencies?.['@hyperframes/core']).toBe('0.7.83');
-    expect(packageJson.devDependencies?.['@hyperframes/lint']).toBe('0.7.83');
-    expect(packageJson.devDependencies?.['@hyperframes/player']).toBe('0.7.83');
+    expect(packageJson.devDependencies?.['@hyperframes/core']).toBe('0.8.40');
+    expect(packageJson.devDependencies?.['@hyperframes/lint']).toBe('0.8.40');
+    expect(packageJson.devDependencies?.['@hyperframes/player']).toBe('0.8.40');
     expect(packageJson.devDependencies?.gsap).toBe('3.12.5');
   });
 

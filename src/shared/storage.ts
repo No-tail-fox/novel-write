@@ -101,6 +101,7 @@ import {
   type OrdinaryTaskCoverInspection,
 } from './ordinary-task-cover';
 import { normalizeAppConfig } from './config-utils';
+import { readProjectCover } from './project-cover';
 import { stripConfigSecrets } from './config-secrets';
 import {
   canonicalThemePreferencePair,
@@ -123,6 +124,7 @@ import {
 import { loadDefaultPromptTemplates } from './prompt-template-loader';
 import { parseDraftTemplate } from './draft-template-contract';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
+import { builtinDraftTemplateUpdates } from './draft-template-migration';
 import { isOrdinaryTask, parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import {
   normalizeDirectorBatchConcurrency,
@@ -401,7 +403,9 @@ const taskSummaryColumns = `
   failed_step, retry_from_step, artifact_state_path, video_form, llm_profile_id, image_quality,
   material_source, draft_dir,
   lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
-  script_format, podcast_image_mode, podcast_speaker_a,
+  script_format, podcast_image_mode, podcast_speaker_a, ordinary_cover_asset_json,
+  CASE WHEN task_type = 'html-video' AND json_valid(pipeline_data)
+    THEN json_extract(pipeline_data, '$.coverAsset.path') END AS project_cover_path,
   podcast_speaker_b, cover_image_mode, cover_template_id, cover_page_enabled, cover_page_text, auto_borrow_image, html_video_foreground,
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
@@ -1626,20 +1630,19 @@ export class FileDatabase {
   private seedShellDefaults(): void {
     this.syncBuiltinPromptTemplates();
 
-    const draftCount = getFirstRow<{ count: number }>(this.db, 'SELECT COUNT(*) AS count FROM draft_templates')?.count ?? 0;
-    if (draftCount === 0) {
-      for (const template of draftTemplates) {
-        this.db.run('INSERT INTO draft_templates (id, data, is_builtin, name, canvas_width, canvas_height, canvas_ratio, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-          template.id,
-          json(template),
-          template.isDefault ? 1 : 0,
-          template.name,
-          template.canvas.width,
-          template.canvas.height,
-          template.canvas.ratio,
-          '2026-05-26T00:00:00.000Z',
-        ]);
-      }
+    const storedDrafts = getRows<{ id: string; data: string }>(this.db, 'SELECT id, data FROM draft_templates')
+      .map((row) => ({ ...parseJson<Partial<DraftTemplate>>(row.data, {}), id: row.id }));
+    for (const template of builtinDraftTemplateUpdates(storedDrafts)) {
+      this.db.run('INSERT OR REPLACE INTO draft_templates (id, data, is_builtin, name, canvas_width, canvas_height, canvas_ratio, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        template.id,
+        json(template),
+        template.isDefault ? 1 : 0,
+        template.name,
+        template.canvas.width,
+        template.canvas.height,
+        template.canvas.ratio,
+        template.updatedAt ?? new Date().toISOString(),
+      ]);
     }
     this.removeLegacyBundledCozeDraftTemplates();
 
@@ -3043,11 +3046,11 @@ export class FileDatabase {
   }
 
   async archiveTask(id: string): Promise<TaskSummary> {
-    return this.enqueueCommit(() => this.archiveHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary, true));
+    return this.withProjectCover(await this.enqueueCommit(() => this.archiveHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary, true)));
   }
 
   async restoreTask(id: string): Promise<TaskSummary> {
-    return this.enqueueCommit(() => this.restoreHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary));
+    return this.withProjectCover(await this.enqueueCommit(() => this.restoreHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary)));
   }
 
   async getHistoryDeletionTarget(family: HistoryFamily, id: string): Promise<HistoryDeletionTarget> {
@@ -3760,7 +3763,7 @@ export class FileDatabase {
     if (request.favorite !== undefined) {
       filters.push({ sql: 'is_favorite = ?', params: [request.favorite ? 1 : 0] });
     }
-    return this.listHistoryRecords({
+    const page = await this.listHistoryRecords({
       family: 'task',
       table: 'tasks',
       columns: taskSummaryColumns,
@@ -3778,16 +3781,17 @@ export class FileDatabase {
       }),
       filters,
     });
+    return { ...page, items: await Promise.all(page.items.map((task) => this.withProjectCover(task))) };
   }
 
   async getTaskSummary(id: string): Promise<TaskSummary | null> {
     await this.waitForWrites();
     const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`, [id]);
-    return row ? rowToTaskSummary(row) : null;
+    return row ? this.withProjectCover(rowToTaskSummary(row)) : null;
   }
 
   async setTaskFavorite(id: string, isFavorite: boolean): Promise<TaskSummary> {
-    return this.enqueueCommit(() => {
+    const task = await this.enqueueCommit(() => {
       this.assertHistoryWritable('task', id);
       this.db.run('UPDATE tasks SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, id]);
       if (this.db.getRowsModified() !== 1) throw new Error(`TASK_NOT_FOUND: ${id}`);
@@ -3795,6 +3799,19 @@ export class FileDatabase {
       if (!row) throw new Error(`TASK_NOT_FOUND: ${id}`);
       return rowToTaskSummary(row);
     });
+    return this.withProjectCover(task);
+  }
+
+  private async withProjectCover(task: TaskSummary): Promise<TaskSummary> {
+    let workDir: string | null = null;
+    if (task.managedStorageKey) {
+      try {
+        workDir = join(dirname(this.file), 'tasks', requireManagedStorageKey(task.managedStorageKey));
+      } catch {
+        // Legacy records may have no usable managed directory.
+      }
+    }
+    return { ...task, projectCover: await readProjectCover(task, workDir) };
   }
 
   async getTaskDetail(id: string): Promise<Task | null> {
@@ -4187,6 +4204,7 @@ function rowToTaskSummary(row: Record<string, unknown>): TaskSummary {
   } = task;
   return {
     ...summary,
+    ...(typeof row.project_cover_path === 'string' ? { projectCover: { path: row.project_cover_path, revision: '' } } : {}),
     inputPreview: String(row.input_preview ?? inputText).replace(/\s+/gu, ' ').trim().slice(0, TASK_INPUT_PREVIEW_LIMIT),
   };
 }

@@ -13,6 +13,15 @@ const textStyle = {
 };
 
 describe('draft canvas text style', () => {
+  it('stacks editable text above both selected and inactive image transform surfaces', async () => {
+    const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+    expect(styles).toMatch(/\.editable-draft-canvas\s*\{[^}]*isolation:\s*isolate;/su);
+    expect(styles).toMatch(/\.draft-image-transform-box\s*\{[^}]*z-index:\s*2;/su);
+    expect(styles).toMatch(/\.draft-image-transform-box\.selected\s*\{[^}]*z-index:\s*3;/su);
+    expect(styles).toMatch(/\.editable-draft-canvas \.text-layer\s*\{[^}]*z-index:\s*4;/su);
+  });
+
   it('previews crop-fill and full-image scaling as distinct image-region modes', () => {
     const template = structuredClone(draftTemplates[1]);
     template.image.fit = 'cover';

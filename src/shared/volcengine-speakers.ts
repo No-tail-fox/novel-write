@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
 import { fetchWithTimeout } from './http';
-import { readJsonBounded, readTextBounded, type NetworkFetch } from './network-policy';
+import { readTextBounded, type NetworkFetch } from './network-policy';
 import type { VolcengineSpeaker, VolcengineSpeakerListRequest, VolcengineSpeakerListResult } from './types';
 
 type SpeakerListOptions = {
@@ -33,7 +33,8 @@ export async function listVolcengineSpeakers(
   }
 
   const body = JSON.stringify({
-    ResourceIDs: [request.resourceId?.trim() || 'seed-tts-2.0'],
+    // ListSpeakers filters are optional; synthesis resource IDs are not list defaults.
+    ...(request.resourceId?.trim() ? { ResourceIDs: [request.resourceId.trim()] } : {}),
     ...(request.voiceTypes?.length ? { VoiceTypes: request.voiceTypes } : {}),
     Page: request.page ?? 1,
     Limit: String(request.limit ?? 100),
@@ -65,17 +66,28 @@ export async function listVolcengineSpeakers(
       },
       body,
     });
-    if (!response.ok) {
+    const text = await readTextBounded(response, SPEAKER_LIST_RESPONSE_MAX_BYTES);
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { data = null; }
+    const metadata = isRecord(data) && isRecord(data.ResponseMetadata) ? data.ResponseMetadata : {};
+    const apiError = isRecord(metadata.Error) ? metadata.Error : null;
+    const requestId = optionalString(metadata.RequestId) ?? null;
+    if (!response.ok || apiError) {
+      const code = optionalString(apiError?.Code);
+      const message = optionalString(apiError?.Message) || text.slice(0, 1024);
+      const hint = code === 'InvalidParameter'
+        ? '音色列表参数被拒绝；该错误不代表语音合成密钥无效。'
+        : '';
       return buildResult({
         startedAt,
         status: 'fail',
-        detail: `火山音色列表接口错误 (${response.status}): ${await readTextBounded(response, SPEAKER_LIST_RESPONSE_MAX_BYTES)}`,
+        detail: `火山音色列表接口错误 (${response.status})${code ? ` ${code}` : ''}: ${message}${hint ? `。${hint}` : ''}${requestId ? ` [RequestId: ${requestId}]` : ''}`,
         speakers: [],
         total: 0,
-        requestId: null,
+        requestId,
       });
     }
-    const data = await readJsonBounded(response, SPEAKER_LIST_RESPONSE_MAX_BYTES);
+    if (!isRecord(data)) throw new Error('火山音色列表响应不是有效的 JSON 对象。');
     const result = parseListSpeakersResponse(data);
     return buildResult({
       startedAt,
@@ -105,7 +117,8 @@ function parseListSpeakersResponse(data: unknown): { speakers: VolcengineSpeaker
   const speakers = rawSpeakers.map(parseSpeaker).filter((speaker): speaker is VolcengineSpeaker => Boolean(speaker));
   return {
     speakers,
-    total: Number(result.Total ?? result.total ?? speakers.length),
+    total: Number.isSafeInteger(Number(result.Total ?? result.total)) && Number(result.Total ?? result.total) >= 0
+      ? Number(result.Total ?? result.total) : speakers.length,
     requestId: typeof responseMetadata.RequestId === 'string' ? responseMetadata.RequestId : null,
   };
 }
@@ -182,5 +195,5 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object');
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

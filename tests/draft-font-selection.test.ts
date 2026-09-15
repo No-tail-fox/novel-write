@@ -46,7 +46,7 @@ describe('draft font selection', () => {
     expect(draftFontGroups).toEqual(['默认', '黑体', '宋体', '圆体', '楷体与手写', '标题设计']);
     expect(new Set(draftFontOptions.map((option) => option.group))).toEqual(new Set(draftFontGroups));
     expect(new Set(draftFontOptions.map((option) => option.value)).size).toBe(draftFontOptions.length);
-    expect(draftTemplates.every((template) => (
+    expect(draftTemplates.slice(0, 3).every((template) => (
       template.title.fontFamily === 'system'
       && template.subtitle.fontFamily === 'system'
       && template.caption.fontFamily === 'system'

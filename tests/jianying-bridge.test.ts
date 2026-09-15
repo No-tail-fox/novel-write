@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPyJianYingDraftBridge, writePyJianYingBridgeInput, writePyJianYingBridgeScript, type PyJianYingBridgeInput } from '@shared/jianying-bridge';
+import { draftTemplates } from '@shared/templates';
 
 function defaultBridgeImageArea(animation = '') {
   return { visible: true, ratio: '9:16', top: 0, height: 1, fit: 'cover' as const, animation, motion: '' as const, motionStrength: 1 };
@@ -192,7 +193,10 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
-  it('writes camera keyframes and a transparent frame overlay into the generated draft', async () => {
+  it.each([
+    { motion: 'zoom_pan_up' as const, startY: 0.04, endY: 0.16 },
+    { motion: 'zoom_pan_down' as const, startY: 0.16, endY: 0.04 },
+  ])('writes $motion keyframes around the image position and a transparent frame overlay', async ({ motion, startY, endY }) => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-motion-frame-'));
     const draftDir = join(dir, 'Draft Root', 'Motion Frame Draft');
     const bridgeDir = join(dir, 'pyjianying-bridge');
@@ -215,11 +219,11 @@ describe('pyJianYingDraft bridge input', () => {
         imageArea: {
           visible: true,
           ratio: '4:3',
-          top: 0.25,
+          top: 0.2,
           height: 0.5,
           fit: 'cover',
           animation: '缩放',
-          motion: 'zoom_pan_up',
+          motion,
           motionStrength: 1.5,
         },
         frame: {
@@ -251,6 +255,11 @@ describe('pyJianYingDraft bridge input', () => {
         expect.objectContaining({ property: 'KFTypePositionY', time_offset: 0 }),
         expect.objectContaining({ property: 'KFTypePositionY', time_offset: 1_200_000 }),
       ]));
+      const verticalKeyframes = imageSegment.keyframes.filter((frame: { property: string }) => frame.property === 'KFTypePositionY');
+      expect(imageSegment.clip_settings.transform_y).toBeCloseTo(0.1, 8);
+      expect(verticalKeyframes.map((frame: { time_offset: number }) => frame.time_offset)).toEqual([0, 1_200_000]);
+      expect(verticalKeyframes[0].value).toBeCloseTo(startY, 8);
+      expect(verticalKeyframes[1].value).toBeCloseTo(endY, 8);
       expect(frameTrack.segments).toHaveLength(1);
       const overlay = await readFile(join(draftDir, 'materials', 'frame', 'frame-overlay.png'));
       expect(overlay.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
@@ -309,9 +318,10 @@ describe('pyJianYingDraft bridge input', () => {
 
       expect(await render('cover')).toMatchObject({ scale_x: 1, scale_y: 1, transform_y: 0 });
       expect(await render('contain')).toMatchObject({ scale_x: 0.5, scale_y: 0.5, transform_y: 0 });
-      expect(await render('cover', 0)).toMatchObject({ transform_x: 0, transform_y: 0.5 });
-      expect(await render('cover', 1)).toMatchObject({ transform_x: 0, transform_y: -0.5 });
+      expect(await render('cover', 0)).toMatchObject({ transform_x: 0, transform_y: -0.5 });
+      expect(await render('cover', 1)).toMatchObject({ transform_x: 0, transform_y: 0.5 });
       expect(await render('contain', 0)).toMatchObject({ transform_x: 0, transform_y: 0 });
+      expect((await render('contain', 0, { top: 0.1 })).transform_y).toBeCloseTo(0.3, 8);
       expect(await render('cover', 0.5, { mediaScale: 0.5, focusX: 0 })).toMatchObject({
         scale_x: 0.5,
         scale_y: 0.5,
@@ -323,13 +333,69 @@ describe('pyJianYingDraft bridge input', () => {
         scale_x: 1,
         scale_y: 1,
         transform_x: -0.5,
-        transform_y: 0.5,
-        masks: [{ mask_type: 'rectangle', center_x: 270, center_y: -480, size: 0.5, rect_width: 0.5 }],
+        transform_y: -0.5,
+        masks: [{ mask_type: 'rectangle', center_x: 270, center_y: 480, size: 0.5, rect_width: 0.5 }],
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it.each(['builtin-portrait-knowledge', 'builtin-portrait-story', 'builtin-portrait-editorial'])(
+    'keeps %s image bounds fixed while selecting the top, center, and bottom of the source image',
+    async (templateId) => {
+      const template = draftTemplates.find((item) => item.id === templateId)!;
+      const dir = await mkdtemp(join(tmpdir(), 'storydream-jy-preset-image-position-'));
+      try {
+        await writePyJianYingBridgeScript(dir);
+        await writeFile(join(dir, 'pyjianying-bridge', 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+        const voice = join(dir, 'voice.wav');
+        const image = join(dir, 'image.png');
+        const subtitles = join(dir, 'subtitles.srt');
+        await writeFile(voice, wavTone(1200));
+        await writeFile(image, Buffer.from('image'));
+        await writeFile(subtitles, '', 'utf8');
+
+        for (const focusY of [0, 0.5, 1]) {
+          const draftDir = join(dir, `draft-${focusY}`);
+          await runPyJianYingDraftBridge({
+            workDir: dir,
+            draftDir,
+            title: template.name,
+            canvas: template.canvas,
+            imageArea: { ...template.image, focusY },
+            caption: { ...template.caption, visible: false },
+            scenes: [{ sceneId: 1, startUs: 0, durationUs: 1_200_000, text: 'frame position' }],
+            images: [{ sceneId: 1, path: image }],
+            narration: [{ sceneId: 1, path: voice }],
+            subtitlesSrtPath: subtitles,
+            bgm: null,
+            totalDurationUs: 1_200_000,
+            volumes: { narration: 1, bgm: 0.3 },
+          });
+          const content = JSON.parse(await readFile(join(draftDir, 'draft_content.json'), 'utf8'));
+          const segment = content.tracks.find((track: { name: string }) => track.name === 'images').segments[0];
+          const clip = segment.clip_settings;
+          const mask = segment.masks[0];
+          // The bridge test source is 1080 x 1920. Project the exported upward-positive
+          // clip and material mask coordinates back onto the downward-positive canvas.
+          const visibleHeight = mask.size * 1920 * clip.scale_y;
+          const centerY = template.canvas.height / 2
+            - clip.transform_y * template.canvas.height / 2
+            - mask.center_y * clip.scale_y;
+          expect((centerY - visibleHeight / 2) / template.canvas.height).toBeCloseTo(template.image.top, 8);
+          expect(visibleHeight / template.canvas.height).toBeCloseTo(template.image.height, 8);
+          const sourceCropTop = 1920 / 2 - mask.center_y - mask.size * 1920 / 2;
+          expect(sourceCropTop).toBeCloseTo((1920 - mask.size * 1920) * focusY, 8);
+          if (focusY === 0.5) {
+            expect(clip.transform_y).toBeCloseTo(0.04, 8);
+          }
+        }
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('keeps zero camera strength still and omits a zero-height image region', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-zero-motion-'));

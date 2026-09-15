@@ -81,7 +81,7 @@ export function buildBookDiscoveryFallback(
   };
 }
 
-function normalizeRequest(input: BookDiscoveryRequest): Required<BookDiscoveryRequest> {
+function normalizeRequest(input: BookDiscoveryRequest): Required<Omit<BookDiscoveryRequest, 'sources'>> {
   const query = input.query.trim();
   if (!query) throw new Error('请输入选书主题或书名。');
   return { query, track: input.track?.trim() || '全部图书', limit: Math.min(MAX_LIMIT, Math.max(1, Math.round(input.limit ?? 24))) };

@@ -4,6 +4,8 @@ import type { AppConfig, ImageGenerationQuality, ImageProviderProfile, MinimaxCl
 import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { defaultConfig } from "../../shared/config";
+import { LLM_PROTOCOL_OPTIONS, resolveLlmProtocol, type LlmProtocol } from '../../shared/llm-protocol';
+import { SelectField } from '../../ui';
 import { ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
@@ -98,7 +100,7 @@ export function LlmProfileManager({
       <div className="profile-switcher-head">
         <div>
           <strong>配置档案</strong>
-          <span>可保存多个 OpenAI 兼容接口，启用一个作为任务运行配置。</span>
+          <span>{profiles.length} 个配置</span>
         </div>
         <button className="ghost-action" type="button" onClick={addProfile}>
           <Plus size={15} />
@@ -180,7 +182,7 @@ export function LlmProfileManager({
             updateSelectedProfile({
               ...selectedProfile,
               provider: value,
-              protocol: value === 'anthropic' ? 'anthropic' : 'openai',
+              protocol: value === 'custom' ? resolveLlmProtocol(selectedProfile) : value === 'anthropic' ? 'anthropic' : 'openai',
               baseUrl:
                 value === 'openai'
                   ? 'https://api.openai.com'
@@ -194,9 +196,21 @@ export function LlmProfileManager({
             });
           }}
         />
+        {selectedProvider !== 'anthropic' && (
+          <SelectField
+            label="API 协议"
+            value={resolveLlmProtocol(selectedProfile)}
+            options={selectedProvider === 'custom' ? LLM_PROTOCOL_OPTIONS : LLM_PROTOCOL_OPTIONS.filter((option) => option.value !== 'anthropic')}
+            disabled={saving || loadingModels}
+            onChange={(event) => {
+              onClearModels();
+              updateSelectedProfile({ ...selectedProfile, protocol: event.target.value as LlmProtocol });
+            }}
+          />
+        )}
         {selectedProvider === 'openai' ? (
           <>
-            <ProviderConfigNote title="OpenAI 对话接口" value="使用官方 /v1/chat/completions，填写接口密钥与模型。" />
+            <ProviderConfigNote title="OpenAI" value={resolveLlmProtocol(selectedProfile) === 'responses' ? '/v1/responses' : '/v1/chat/completions'} />
             <SecretInput label="OpenAI 接口密钥" value={secrets.value(apiKeyId)} configured={secrets.configured(apiKeyId)} onChange={(value) => { onClearModels(); secrets.change(apiKeyId, value); }} onClear={() => secrets.change(apiKeyId, null)} />
             <ModelPicker
               key={`llm-${selectedProfile.id}`}
@@ -239,7 +253,6 @@ export function LlmProfileManager({
           </>
         ) : (
           <>
-            <ProviderConfigNote title="OpenAI 兼容 LLM" value="自定义接口按 /chat/completions 调用，需要接口地址、接口密钥与模型。" />
             <ConfigInput label="接口地址" value={selectedProfile.baseUrl} onChange={(value) => { onClearModels(); updateSelectedProfile({ ...selectedProfile, baseUrl: value }); }} />
             <SecretInput label="接口密钥" value={secrets.value(apiKeyId)} configured={secrets.configured(apiKeyId)} onChange={(value) => { onClearModels(); secrets.change(apiKeyId, value); }} onClear={() => secrets.change(apiKeyId, null)} />
             <ModelPicker

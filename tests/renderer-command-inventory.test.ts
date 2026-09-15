@@ -8,7 +8,7 @@ import { readRendererSources } from './helpers/renderer-source';
 const queryOnlyMethods = new Set([
   'getState', 'getBootstrap', 'reconcileDeltas', 'listTasks', 'getTaskDetail', 'listTaskEvents',
   'listViralAnalyses', 'getViralAnalysisDetail', 'listViralEvents', 'listImageLabRecords',
-  'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listPromptTemplates',
+  'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listVideoLabRecords', 'listPromptTemplates',
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
   'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getPersonAssetUsage', 'restorePersonAsset', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
@@ -32,6 +32,7 @@ const routeEntryPaths = {
   'html-video': ['src/features/html-video/HtmlVideoPage.tsx'],
   'image-lab': ['src/features/labs/ImageLabPage.tsx'],
   'voice-lab': ['src/features/labs/VoiceLabPage.tsx'],
+  'video-lab': ['src/features/labs/VideoLabPage.tsx'],
   'music-mv': ['src/features/music-mv/MusicMvPage.tsx'],
   'book-selection': ['src/features/labs/BookSelectionPage.tsx'],
   benchmark: ['src/features/labs/BenchmarkImportPage.tsx'],

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { ArrowLeft, BookOpenCheck, CheckCircle2, CircleAlert, ImageOff, ImagePlus, Images, Loader2, LockKeyhole, Pin, PinOff, Save, Settings2, ShieldCheck, Upload } from 'lucide-react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
+import { navigationReturnLabel } from '../../app/navigation';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { mergeDirectorSavedDocument } from '../../shared/director-document-sync';
@@ -836,7 +837,7 @@ export function MotionComicPage({
     acceptSavedDocument(saved, current);
   }
 
-  if (loadingProjectId) return <div data-motion-comic-workbench="true"><DirectorProjectLoading mode="motion-comic" onCancel={() => navigate?.('history')} /></div>;
+  if (loadingProjectId) return <div data-motion-comic-workbench="true"><DirectorProjectLoading mode="motion-comic" /></div>;
 
   if (createOpen) {
     return <div data-motion-comic-workbench="true"><DirectorCreateWizard
@@ -858,7 +859,6 @@ export function MotionComicPage({
       ]}
       feedback={actionFeedback}
       errorMessage={actionError}
-      onBack={() => navigate?.('new-task')}
       onStepChange={setCreateStep}
       onConfigureImage={() => openSettings?.('image', 'motion-comic')}
       onConfigureVoice={() => openSettings?.('tts', 'motion-comic')}
@@ -898,7 +898,7 @@ export function MotionComicPage({
     </DirectorCreateWizard></div>;
   }
 
-  if (!document || !activeEpisode) return <div data-motion-comic-workbench="true"><DirectorProjectRecovery mode="motion-comic" errorMessage={actionError} returnLabel={returnView === 'projects' ? '返回项目' : '返回全部任务'} onReturnTasks={() => navigate?.(returnView)} onNewProject={startCreate} /></div>;
+  if (!document || !activeEpisode) return <div data-motion-comic-workbench="true"><DirectorProjectRecovery mode="motion-comic" errorMessage={actionError} onNewProject={startCreate} /></div>;
 
   if (seriesSettingsOpen) return <div data-motion-comic-workbench="true" data-motion-comic-series-bible="true" className="director-series-page">
     <header className="director-series-header">
@@ -1056,7 +1056,7 @@ export function MotionComicPage({
         onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
         onOpenSettings={() => setSeriesSettingsOpen(true)}
         onConfigureProvider={() => openSettings?.('image', 'motion-comic', document.id)}
-        backToTasksLabel={returnView === 'projects' ? '返回项目' : '返回全部任务'}
+        backToTasksLabel={navigationReturnLabel(returnView)}
         onBackToTasks={() => navigate?.(returnView)}
         onStageChange={(stage) => { if (stage === '剧本') setSeriesSettingsOpen(true); }}
       />

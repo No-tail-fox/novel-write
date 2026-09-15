@@ -133,7 +133,7 @@ describe('local and lab editorial workbenches', () => {
     expect(css).toContain('.selection-evidence-list');
   });
 
-  it('implements a StoryBound-inspired Dangdang ranking, search, filter, favorite, and creation workflow', async () => {
+  it('implements a multi-source book search, search, filter, favorite, and creation workflow', async () => {
     const [selection, css] = await Promise.all([
       readFile(new URL('../src/features/labs/BookSelectionPage.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../src/styles/features/local-labs.css', import.meta.url), 'utf8'),
@@ -141,16 +141,17 @@ describe('local and lab editorial workbenches', () => {
 
     for (const contract of [
       'discoverBooks',
-      '生成榜单',
+      '搜索图书',
       '快捷赛道',
-      '当当搜索榜',
+      '图书搜索结果',
       '全部分类',
       '全部潜力',
       '只看收藏',
       '去创作',
       '智能建议',
-      '真实公开数据',
-      '预览数据',
+      'selection-source-results',
+      '筛选当前结果',
+      '跨来源搜索此书',
       'initialDiscoveryPending',
       'data-source-state',
       "sessionStorage.setItem('book_product_track'",

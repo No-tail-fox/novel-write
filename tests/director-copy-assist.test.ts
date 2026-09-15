@@ -1,7 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError } from '../src/features/director-desk/director-copy-assist';
+import { composeCopyFromSources } from '../src/shared/research';
 
 describe('Director create copy assistance', () => {
+  it.each(['create', 'revise'] as const)('passes the creator direction into the %s request', (intent) => {
+    const request = buildDirectorCopyAssistRequest({
+      mode: 'vox', intent, title: '城市旧书店为何消失', copy: '旧书店正在消失。',
+      requirements: '  面向年轻读者，从租金变化切入。\n纪录片口吻，避免怀旧煽情和编造数据。  ',
+      durationMs: 60_000,
+    });
+    expect(request.extraRequirements).toContain('用户创作方向与要求：\n面向年轻读者，从租金变化切入。\n纪录片口吻，避免怀旧煽情和编造数据。');
+    expect(request.extraRequirements).toContain('60 秒解释型视频');
+    expect(request.extraRequirements).toContain('只输出可直接配音的正文');
+    expect(request.selectedSources).toHaveLength(intent === 'revise' ? 1 : 0);
+    if (intent === 'revise') expect(request.selectedSources[0].content).toBe('旧书店正在消失。');
+  });
+
+  it('keeps title-only creation compatible when the optional direction is blank', () => {
+    const input = { mode: 'vox', intent: 'create', title: '旧书店', copy: '' } as const;
+    expect(buildDirectorCopyAssistRequest({ ...input, requirements: '  \n ' })).toEqual(buildDirectorCopyAssistRequest(input));
+  });
+
+  it('delivers creator requirements to the actual text-model prompt', async () => {
+    const requirements = '面向大学生，从租金和线上阅读切入，语气客观，避免怀旧煽情。';
+    const result = await composeCopyFromSources({ protocol: 'anthropic', run: async (request) => {
+      const message = request.messages.find((message) => message.role === 'user');
+      expect(message?.content).toContain(requirements);
+      expect(message?.content).toContain('城市旧书店为何消失');
+      expect(message?.content).toContain('只输出可直接配音的正文');
+      return { text: '街角的书店关了，变化先从租金开始。', raw: 'text', requestId: 'vox-direction-test' };
+    } }, buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '城市旧书店为何消失', copy: '', requirements }));
+    expect(result.copy).toBe('街角的书店关了，变化先从租金开始。');
+  });
   it('builds a VOX creation request from the project title', () => {
     const request = buildDirectorCopyAssistRequest({
       mode: 'vox',

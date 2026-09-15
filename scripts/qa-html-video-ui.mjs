@@ -18,6 +18,7 @@ const maximizeRestoreOnly = process.env.STORYDREAM_QA_MAXIMIZE_RESTORE_ONLY === 
 const templatePreviewOnly = process.env.STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY === '1';
 const assetRemovalOnly = process.env.STORYDREAM_QA_ASSET_REMOVAL_ONLY === '1';
 const assetProgressOnly = process.env.STORYDREAM_QA_ASSET_PROGRESS_ONLY === '1';
+const hyperframesOnly = process.env.STORYDREAM_QA_HYPERFRAMES_ONLY === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -114,6 +115,7 @@ try {
     if (params.type !== 'error' && params.type !== 'warning') return;
     runtimeErrors.push({
       source: 'console',
+      level: params.type,
       message: params.args?.map((item) => item.value ?? item.description ?? '').join(' ') || `console.${params.type}`,
     });
   });
@@ -121,6 +123,7 @@ try {
     if (entry?.level !== 'error' && entry?.level !== 'warning') return;
     runtimeErrors.push({
       source: 'log',
+      level: entry.level,
       message: entry.text || `log.${entry.level}`,
       url: entry.url || '',
       requestId: entry.networkRequestId || '',
@@ -162,6 +165,33 @@ try {
   })`);
   const expectedUrl = pathToFileURL(join(rootDir, 'dist-renderer', 'index.html')).href;
   if (identity.url !== expectedUrl) throw new Error(`Unexpected renderer URL: ${identity.url}`);
+  if (hyperframesOnly) {
+    await evaluate(cdp, `document.querySelector('.new-task-button')?.click()`);
+    await waitFor(async () => evaluate(cdp, `Boolean(document.querySelector('[data-task-creation-type="html-video"]'))`), 10_000, 'creation type picker');
+    await evaluate(cdp, `document.querySelector('[data-task-creation-type="html-video"]').click()`);
+    await waitFor(async () => evaluate(cdp, `Boolean(document.querySelector('select[aria-label="打开已有 HTML 动画视频任务"]'))`), 10_000, 'HTML video task selector');
+    await selectHtmlVideoTask(cdp, seededTasks.primary);
+    const authoringDesktop = await exerciseHyperframesAuthoring(cdp, authoringDesktopScreenshot);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1040, height: 720, deviceScaleFactor: 1, mobile: false });
+    const authoringCompact = await exerciseHyperframesAuthoring(cdp, authoringCompactScreenshot);
+    for (const state of [authoringDesktop, authoringCompact]) {
+      if (!state.playerReady || state.horizontalOverflow > 2 || state.clippedControls.length) {
+        throw new Error(`HyperFrames upgrade QA failed: ${JSON.stringify(state)}`);
+      }
+    }
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.level !== 'warning' && error.message && !error.message.includes('DevTools'));
+    if (relevantRuntimeErrors.length) throw new Error(`HyperFrames runtime errors: ${JSON.stringify(relevantRuntimeErrors)}`);
+    const evidenceDirectory = resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR || qaTempDir);
+    await mkdir(evidenceDirectory, { recursive: true });
+    for (const screenshot of [authoringDesktopScreenshot, authoringCompactScreenshot]) {
+      const target = join(evidenceDirectory, basename(screenshot));
+      if (target !== screenshot) await copyFile(screenshot, target);
+    }
+    const report = { status: 'passed', scope: 'hyperframes', authoringDesktop, authoringCompact, runtimeErrors: relevantRuntimeErrors, warnings: runtimeErrors.filter((entry) => entry.level === 'warning') };
+    await writeFile(join(evidenceDirectory, 'report.json'), JSON.stringify(report, null, 2), 'utf8');
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    break qaRun;
+  }
   const themePreference = localizationOnly
     ? { skipped: true, reason: 'localization-only scope' }
     : await exerciseThemePreference(cdp, themeLightScreenshot);
@@ -1294,12 +1324,20 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
   await setShellTheme(cdpConnection, 'light');
   await evaluate(cdpConnection, `(() => {
     globalThis.__storydreamQaHyperframesRuntime = null;
+    globalThis.__storydreamQaHyperframesPlayback = null;
     if (globalThis.__storydreamQaHyperframesProbeInstalled) return true;
     globalThis.__storydreamQaHyperframesProbeInstalled = true;
     addEventListener('message', (event) => {
       const payload = event.data;
       const iframe = document.querySelector('hyperframes-player')?.iframeElement;
       if (!iframe || event.source !== iframe.contentWindow) return;
+      if (payload?.source === 'hf-preview' && payload.type === 'state') {
+        const fps = Number(payload.fps?.numerator) / Number(payload.fps?.denominator);
+        globalThis.__storydreamQaHyperframesPlayback = {
+          time: Number(payload.frame) / (Number.isFinite(fps) && fps > 0 ? fps : 30),
+          playing: payload.isPlaying === true,
+        };
+      }
       if (!payload || payload.type !== 'storydream:hyperframes-runtime-ready') return;
       globalThis.__storydreamQaHyperframesRuntime = {
         compositionId: typeof payload.compositionId === 'string' ? payload.compositionId : '',
@@ -1345,6 +1383,7 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
         const runtime = player.runtime ?? {};
         return player.workspace
           && player.player
+          && player.ready
           && player.sourceMode === 'src'
           && player.iframeUrl.startsWith('storydream-media:')
           && runtime.hasGsap
@@ -1367,6 +1406,31 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
       electronStderr: Buffer.concat(stderr).toString('utf8').slice(-4000),
     })}`, { cause: error });
   }
+
+  await evaluate(cdpConnection, `(() => {
+    const player = document.querySelector('hyperframes-player');
+    player.muted = true;
+    player.seek(0);
+    player.play();
+  })()`);
+  await waitFor(async () => evaluate(cdpConnection, `
+    globalThis.__storydreamQaHyperframesPlayback?.playing === true
+      && globalThis.__storydreamQaHyperframesPlayback.time > 0.1
+      && document.querySelector('hyperframes-player').currentTime > 0.1
+  `), 10_000, 'HyperFrames real runtime playback');
+  const playbackAdvanced = await evaluate(cdpConnection, `globalThis.__storydreamQaHyperframesPlayback`);
+  await evaluate(cdpConnection, `(() => {
+    const player = document.querySelector('hyperframes-player');
+    player.pause();
+    player.seek(player.duration * 0.6);
+  })()`);
+  await waitFor(async () => evaluate(cdpConnection, `(() => {
+    const player = document.querySelector('hyperframes-player');
+    const playback = globalThis.__storydreamQaHyperframesPlayback;
+    return player.paused && playback?.playing === false
+      && Math.abs(playback.time - player.duration * 0.6) < 0.06;
+  })()`), 10_000, 'HyperFrames real runtime seek and pause');
+  const playbackSeeked = await evaluate(cdpConnection, `globalThis.__storydreamQaHyperframesPlayback`);
 
   const panelLabels = ['源码', '属性', '检查', '渲染队列'];
   const panels = [];
@@ -1437,6 +1501,8 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
         && runtime.timelineKeys.length > 0
         && runtime.timelineDuration > 0,
       playerReady: player?.ready === true,
+      playbackAdvanced: ${JSON.stringify(playbackAdvanced)},
+      playbackSeeked: ${JSON.stringify(playbackSeeked)},
       backgroundReady: runtime.backgroundReady === true,
       sourceMode: player?.hasAttribute('src') ? 'src' : 'unknown',
       iframeUrl,
@@ -1491,7 +1557,7 @@ async function exerciseHyperframesAuthoring(cdpConnection, screenshotPath) {
     10_000,
     'automatic HTML video mode restoration',
   );
-  await setShellTheme(cdpConnection, 'dark');
+  if (!hyperframesOnly) await setShellTheme(cdpConnection, 'dark');
   return state;
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, CheckCircle2, ChevronDown, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
@@ -7,7 +7,7 @@ import { StatusBadge as StatusPill } from '../../components/StatusBadge';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { taskProgressSnapshot, taskProgressStages } from '../../shared/task-progress';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { BgmItem, DraftTemplate, ShellView, Task, TaskArtifactSnapshot } from '../../shared/types';
+import type { BgmItem, DraftTemplate, Task, TaskArtifactSnapshot } from '../../shared/types';
 import { Button } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { ArtifactPreviewContent, type TaskArtifactTab } from './TaskArtifactPreview';
@@ -306,8 +306,6 @@ export function TaskDetailPage({
   state,
   task,
   applyState,
-  returnView,
-  close,
   openTemplateManager,
   isBrowserPreview,
 }: {
@@ -315,8 +313,6 @@ export function TaskDetailPage({
   state: AppState;
   task: Task | null;
   applyState: ApplyMutationResult;
-  returnView: ShellView;
-  close: () => void;
   openTemplateManager: () => void;
   isBrowserPreview: boolean;
 }) {
@@ -513,7 +509,6 @@ export function TaskDetailPage({
     <div className="task-detail-shell" data-task-operations="detail" data-task-id={activeTask.id}>
       <header className="task-detail-bar">
         <div className="task-detail-identity">
-          <Button className="task-detail-back" variant="subtle" density="compact" icon={<ArrowLeft size={14} />} type="button" onClick={close}>{returnView === 'projects' ? '返回项目' : '返回历史任务'}</Button>
           <div>
             <h2>{activeTask.title || '未命名任务'}</h2>
             <span>{activeTask.mode === 'ai' ? 'AI 创作' : '粘贴文案'} · {activeTask.ratio} · 创建于 {formatDate(activeTask.createdAt)}</span>

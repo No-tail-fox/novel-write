@@ -987,6 +987,35 @@ export async function rewriteHtmlVideoCompositionMediaUrls(
     );
     element.setAttribute('src', mediaUrl);
   }));
+  // Player 0.8.40 resets its ready state on iframe load, after the runtime's
+  // DOMContentLoaded timeline announcement. Replay from the loaded frame so
+  // cross-origin previews (including saved compositions) can become ready.
+  // Keep this in the served response; never rewrite the user's stored source.
+  if (document.querySelector('[data-composition-id]')) {
+    const handshake = document.createElement('script');
+    handshake.setAttribute('nonce', 'storydream-html-video');
+    handshake.textContent = `(() => {
+      window.addEventListener('load', () => window.setTimeout(() => {
+        const root = document.querySelector('[data-composition-id]');
+        const id = root?.getAttribute('data-composition-id');
+        const timeline = window.__timelines?.[id];
+        const duration = timeline?.duration?.();
+        if (!Number.isFinite(duration) || duration <= 0) return;
+        const protocol = typeof hyperframesProtocol === 'object' ? hyperframesProtocol : {};
+        const declaredFps = Number(protocol.fps?.numerator) / Number(protocol.fps?.denominator);
+        const fps = Number.isFinite(declaredFps) && declaredFps > 0 ? declaredFps : 30;
+        window.parent.postMessage({
+          source: 'hf-preview', ...protocol, type: 'timeline',
+          durationSeconds: duration,
+          durationInFrames: Math.max(1, Math.round(duration * fps)),
+          compositionWidth: Number(root.getAttribute('data-width')),
+          compositionHeight: Number(root.getAttribute('data-height')),
+          scenes: [{ id, start: 0, duration }],
+        }, '*');
+      }, 0), { once: true });
+    })();`;
+    document.body.appendChild(handshake);
+  }
   return `<!doctype html>\n${document.documentElement.outerHTML}`;
 }
 

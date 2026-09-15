@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import type { ShellView } from '../shared/types';
 
 const loadProjectHomePage = () => import('../features/projects/ProjectHomePage').then((module) => ({ default: module.ProjectHomePage }));
+const loadConversationWorkbenchPage = () => import('../features/conversation/ConversationWorkbenchPage').then((module) => ({ default: module.ConversationWorkbenchPage }));
 const loadNewTaskPage = () => import('../features/tasks/NewTaskPage').then((module) => ({ default: module.NewTaskPage }));
 const loadHotBoardPage = () => import('../features/hotboard/HotBoardPage').then((module) => ({ default: module.HotBoardPage }));
 const loadQueuePage = () => import('../features/tasks/QueuePage').then((module) => ({ default: module.QueuePage }));
@@ -12,10 +13,12 @@ const loadMotionComicPage = () => import('../features/motion-comic/MotionComicPa
 const loadHtmlVideoPage = () => import('../features/html-video/HtmlVideoPage').then((module) => ({ default: module.HtmlVideoPage }));
 const loadImageLabPage = () => import('../features/labs/ImageLabPage').then((module) => ({ default: module.ImageLabPage }));
 const loadVoiceLabPage = () => import('../features/labs/VoiceLabPage').then((module) => ({ default: module.VoiceLabPage }));
+const loadVideoLabPage = () => import('../features/labs/VideoLabPage').then((module) => ({ default: module.VideoLabPage }));
 const loadMusicMvPage = () => import('../features/music-mv/MusicMvPage').then((module) => ({ default: module.MusicMvPage }));
 const loadBookSelectionPage = () => import('../features/labs/BookSelectionPage').then((module) => ({ default: module.BookSelectionPage }));
 const loadBenchmarkImportPage = () => import('../features/labs/BenchmarkImportPage').then((module) => ({ default: module.BenchmarkImportPage }));
 const loadPersonAssetsPage = () => import('../features/labs/PersonAssetsPage').then((module) => ({ default: module.PersonAssetsPage }));
+const loadCopyStudioPage = () => import('../features/copy-studio/CopyStudioPage').then((module) => ({ default: module.CopyStudioPage }));
 const loadViralAnalyzerPage = () => import('../features/viral/ViralAnalyzerPage').then((module) => ({ default: module.ViralAnalyzerPage }));
 const loadPromptTemplatesPage = () => import('../features/templates/PromptTemplatesPage').then((module) => ({ default: module.PromptTemplatesPage }));
 const loadDraftTemplatesPage = () => import('../features/templates/DraftTemplatesPage').then((module) => ({ default: module.DraftTemplatesPage }));
@@ -25,6 +28,7 @@ const loadActivationPage = () => import('../features/account/ActivationPage').th
 
 export const routeLoaders = {
   'projects': loadProjectHomePage,
+  'conversation-workbench': loadConversationWorkbenchPage,
   'new-task': loadNewTaskPage,
   'hot-board': loadHotBoardPage,
   'queue': loadQueuePage,
@@ -35,10 +39,12 @@ export const routeLoaders = {
   'html-video': loadHtmlVideoPage,
   'image-lab': loadImageLabPage,
   'voice-lab': loadVoiceLabPage,
+  'video-lab': loadVideoLabPage,
   'music-mv': loadMusicMvPage,
   'book-selection': loadBookSelectionPage,
   'benchmark': loadBenchmarkImportPage,
   'person-assets': loadPersonAssetsPage,
+  'copy-studio': loadCopyStudioPage,
   'viral-analyzer': loadViralAnalyzerPage,
   'prompt-templates': loadPromptTemplatesPage,
   'draft-templates': loadDraftTemplatesPage,
@@ -49,6 +55,7 @@ export const routeLoaders = {
 
 export const routeComponents = {
   'projects': lazy(routeLoaders['projects']),
+  'conversation-workbench': lazy(routeLoaders['conversation-workbench']),
   'new-task': lazy(routeLoaders['new-task']),
   'hot-board': lazy(routeLoaders['hot-board']),
   'queue': lazy(routeLoaders['queue']),
@@ -59,10 +66,12 @@ export const routeComponents = {
   'html-video': lazy(routeLoaders['html-video']),
   'image-lab': lazy(routeLoaders['image-lab']),
   'voice-lab': lazy(routeLoaders['voice-lab']),
+  'video-lab': lazy(routeLoaders['video-lab']),
   'music-mv': lazy(routeLoaders['music-mv']),
   'book-selection': lazy(routeLoaders['book-selection']),
   'benchmark': lazy(routeLoaders['benchmark']),
   'person-assets': lazy(routeLoaders['person-assets']),
+  'copy-studio': lazy(routeLoaders['copy-studio']),
   'viral-analyzer': lazy(routeLoaders['viral-analyzer']),
   'prompt-templates': lazy(routeLoaders['prompt-templates']),
   'draft-templates': lazy(routeLoaders['draft-templates']),

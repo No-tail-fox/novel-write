@@ -13,6 +13,15 @@ import {
 } from '@shared/storybound-sidecar';
 
 describe('Storybound-compatible media sidecar', () => {
+  it('counts decoded narration samples without rounding milliseconds to container display precision', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-audio-duration-'));
+    try {
+      const path = join(dir, 'narration.wav');
+      await writeFile(path, wavTone(7632));
+      const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: dir, media_path: path, measure_audio_duration: true });
+      expect(probe.audio_duration_ms).toBe(7632);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 30_000);
   it.each([8000, 30, 32767, 0])('measures real audio at amplitude %s and explicitly reports no video', async (amplitude) => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-quality-audio-'));
     try {
