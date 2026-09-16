@@ -1,0 +1,536 @@
+{
+  "scope": "Local UI simulation only; does not verify a production payment or billing service.",
+  "checks": [
+    {
+      "name": "demo marker visible",
+      "result": true
+    },
+    {
+      "name": "balance 2,600/100",
+      "result": true
+    },
+    {
+      "name": "balance 2,600/0",
+      "result": true
+    },
+    {
+      "name": "balance 2,500/100",
+      "result": true
+    },
+    {
+      "name": "balance 2,600/0",
+      "result": true
+    },
+    {
+      "name": "balance 5,600/0",
+      "result": true
+    },
+    {
+      "name": "paid demo order disables repeated crediting",
+      "result": true
+    },
+    {
+      "name": "balance 50/0",
+      "result": true
+    },
+    {
+      "name": "insufficient funds blocks submit",
+      "result": true
+    },
+    {
+      "name": "balance 3,050/0",
+      "result": true
+    },
+    {
+      "name": "top up does not automatically generate",
+      "result": true
+    },
+    {
+      "name": "offline blocks topup",
+      "result": true
+    },
+    {
+      "name": "offline blocks generation",
+      "result": true
+    },
+    {
+      "name": "seven categories",
+      "result": true
+    },
+    {
+      "name": "draft source does not activate",
+      "result": true
+    },
+    {
+      "name": "explicit source enable",
+      "result": true
+    },
+    {
+      "name": "balance 3,050/0",
+      "result": true
+    },
+    {
+      "name": "balance 3,050/0",
+      "result": true
+    },
+    {
+      "name": "BYOK completion does not charge platform credits",
+      "result": true
+    },
+    {
+      "name": "redeem only once",
+      "result": true
+    },
+    {
+      "name": "device removed",
+      "result": true
+    },
+    {
+      "name": "device rebound",
+      "result": true
+    },
+    {
+      "name": "update waits for jobs",
+      "result": true
+    },
+    {
+      "name": "simulated update completes",
+      "result": true
+    },
+    {
+      "name": "orders shared with admin",
+      "result": true
+    },
+    {
+      "name": "admin suspension gates new jobs",
+      "result": true
+    },
+    {
+      "name": "price publish only once",
+      "result": true
+    },
+    {
+      "name": "release revoked",
+      "result": true
+    },
+    {
+      "name": "balance 2,600/100",
+      "result": true
+    },
+    {
+      "name": "balance 2,600/0",
+      "result": true
+    },
+    {
+      "name": "in-flight platform job keeps original charge after source switch",
+      "result": true
+    },
+    {
+      "name": "next job uses newly activated BYOK source",
+      "result": true
+    },
+    {
+      "name": "账号总览 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 one active navigation",
+      "result": true
+    },
+    {
+      "name": "账号总览 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 one active navigation",
+      "result": true
+    },
+    {
+      "name": "授权与设备 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 one active navigation",
+      "result": true
+    },
+    {
+      "name": "积分钱包 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "平台模型 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 one active navigation",
+      "result": true
+    },
+    {
+      "name": "平台模型 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "远程更新 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 one active navigation",
+      "result": true
+    },
+    {
+      "name": "远程更新 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "运营后台 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 one active navigation",
+      "result": true
+    },
+    {
+      "name": "运营后台 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "账号总览 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 one active navigation",
+      "result": true
+    },
+    {
+      "name": "账号总览 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 one active navigation",
+      "result": true
+    },
+    {
+      "name": "授权与设备 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 one active navigation",
+      "result": true
+    },
+    {
+      "name": "积分钱包 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "平台模型 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 one active navigation",
+      "result": true
+    },
+    {
+      "name": "平台模型 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "远程更新 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 one active navigation",
+      "result": true
+    },
+    {
+      "name": "远程更新 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "运营后台 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 one active navigation",
+      "result": true
+    },
+    {
+      "name": "运营后台 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "账号总览 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 one active navigation",
+      "result": true
+    },
+    {
+      "name": "账号总览 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 one active navigation",
+      "result": true
+    },
+    {
+      "name": "授权与设备 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 one active navigation",
+      "result": true
+    },
+    {
+      "name": "积分钱包 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "平台模型 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 one active navigation",
+      "result": true
+    },
+    {
+      "name": "平台模型 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "远程更新 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 one active navigation",
+      "result": true
+    },
+    {
+      "name": "远程更新 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "运营后台 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 one active navigation",
+      "result": true
+    },
+    {
+      "name": "运营后台 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "账号总览 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "账号总览 one active navigation",
+      "result": true
+    },
+    {
+      "name": "账号总览 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "授权与设备 one active navigation",
+      "result": true
+    },
+    {
+      "name": "授权与设备 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "积分钱包 one active navigation",
+      "result": true
+    },
+    {
+      "name": "积分钱包 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "平台模型 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "平台模型 one active navigation",
+      "result": true
+    },
+    {
+      "name": "平台模型 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "远程更新 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "远程更新 one active navigation",
+      "result": true
+    },
+    {
+      "name": "远程更新 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "运营后台 no page horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 no main horizontal overflow",
+      "result": true
+    },
+    {
+      "name": "运营后台 one active navigation",
+      "result": true
+    },
+    {
+      "name": "运营后台 navigation label stays on one line",
+      "result": true
+    },
+    {
+      "name": "compact scenario controls accessible",
+      "result": true
+    },
+    {
+      "name": "no browser exceptions",
+      "result": true
+    },
+    {
+      "name": "no external network requests",
+      "result": true
+    }
+  ],
+  "errors": [],
+  "viewportSizes": [
+    "1440x1000",
+    "1040x900"
+  ],
+  "externalRequests": [],
+  "paidRequests": 0
+}
