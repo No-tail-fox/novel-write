@@ -3620,7 +3620,8 @@ trustedHandle('html-video:regenerate-cover', (_event, id: string) =>
     if (pipeline.config.coverImageMode !== 'auto') {
       throw new Error('HTML_VIDEO_COVER_MODE_INVALID: 只有自动封面模式可以重画封面。');
     }
-    const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
+    const { taskDirectory, runtime } = await createHtmlVideoEditorialRuntime(task);
+    const runtimeConfig = await getCommercialRuntimeConfig();
     const providers = createHtmlVideoRuntimeProviders(runtimeConfig, taskDirectory.workDir.canonicalPath, task, {
       measureAudioDuration: runtime.measureAudioDuration,
       jobConfig: pipeline.config,
@@ -3816,7 +3817,6 @@ async function createHtmlVideoEditorialRuntime(
   options: { maxLongEdge?: number } = {},
 ) {
   const taskDirectory = await htmlVideoTaskDirectory(task.id);
-  const runtimeConfig = await getCommercialRuntimeConfig();
   const runtime = createElectronHtmlVideoRuntime({
     taskDirectory,
     taskTitle: task.title,
@@ -3826,7 +3826,7 @@ async function createHtmlVideoEditorialRuntime(
     hyperframesRuntimePath: join(dirname(fileURLToPath(import.meta.url)), HYPERFRAMES_RUNTIME_FILENAME),
     ...(options.maxLongEdge === undefined ? {} : { maxLongEdge: options.maxLongEdge }),
   });
-  return { taskDirectory, runtimeConfig, runtime };
+  return { taskDirectory, runtime };
 }
 
 async function rebuildHtmlVideoEditorialPreviews(
@@ -4057,7 +4057,8 @@ async function regenerateHtmlVideoEditorialAsset(
 ): Promise<HtmlVideoPipelineDataV2> {
   const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
   if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
-  const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
+  const { taskDirectory, runtime } = await createHtmlVideoEditorialRuntime(task);
+  const runtimeConfig = await getCommercialRuntimeConfig();
   const stageDirectory = join(taskDirectory.workDir.canonicalPath, '.editorial-regenerate', randomUUID());
   await mkdir(stageDirectory, { recursive: true });
   try {
@@ -4094,7 +4095,8 @@ async function regenerateHtmlVideoEditorialVoice(
 ): Promise<HtmlVideoPipelineDataV2> {
   const scene = pipeline.scenes.find((item) => item.index === sceneIndex);
   if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${sceneIndex}`);
-  const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
+  const { taskDirectory, runtime } = await createHtmlVideoEditorialRuntime(task);
+  const runtimeConfig = await getCommercialRuntimeConfig();
   const stageDirectory = join(taskDirectory.workDir.canonicalPath, '.editorial-regenerate', randomUUID());
   await mkdir(stageDirectory, { recursive: true });
   try {
