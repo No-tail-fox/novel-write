@@ -28,6 +28,7 @@ export interface TrustedIpcDependencies {
   register: (channel: string, handler: RegisteredHandler) => void;
   getWindow: () => IpcWindowLike | null;
   getPolicy: () => RendererPolicy | null;
+  beforeHandle?: (channel: IpcChannel, input: unknown) => Promise<void>;
 }
 
 export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) {
@@ -47,6 +48,7 @@ export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) 
         if (!parsed.success) {
           throw new AppError('IPC_INVALID_INPUT', '请求参数无效。');
         }
+        await dependencies.beforeHandle?.(channel, parsed.data);
         return { ok: true, value: await handler(event as IpcMainInvokeEvent, parsed.data) };
       } catch (error) {
         return {

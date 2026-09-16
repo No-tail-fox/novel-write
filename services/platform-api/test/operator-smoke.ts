@@ -1,0 +1,21 @@
+import {createRequire} from 'node:module';
+import {generateKeyPairSync,randomBytes} from 'node:crypto';
+import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {poolFor,migrate} from '../src/db.js';
+import {loadConfig} from '../src/config.js';
+import {seedDevelopment} from '../src/fixture.js';
+import {buildApp} from '../src/app.js';
+if(!process.env.PLATFORM_TEST_DATABASE_URL||!process.env.PLAYWRIGHT_PACKAGE_JSON)throw new Error('Set PLATFORM_TEST_DATABASE_URL and PLAYWRIGHT_PACKAGE_JSON for optional local browser smoke.');
+const req=createRequire(process.env.PLAYWRIGHT_PACKAGE_JSON),{chromium}=req('playwright');
+const admin=poolFor(process.env.PLATFORM_TEST_DATABASE_URL),name='storydream_operatorqa_'+randomBytes(5).toString('hex');await admin.query('CREATE DATABASE "'+name+'"');
+const dbUrl=new URL(process.env.PLATFORM_TEST_DATABASE_URL);dbUrl.pathname='/'+name;const artifacts=await mkdtemp(join(tmpdir(),'storydream-operatorqa-')),key=generateKeyPairSync('ed25519');
+const config=loadConfig({NODE_ENV:'test',DATABASE_URL:dbUrl.href,PLATFORM_DEV_FIXTURES:'1',PLATFORM_HOST:'127.0.0.1',PLATFORM_PORT:'4321',PLATFORM_PUBLIC_URL:'http://127.0.0.1:4321',PLATFORM_TOKEN_SECRET:randomBytes(32).toString('hex'),PLATFORM_PEPPER:randomBytes(32).toString('hex'),PLATFORM_LICENSE_PRIVATE_KEY:key.privateKey.export({type:'pkcs8',format:'pem'}).toString(),PLATFORM_ARTIFACT_DIRECTORY:artifacts});
+const pool=poolFor(config.databaseUrl);await migrate(pool);await seedDevelopment(pool,config);const app=buildApp(config,pool);await app.listen({host:config.host,port:config.port});
+const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
+try{const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.goto(config.publicUrl+'/operator');await page.locator('#phone').fill('13800138000');await page.locator('#send').click();await page.locator('#status').filter({hasText:'开发环境验证码'}).waitFor();await page.locator('#code').fill(config.fixtureOtp);await page.locator('#verify').click();await page.locator('#console').waitFor({state:'visible'});await page.getByRole('button',{name:'用户与积分',exact:true}).click();await page.locator('table').waitFor();
+const output=resolve('../../.tmp/operator-console-qa');await mkdir(output,{recursive:true});await page.screenshot({path:join(output,'desktop.png'),fullPage:true});await page.setViewportSize({width:1040,height:900});await page.screenshot({path:join(output,'compact.png'),fullPage:true});
+const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);if(overflow||errors.length)throw new Error(JSON.stringify({overflow,errors}));
+await page.locator('#action').selectOption('reconcile');await page.locator('#execute').click();await page.locator('#actionResult').filter({hasText:'differences'}).waitFor();console.log('Operator browser login, role-gated data, reconciliation and 1440/1040 layout smoke passed.');
+}finally{await browser.close();await app.close();await pool.end();await admin.query('DROP DATABASE "'+name+'"');await admin.end();await rm(artifacts,{recursive:true,force:true});}

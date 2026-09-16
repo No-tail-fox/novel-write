@@ -193,6 +193,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'image-lab:generate',
   'image-lab:add-record',
   'voice-lab:generate',
+  'commercial:request',
   'account:save',
   'activation:save',
   'ui:save-preferences',
@@ -330,6 +331,7 @@ export interface PersonAssetReference {
 }
 
 export type StoryDreamApi = {
+  commercial: import('./commercial-contract').CommercialApi;
   getState: () => Promise<AppState>;
   getBootstrap: () => Promise<BootstrapState>;
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;

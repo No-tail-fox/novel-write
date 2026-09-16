@@ -37,3 +37,5 @@ Thumbs.db
 # Local QA and audit artifacts
 .artifacts/
 .codex-audit-temp/
+.tmp/
+services/platform-api/data/

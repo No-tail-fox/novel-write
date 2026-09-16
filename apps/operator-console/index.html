@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>StoryDream 运营管理</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font:
+          14px/1.6 system-ui,
+          sans-serif;
+        background: #171a22;
+        color: #e8ebf5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      header {
+        padding: 20px 32px;
+        border-bottom: 1px solid #343949;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      small {
+        color: #a5b3c9;
+      }
+      main {
+        padding: 24px 32px;
+        max-width: 1500px;
+        margin: auto;
+      }
+      input,
+      button,
+      select,
+      textarea {
+        font: inherit;
+        border: 1px solid #4b536b;
+        background: #252b3a;
+        color: inherit;
+        border-radius: 6px;
+        padding: 8px 12px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        background: #38445c;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid #8cafff;
+        outline-offset: 2px;
+      }
+      input {
+        max-width: 260px;
+      }
+      label {
+        display: block;
+        color: #c4cee1;
+      }
+      section {
+        background: #202533;
+        border: 1px solid #343d52;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 18px 0;
+      }
+      nav {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      nav button[aria-current="true"] {
+        background: #405985;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: end;
+      }
+      .grow {
+        flex: 1;
+      }
+      #status {
+        white-space: pre-wrap;
+        padding: 12px;
+        background: #252d40;
+        border-radius: 6px;
+        min-height: 46px;
+      }
+      table {
+        border-collapse: collapse;
+        font-size: 12px;
+        width: 100%;
+      }
+      td,
+      th {
+        text-align: left;
+        border-bottom: 1px solid #374159;
+        padding: 10px;
+        vertical-align: top;
+        max-width: 400px;
+        overflow-wrap: anywhere;
+      }
+      th {
+        color: #aec5e9;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      textarea {
+        width: 100%;
+        min-height: 150px;
+      }
+      .table-scroll {
+        overflow-x: auto;
+        max-height: 600px;
+      }
+      details {
+        margin: 14px 0;
+      }
+      summary {
+        cursor: pointer;
+      }
+      #console[hidden],
+      #login[hidden] {
+        display: none;
+      }
+      a {
+        color: #aac4ff;
+      }
+      .warning {
+        color: #ffe2a8;
+      }
+      code {
+        color: #acc4ff;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>StoryDream 运营管理</h1>
+      <small id="environment">正在读取服务状态</small
+      ><button id="logout" hidden>退出</button>
+    </header>
+    <main>
+      <p id="status" role="status" aria-live="polite">
+        需要运营权限的账号登录。
+      </p>
+      <section id="login">
+        <h2>手机验证登录</h2>
+        <p>
+          账号须先由管理员分配支持、财务或管理员角色。登录密钥仅保留在当前页面内存。
+        </p>
+        <div class="row">
+          <label
+            >手机号码<input
+              id="phone"
+              autocomplete="tel"
+              placeholder="13800138000" /></label
+          ><button id="send">发送验证码</button
+          ><label
+            >验证码<input
+              id="code"
+              autocomplete="one-time-code"
+              maxlength="6" /></label
+          ><button id="verify">登录</button>
+        </div>
+      </section>
+      <div id="console" hidden>
+        <nav id="navigation"></nav>
+        <section>
+          <h2 id="viewTitle">总览</h2>
+          <div id="view"></div>
+        </section>
+        <section>
+          <h2>发布与操作</h2>
+          <p>
+            财务和配置操作会记录账号、原因与时间；敏感写入要求最近 15
+            分钟内重新验证登录。商品、费率采用新版本发布。
+          </p>
+          <label
+            >操作<select id="action">
+              <option value="recharge-products">发布充值商品</option>
+              <option value="license-products">发布授权商品</option>
+              <option value="activation-codes">生成激活码</option>
+              <option value="models">发布模型与费率</option>
+              <option value="reconcile">钱包对账</option>
+            </select></label
+          >
+          <label
+            >配置 JSON<textarea
+              id="payload"
+              spellcheck="false"
+              aria-label="配置 JSON"
+            ></textarea></label
+          ><button id="execute">执行并记录审计</button>
+          <pre id="actionResult"></pre>
+          <details>
+            <summary>账号限制、模型停用、开发支付与异常释放</summary>
+            <div class="row">
+              <label
+                >操作<select id="targetAction">
+                  <option value="users/status">变更账号状态</option>
+                  <option value="models/enabled">启用或停用模型渠道</option>
+                  <option value="jobs/release">补偿未知任务</option>
+                  <option value="dev/orders/pay">开发订单确认</option>
+                  <option value="dev/refunds/complete">开发退款确认</option>
+                </select></label
+              ><label
+                >记录 ID<input id="targetId" placeholder="记录 UUID"
+              /></label>
+            </div>
+            <label
+              >操作内容 JSON<textarea id="targetPayload">
+{"reason":"已核验相关证据，执行本次操作","status":"restricted"}</textarea></label
+            ><button id="targetExecute">提交操作</button>
+          </details>
+        </section>
+      </div>
+    </main>
+    <script type="module">
+      const $ = (id) => document.getElementById(id),
+        encoder = new TextEncoder();
+      let token = "",
+        refreshToken = "",
+        challenge = "",
+        keyPair,
+        installationId = crypto.randomUUID(),
+        userId = "";
+      function status(value) {
+        $("status").textContent = value;
+      }
+      function hex(bytes) {
+        return [...new Uint8Array(bytes)]
+          .map((n) => n.toString(16).padStart(2, "0"))
+          .join("");
+      }
+      function b64(bytes) {
+        return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+      }
+      async function request(
+        path,
+        method = "GET",
+        body,
+        publicRequest = false,
+      ) {
+        const raw = body === undefined ? "" : JSON.stringify(body),
+          headers = {};
+        if (raw) headers["Content-Type"] = "application/json";
+        if (token && !publicRequest) headers.Authorization = "Bearer " + token;
+        if (method !== "GET") headers["Idempotency-Key"] = crypto.randomUUID();
+        if (keyPair && path !== "/v1/auth/challenges") {
+          const timestamp = String(Date.now()),
+            nonce = crypto.randomUUID(),
+            message =
+              method +
+              "\n" +
+              path +
+              "\n" +
+              timestamp +
+              "\n" +
+              nonce +
+              "\n" +
+              hex(await crypto.subtle.digest("SHA-256", encoder.encode(raw)));
+          Object.assign(headers, {
+            "X-Device-Id": installationId,
+            "X-Device-Timestamp": timestamp,
+            "X-Device-Nonce": nonce,
+            "X-Device-Signature": b64(
+              await crypto.subtle.sign(
+                "Ed25519",
+                keyPair.privateKey,
+                encoder.encode(message),
+              ),
+            ),
+          });
+        }
+        const response = await fetch(path, {
+          method,
+          headers,
+          body: raw || undefined,
+        });
+        const result = await response.json();
+        if (!response.ok) throw Error(result.error?.message || "请求失败");
+        return result;
+      }
+      const run = (fn) => async () => {
+        try {
+          await fn();
+        } catch (error) {
+          status(error.message);
+        }
+      };
+      $("send").onclick = run(async () => {
+        const result = await request(
+          "/v1/auth/challenges",
+          "POST",
+          { phone: $("phone").value },
+          true,
+        );
+        challenge = result.challengeId;
+        status(
+          result.developmentCode
+            ? "开发环境验证码：" + result.developmentCode
+            : "验证码已发送，请在有效期内登录。",
+        );
+      });
+      $("verify").onclick = run(async () => {
+        keyPair = await crypto.subtle.generateKey("Ed25519", false, [
+          "sign",
+          "verify",
+        ]);
+        const pub = b64(
+          await crypto.subtle.exportKey("spki", keyPair.publicKey),
+        );
+        const publicKey =
+          "-----BEGIN PUBLIC KEY-----\n" +
+          pub.match(/.{1,64}/g).join("\n") +
+          "\n-----END PUBLIC KEY-----\n";
+        const result = await request(
+          "/v1/auth/verify",
+          "POST",
+          {
+            challengeId: challenge,
+            code: $("code").value,
+            device: { installationId, publicKey, name: "运营管理浏览器" },
+          },
+          true,
+        );
+        token = result.accessToken;
+        refreshToken = result.refreshToken;
+        userId = result.userId;
+        await request("/v1/operator/overview");
+        $("login").hidden = true;
+        $("console").hidden = false;
+        $("logout").hidden = false;
+        status(
+          "已登录运营账号。会话于 " +
+            new Date(result.expiresAt).toLocaleTimeString() +
+            " 到期，写入操作需有效手机验证。",
+        );
+        await show("overview");
+      });
+      $("logout").onclick = run(async () => {
+        try {
+          await request("/v1/auth/logout", "POST", {});
+        } finally {
+          token = "";
+          refreshToken = "";
+          keyPair = undefined;
+          $("login").hidden = false;
+          $("console").hidden = true;
+          $("logout").hidden = true;
+          status("已退出登录。");
+        }
+      });
+      const views = {
+        overview: "总览",
+        users: "用户与积分",
+        licenses: "软件授权",
+        orders: "充值订单",
+        refunds: "退款",
+        models: "模型渠道",
+        jobs: "生成任务",
+        ledger: "积分账本",
+        products: "充值商品",
+        releases: "远程版本",
+        audit: "操作审计",
+      };
+      async function show(kind) {
+        $("viewTitle").textContent = views[kind];
+        for (const button of $("navigation").children)
+          button.setAttribute(
+            "aria-current",
+            String(button.dataset.kind === kind),
+          );
+        const data = await request(
+          kind === "overview"
+            ? "/v1/operator/overview"
+            : "/v1/operator/data/" + kind,
+        );
+        $("view").replaceChildren();
+        if (!Array.isArray(data)) {
+          const pre = document.createElement("pre");
+          pre.textContent = JSON.stringify(data, null, 2);
+          $("view").append(pre);
+          return;
+        }
+        if (!data.length) {
+          $("view").textContent = "暂无记录";
+          return;
+        }
+        const wrap = document.createElement("div");
+        wrap.className = "table-scroll";
+        const table = document.createElement("table"),
+          head = document.createElement("tr"),
+          keys = Object.keys(data[0]);
+        for (const key of keys) {
+          const th = document.createElement("th");
+          th.textContent = key;
+          head.append(th);
+        }
+        table.append(head);
+        for (const row of data) {
+          const tr = document.createElement("tr");
+          for (const key of keys) {
+            const td = document.createElement("td");
+            td.textContent =
+              typeof row[key] === "object"
+                ? JSON.stringify(row[key])
+                : String(row[key] ?? "");
+            tr.append(td);
+          }
+          table.append(tr);
+        }
+        wrap.append(table);
+        $("view").append(wrap);
+      }
+      for (const [key, title] of Object.entries(views)) {
+        const button = document.createElement("button");
+        button.textContent = title;
+        button.dataset.kind = key;
+        button.onclick = run(() => show(key));
+        $("navigation").append(button);
+      }
+      const templates = {
+        "recharge-products": {
+          id: "credits-30",
+          version: "1",
+          name: "3000 积分",
+          amountFen: "3000",
+          paidUnits: "3000000",
+          bonusUnits: "0",
+          enabled: false,
+        },
+        "license-products": {
+          id: "personal",
+          version: "1",
+          name: "个人授权",
+          kind: "subscription",
+          durationDays: 365,
+          deviceLimit: 2,
+          features: ["platform", "local"],
+          enabled: false,
+        },
+        "activation-codes": { productId: "personal", version: "1", count: 1 },
+        models: {
+          id: "platform.music.standard",
+          version: "1",
+          name: "Suno 音乐生成",
+          capability: "music",
+          operation: "music.generate",
+          adapter: "suno",
+          origin: "https://www.suno-api.io",
+          credentialRef: "SUNO_API_KEY",
+          upstreamModel: "suno-v6",
+          priceUnits: "100000",
+          unit: "request",
+          maxQuantity: "1",
+          enabled: false,
+          isDefault: true,
+        },
+        reconcile: {},
+      };
+      $("action").onchange = () => {
+        $("payload").value = JSON.stringify(
+          templates[$("action").value],
+          null,
+          2,
+        );
+      };
+      $("action").onchange();
+      $("execute").onclick = run(async () => {
+        const result = await request(
+          "/v1/operator/" + $("action").value,
+          "POST",
+          JSON.parse($("payload").value),
+        );
+        $("actionResult").textContent = JSON.stringify(result, null, 2);
+        status("操作已完成并记录审计。激活码应保存到受控交付渠道。");
+      });
+      $("targetExecute").onclick = run(async () => {
+        const [group, section, tail] = $("targetAction").value.split("/"),
+          id = $("targetId").value;
+        const path =
+          group === "dev"
+            ? `/v1/operator/dev/${section}/${encodeURIComponent(id)}/${tail}`
+            : `/v1/operator/${group}/${encodeURIComponent(id)}/${section}`;
+        const result = await request(
+          path,
+          "POST",
+          JSON.parse($("targetPayload").value),
+        );
+        $("actionResult").textContent = JSON.stringify(result, null, 2);
+        status("操作已完成并记录审计。");
+      });
+      request("/v1/public/config", "GET", undefined, true)
+        .then((result) => {
+          $("environment").textContent =
+            result.environment === "development"
+              ? "开发环境 · 不提供真实收款"
+              : "生产环境";
+          if (result.environment === "development")
+            $("environment").className = "warning";
+        })
+        .catch((error) => status(error.message));
+    </script>
+  </body>
+</html>

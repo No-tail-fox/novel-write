@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { commercialRequestSchema } from './commercial-ipc';
 import { musicVoiceRequestSchema } from './music-voice';
 import { musicEnhancedRequestSchema } from './music-enhanced';
 import { voxPropsSchema, voxSavedTemplateSchema } from './vox-animation';
@@ -934,6 +935,7 @@ export const ipcInputSchemas = {
   'music-lab:sync-history': z.void(),
   'music-lab:voice': musicVoiceRequestSchema,
   'music-lab:enhanced': musicEnhancedRequestSchema,
+  'commercial:request': commercialRequestSchema,
   'account:save': z
     .object({
       displayName: z.string().max(1024),

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { createCommercialBridge } from '../src/shared/commercial-ipc';
 import type { MusicVoiceRequest, MusicVoiceState } from '../src/shared/music-voice';
 import type { MusicEnhancedRequest, MusicEnhancedJob } from '../src/shared/music-enhanced';
 import type { VideoLabGenerateInput, VideoLabRecord } from '../src/shared/video-lab';
@@ -274,6 +275,7 @@ export const storyDreamApi: StoryDreamApi = {
   generateImageLab: (input: ImageLabGenerateInput): Promise<AppMutationResult | null> => invokeTrusted('image-lab:generate', input),
   addImageLabRecord: (input: ImageLabImportInput): Promise<AppMutationResult | null> => invokeTrusted('image-lab:add-record', input),
   generateVoiceLabPreview: (input: VoiceLabGenerateInput): Promise<AppMutationResult | null> => invokeTrusted('voice-lab:generate', input),
+  commercial: createCommercialBridge(request => invokeTrusted('commercial:request', request)),
   saveAccount: (account: AccountProfile): Promise<AppMutationResult | null> => invokeTrusted('account:save', account),
   saveActivation: (activation: ActivationState): Promise<AppMutationResult | null> => invokeTrusted('activation:save', activation),
   saveUiPreferences: (update: UiPreferencesUpdate): Promise<AppMutationResult | null> => invokeTrusted('ui:save-preferences', update),

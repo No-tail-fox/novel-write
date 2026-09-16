@@ -22,6 +22,8 @@ import { generateImageLabRecord } from '../src/shared/image-lab';
 import { removeEditorialGreenBackground } from '../src/shared/editorial-cutout';
 import { createVideoLabRuntime } from '../src/shared/video-lab-runtime';
 import { createMusicProfileService } from './music-profile-service';
+import { createCommercialService } from './commercial-service';
+import { dispatchCommercialRequest } from '../src/shared/commercial-ipc';
 import type { MusicTrackInput } from '../src/shared/music-lab';
 import { loadAiHotArchive, loadHotBoardArchive } from '../src/shared/hotboard-archive';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
@@ -94,6 +96,7 @@ import { voxAnimationMessages } from '../src/shared/vox-animation-prompt';
 import { voxPropsSchema, type VoxGenerateRequest } from '../src/shared/vox-animation';
 import { hashDirectorRenderOutput } from './director-render-output';
 import { createTrustedIpcRegistrar } from './ipc';
+import { applyCommercialByokProfiles, assertLegacyModelSource, legacyPaidCapabilities } from './commercial-model-routing';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
 import { importManagedBgm, resolveManagedBgmFilePath, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
@@ -222,6 +225,9 @@ const trustedHandle = createTrustedIpcRegistrar({
   register: (channel, handler) => ipcMain.handle(channel, handler),
   getWindow: () => mainWindow,
   getPolicy: () => mainRendererPolicy,
+  beforeHandle: async (channel, input) => {
+    if (legacyPaidCapabilities[channel]) assertLegacyModelSource(channel, (await getCommercialService().getLocalModelContext()).profiles, input);
+  },
 });
 const appDataName = 'storydream';
 const pipelineStepAgents: Record<number, string> = {
@@ -791,6 +797,12 @@ async function getConfigService(): Promise<ConfigService> {
   return configService;
 }
 
+async function getCommercialRuntimeConfig(): Promise<AppConfig> {
+  const config = await (await getConfigService()).getRuntimeConfig();
+  const context = await getCommercialService().getLocalModelContext();
+  return applyCommercialByokProfiles(config, context.profiles);
+}
+
 function publicViralAnalysisDetail(record: ViralAnalysisRecord | null): ViralAnalysisRecord | null {
   if (!record) return null;
   const { checkpoint: _checkpoint, ...detail } = record;
@@ -1238,7 +1250,7 @@ async function readViralAnalysisResult(path: string): Promise<ViralAnalysisResul
 }
 
 async function buildRunOptions(database: FileDatabase, task: Task, workDir: string, controller: AbortController) {
-  const [state, runtimeConfig] = await Promise.all([database.getState(), (await getConfigService()).getRuntimeConfig()]);
+  const [state, runtimeConfig] = await Promise.all([database.getState(), getCommercialRuntimeConfig()]);
   return {
     appDataDir: appDataDir(),
     workDir,
@@ -1427,7 +1439,7 @@ async function runHtmlVideoTask(
     });
     await publishTaskUpsert(database, task.id);
 
-    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+    const runtimeConfig = await getCommercialRuntimeConfig();
     const probeMedia = probeHtmlVideoMedia;
     const bgmPath = await prepareHtmlVideoBgm({
       taskDirectory,
@@ -1907,7 +1919,7 @@ function startViralAnalysisRun(
     const resumeState = viralCheckpointResumeState(record.checkpoint);
     let lastStage = resumeState.stage;
     try {
-      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const runtimeConfig = await getCommercialRuntimeConfig();
       if (!await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
         status: 'running',
         currentStage: resumeState.stage,
@@ -2136,7 +2148,7 @@ let videoLabRuntime: ReturnType<typeof createVideoLabRuntime> | undefined;
 function getVideoLabRuntime() {
   return videoLabRuntime ??= createVideoLabRuntime({
     rootDirectory: join(appDataDir(), 'video-lab'),
-    getConfig: async () => (await getConfigService()).getRuntimeConfig(),
+    getConfig: async () => getCommercialRuntimeConfig(),
     normalizeVideo: normalizeSceneVideo,
   });
 }
@@ -2149,8 +2161,14 @@ trustedHandle('video-lab:open-output-directory', async (_event, id: string) => {
 let musicProfileService: ReturnType<typeof createMusicProfileService> | undefined;
 function getMusicProfileService() {
   return musicProfileService ??= createMusicProfileService({
-    dataDir: appDataDir(), getConfig: async () => (await getConfigService()).getRuntimeConfig(),
+    dataDir: appDataDir(), getConfig: async () => getCommercialRuntimeConfig(),
     resolveEnvironmentApiKey: resolveMusicLabApiKey,
+    assertByok: async () => {
+      const context = await getCommercialService().getLocalModelContext();
+      const profile = context.profiles.profiles.find(item => item.id === context.profiles.active.music);
+      if (profile?.source === 'platform') throw new Error('PLATFORM_QUOTE_REQUIRED: 当前启用平台音乐模型，请使用音乐创作中的平台报价入口；此自有 API 操作未授权切换来源。');
+      if (context.userId && !profile) throw new Error('BYOK_ASSOCIATION_REQUIRED: 请在系统设置的音乐来源中，明确关联并启用此账号的自有 API 配置。');
+    },
   });
 }
 async function getMusicLabRuntime(requireEnabled = true) { return (await getMusicProfileService().active(requireEnabled)).lab; }
@@ -2177,18 +2195,18 @@ async function resolveMusicLabApiKey(): Promise<string> {
 trustedHandle('music-lab:service-status', async () => getMusicProfileService().getServiceStatus());
 trustedHandle('music-lab:enhanced', async (_event, input) => {
   if (isShuttingDown) throw new Error('应用正在退出，请稍后重试。');
-  const context = await getMusicProfileService().active(input.action !== 'list');
+  const context = await getMusicProfileService().active(!['list', 'poll', 'cancel'].includes(input.action));
   const pending=context.enhanced.execute(input); activeMusicSubmissions.add(pending);
   try{return await pending;}finally{activeMusicSubmissions.delete(pending);}
 });
 trustedHandle('music-lab:voice', async (_event, input) => {
   if (isShuttingDown) throw new Error('应用正在退出，请稍后重试。');
-  const context = await getMusicProfileService().active(input.action !== 'list');
+  const context = await getMusicProfileService().active(!['list', 'refresh', 'poll', 'delete'].includes(input.action));
   const pending = context.voice.execute(input);
   activeMusicSubmissions.add(pending);
   try { return await pending; } finally { activeMusicSubmissions.delete(pending); }
 });
-trustedHandle('music-lab:balance', async () => (await getMusicLabRuntime()).getBalance());
+trustedHandle('music-lab:balance', async () => (await getMusicLabRuntime(false)).getBalance());
 trustedHandle('music-lab:list', async () => (await getMusicLabRuntime(false)).list());
 const activeMusicSubmissions = new Set<Promise<unknown>>();
 async function runMusicSubmission<T>(operation: () => Promise<T>): Promise<T> {
@@ -2199,14 +2217,14 @@ async function runMusicSubmission<T>(operation: () => Promise<T>): Promise<T> {
   finally { activeMusicSubmissions.delete(submission); }
 }
 trustedHandle('music-lab:generate', async (_event, input) => runMusicSubmission(async () => (await getMusicLabRuntime()).generate(input)));
-trustedHandle('music-lab:refresh', async (_event, id) => (await getMusicLabRuntime()).refresh(id));
+trustedHandle('music-lab:refresh', async (_event, id) => (await getMusicLabRuntime(false)).refresh(id));
 trustedHandle('music-lab:lyrics', async (_event, input) => (await getMusicLabRuntime()).generateLyrics(input));
 trustedHandle('music-lab:boost-style', async (_event, input) => (await getMusicLabRuntime()).boostStyle(input));
-trustedHandle('music-lab:download', async (_event, input) => (await getMusicLabRuntime()).downloadTrack(input));
+trustedHandle('music-lab:download', async (_event, input) => (await getMusicLabRuntime(false)).downloadTrack(input));
 let musicBgmImportQueue: Promise<unknown> = Promise.resolve();
 trustedHandle('music-lab:import-bgm', async (_event, input) => {
   if (isShuttingDown) throw new Error('应用正在退出，请稍后重新打开音乐创作。');
-  const runtime = await getMusicLabRuntime();
+  const runtime = await getMusicLabRuntime(false);
   const pending = musicBgmImportQueue.then(() => importMusicLabBgm(input, runtime));
   musicBgmImportQueue = pending.catch(() => undefined);
   return pending;
@@ -2255,7 +2273,7 @@ trustedHandle('music-lab:upload-source', async (_event, input) => runMusicSubmis
   if (normalizePath(dirname(sourcePath)) !== normalizePath(managedRoot)) throw new Error('音频文件不在受管素材目录内。');
   return runtime.uploadSource({ ...input, audioPath: sourcePath });
 }));
-trustedHandle('music-lab:sync-history', async () => (await getMusicLabRuntime()).syncHistory());
+trustedHandle('music-lab:sync-history', async () => (await getMusicLabRuntime(false)).syncHistory());
 trustedHandle('task:archive', (_event, id: string) =>
   runHistoryGovernanceMutation('task', id, async (database) => {
     const task = await database.archiveTask(id);
@@ -2398,7 +2416,7 @@ trustedHandle('research:web-search', async (_event, input: string | WebSearchReq
 });
 
 trustedHandle('research:compose-copy', async (_event, input: ResearchCopyComposeInput) => {
-  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const runtimeConfig = await getCommercialRuntimeConfig();
   return composeCopyFromSources(createConfiguredTextLlm(runtimeConfig.llm), input);
 });
 
@@ -2441,7 +2459,7 @@ trustedHandle('vox:generate', async (_event, input: VoxGenerateRequest) => {
   const props = voxPropsSchema.parse(input.props);
   const controller = new AbortController(); voxGenerationControllers.set(input.requestId, controller);
   try {
-    const runtime = await (await getConfigService()).getRuntimeConfig();
+    const runtime = await getCommercialRuntimeConfig();
     const result = await createConfiguredTextLlm(runtime.llm).run({ step: 1, name: 'VOX 动画代码', messages: voxAnimationMessages({...input,props}), signal: controller.signal, maxTokens: 10000, maxRetries: 0, timeoutMs: 180000 });
     if (controller.signal.aborted) throw new Error('动画生成已取消');
     return compileVoxCode(result.text);
@@ -2499,7 +2517,7 @@ trustedHandle('viral:save-templates', async (_event, input) => {
 });
 
 trustedHandle('custom-style:generate-draft', async (_event, input: CustomStyleGenerateInput): Promise<CustomStyle> => {
-  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const runtimeConfig = await getCommercialRuntimeConfig();
   const llm = createConfiguredJsonLlm(runtimeConfig.llm);
   const result = await llm.run<Partial<CustomStyle>>({
     step: -1,
@@ -2547,7 +2565,7 @@ trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput)
     } as const;
     const initial = await database.addImageLabRecord(record);
     try {
-      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const runtimeConfig = await getCommercialRuntimeConfig();
       const generatedRecord = await generateImageLabRecord(
         runtimeConfig,
         imageLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
@@ -2612,7 +2630,7 @@ trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput)
     } as const;
     const initial = await database.addVoiceLabRecord(record);
     try {
-      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const runtimeConfig = await getCommercialRuntimeConfig();
       const generatedRecord = await generateConfiguredVoicePreview(
         runtimeConfig,
         voiceLabWorkDir({ managedStorageKey: initial.managedStorageKey }),
@@ -2636,15 +2654,29 @@ trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput)
 
 trustedHandle('account:save', async (_event, account: AccountProfile) => {
   const database = await getDb();
-  await database.upsertAccount(account);
-  return publishStatePatch({ kind: 'account', account });
+  const current = (await database.getState()).account;
+  const profile = { ...current, displayName: account.displayName.trim().slice(0, 100), avatarInitial: account.displayName.trim().slice(0, 1) };
+  await database.upsertAccount(profile);
+  return publishStatePatch({ kind: 'account', account: profile });
 });
 
 trustedHandle('activation:save', async (_event, activation: ActivationState) => {
-  const database = await getDb();
-  await database.upsertActivation(activation);
-  return publishStatePatch({ kind: 'activation', activation });
+  throw new Error('LICENSE_SERVER_REQUIRED: 软件授权只能通过账号服务兑换和校验。');
 });
+
+let commercialService: ReturnType<typeof createCommercialService> | undefined;
+function getCommercialService() {
+  return commercialService ??= createCommercialService({
+    dataDir: appDataDir(), baseUrl: process.env.STORYDREAM_PLATFORM_URL || '', appVersion: app.getVersion(), safeStorage,
+    allowInsecureLoopback: !app.isPackaged && process.env.STORYDREAM_PLATFORM_ALLOW_LOCAL === '1',
+    getActiveTaskCount: () => historyActivityRegistry.activeCount + activeMusicSubmissions.size + runningTasks.size + runningViralAnalyses.size + voxGenerationControllers.size + directorRenderControllers.size,
+    openPath: (path: string) => shell.openPath(path),
+    updatePublicKeys: JSON.parse(process.env.STORYDREAM_UPDATE_PUBLIC_KEYS || '{}'),
+    licensePublicKeys: JSON.parse(process.env.STORYDREAM_LICENSE_PUBLIC_KEYS || '{}'),
+    allowedDownloadOrigins: (process.env.STORYDREAM_UPDATE_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean),
+  });
+}
+trustedHandle('commercial:request', (_event, input) => dispatchCommercialRequest(getCommercialService(), input));
 
 trustedHandle('ui:save-preferences', async (_event, update: UiPreferencesUpdate) => {
   const database = await getDb();
@@ -2833,7 +2865,7 @@ trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUC
     throw new Error('DIRECTOR_VIDEO_FIRST_FRAME_MISSING: 当前镜头首帧文件不存在或为空，请重新生成图片。');
   }
 
-  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const runtimeConfig = await getCommercialRuntimeConfig();
   const durationSec = Math.max(1, shot.durationMs / 1000);
   const videoFrames = editorialVideoFrames(document, shot);
   if (!videoFrames.ready) throw new Error(`DIRECTOR_VIDEO_LAST_FRAME_REQUIRED: ${videoFrames.unavailableReason}`);
@@ -3784,7 +3816,7 @@ async function createHtmlVideoEditorialRuntime(
   options: { maxLongEdge?: number } = {},
 ) {
   const taskDirectory = await htmlVideoTaskDirectory(task.id);
-  const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+  const runtimeConfig = await getCommercialRuntimeConfig();
   const runtime = createElectronHtmlVideoRuntime({
     taskDirectory,
     taskTitle: task.title,
@@ -4809,7 +4841,7 @@ trustedHandle('task:replace-video', async (_event, input: { id: string; sceneId:
     if (!scene) throw new Error(`分镜 ${sceneId} 不存在。`);
     const library = await listSceneVideoLibrary(sceneVideoLibraryRoot());
     if (input.source.kind === 'ai') {
-      const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+      const runtimeConfig = await getCommercialRuntimeConfig();
       const sceneImage = input.source.useSceneImage === false
         ? undefined
         : snapshot.assets.images.find((asset) => asset.sceneId === sceneId)?.path;
@@ -4988,7 +5020,7 @@ trustedHandle('task:reference-edit-image', async (_event, input: { id: string; s
     const snapshot = await readTaskArtifactSnapshot(task);
     const current = snapshot.assets.images.find((asset) => asset.sceneId === sceneId);
     if (!current) throw new Error(`分镜 ${sceneId} 还没有可供参考编辑的图片。`);
-    const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
+    const runtimeConfig = await getCommercialRuntimeConfig();
     if (runtimeConfig.imageProvider === 'jimeng') {
       throw new Error('当前即梦图片服务不支持参考图编辑，请切换到 GPT Image 或自定义 OpenAI 兼容图片服务。');
     }

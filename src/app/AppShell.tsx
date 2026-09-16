@@ -19,10 +19,17 @@ import {
 } from './navigation';
 import type { ShellView } from '../shared/types';
 import { preloadRoute } from './route-registry';
+import type { StoryDreamApi } from '../shared/storydream-api';
+import { formatCredits } from '../shared/commercial-contract';
+import { createUnavailableCommercialApi } from '../shared/commercial-ipc';
+import { useCommercialSnapshot } from '../features/account/useCommercialSnapshot';
+
+const previewAccountApi = { commercial: createUnavailableCommercialApi() } as StoryDreamApi;
 
 export type SaveTone = 'saved' | 'saving' | 'dirty';
 
 export function AppShell({
+  api,
   activeView,
   returnView,
   state,
@@ -38,6 +45,7 @@ export function AppShell({
   toggleTheme,
   children,
 }: {
+  api?: StoryDreamApi;
   activeView: ShellView;
   returnView: ShellView;
   state: AppState;
@@ -54,9 +62,12 @@ export function AppShell({
   children: ReactNode;
 }) {
   const recentTasks = state.tasks.slice(0, 3);
-  const trialDaysLabel = state.activation.expiresAt
-    ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
-    : '本地试用';
+  const commercial = useCommercialSnapshot(api ?? previewAccountApi);
+  const license = commercial.snapshot?.license;
+  const trialDaysLabel = license?.status === 'active'
+    ? license.expiresAt ? `${Math.max(0, Math.ceil((new Date(license.expiresAt).getTime() - Date.now()) / 86400000))} 天` : '有效授权'
+    : commercial.snapshot?.authenticated ? '待激活' : '未登录';
+  const creditBalance = commercial.snapshot?.wallet ? formatCredits(commercial.snapshot.wallet.availableUnits) : '—';
   const activeNav = navigationItemForView(activeView);
   const backView = shellBackView(activeView, returnView);
   const NewTaskIcon = newTaskPrimaryAction.icon;
@@ -184,7 +195,7 @@ export function AppShell({
               type="button"
               icon={<KeyRound size={15} />}
               data-nav-view="activation"
-              aria-label={`试用剩余 ${trialDaysLabel}`}
+              aria-label={`软件授权 ${trialDaysLabel}`}
               title={`激活管理 · ${trialDaysLabel}`}
               disabled={busy}
               aria-current={activeView === 'activation' ? 'page' : undefined}
@@ -192,7 +203,7 @@ export function AppShell({
               onMouseEnter={() => preloadRouteIntent('activation')}
               onFocus={() => preloadRouteIntent('activation')}
             >
-              <span>试用剩余</span>
+              <span>软件授权</span>
               <strong>{trialDaysLabel}</strong>
             </Button>
             <div className="account-entry-grid">
@@ -203,7 +214,7 @@ export function AppShell({
                 type="button"
                 icon={<Coins size={15} />}
                 data-nav-view="account"
-                aria-label={`积分明细 ${state.account.balance.toFixed(2)}`}
+                aria-label={`积分明细 ${creditBalance}`}
                 title="账户与积分"
                 disabled={busy}
                 aria-current={activeView === 'account' ? 'page' : undefined}
@@ -212,7 +223,7 @@ export function AppShell({
                 onFocus={() => preloadRouteIntent('account')}
               >
                 <span className="credit-label">积分明细</span>
-                <span className="credit-balance">{state.account.balance.toFixed(2)}</span>
+                <span className="credit-balance">{creditBalance}</span>
               </Button>
               <Button
                 className="feedback-link"

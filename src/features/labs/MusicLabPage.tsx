@@ -13,6 +13,9 @@ import { MusicSourceTools, musicOperationGroups } from './MusicSourceTools';
 import { MUSIC_OPERATION_LABELS, type MusicOperation } from '../../shared/music-operations';
 import { MusicVoicePanel } from './MusicVoicePanel';
 import { MusicEnhancedPanel } from './MusicEnhancedPanel';
+import { PlatformMusicControls } from './PlatformMusicControls';
+import { useCommercialSnapshot } from '../account/useCommercialSnapshot';
+import { formatCredits } from '../../shared/commercial-contract';
 
 const statusLabels = { submitting: '提交中', pending: '排队中', processing: '创作中', completed: '已完成', partial: '部分完成', failed: '失败', 'needs-recovery': '待核对' } as const;
 const inspirations = [
@@ -28,11 +31,17 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
   musicConfig?: AppConfig['music']; openSettings?: () => void;
   onUseInMv: (song: { title: string; lyrics: string; audioPath: string }) => void;
 }) {
+  const commercial = useCommercialSnapshot(api);
+  const activeCommercialMusic = commercial.snapshot?.profiles.profiles.find(item => item.id === commercial.snapshot?.profiles.active.music);
+  const platformMusic = activeCommercialMusic?.source === 'platform';
+  const platformModel = commercial.snapshot?.catalog.find(item => item.id === activeCommercialMusic?.modelId);
+  const byokReady = !platformMusic && !commercial.loading && (!commercial.snapshot?.authenticated || activeCommercialMusic?.source === 'byok');
   const [draft, setDraft] = useState<MusicDraft>(() => {
     const profile = musicConfig?.profiles.find((item) => item.id === musicConfig.activeProfileId);
     return { ...defaultMusicDraft, ...(profile ? { profileId: profile.id, model: profile.model } : {}) };
   });
   const [records, setRecords] = useState<MusicLabRecord[]>([]);
+  const [platformOutputHost, setPlatformOutputHost] = useState<HTMLDivElement | null>(null);
   const [selectedId, setSelectedId] = useState(() => { try { return sessionStorage.getItem('storydream.music-selected') || ''; } catch { return ''; } });
   const [favoriteIds,setFavoriteIds] = useState<string[]>(() => { try { const values:unknown=JSON.parse(localStorage.getItem('storydream.music-favorites') || '[]');return Array.isArray(values)?values.filter((item):item is string=>typeof item==='string'):[]; }catch{return [];} });
   const [query, setQuery] = useState('');
@@ -81,7 +90,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
   const cost = estimateMusicCost(musicDraftInput(draft));
   const activeCount = records.filter((item) => ['submitting', 'processing'].includes(item.status) || (item.status === 'needs-recovery' && item.tracks.some((candidate) => !['completed', 'failed'].includes(candidate.status)))).length;
   const busy = !!pendingAction;
-  const profileSignature = JSON.stringify(musicConfig);
+  const profileSignature = JSON.stringify([musicConfig, commercial.snapshot?.user?.id, activeCommercialMusic?.localProfileId]);
 
   const draftGuard = useWorkspaceDraft({ id: 'music-lab-create', label: '音乐创作草稿', value: draft, restore: setDraft, busy });
   function patchDraft(patch: Partial<MusicDraft>) { inputRevision.current++; setDraft((current) => ({ ...current, ...patch })); }
@@ -133,6 +142,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
     finally { actionLock.current = false; if (mounted.current) setPendingAction(''); }
   }
   async function generateMusic() {
+    if (platformMusic) return;
     if (issue || !service?.configured) return;
     const snapshot = draftGuard.snapshot();
     await runAction('generate', async () => {
@@ -258,11 +268,11 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
     if (next) setSelectedId(next.id);
   }
 
-  return <div className="music-lab" data-music-workspace>
+  return <div className="music-lab" data-music-workspace data-platform-music={platformMusic || undefined}>
     <header className="music-lab__header">
       <div className="music-lab__heading"><Music2 size={21} /><div><h2>音乐创作</h2><span>让灵感成为下一段旋律</span></div></div>
-      <div className="music-lab__service"><span className={`music-lab__dot ${service?.configured ? 'is-ready' : ''}`} />{service === null ? '检查服务…' : `${service.providerName} ${service.enabled === false ? '已停用' : service.configured ? '已配置' : '未配置'}`}
-        <Button density="compact" variant="subtle" onClick={() => void checkBalance()} disabled={busy || !service?.configured}>{pendingAction === 'balance' ? '查询中…' : balance === null ? '查询余额' : `余额 ¥${balance.toFixed(2)}`}</Button>
+      <div className="music-lab__service"><span className={`music-lab__dot ${(platformMusic ? platformModel?.status === 'available' : service?.configured) ? 'is-ready' : ''}`} />{platformMusic ? `平台积分 · ${platformModel?.name || activeCommercialMusic?.name}` : service === null ? '检查服务…' : `${service.providerName} ${service.enabled === false ? '已停用' : service.configured ? '已配置' : '未配置'}`}
+        {platformMusic ? <span>可用 {commercial.snapshot?.wallet ? formatCredits(commercial.snapshot.wallet.availableUnits) : '—'} 积分</span> : <Button density="compact" variant="subtle" onClick={() => void checkBalance()} disabled={busy || !byokReady || !service?.configured}>{pendingAction === 'balance' ? '查询中…' : balance === null ? '查询余额' : `余额 ¥${balance.toFixed(2)}`}</Button>}
         <Button density="compact" variant="subtle" onClick={()=>setServiceOpen(true)}>服务与授权</Button>
         {openSettings && <Button density="compact" variant="subtle" disabled={busy} onClick={openSettings}>API 设置</Button>}
       </div>
@@ -271,9 +281,9 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
     <div className="music-lab__workspace">
       <section className="music-lab__composer" aria-label="音乐创作表单">
         <div className="music-lab__composer-head"><SegmentedControl label="创作模式" value={draft.mode} onChange={(mode) => patchDraft({ mode })} options={[{ value: 'description', label: '简易' }, { value: 'custom', label: '高级' }, { value: 'sounds', label: '音色' }]} /><IconButton label="重置创作草稿" icon={<RotateCcw size={15} />} variant="subtle" disabled={busy} onClick={() => setClearOpen(true)} /></div>
-        <div className="music-lab__entry-tools"><Button density="compact" variant="subtle" icon={<Upload size={14} />} disabled={busy} onClick={() => setUploadOpen(true)}>上传音频</Button><Button density="compact" variant="subtle" icon={<Headphones size={14} />} onClick={() => setVoiceOpen(true)}>人声克隆</Button><Button density="compact" variant="subtle" icon={<Sparkles size={14} />} onClick={() => setOperation('inspo')}>灵感生成</Button><Button density="compact" variant="subtle" icon={<SlidersHorizontal size={14} />} onClick={() => setToolsOpen(true)}>歌曲工具</Button></div>
+        <div className="music-lab__entry-tools"><Button density="compact" variant="subtle" icon={<Upload size={14} />} disabled={busy || !byokReady} onClick={() => setUploadOpen(true)}>上传音频</Button><Button density="compact" variant="subtle" icon={<Headphones size={14} />} disabled={!byokReady || busy} onClick={() => setVoiceOpen(true)}>人声克隆</Button><Button density="compact" variant="subtle" icon={<Sparkles size={14} />} disabled={!byokReady || busy} onClick={() => setOperation('inspo')}>灵感生成</Button><Button density="compact" variant="subtle" icon={<SlidersHorizontal size={14} />} disabled={!byokReady || busy} onClick={() => setToolsOpen(true)}>歌曲工具</Button></div>
         <div className="music-lab__form">
-          <SelectField label="生成模型" value={draft.model} onChange={(_, data) => patchDraft({ model: data.value as MusicModel })} options={[{ value: 'suno-v6', label: 'Suno V6' }, { value: 'suno-v6-wild', label: 'Suno V6 Wild' }, { value: 'suno-v6-mini', label: 'Suno V6 Mini' }]} />
+          {platformMusic ? <p className="music-lab__hint">平台模型：{platformModel?.name || activeCommercialMusic?.name}。可在 API 设置中切换。当前支持普通创作、纯音乐和音效的积分结算；歌词辅助、克隆和歌曲编辑需明确启用自有 API。</p> : <SelectField label="生成模型" value={draft.model} onChange={(_, data) => patchDraft({ model: data.value as MusicModel })} options={[{ value: 'suno-v6', label: 'Suno V6' }, { value: 'suno-v6-wild', label: 'Suno V6 Wild' }, { value: 'suno-v6-mini', label: 'Suno V6 Mini' }]} />}
           {draft.mode === 'description' && <>
             <TextAreaField label="歌曲描述" placeholder="描述主题、情绪、乐器和人声，例如：温暖的中文民谣，木吉他与轻鼓点，唱一段重新出发的故事…" rows={7} maxLength={10000} value={draft.description} onChange={(_, data) => patchDraft({ description: data.value })} />
             <div className="music-lab__field-caption"><span>一句话也可以开始</span><span>{draft.description.length} / 10000</span></div>
@@ -283,10 +293,10 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
           {draft.mode === 'custom' && <>
             <TextField label="歌曲标题" placeholder="为这首歌起个名字（选填）" maxLength={200} value={draft.title} onChange={(_, data) => patchDraft({ title: data.value })} />
             <TextAreaField label="歌词" hint={draft.instrumental ? '纯音乐模式下不发送歌词，已写内容会保留。' : '支持 [Verse]、[Chorus] 等段落标记。'} placeholder={'[Verse]\n在这里写下第一句\n\n[Chorus]\n让故事随旋律展开'} rows={7} maxLength={30000} value={draft.lyrics} disabled={draft.instrumental} onChange={(_, data) => patchDraft({ lyrics: data.value })} />
-            <div className="music-lab__inline-actions"><Button density="compact" variant="subtle" icon={<Wand2 size={14} />} disabled={busy || !service?.configured || draft.instrumental} onClick={() => { setLyricInstruction(draft.description); setHelperOpen(true); }}>帮我写歌词</Button><Button density="compact" variant="subtle" disabled={draft.instrumental} onClick={() => patchDraft({ lyrics: `${draft.lyrics}${draft.lyrics ? '\n\n' : ''}[Verse]\n\n[Chorus]\n\n[Outro]\n` })}>插入结构</Button><Button density="compact" variant="subtle" disabled={busy || !draft.lyrics.trim() || draft.instrumental || !service?.configured} onClick={()=>{setLyricInstruction(`请把以下歌词转换为便于演唱的拼音，保留段落结构，只输出转换后的完整歌词：\n${draft.lyrics}`);setHelperOpen(true);}}>拼音辅助</Button></div>
+            <div className="music-lab__inline-actions"><Button density="compact" variant="subtle" icon={<Wand2 size={14} />} disabled={busy || !byokReady || !service?.configured || draft.instrumental} onClick={() => { setLyricInstruction(draft.description); setHelperOpen(true); }}>帮我写歌词</Button><Button density="compact" variant="subtle" disabled={draft.instrumental} onClick={() => patchDraft({ lyrics: `${draft.lyrics}${draft.lyrics ? '\n\n' : ''}[Verse]\n\n[Chorus]\n\n[Outro]\n` })}>插入结构</Button><Button density="compact" variant="subtle" disabled={busy || !byokReady || !draft.lyrics.trim() || draft.instrumental || !service?.configured} onClick={()=>{setLyricInstruction(`请把以下歌词转换为便于演唱的拼音，保留段落结构，只输出转换后的完整歌词：\n${draft.lyrics}`);setHelperOpen(true);}}>拼音辅助</Button></div>
             <TextAreaField label="音乐风格" placeholder="如：Chinese pop, warm vocal, acoustic guitar" rows={3} maxLength={5000} value={draft.style} onChange={(_, data) => patchDraft({ style: data.value })} />
             <div className="music-lab__tags">{styles.map((style) => <Button key={style} density="compact" variant="subtle" onClick={() => patchDraft({ style: [draft.style, style].filter(Boolean).join(', ') })}>{style}</Button>)}</div>
-            <Button density="compact" variant="subtle" icon={<Sparkles size={14} />} disabled={busy || !service?.configured || !draft.style.trim()} onClick={() => void boostStyle()}>{pendingAction === 'style' ? '正在润色…' : '润色风格'}</Button>
+            <Button density="compact" variant="subtle" icon={<Sparkles size={14} />} disabled={busy || !byokReady || !service?.configured || !draft.style.trim()} onClick={() => void boostStyle()}>{pendingAction === 'style' ? '正在润色…' : '润色风格'}</Button>
             <p className="music-lab__hint">歌词与风格辅助：额度内免费，超额 ¥0.10 / 次。</p>
           </>}
           {draft.mode === 'sounds' && <>
@@ -309,10 +319,11 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
             </div></details>
           </>}
         </div>
-        <div className="music-lab__submit"><Button variant="primary" icon={pendingAction === 'generate' ? <Loader2 size={17} className="music-lab__spin" /> : <AudioLines size={17} />} disabled={busy || !!issue || !service?.configured} onClick={() => void generateMusic()}>{pendingAction === 'generate' ? '正在提交…' : '生成音乐'}<span className="music-lab__price">¥{cost.toFixed(2)} / 次</span></Button><p>{!service?.configured ? service === null ? '正在检查音乐服务…' : '请在系统设置中配置并启用音乐 API。' : issue || (draft.mode === 'sounds' ? '音效数量以实际结果为准' : '通常返回 2 首候选 · 时长由模型决定')}</p></div>
+        {platformMusic ? <PlatformMusicControls api={api} input={issue ? null : musicDraftInput(draft)} invalid={Boolean(issue)} onUseInMv={onUseInMv} outputHost={platformOutputHost} onSubmitted={() => draftGuard.complete(draftGuard.snapshot())} /> : <div className="music-lab__submit"><Button variant="primary" icon={pendingAction === 'generate' ? <Loader2 size={17} className="music-lab__spin" /> : <AudioLines size={17} />} disabled={busy || !!issue || !service?.configured || !byokReady} onClick={() => void generateMusic()}>{pendingAction === 'generate' ? '正在提交…' : '生成音乐'}<span className="music-lab__price">¥{cost.toFixed(2)} / 次</span></Button><p>{!service?.configured ? service === null ? '正在检查音乐服务…' : '请在系统设置中配置并启用音乐 API。' : issue || (draft.mode === 'sounds' ? '音效数量以实际结果为准' : '通常返回 2 首候选 · 时长由模型决定')}</p></div>}
       </section>
       <section className="music-lab__library" aria-label="音乐作品库">
-        <div className="music-lab__pane-title"><h3><Library size={16} /> 我的作品 <span>{allRows.filter((row) => row.track).length}</span></h3><div><IconButton label="同步云端曲库" icon={<CloudDownload size={15} />} variant="subtle" disabled={busy || !service?.configured} onClick={() => void syncHistory()} /><IconButton label="刷新音乐作品" icon={<RefreshCw size={15} className={pendingAction === 'refresh' ? 'music-lab__spin' : ''} />} variant="subtle" disabled={busy || loading} onClick={() => void refreshSelected()} /></div></div>
+        {platformMusic ? <><div className="music-lab__pane-title"><h3><Library size={16} /> 平台音乐作品</h3></div><div ref={setPlatformOutputHost} className="platform-music-library" /></> : <>
+        <div className="music-lab__pane-title"><h3><Library size={16} /> 我的作品 <span>{allRows.filter((row) => row.track).length}</span></h3><div><IconButton label="同步云端曲库" icon={<CloudDownload size={15} />} variant="subtle" disabled={busy || !byokReady || !service?.configured} onClick={() => void syncHistory()} /><IconButton label="刷新音乐作品" icon={<RefreshCw size={15} className={pendingAction === 'refresh' ? 'music-lab__spin' : ''} />} variant="subtle" disabled={busy || loading} onClick={() => void refreshSelected()} /></div></div>
         <div className="music-lab__library-tools"><TextField label="搜索作品" contentBefore={<Search size={14} />} placeholder="标题、歌词或风格" value={query} onChange={(_, data) => setQuery(data.value)} /><SelectField label="排序" value={sort} onChange={(_, data) => setSort(data.value)} options={[{ value: 'newest', label: '最新优先' }, { value: 'title', label: '按标题' }]} /></div>
         <SegmentedControl label="作品筛选" value={filter} onChange={setFilter} options={[{value:'all',label:'全部'},{value:'favorites',label:'收藏'},{value:'generated',label:'生成'},{value:'upload',label:'上传'},{value:'remix',label:'改编'},{value:'stems',label:'分轨'},{value:'active',label:'进行中'},{value:'saved',label:'已保存'}]} />
         <div className="music-lab__tracks" aria-busy={loading}>
@@ -322,6 +333,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
           </Button>) : <div className="music-lab__empty"><span className="music-lab__empty-icon"><AudioLines size={32} strokeWidth={1.3} /></span><h3>{query || filter !== 'all' ? '没有符合条件的作品' : '你的第一首作品，从这里开始'}</h3><p>{query || filter !== 'all' ? '换个关键词，或查看全部作品。' : '在左侧描述音乐，或带着自己的歌词创作。生成的候选歌曲会保存在这里。'}</p>{!query && filter === 'all' && <div className="music-lab__steps"><span>01 描述灵感</span><ChevronRight size={13} /><span>02 试听挑选</span><ChevronRight size={13} /><span>03 用于创作</span></div>}</div>}
         </div>
         <div className="music-lab__library-footer"><span className={`music-lab__dot ${activeCount ? 'is-working' : ''}`} />{activeCount ? `${activeCount} 个任务正在创作，关闭页面后仍会继续` : '本地作品记录 · 音频下载后可持续复用'}</div>
+        </>}
       </section>
       <aside className="music-lab__inspector" aria-label="歌曲详情">
         <div className="music-lab__pane-title"><h3>歌曲详情</h3>{track && <div><span className="music-lab__status">{statusLabels[track.status]}</span><IconButton label={favoriteIds.includes(track.id)?'取消收藏':'收藏歌曲'} icon={<Star size={14} fill={favoriteIds.includes(track.id)?'currentColor':'none'} />} variant="subtle" onClick={toggleFavorite} /></div>}</div>
@@ -335,7 +347,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
           <div className="music-lab__export-row"><SelectField label="更多格式" value={exportFormat} onChange={(_,data) => setExportFormat(data.value as MusicMediaFormat)} options={[{value:'lyrics',label:'歌词 TXT'},{value:'lrc',label:'时间轴歌词 LRC'},{value:'cover',label:'歌曲封面'},{value:'mp4',label:'歌曲视频 MP4'},{value:'midi',label:'分轨 MIDI',disabled:!track?.stemType && !['separate','vocal-removal'].includes(record.operation?.operation ?? '')}]} /><Button density="compact" disabled={busy || track?.status !== 'completed' || exportFormat === 'midi' && !track.stemType && !['separate','vocal-removal'].includes(record.operation?.operation ?? '')} onClick={() => void downloadTrack(exportFormat)}>导出</Button></div>
           <Button icon={track?.bgmId ? <Check size={15} /> : <Library size={15} />} disabled={busy || track?.status !== 'completed' || !!track?.bgmId} onClick={() => void importBgm()}>{pendingAction === 'bgm' ? '正在加入…' : track?.bgmId ? '已加入背景音乐库' : '加入背景音乐库'}</Button>
           <Button icon={<Clapperboard size={15} />} disabled={busy || track?.status !== 'completed'} onClick={() => void useInMv()}>{pendingAction === 'mv' ? '准备音频…' : '用于音乐 MV'}</Button>
-          <Button icon={<SlidersHorizontal size={15} />} disabled={busy || track?.status !== 'completed'} onClick={() => setToolsOpen(true)}>编辑、翻唱与分轨</Button>
+          <Button icon={<SlidersHorizontal size={15} />} disabled={busy || !byokReady || track?.status !== 'completed'} onClick={() => setToolsOpen(true)}>编辑、翻唱与分轨</Button>
           <Button variant="subtle" density="compact" icon={<RotateCcw size={14} />} disabled={busy} onClick={() => { patchDraft(musicRecordDraft(record.input)); setNotice('已复用创作参数，修改后可再次生成。'); }}>复用创作参数</Button>
           <div className="music-lab__lyrics"><h4>歌词</h4><pre>{track?.lyrics || (record.input.mode === 'custom' && !record.input.instrumental ? record.input.lyrics : '暂无歌词 · 纯音乐作品可直接用于配乐')}</pre></div>
           <details className="music-lab__source"><summary>创作记录</summary><p>{new Date(record.createdAt).toLocaleString('zh-CN')}</p><p>服务：{record.providerName}</p><p>歌曲 ID：{track?.songId || '尚未返回'}</p></details>
@@ -353,8 +365,8 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
     <Dialog open={clearOpen} title="重置创作草稿？" onOpenChange={setClearOpen} actions={<><Button onClick={() => setClearOpen(false)}>保留草稿</Button><Button variant="primary" onClick={() => { patchDraft({ ...defaultMusicDraft }); setClearOpen(false); }}>重置草稿</Button></>}><p>当前描述、歌词和参数将被清空。已有作品会保留。</p></Dialog>
     <Dialog open={serviceOpen} title="Suno-API 服务与授权" onOpenChange={setServiceOpen} actions={<><Button onClick={()=>setServiceOpen(false)}>关闭</Button><Button disabled={busy} onClick={()=>void openServiceSite()}>打开服务网站</Button></>}><div className="music-lab__operation-form"><p>本软件通过 Suno-API 第三方服务生成音乐。</p><p className="music-lab__hint">充值、消费明细、商用授权书申请及 ¥20 自动人声克隆在服务网站处理，沿用你在浏览器中的登录状态。</p><p className="music-lab__hint">商用授权书有累计充值和身份资料要求。资格、具体授权范围及有效期以服务网站返回的条款和证书为准。</p><p className="music-lab__hint">应用内已接入普通人声克隆验证、指定人声创作、强化上传及歌曲编辑流程。网站专用自动克隆不会由应用在后台触发。</p></div></Dialog>
     <Dialog open={toolsOpen} title="歌曲工具" onOpenChange={setToolsOpen} actions={<Button onClick={() => setToolsOpen(false)}>关闭</Button>}><p className="music-lab__hint">{track?.title ? `当前作品：${track.title}` : '进入工具后，选择已完成的作品作为来源。'}</p><div className="music-lab__tool-groups">{musicOperationGroups.map((group) => <section key={group.label}><h4>{group.label}</h4><div>{group.operations.map((item) => <Button key={item} onClick={() => { setToolsOpen(false); setOperation(item); }}>{MUSIC_OPERATION_LABELS[item]}</Button>)}</div></section>)}</div></Dialog>
-    {operation && <MusicSourceTools key={operation} open api={api} records={records} initialOperation={operation} selected={selected} configured={!!service?.configured} onClose={() => setOperation(null)} onRecord={(next) => { updateRecord(next); setSelectedId(next.tracks[0]?.id ?? next.id); }} />}
-    {voiceOpen && <MusicVoicePanel api={api} draft={draft} configured={!!service?.configured} onClose={() => { setVoiceOpen(false); void refreshLibrary(); }} onLibraryChanged={() => void refreshLibrary()} />}
-    <Dialog open={uploadOpen} title="上传音频" onOpenChange={(open) => { if (!busy) setUploadOpen(open); }} actions={<><Button disabled={busy} onClick={() => setUploadOpen(false)}>关闭</Button>{uploadMode === 'normal' && <Button variant="primary" disabled={busy || !uploadPath || !service?.configured} onClick={() => void uploadSource()}>{pendingAction === 'upload' ? '上传中…' : '上传源音频 · 免费'}</Button>}</>}><div className="music-lab__operation-form"><SegmentedControl label="上传方式" value={uploadMode} disabled={busy} onChange={setUploadMode} options={[{value:'normal',label:'普通上传'},{value:'enhanced',label:'强化上传'}]} /><p className="music-lab__hint">导入自己的录音或歌曲，上传后可用于翻唱、续写和分轨。</p><Button icon={<FolderOpen size={16} />} disabled={busy} onClick={() => void chooseUpload()}>{pendingAction === 'choose-upload' ? '选择中…' : '选择音频文件'}</Button>{uploadPath && <p className="music-lab__hint">{uploadPath.split(/[\\/]/u).pop()}</p>}<TextField label="素材名称" disabled={busy} value={uploadTitle} onChange={(_, data) => setUploadTitle(data.value)} />{uploadOpen && uploadMode === 'enhanced' && <MusicEnhancedPanel api={api} audioPath={uploadPath} title={uploadTitle} configured={!!service?.configured} onLibraryChanged={()=>void refreshLibrary()} onBusyChange={(value)=>setPendingAction(value?'enhanced':'')} />}{error && <p className="music-lab__error" role="alert">{error}</p>}</div></Dialog>
+    {operation && <MusicSourceTools key={operation} open api={api} records={records} initialOperation={operation} selected={selected} configured={byokReady && !!service?.configured} onClose={() => setOperation(null)} onRecord={(next) => { updateRecord(next); setSelectedId(next.tracks[0]?.id ?? next.id); }} />}
+    {voiceOpen && <MusicVoicePanel api={api} draft={draft} configured={byokReady && !!service?.configured} onClose={() => { setVoiceOpen(false); void refreshLibrary(); }} onLibraryChanged={() => void refreshLibrary()} />}
+    <Dialog open={uploadOpen} title="上传音频" onOpenChange={(open) => { if (!busy) setUploadOpen(open); }} actions={<><Button disabled={busy} onClick={() => setUploadOpen(false)}>关闭</Button>{uploadMode === 'normal' && <Button variant="primary" disabled={busy || !uploadPath || !service?.configured} onClick={() => void uploadSource()}>{pendingAction === 'upload' ? '上传中…' : '上传源音频 · 免费'}</Button>}</>}><div className="music-lab__operation-form"><SegmentedControl label="上传方式" value={uploadMode} disabled={busy} onChange={setUploadMode} options={[{value:'normal',label:'普通上传'},{value:'enhanced',label:'强化上传'}]} /><p className="music-lab__hint">导入自己的录音或歌曲，上传后可用于翻唱、续写和分轨。</p><Button icon={<FolderOpen size={16} />} disabled={busy} onClick={() => void chooseUpload()}>{pendingAction === 'choose-upload' ? '选择中…' : '选择音频文件'}</Button>{uploadPath && <p className="music-lab__hint">{uploadPath.split(/[\\/]/u).pop()}</p>}<TextField label="素材名称" disabled={busy} value={uploadTitle} onChange={(_, data) => setUploadTitle(data.value)} />{uploadOpen && uploadMode === 'enhanced' && <MusicEnhancedPanel api={api} audioPath={uploadPath} title={uploadTitle} configured={byokReady && !!service?.configured} onLibraryChanged={()=>void refreshLibrary()} onBusyChange={(value)=>setPendingAction(value?'enhanced':'')} />}{error && <p className="music-lab__error" role="alert">{error}</p>}</div></Dialog>
   </div>;
 }

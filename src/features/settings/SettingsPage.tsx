@@ -25,6 +25,10 @@ import { MinimaxCloneVoiceManager } from './MinimaxCloneVoiceManager';
 import { ProviderPortalLinks } from './ProviderPortalLinks';
 import { MusicProfileManager, ProfileSecretField, TranscriptionVisionProfileSwitcher, VideoProfileSwitcher, VisionProfileManager } from './MusicVideoProfileManagers';
 import { providerKeyPortals } from '../../shared/provider-portals';
+import { PlatformModelsPanel } from './PlatformModelsPanel';
+import { PlatformUpdatesPanel } from './PlatformUpdatesPanel';
+import type { ModelCapability } from '../../shared/commercial-contract';
+import { useCommercialSnapshot } from '../account/useCommercialSnapshot';
 import {
   ConfigInput,
   ConfigNumberInput,
@@ -47,6 +51,7 @@ import {
 export type SettingsSection = 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
 
 export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; returnView?: ShellView; onReturn?: () => void }) {
+  const commercial = useCommercialSnapshot(api);
   const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -457,7 +462,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draftWithCredentialStatus))],
     ['vision', Eye, '视觉分析', '视频关键帧理解', settingsStatusLabel(configTargetStatus('vision', draftWithCredentialStatus))],
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
-    ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
+    ['activation', KeyRound, '激活与订阅', '授权 · 激活码', commercial.snapshot?.license?.status === 'active' ? '已激活' : commercial.snapshot?.license?.status === 'expired' ? '已到期' : '待激活'],
     ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draftWithCredentialStatus))],
     ['webSearch', Globe2, '联网搜索', 'SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
@@ -507,6 +512,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
+        {(['llm', 'image', 'video', 'music', 'tts', 'speechToText', 'vision'] as string[]).includes(section) ? <PlatformModelsPanel api={api} config={state.config} capability={(section === 'llm' ? 'text' : section) as ModelCapability} /> : null}
         {section === 'llm' || section === 'image' || section === 'tts' ? <p className="settings-profile-explanation">可保存多个模型配置，选中用于编辑，启用用于创作。保存或测试所选配置会保留当前启用项。</p> : null}
         {section === 'appearance' ? (
           <SettingsCard title="界面主题" status={state.ui.theme === 'dark' ? '深色' : '浅色'}>
@@ -806,7 +812,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             </div>
           </SettingsCard>
         ) : null}
-        {section === 'activation' ? <LocalInfo title="激活与订阅" value={state.activation.message} /> : null}
+        {section === 'activation' ? <div><LocalInfo title="授权与设备" value="授权由账号服务统一管理，可兑换激活码、查询有效期和管理已绑定设备。" /><Button onClick={() => navigate('activation')}>查看授权与设备</Button></div> : null}
         {section === 'creative' ? (
           <SettingsCard title="AI 创作 / IMA 知识库" status={secrets.configured('ima/apiKey') ? '已配置' : '待配置'}>
             <ConfigInput label="客户端 ID" value={draft.ima.clientId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, clientId: value } })} />
@@ -856,6 +862,8 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           </SettingsCard>
         ) : null}
         {section === 'about' ? (
+          <>
+          <PlatformUpdatesPanel api={api} />
           <div className="diagnostics-card">
             <LocalInfo title="视频故事创作助手" value="V1.0.0 · Windows · 本地数据目录" />
             <div className="button-row">
@@ -868,6 +876,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             </div>
             <pre>{diagnostics || '点击检查诊断后显示 LLM、TTS、BGM、剪映目录、账户状态等检查结果。'}</pre>
           </div>
+          </>
         ) : null}
       </section>
     </div>

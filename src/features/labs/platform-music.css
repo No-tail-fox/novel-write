@@ -1,0 +1,16 @@
+.platform-music { border-top:1px solid var(--shell-border); padding:16px; display:grid; gap:12px; }
+.platform-music p,.platform-music small { color:var(--shell-muted); font-size:12px; line-height:1.6; margin:0; }
+.platform-music-heading { display:flex; gap:12px; justify-content:space-between; align-items:center; }
+.platform-music-jobs { display:grid; gap:12px; max-height:360px; overflow:auto; }
+.platform-music-jobs article { display:grid; gap:8px; padding-top:12px; border-top:1px solid var(--shell-border); }
+.platform-music-jobs article>div { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.platform-music-jobs audio { width:100%; max-width:100%; height:32px; }
+.platform-music .platform-music-error { color:var(--sd-color-error,var(--shell-accent)); }
+.music-lab[data-platform-music] .music-lab__workspace { grid-template-columns:minmax(280px,380px) minmax(0,1fr); }
+.music-lab[data-platform-music] .music-lab__inspector,.music-lab[data-platform-music] .music-lab__player { display:none; }
+.platform-music-library { padding:0 20px 20px; min-height:0; overflow:auto; }
+.platform-music-library .platform-music-jobs { max-height:none; }
+.platform-music-library article { padding:18px 0; }
+.platform-music-library small { color:var(--shell-muted); }
+.platform-music-library article>div { padding:12px; background:var(--shell-surface); border-radius:var(--sd-radius); }
+.platform-music-library audio { max-width:480px; }

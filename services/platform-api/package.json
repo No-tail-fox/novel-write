@@ -1,0 +1,27 @@
+{
+  "name": "@storydream/platform-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
+    "migrate": "tsx src/migrate.ts",
+    "worker": "tsx ../platform-worker/src/main.ts",
+    "fixture": "tsx src/fixture.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "fastify": "^5.6.0",
+    "pg": "^8.16.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.0",
+    "@types/pg": "^8.15.5",
+    "prettier": "^3.9.7",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  }
+}

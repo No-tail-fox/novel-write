@@ -1,4 +1,5 @@
 import { cloneState, hydrateState, initialState } from './app-state';
+import { createUnavailableCommercialApi } from '../shared/commercial-ipc';
 import { stripConfigSecrets, type PublicAppState } from '../shared/config-secrets';
 import { HOT_BOARD_SOURCE_ASSESSMENTS } from '../shared/hotboard-catalog';
 import { fallbackEffectCatalog, volcengineVoicePresets } from '../shared/editorial-options';
@@ -549,6 +550,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
   const writeDirectorBatches = (records: DirectorBatchRecord[]) => localStorage.setItem('storydream-director-batches', JSON.stringify(records));
 
   return {
+    commercial: createUnavailableCommercialApi(),
     async getState() {
       return loadFallbackPromptTemplates();
     },
@@ -1047,10 +1049,11 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       throw new Error('IMAGE_LAB_IMPORT_REQUIRES_ELECTRON: 浏览器预览不能导入受管图片。');
     },
     async saveAccount(account: AccountProfile) {
-      return persist({ ...read(), account });
+      const state = read();
+      return persist({ ...state, account: { ...state.account, displayName: account.displayName, avatarInitial: account.displayName.slice(0, 1) } });
     },
     async saveActivation(activation: ActivationState) {
-      return persist({ ...read(), activation });
+      throw new Error('LICENSE_SERVER_REQUIRED: 软件授权只能通过账号服务兑换和校验。');
     },
     async saveUiPreferences(update: UiPreferencesUpdate) {
       const current = read();

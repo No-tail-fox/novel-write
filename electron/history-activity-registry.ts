@@ -35,6 +35,8 @@ export class HistoryActivityRegistry {
     });
   }
 
+  get activeCount(): number { return this.reservations.size; }
+
   private reserve(
     family: HistoryFamily,
     id: string,

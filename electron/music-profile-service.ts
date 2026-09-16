@@ -13,6 +13,7 @@ interface Options {
   resolveEnvironmentApiKey: () => Promise<string>;
   fetchImpl?: typeof fetch;
   autoPoll?: boolean;
+  assertByok?: () => Promise<void>;
 }
 
 export function musicProfileStorageDirectory(dataDir: string, family: string, profile: MusicProviderProfile): string {
@@ -51,6 +52,7 @@ export function createMusicProfileService(options: Options) {
     return { profile: original, lab, voice, enhanced };
   }
   async function active(requireEnabled = true) {
+    if (requireEnabled) await options.assertByok?.();
     const config = await options.getConfig();
     if (requireEnabled && !config.music.enabled) throw new Error('音乐生成服务已停用，请在系统设置中启用。');
     const profile = profileFrom(config);

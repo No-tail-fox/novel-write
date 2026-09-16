@@ -686,6 +686,7 @@ function AppWorkspace() {
   return (
     <StoryDreamProvider theme={state.ui.theme}>
       <AppShell
+        api={api}
         activeView={activeView}
         returnView={taskDetailReturnView}
         state={state}
