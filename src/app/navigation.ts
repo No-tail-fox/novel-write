@@ -59,6 +59,7 @@ export const generationNavItems: NavigationItem[] = [
   { view: 'image-lab', label: '图片生成', hint: '文生图与参考图', icon: FlaskConical },
   { view: 'voice-lab', label: '配音生成', hint: '文本配音与音色试听', icon: Mic2 },
   { view: 'video-lab', label: '视频生成', hint: '文生视频与图生视频', icon: MonitorPlay },
+  { view: 'music-lab', label: '音乐创作', hint: '作曲、歌词与配乐', icon: Music },
 ];
 
 export const assetLabNavItems: NavigationItem[] = [
@@ -207,6 +208,7 @@ export function pageSubtitle(view: ShellView): string {
     'image-lab': '单独测试文生图、图像参考和分镜图片提示词',
     'voice-lab': '单独试听豆包与 MiniMax 音色，保存本地试听记录',
     'video-lab': '输入提示词或参考图，独立生成视频并保存本地记录',
+    'music-lab': '从灵感到歌曲，试听、保存并用于视频创作',
     'music-mv': '按歌词节奏生成音乐 MV 分镜、字幕和剪映草稿',
     'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
     'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',

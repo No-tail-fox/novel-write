@@ -11,12 +11,12 @@ const config: WebSearchConfig = {
 describe('web search backends', () => {
   it('parses SearXNG JSON and maps the selected engine to the legacy provider label', async () => {
     let requestUrl = '';
-    const items = await searchSearxng(`${config.searxngBaseUrl}/searxng`, 'OpenAI 发布', ['bing', 'sogou'], async (url) => {
+    const items = await searchSearxng(`${config.searxngBaseUrl}/searxng`, 'OpenAI 发布', ['bing', 'sogou', 'duckduckgo', 'wikipedia'], async (url) => {
       requestUrl = String(url);
       return new Response(JSON.stringify({ results: [{ title: 'OpenAI 发布新模型', url: 'https://example.test/openai', content: '官方发布信息。', engine: 'bing' }] }), { status: 200 });
     });
     expect(requestUrl).toContain('/searxng/search?format=json');
-    expect(requestUrl).toContain('engines=bing%2Csogou');
+    expect(requestUrl).toContain('engines=bing%2Csogou%2Cduckduckgo%2Cwikipedia');
     expect(items[0]).toMatchObject({ backend: 'searxng', provider: 'bing', title: 'OpenAI 发布新模型', snippet: '官方发布信息。' });
   });
 
@@ -49,5 +49,33 @@ describe('web search backends', () => {
     const result = await searchConfiguredBackends(config, 'legacy', ['bing'], async () => new Response('bad', { status: 500 }), async () => [{ source: 'web', backend: 'legacy', title: '旧源', content: '旧源摘要' }]);
     expect(result.items[0]).toMatchObject({ backend: 'legacy', title: '旧源' });
     expect(result.statuses.map((status) => status.state)).toEqual(['failed', 'failed', 'ready']);
+  });
+
+  it('treats exhausted Tavily keyless quota as a quiet fallback when legacy search succeeds', async () => {
+    const result = await searchConfiguredBackends(config, 'quota fallback', ['bing'], async (url) => {
+      if (String(url).includes('127.0.0.1:8080')) return new Response(JSON.stringify({ results: [] }), { status: 200 });
+      return new Response(JSON.stringify({
+        error: {
+          code: 'monthly_cap_reached_bonus_eligible',
+          message: 'You reached the monthly keyless Tavily limit.',
+        },
+      }), { status: 429 });
+    }, async () => [{ source: 'web', backend: 'legacy', provider: 'bing', title: '兼容结果', url: 'https://example.test/legacy', content: '兼容摘要' }]);
+
+    expect(result.items[0]).toMatchObject({ backend: 'legacy', title: '兼容结果' });
+    expect(result.statuses.map((status) => status.state)).toEqual(['empty', 'limited', 'ready']);
+    expect(result.statuses[1].message).toContain('免费额度已用完');
+    expect(result.warnings).toEqual(['SearXNG 没有返回结果，正在尝试备用搜索源。']);
+  });
+
+  it('reports exhausted Tavily keyless quota when no fallback returns results', async () => {
+    const result = await searchConfiguredBackends(config, 'quota empty', ['bing'], async (url) => {
+      if (String(url).includes('127.0.0.1:8080')) return new Response(JSON.stringify({ results: [] }), { status: 200 });
+      return new Response(JSON.stringify({ error: { code: 'monthly_cap_reached' } }), { status: 429 });
+    }, async () => []);
+
+    expect(result.items).toEqual([]);
+    expect(result.statuses.map((status) => status.state)).toEqual(['empty', 'limited', 'empty']);
+    expect(result.warnings).toEqual(expect.arrayContaining([expect.stringContaining('免费额度已用完')]));
   });
 });

@@ -15,7 +15,7 @@ export type SecretEditor = {
   change: (id: SecretId, value: string | null) => void;
 };
 
-export function profileSecretId(domain: 'llm' | 'image' | 'video' | 'tts', profileId: string | undefined, suffix: string): SecretId {
+export function profileSecretId(domain: 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'viralVision', profileId: string | undefined, suffix: string): SecretId {
   const stableId = profileId?.trim();
   if (!stableId) throw new Error('Provider profile requires a stable id.');
   return `${domain}/${encodeURIComponent(stableId)}/${suffix}` as SecretId;
@@ -160,7 +160,7 @@ export function activeImageConcurrency(config: AppConfig): number {
 export function SettingsCard({ title, status, children }: { title: string; status: string; children: React.ReactNode }) {
   return (
     <div className="config-card">
-      <div className="config-card-head"><div><strong>{title}</strong><span>使用中</span></div><small>{status}</small></div>
+      <div className="config-card-head"><div><strong>{title}</strong></div><small>{status}</small></div>
       <div className="form-grid">{children}</div>
     </div>
   );

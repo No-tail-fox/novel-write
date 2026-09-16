@@ -38,6 +38,7 @@ import type {
   ImageLabRecord,
   ImageLabSummary,
   MinimaxCloneVoice,
+  MusicMvTaskUpdateInput,
   OrdinaryTaskCoverAsset,
   OrdinaryTaskCoverRatio,
   PromptTemplate,
@@ -110,6 +111,7 @@ import {
   type ThemePreferencePair,
 } from './theme-preference';
 import { normalizeStoryboardSceneCount } from './content-metrics';
+import { musicMvTaskUpdateSchema } from './ipc-contract';
 import feishuCozeDraftTemplateBundle from '../../data/coze-workflows/feishu-draft-templates.json';
 import {
   defaultAccount,
@@ -1506,6 +1508,7 @@ export class FileDatabase {
     addColumnIfMissing(this.db, 'viral_analyses', 'run_generation', 'INTEGER DEFAULT 0');
     addColumnIfMissing(this.db, 'viral_analyses', 'result_generation', 'INTEGER DEFAULT NULL');
     addColumnIfMissing(this.db, 'viral_analyses', 'checkpoint_json', 'TEXT DEFAULT NULL');
+    addColumnIfMissing(this.db, 'viral_analyses', 'reference_index_json', 'TEXT DEFAULT NULL');
     addColumnIfMissing(this.db, 'viral_analysis_events', 'run_generation', 'INTEGER DEFAULT 0');
     this.db.run(
       `UPDATE viral_analyses
@@ -3245,6 +3248,39 @@ export class FileDatabase {
     });
   }
 
+  async publishViralReferenceIndex(
+    id: string,
+    runGeneration: number,
+    expectedRevision: number,
+    index: NonNullable<ViralAnalysisRecord['referenceIndex']>,
+  ): Promise<void> {
+    await this.enqueueCommit(() => {
+      this.assertHistoryWritable('viral-analysis', id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analyses WHERE id = ?', [id]);
+      if (!row || Number(row.run_generation ?? 0) !== runGeneration) throw new Error('STALE_VIRAL_RUN: 拆解运行已更新。');
+      const current = rowToViralAnalysis(row).referenceIndex;
+      if ((current?.revision ?? 0) !== expectedRevision || index.revision !== expectedRevision + 1) {
+        throw new Error('VIRAL_REFERENCE_CONFLICT: 拆解已更新，请刷新后保留草稿重新保存。');
+      }
+      if (!/^reference\/[a-zA-Z0-9_-]+\.json$/.test(index.path) || !/^[a-f0-9]{64}$/.test(index.hash)) {
+        throw new Error('VIRAL_REFERENCE_INVALID: Invalid managed reference index.');
+      }
+      this.db.run('UPDATE viral_analyses SET reference_index_json = ? WHERE id = ?', [json(index), id]);
+    });
+  }
+
+  async configureViralReferenceRun(id: string, settings: Pick<ViralAnalysisRecord['settings'], 'maxAnalysisRequests' | 'referenceVisualInput' | 'referenceAudioInput'>): Promise<void> {
+    await this.enqueueCommit(() => {
+      this.assertHistoryWritable('viral-analysis', id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM viral_analyses WHERE id = ?', [id]);
+      if (!row) throw new Error('VIRAL_ANALYSIS_NOT_FOUND');
+      const current = rowToViralAnalysis(row);
+      if (current.settings.analysisMode !== 'deep' || !['paused', 'failed', 'cancelled'].includes(current.status)) throw new Error('VIRAL_REFERENCE_BUSY: 请先暂停分析再修改恢复设置。');
+      this.db.run('UPDATE viral_analyses SET settings_json = ?, status = ?, error_message = ? WHERE id = ?',
+        [json({ ...current.settings, ...settings }), 'paused', '', id]);
+    });
+  }
+
   async updateViralAnalysisForGeneration(
     id: string,
     runGeneration: number,
@@ -3315,6 +3351,7 @@ export class FileDatabase {
         | 'startedAt'
         | 'lastHeartbeatAt'
         | 'templateId'
+        | 'ratio'
         | 'bgmId'
         | 'step3PromptSnapshot'
         | 'podcastSpeakerA'
@@ -3340,6 +3377,7 @@ export class FileDatabase {
       startedAt: 'started_at',
       lastHeartbeatAt: 'last_heartbeat_at',
       templateId: 'template_id',
+      ratio: 'ratio',
       bgmId: 'bgm_id',
       step3PromptSnapshot: 'step3_prompt_snapshot',
       podcastSpeakerA: 'podcast_speaker_a',
@@ -3370,6 +3408,35 @@ export class FileDatabase {
       const runGeneration = Number(row.run_generation ?? 0) + 1;
       this.db.run('UPDATE tasks SET run_generation = ? WHERE id = ?', [runGeneration, id]);
       return rowToTask({ ...row, run_generation: runGeneration });
+    });
+  }
+
+  async updateMusicMvTask(input: MusicMvTaskUpdateInput): Promise<Task> {
+    const validated = musicMvTaskUpdateSchema.parse(input);
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', validated.id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [validated.id]);
+      if (!row) throw new Error(`MUSIC_MV_TASK_NOT_FOUND: ${validated.id}`);
+      const task = rowToTask(row);
+      if (task.taskKind !== 'music-mv' && task.taskType !== 'music-mv') {
+        throw new Error('MUSIC_MV_TASK_INVALID: 只能编辑音乐 MV 任务。');
+      }
+      if (task.status === 'pending' || task.status === 'running') {
+        throw new Error('MUSIC_MV_TASK_ACTIVE: 运行中的音乐 MV 不能编辑。');
+      }
+      this.db.run(
+        `UPDATE tasks SET title = ?, input_text = ?, style = ?, ratio = ?, template_id = ?, bgm_id = ?,
+          storyboard_scene_count = ?, target_scenes = ?, processing_mode = ?, pause_points = ?, music_mv_json = ?,
+          status = 'paused', current_step = 0, retry_from_step = 0, failed_step = NULL,
+          completed_at = NULL, output_dir = '', error_message = '', last_heartbeat_at = ? WHERE id = ?`,
+        [validated.title.trim(), validated.lyrics, validated.style, validated.ratio, validated.templateId,
+          validated.bgmId, validated.storyboardSceneCount, validated.storyboardSceneCount,
+          validated.processingMode, JSON.stringify(validated.pausePoints), JSON.stringify(validated.musicMv),
+          new Date().toISOString(), validated.id],
+      );
+      const updated = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [validated.id]);
+      if (!updated) throw new Error(`MUSIC_MV_TASK_NOT_FOUND: ${validated.id}`);
+      return rowToTask(updated);
     });
   }
 
@@ -4483,6 +4550,7 @@ function viralPatchSqlValue(key: string, value: unknown): SqlValue {
 function rowToViralAnalysis(row: Record<string, unknown>): ViralAnalysisRecord {
   return {
     id: String(row.id),
+    referenceIndex: row.reference_index_json ? parseJson(String(row.reference_index_json), null) : null,
     archivedAt: row.archived_at ? String(row.archived_at) : null,
     managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     url: String(row.url ?? ''),

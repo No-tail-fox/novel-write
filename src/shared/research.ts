@@ -1,6 +1,6 @@
 import type { ConfiguredTextLlm } from './llm-provider';
 import { targetWordCountRange } from './content-metrics';
-import { fetchWithNetworkPolicy, readTextBounded, type NetworkPurpose } from './network-policy';
+import { fetchWithNetworkPolicy, readJsonBounded, readTextBounded, type NetworkPurpose } from './network-policy';
 import type {
   AiSourceContext,
   AiSourceSection,
@@ -60,14 +60,16 @@ const SEARCH_RESULTS_LIMIT = 10;
 const SEARCH_HYDRATION_CANDIDATE_LIMIT = 20;
 const ARTICLE_MEDIA_LIMIT = 18;
 
-export const DEFAULT_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'sogou'];
-export const ALL_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao'];
+export const DEFAULT_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'sogou', 'duckduckgo'];
+export const ALL_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao', 'duckduckgo', 'wikipedia'];
 
 export const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {
   bing: '必应',
   baidu: '百度',
   sogou: '搜狗',
   toutiao: '头条',
+  duckduckgo: 'DuckDuckGo',
+  wikipedia: '维基百科',
 };
 
 const storyboundTrackMap: Record<string, StoryboundTrackInfo> = {
@@ -348,20 +350,32 @@ export async function searchWebSourcesDetailed(
 }
 
 async function searchLegacySourcesDetailed(query: string, providers: readonly WebSearchProvider[], fetchImpl: FetchLike): Promise<AiSourceContext> {
-
-  const outcomes = await Promise.all(providers.map(async (provider): Promise<SearchProviderOutcome> => {
+  const primaryProviders = providers.filter((provider) => provider !== 'wikipedia');
+  let outcomes = await Promise.all(primaryProviders.map(async (provider): Promise<SearchProviderOutcome> => {
     try {
       return { provider, items: await searchProvider(provider, query, fetchImpl) };
     } catch (error) {
       return { provider, items: [], error: error instanceof Error ? error : new Error(String(error)) };
     }
   }));
-  const searchItems = outcomes.flatMap((outcome) => outcome.items);
-  const hydrationCandidates = selectHydrationCandidates(query, providers, searchItems);
-  const hydrated = await runLimited(hydrationCandidates, 5, async (item) => hydratePreciseSearchItem(query, item, fetchImpl));
-  const preciseItems = hydrated.filter((item): item is AiSourceSection => item !== null);
-  const sections = diversifySearchProviders(query, providers, preciseItems).slice(0, SEARCH_RESULTS_LIMIT);
-  const providerStatuses = buildProviderStatuses(providers, outcomes, preciseItems);
+  const hydrateItems = async (items: AiSourceSection[], activeProviders: readonly WebSearchProvider[]) => {
+    const candidates = selectHydrationCandidates(query, activeProviders, items);
+    const hydrated = await runLimited(candidates, 5, async (item) => hydratePreciseSearchItem(query, item, fetchImpl));
+    return hydrated.filter((item): item is AiSourceSection => item !== null);
+  };
+  let preciseItems = await hydrateItems(outcomes.flatMap((outcome) => outcome.items), primaryProviders);
+  let activeProviders: WebSearchProvider[] = [...primaryProviders];
+  if (preciseItems.length === 0) {
+    const wikipediaOutcome = await runSearchProvider('wikipedia', query, fetchImpl);
+    const wikipediaItems = await hydrateItems(wikipediaOutcome.items, ['wikipedia']);
+    if (wikipediaItems.length > 0) {
+      outcomes = [...outcomes, wikipediaOutcome];
+      activeProviders = [...primaryProviders, 'wikipedia'];
+      preciseItems = wikipediaItems;
+    }
+  }
+  const sections = diversifySearchProviders(query, activeProviders, preciseItems).slice(0, SEARCH_RESULTS_LIMIT);
+  const providerStatuses = buildProviderStatuses(activeProviders, outcomes, preciseItems);
   const warnings = providerStatuses
     .filter((status) => status.state === 'failed')
     .map((status) => `${status.label}搜索失败：${status.message || '连接失败'}`);
@@ -379,6 +393,16 @@ async function searchProvider(provider: WebSearchProvider, query: string, fetchI
     case 'baidu': return searchBaiduHtml(query, fetchImpl);
     case 'sogou': return searchSogouHtml(query, fetchImpl);
     case 'toutiao': return searchToutiaoHtml(query, fetchImpl);
+    case 'duckduckgo': return searchDuckDuckGoHtml(query, fetchImpl);
+    case 'wikipedia': return searchWikipedia(query, fetchImpl);
+  }
+}
+
+async function runSearchProvider(provider: WebSearchProvider, query: string, fetchImpl: FetchLike): Promise<SearchProviderOutcome> {
+  try {
+    return { provider, items: await searchProvider(provider, query, fetchImpl) };
+  } catch (error) {
+    return { provider, items: [], error: error instanceof Error ? error : new Error(String(error)) };
   }
 }
 
@@ -533,6 +557,53 @@ async function searchBingHtml(query: string, fetchImpl: FetchLike): Promise<AiSo
   }
   if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
   return [];
+}
+
+async function searchDuckDuckGoHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(normalizeStoryboundSearchQuery(query))}`;
+  const response = await fetchBounded(fetchImpl, url, {
+    timeoutMs: 8000,
+    maxBytes: SEARCH_PAGE_MAX_BYTES,
+    accept: 'text/html,application/xhtml+xml,*/*',
+  });
+  if (!response.ok || response.status === 202) throw new Error(`DuckDuckGo returned ${response.status}`);
+  const html = await readTextBounded(response, SEARCH_PAGE_MAX_BYTES);
+  if (/\banomaly-modal\b/u.test(html)) throw new Error('DuckDuckGo returned a verification challenge');
+  return extractDuckDuckGoItems(html).slice(0, 15).map((item) => ({ source: 'web', provider: 'duckduckgo', ...item }));
+}
+
+async function searchWikipedia(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
+  const language = hasCjk(query) ? 'zh' : 'en';
+  const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
+  url.searchParams.set('action', 'query');
+  url.searchParams.set('list', 'search');
+  url.searchParams.set('srsearch', normalizeStoryboundSearchQuery(query));
+  url.searchParams.set('srlimit', '10');
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('origin', '*');
+  const response = await fetchBounded(fetchImpl, url.href, {
+    timeoutMs: 8000,
+    maxBytes: SEARCH_PAGE_MAX_BYTES,
+    accept: 'application/json',
+  });
+  if (!response.ok) throw new Error(`Wikipedia returned ${response.status}`);
+  const payload = await readJsonBounded<unknown>(response, SEARCH_PAGE_MAX_BYTES);
+  const entries = isRecord(payload) && isRecord(payload.query) && Array.isArray(payload.query.search)
+    ? payload.query.search
+    : [];
+  return entries
+    .filter(isRecord)
+    .map((entry) => {
+      const title = firstString(entry, ['title']);
+      const content = compactText(stripHtmlToText(firstString(entry, ['snippet']))) || title;
+      const pageId = Number(entry.pageid);
+      const pageUrl = Number.isSafeInteger(pageId) && pageId > 0
+        ? `https://${language}.wikipedia.org/?curid=${pageId}`
+        : `https://${language}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/gu, '_'))}`;
+      return { source: 'web', provider: 'wikipedia' as const, title, url: pageUrl, snippet: content, content };
+    })
+    .filter((item) => item.title)
+    .slice(0, 10);
 }
 
 async function searchSogouHtml(query: string, fetchImpl: FetchLike): Promise<AiSourceSection[]> {
@@ -889,6 +960,33 @@ function extractBingItems(html: string): SearchResultItem[] {
       return { title, url, content };
     })
     .filter((item) => item.title && item.url && item.content && !isBlockedBingResult(item));
+}
+
+function extractDuckDuckGoItems(html: string): SearchResultItem[] {
+  return [...html.matchAll(/<div\b(?=[^>]*\bclass=(?:"[^"]*\bresult\b[^"]*"|'[^']*\bresult\b[^']*'))[^>]*>[\s\S]*?<div\b[^>]*\bclass=(?:"clear"|'clear')[^>]*><\/div>/gi)]
+    .map(([block]) => {
+      const titleHtml = block.match(/<a\b(?=[^>]*\bclass=(?:"[^"]*\bresult__a\b[^"]*"|'[^']*\bresult__a\b[^']*'))[^>]*>[\s\S]*?<\/a>/i)?.[0] ?? '';
+      const snippetHtml = block.match(/<a\b(?=[^>]*\bclass=(?:"[^"]*\bresult__snippet\b[^"]*"|'[^']*\bresult__snippet\b[^']*'))[^>]*>[\s\S]*?<\/a>/i)?.[0] ?? '';
+      const title = cleanXml(titleHtml);
+      const content = compactText(cleanXml(snippetHtml)) || title;
+      const url = decodeDuckDuckGoResultUrl(extractAttribute(titleHtml, 'href'));
+      return { title, url, content };
+    })
+    .filter((item) => item.title && /^https?:\/\//iu.test(item.url));
+}
+
+function decodeDuckDuckGoResultUrl(input: string): string {
+  const normalized = normalizeSearchResultUrl(input, 'https://duckduckgo.com');
+  try {
+    const url = new URL(normalized);
+    if (/(^|\.)duckduckgo\.com$/iu.test(url.hostname) && url.pathname === '/l/') {
+      const target = url.searchParams.get('uddg') ?? '';
+      if (/^https?:\/\//iu.test(target)) return target;
+    }
+  } catch {
+    return normalized;
+  }
+  return normalized;
 }
 
 function extractSogouItems(html: string): SearchResultItem[] {

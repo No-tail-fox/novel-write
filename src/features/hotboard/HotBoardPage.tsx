@@ -201,14 +201,21 @@ export function HotBoardPage({
     try {
       const context = await api.searchWebSources({
         query: item.title,
-        providers: ['bing', 'sogou', 'baidu'],
+        providers: ['bing', 'sogou', 'baidu', 'duckduckgo'],
       });
       if (requestId !== searchRequestRef.current) return;
       setSearchResults((current) => ({ ...current, [item.id]: context.sections }));
       setSearchBackendStatuses((current) => ({ ...current, [item.id]: context.backendStatuses ?? [] }));
       if (context.sections.length === 0) {
-        if (context.warnings.length > 0) setSearchErrors((current) => ({ ...current, [item.id]: context.warnings.join('；') }));
-        else setSearchEmpty((current) => ({ ...current, [item.id]: true }));
+        const failedBackends = context.backendStatuses?.filter((status) => status.state === 'failed') ?? [];
+        if (failedBackends.length > 0) {
+          setSearchErrors((current) => ({
+            ...current,
+            [item.id]: failedBackends.map((status) => `${status.label}：${status.message || '连接失败'}`).join('；'),
+          }));
+        } else {
+          setSearchEmpty((current) => ({ ...current, [item.id]: true }));
+        }
       }
     } catch (error) {
       if (requestId === searchRequestRef.current) {

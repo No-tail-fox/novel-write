@@ -12,7 +12,9 @@ import type { PausePoint, ProcessingMode, Task } from '../../shared/types';
 import type { TemplateOption } from '../../shared/prompt-templates';
 import { pauseOptions, storyboardSceneCountOptions, styleOptions } from '../../shared/editorial-options';
 import { useAsyncAction } from '../../ui/async-action';
+import { Button } from '../../ui';
 import { addUploadedBgm, resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
+import { applyMusicMvHandoff, type MusicMvHandoff } from './music-mv-handoff';
 
 const MUSIC_MV_RHYTHM_LABELS: Record<Task['musicMv']['rhythmMode'], string> = {
   'lyric-sync': '歌词同步',
@@ -32,12 +34,16 @@ export function MusicMvPage({
   applyState,
   openTaskDetail,
   isBrowserPreview,
+  initialMusic,
+  onInitialMusicHandled,
 }: {
   api: StoryDreamApi;
   state: AppState;
   applyState: ApplyMutationResult;
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
+  initialMusic?: MusicMvHandoff;
+  onInitialMusicHandled?: (id: string) => void;
 }) {
   const defaultTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
   const [title, setTitle] = useState('音乐MV');
@@ -55,6 +61,7 @@ export function MusicMvPage({
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
+  const [handledMusicId, setHandledMusicId] = useState('');
   const musicAction = useAsyncAction();
   const creationDraft = useWorkspaceDraft({
     id: 'music-mv-create', label: '音乐 MV 草稿',
@@ -67,20 +74,37 @@ export function MusicMvPage({
       setMusicMvAudioPath(draft.musicMvAudioPath); setBgmId(draft.bgmId);
     },
   });
+  const pendingMusic = initialMusic && initialMusic.id !== handledMusicId ? initialMusic : undefined;
   const bgmOptions = validBgmItems(state.config);
   const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
   const musicMvStyleOptions = styleOptions;
   const musicMvDraftTemplateOptions = state.draftTemplates.map((template): TemplateOption => [template.id, template.name, `出图 ${template.image.ratio}`]);
+
+  function handleInitialMusic(useMusic: boolean) {
+    if (!pendingMusic || running || musicAction.busy) return;
+    if (useMusic) {
+      if (!pendingMusic.audioPath.trim()) return;
+      // The draft restores in a layout effect before the user can accept this offer.
+      const next = applyMusicMvHandoff(creationDraft.snapshot(), pendingMusic);
+      setTitle(next.title);
+      setLyrics(next.lyrics);
+      setMusicMvAudioPath(next.musicMvAudioPath);
+      setBgmId(next.bgmId);
+      setMessage('已使用歌曲，可继续设置画面并生成音乐 MV。');
+    }
+    setHandledMusicId(pendingMusic.id);
+    onInitialMusicHandled?.(pendingMusic.id);
+  }
 
   async function selectMusicMvAudio() {
     await musicAction.run(async () => {
       const imported = await api.importBgmAudio();
       if (!imported) return;
       setMusicMvAudioPath(imported.path);
+      setBgmId('');
       const nextBgm = addUploadedBgm(state.config, imported);
       const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
       applyState(next);
-      setBgmId(nextBgm.bgmId);
     });
   }
 
@@ -147,6 +171,18 @@ export function MusicMvPage({
             生成音乐 MV
           </button>
         </div>
+
+        {pendingMusic ? (
+          <section className="local-note" aria-label="来自音乐创作的歌曲">
+            <strong>来自音乐创作：{pendingMusic.title || '未命名歌曲'}</strong>
+            <p>使用后将更新当前 MV 的标题、歌词和主歌曲，并关闭背景音乐以避免叠加播放。画面设置会保留。</p>
+            {!pendingMusic.audioPath.trim() ? <p>这首歌曲尚未下载，请先在音乐创作中下载音频。</p> : null}
+            <div className="chip-row">
+              <Button variant="primary" disabled={running || musicAction.busy || !pendingMusic.audioPath.trim()} onClick={() => handleInitialMusic(true)}>使用这首歌曲</Button>
+              <Button variant="subtle" disabled={running || musicAction.busy} onClick={() => handleInitialMusic(false)}>忽略</Button>
+            </div>
+          </section>
+        ) : null}
 
         <Field label="标题">
           <input value={title} onChange={(event) => setTitle(event.target.value)} />

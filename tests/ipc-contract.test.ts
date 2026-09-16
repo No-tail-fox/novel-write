@@ -49,9 +49,9 @@ describe('IPC runtime contract', () => {
     const schema = contract.ipcInputSchemas['research:web-search'];
 
     expect(schema.parse('李在明')).toBe('李在明');
-    expect(schema.parse({ query: '李在明 生平', providers: ['bing', 'baidu', 'sogou', 'toutiao'] })).toEqual({
+    expect(schema.parse({ query: '李在明 生平', providers: ['bing', 'baidu', 'sogou', 'toutiao', 'duckduckgo', 'wikipedia'] })).toEqual({
       query: '李在明 生平',
-      providers: ['bing', 'baidu', 'sogou', 'toutiao'],
+      providers: ['bing', 'baidu', 'sogou', 'toutiao', 'duckduckgo', 'wikipedia'],
     });
     expect(() => schema.parse({ query: '李在明', providers: [] })).toThrow();
     expect(() => schema.parse({ query: '李在明', providers: ['bing', 'bing'] })).toThrow();

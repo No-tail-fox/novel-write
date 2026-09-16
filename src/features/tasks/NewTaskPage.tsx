@@ -124,6 +124,7 @@ const WEB_SEARCH_PROVIDER_OPTIONS: ReadonlyArray<{ id: WebSearchProvider; label:
   { id: 'baidu', label: '百度', domain: 'baidu.com' },
   { id: 'sogou', label: '搜狗', domain: 'sogou.com' },
   { id: 'toutiao', label: '头条', domain: 'toutiao.com' },
+  { id: 'duckduckgo', label: 'DuckDuckGo', domain: 'duckduckgo.com' },
 ];
 
 function isWebSearchProvider(value: unknown): value is WebSearchProvider {
@@ -131,6 +132,7 @@ function isWebSearchProvider(value: unknown): value is WebSearchProvider {
 }
 
 function webSearchProviderLabel(provider: WebSearchProvider | undefined): string {
+  if (provider === 'wikipedia') return '维基百科';
   return WEB_SEARCH_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ?? '网页';
 }
 

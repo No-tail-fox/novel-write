@@ -633,3 +633,21 @@
 - 保留所有既有工作区改动。Nantian 仅安装给用户，不将许可未明确的上游源码复制进产品；产品适配由本项目独立实现。验证使用本地桩，不触发付费模型。
 - 验收：新增 7 项单测通过；双尺寸完整页面与 5 项既有双链路流程通过；生产构建、Electron 6 项冒烟通过。首次大图调度超时后隔离重跑 21 项全部通过。旧导航数量断言和既有 Renderer/Electron/Scripts 类型错误仍在，详见 docs/plans/2026-09-15-vox-skill-integration.md。
 - 本机技能补充中文词匹配与 UTF-8 读写，隔离夹具验证不同中文词的帧号及中文输出。收尾误读双链路 report.json，已定位正确产物 result.json。
+
+## 2026-09-16 联网搜索备用源扩充
+
+- [completed] 核验免费/免 Key 搜索服务的当前接口、匿名可用性和产品集成边界。
+- [completed] 接入 DuckDuckGo 兼容引擎与 MediaWiki 末级知识兜底，保留真实后端状态。
+- [completed] 补充回归测试，完成聚焦验证与类型检查。
+- 范围：只接入无需用户新增凭据且现场可验证的来源；需注册、绑卡或依赖脆弱页面抓取的候选只记录。
+- 已知环境限制：`agent-reach` 的 Exa 后端未安装；`web-access` Chrome CDP 代理连接超时，因此使用技能允许的公开 HTTP/Jina Reader 路径。
+- 验证脚本错误：`tsx -e` 顶层 `await` 不支持 CJS 输出；已改用异步 IIFE。
+- 验收：真实 DuckDuckGo 端到端返回 10 条；搜索 41 项、UI/草稿 13 项、IPC 新来源聚焦测试通过；生产构建通过。类型检查仅剩既有的 browser fallback、ViralReferenceReport 缺失与 music MV 数据库接口错误。无可用浏览器，未生成本轮截图。
+
+## 2026-09-16 热榜联网补搜修复
+
+- [completed] 用用户截图中的完整标题复现热榜三源查询为 0 条。
+- [completed] 将 DuckDuckGo 接入热榜实际请求，并区分“额度受限/无结果”和真实后端失败。
+- [completed] 跑热榜与搜索回归，真实复测该标题并验证桌面弹窗。
+- 验收：截图标题在 SearXNG 禁用、Tavily 额度耗尽时仍由兼容源返回 2 条可用结果；聚焦测试 39/39 通过，生产构建产物已更新，正常与紧凑窗口截图实看通过。
+- 已知限制：完整类型检查仍被既有 `browser-fallback` API 缺失和 `FileDatabase.updateMusicMvTask` 缺失阻塞；截图 QA 后续在无关的旧“去创作交接”夹具处超时，不影响本轮搜索弹窗验证。

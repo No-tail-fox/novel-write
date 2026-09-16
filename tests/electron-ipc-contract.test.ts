@@ -755,7 +755,7 @@ describe('electron ipc contract', () => {
     const runner = main.slice(main.indexOf('function startViralAnalysisRun'), main.indexOf('async function resumeViralAnalysisRun'));
     const runningUpdate = runner.indexOf("status: 'running'");
     const initialPublish = runner.indexOf('await publishViralUpsert(database, record.id);', runningUpdate);
-    const runtimeStart = runner.indexOf('const completed = await runViralAnalysis', runningUpdate);
+    const runtimeStart = runner.indexOf('const completed = record.settings.analysisMode', runningUpdate);
 
     expect(runningUpdate).toBeGreaterThan(-1);
     expect(initialPublish).toBeGreaterThan(runningUpdate);
@@ -1037,6 +1037,20 @@ describe('electron ipc contract', () => {
     expect(handler).toContain("markTaskStepForRerun(task.artifactStatePath, 0, 'regenerate')");
     expect(handler).toContain('database.updateMusicMvTask(input)');
     expect(preload).toContain("invokeTrusted('music-mv:update', input)");
+  });
+
+  it('persists HTML scene structure edits through the governed editor and invalidates completed output', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const fallback = await readFile(new URL('../src/app/browser-fallback.ts', import.meta.url), 'utf8');
+    const handler = handlerSource(main, 'html-video:update-scene-structure');
+    expect(handler).toContain("runHistoryGovernanceMutation('task', input.id");
+    expect(handler).toContain('getEditableHtmlVideoTask(database, input.id)');
+    expect(handler).toContain('applyHtmlVideoSceneStructureChange(');
+    expect(handler).toContain('persistHtmlVideoEditorialMutation(database, task, pipeline');
+    expect(main).toContain("const needsResume = persistedPipeline.current !== 'done'");
+    expect(main).toContain("...(needsResume ? { status: 'paused', completedAt: null, outputDir: '' } : {})");
+    expect(fallback).toContain('async updateHtmlVideoSceneStructure(id, change)');
+    expect(fallback).toContain('htmlVideoSceneStructureUpdateSchema.parse({ id, change })');
   });
 
   it('preserves the current HTML video canvas resolution when rebuilding editorial previews', async () => {

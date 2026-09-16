@@ -913,3 +913,27 @@ Standalone generation complete. Final focused suite: 267/267 passed (11 files). 
 本机 vox-skill 同步脚本补充 Unicode 匹配和显式 UTF-8，中文输入/输出夹具验证通过。最新 Nantian 两种尺寸截图已实看；尾帧选择、下一镜头关键帧、导入入口和固定主操作可访问。
 
 验证限制：首次 133 项回归中 131 项通过；调度大图超时隔离重跑 21 项全部通过；旧导航数量测试仍预期 21 而当前为 23。Renderer/Electron 类型检查仍是旧 HTML/MV 接口和 ratio 错误，Scripts 检查另报告既有 QA theme 与环境对象类型错误。错误和边界完整记录于 docs/plans/2026-09-15-vox-skill-integration.md。收尾读取双链路 report.json 路径不存在，通过 rg 定位为 result.json。
+
+## 2026-09-16 联网搜索备用源扩充
+
+- 已确认用户意图按“补充其他免费/免 Key 搜索源”执行。
+- 已读取 `agent-reach`、`web-access`、`planning-with-files`；完成环境体检。
+- 当前阶段：候选服务的一手文档与匿名请求核验，尚未修改本轮产品源码。
+- 第一轮现场探测完成：Jina 匿名 401；DuckDuckGo HTML/Lite 200；中文维基 JSON 200；Bing RSS 200 但许可不适合产品默认集成。
+- 第二轮核验完成：GDELT 公共接口限流过严；Brave/Jina 需 Key；DuckDuckGo 英文结果可用、中文不足；确定“DuckDuckGo 兼容引擎 + MediaWiki 末级知识兜底”的实现方向。
+- 复测 DuckDuckGo 中文单次请求可返回 10 条结果，密集请求会触发 202 challenge；实现中保持单次调用、超时和独立降级。
+- 已接入 DuckDuckGo 来源选择、HTML 解析/跳转解包，以及 MediaWiki 静默末级兜底；搜索相关 41 项与 IPC 聚焦 1 项通过。
+- 真实调用验证第一次使用 `tsx -e` 顶层 `await`，因 CJS 输出不支持而失败；改用异步 IIFE，不重复该调用方式。
+- 真实 DuckDuckGo 端到端验证成功：10 条结果、状态 ready、无告警；链接解包与正文读取有效。
+- 搜索/降级 41 项、HTML 视频 UI/草稿 13 项、IPC 新来源聚焦 1 项通过；生产构建成功。
+- 全项目类型检查仍被三个既有问题阻塞：browser fallback 缺 API、`ViralReferenceReport` 文件缺失、music MV 数据库接口缺失。本轮无新增类型错误。
+- CUA 未发现可用浏览器，未能按 StoryDream UI skill 生成正常/紧凑窗口截图；已通过响应式网格源码、UI 合约测试和生产构建验证新增选项。
+
+## 2026-09-16 热榜联网补搜修复
+
+- 已检查用户截图并复现同一热点标题。
+- 已修改热榜请求加入 DuckDuckGo；仅真实后端失败显示错误，Tavily 限额且无结果时进入空状态。
+- 截图标题完整搜索链复测成功：SearXNG disabled、Tavily limited、legacy ready，最终返回 2 条可用来源（知乎原问题、什么值得买）。
+- 热榜、研究与搜索后端聚焦测试 39/39 通过；`git diff --check` 无空白错误；Electron main/preload 生产构建产物已更新。
+- 已实看 1440x900 与 920x720 热榜内容弹窗截图，布局可用。QA 脚本随后在无关的旧“去创作交接”夹具等待选中项时超时。
+- 全量类型检查仍有两处既有阻塞：`browser-fallback` 缺 `updateHtmlVideoSceneStructure`/`updateMusicMvTask`，以及 `FileDatabase` 缺 `updateMusicMvTask`；本轮改动未新增类型错误。

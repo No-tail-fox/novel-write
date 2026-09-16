@@ -8,7 +8,7 @@ import { copySourceKey, createCopyRevision, handoffCopyToVideo, readCopyStudioDo
 import './copy-studio.css';
 
 const providers: ReadonlyArray<{ value: WebSearchProvider; label: string }> = [
-  { value: 'bing', label: '必应' }, { value: 'baidu', label: '百度' }, { value: 'sogou', label: '搜狗' }, { value: 'toutiao', label: '头条' },
+  { value: 'bing', label: '必应' }, { value: 'baidu', label: '百度' }, { value: 'sogou', label: '搜狗' }, { value: 'toutiao', label: '头条' }, { value: 'duckduckgo', label: 'DuckDuckGo' },
 ];
 const trackOptions = [
   { value: 'character-story', label: '人物故事' }, { value: 'book-product', label: '好书带货' },

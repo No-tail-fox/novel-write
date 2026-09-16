@@ -15,6 +15,7 @@ const loadImageLabPage = () => import('../features/labs/ImageLabPage').then((mod
 const loadVoiceLabPage = () => import('../features/labs/VoiceLabPage').then((module) => ({ default: module.VoiceLabPage }));
 const loadVideoLabPage = () => import('../features/labs/VideoLabPage').then((module) => ({ default: module.VideoLabPage }));
 const loadMusicMvPage = () => import('../features/music-mv/MusicMvPage').then((module) => ({ default: module.MusicMvPage }));
+const loadMusicLabPage = () => import('../features/labs/MusicLabPage').then((module) => ({ default: module.MusicLabPage }));
 const loadBookSelectionPage = () => import('../features/labs/BookSelectionPage').then((module) => ({ default: module.BookSelectionPage }));
 const loadBenchmarkImportPage = () => import('../features/labs/BenchmarkImportPage').then((module) => ({ default: module.BenchmarkImportPage }));
 const loadPersonAssetsPage = () => import('../features/labs/PersonAssetsPage').then((module) => ({ default: module.PersonAssetsPage }));
@@ -41,6 +42,7 @@ export const routeLoaders = {
   'voice-lab': loadVoiceLabPage,
   'video-lab': loadVideoLabPage,
   'music-mv': loadMusicMvPage,
+  'music-lab': loadMusicLabPage,
   'book-selection': loadBookSelectionPage,
   'benchmark': loadBenchmarkImportPage,
   'person-assets': loadPersonAssetsPage,
@@ -68,6 +70,7 @@ export const routeComponents = {
   'voice-lab': lazy(routeLoaders['voice-lab']),
   'video-lab': lazy(routeLoaders['video-lab']),
   'music-mv': lazy(routeLoaders['music-mv']),
+  'music-lab': lazy(routeLoaders['music-lab']),
   'book-selection': lazy(routeLoaders['book-selection']),
   'benchmark': lazy(routeLoaders['benchmark']),
   'person-assets': lazy(routeLoaders['person-assets']),

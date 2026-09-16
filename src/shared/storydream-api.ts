@@ -103,6 +103,10 @@ import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comi
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from './director-batch-persistence';
 import type { VideoLabGenerateInput, VideoLabRecord } from './video-lab';
+import type { MusicBalance, MusicBoostStyleInput, MusicBoostStyleResult, MusicDownloadInput, MusicLabGenerateInput, MusicLabRecord, MusicLyricsInput, MusicLyricsResult, MusicServiceStatus, MusicTrackInput } from './music-lab';
+import type { MusicHistorySyncResult, MusicOperationInput, MusicUploadSourceInput } from './music-operations';
+import type { MusicVoiceRequest, MusicVoiceState } from './music-voice';
+import type { MusicEnhancedRequest, MusicEnhancedJob } from './music-enhanced';
 
 export interface LocalSubtitleTimestampFile {
   path: string;
@@ -142,6 +146,21 @@ export const INVOKE_CHANNELS = Object.freeze([
   'video-lab:list',
   'video-lab:generate',
   'video-lab:open-output-directory',
+  'music-lab:service-status',
+  'music-lab:balance',
+  'music-lab:list',
+  'music-lab:generate',
+  'music-lab:refresh',
+  'music-lab:lyrics',
+  'music-lab:boost-style',
+  'music-lab:download',
+  'music-lab:import-bgm',
+  'music-lab:open-output-directory',
+  'music-lab:operation',
+  'music-lab:upload-source',
+  'music-lab:sync-history',
+  'music-lab:voice',
+  'music-lab:enhanced',
   'prompt-template:list',
   'prompt-template:get-detail',
   'draft-template:list',
@@ -232,6 +251,14 @@ export const INVOKE_CHANNELS = Object.freeze([
   'html-video:media-url',
   'task:create-and-run',
   'music-mv:update',
+  'viral:import-local',
+  'viral:analyze-prepared',
+  'viral:get-reference-index',
+  'viral:get-reference-part',
+  'viral:media-url',
+  'viral:save-reference-edit',
+  'viral:export-reference',
+  'viral:configure-reference',
   'viral:create-and-run',
   'viral:update-status',
   'viral:retry',
@@ -335,6 +362,21 @@ export type StoryDreamApi = {
   listVideoLabRecords: () => Promise<VideoLabRecord[]>;
   generateVideoLab: (input: VideoLabGenerateInput) => Promise<VideoLabRecord>;
   openVideoLabOutputDirectory: (id: string) => Promise<void>;
+  getMusicLabServiceStatus: () => Promise<MusicServiceStatus>;
+  getMusicLabBalance: () => Promise<MusicBalance>;
+  listMusicLabRecords: () => Promise<MusicLabRecord[]>;
+  generateMusicLab: (input: MusicLabGenerateInput) => Promise<MusicLabRecord>;
+  refreshMusicLabRecord: (id: string) => Promise<MusicLabRecord>;
+  generateMusicLabLyrics: (input: MusicLyricsInput) => Promise<MusicLyricsResult>;
+  boostMusicLabStyle: (input: MusicBoostStyleInput) => Promise<MusicBoostStyleResult>;
+  downloadMusicLabTrack: (input: MusicDownloadInput) => Promise<MusicLabRecord>;
+  importMusicLabTrackAsBgm: (input: MusicTrackInput) => Promise<{ record: MusicLabRecord; mutation: AppMutationResult | null }>;
+  openMusicLabOutputDirectory: (id: string) => Promise<void>;
+  performMusicLabOperation: (input: MusicOperationInput) => Promise<MusicLabRecord>;
+  uploadMusicLabSource: (input: MusicUploadSourceInput) => Promise<MusicLabRecord>;
+  syncMusicLabHistory: () => Promise<MusicHistorySyncResult>;
+  musicLabVoice: (input: MusicVoiceRequest) => Promise<MusicVoiceState>;
+  musicLabEnhanced: (input: MusicEnhancedRequest) => Promise<MusicEnhancedJob[]>;
   listPromptTemplates: (request?: CursorRequest) => Promise<CursorPage<PromptTemplateSummary>>;
   getPromptTemplateDetail: (id: string) => Promise<PromptTemplate | null>;
   listDraftTemplates: (request?: CursorRequest) => Promise<CursorPage<DraftTemplateSummary>>;
@@ -454,4 +496,4 @@ export type StoryDreamApi = {
   runDiagnostics: () => Promise<{ generatedAt: string; checks: Array<{ id: string; label: string; status: string; detail: string }> }>;
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close') => Promise<void>;
   onAppDelta: (callback: (delta: AppDelta) => void) => () => void;
-} & LocalBenchmarkBookPersonAssetApi;
+} & LocalBenchmarkBookPersonAssetApi & import('./viral-reference-api').ViralReferenceApi;

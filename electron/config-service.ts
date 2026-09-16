@@ -6,6 +6,7 @@ import {
   applyConfigSecrets,
   extractConfigSecrets,
   isSecretId,
+  retainReferencedConfigSecrets,
   secretStatus,
   stripConfigSecrets,
   type ConfigSecrets,
@@ -33,6 +34,7 @@ import type { ThemePreferencePair } from '../src/shared/theme-preference';
 import { removeUnreferencedManagedBgmFiles } from './managed-bgm';
 
 const MIGRATION_MARKER = 'config-secrets.v1.migrated';
+const MODEL_PROFILES_MIGRATION_MARKER = 'config-model-profile-secrets.v1.migrated';
 
 export interface ConfigDatabase {
   getState: () => Promise<AppState>;
@@ -103,7 +105,7 @@ function synchronizeSecret(
   }
 }
 
-function profileSecretId(domain: 'llm' | 'image' | 'tts', profileId: string, suffix: string): SecretId | null {
+function profileSecretId(domain: 'llm' | 'image' | 'tts' | 'speechToText' | 'viralVision', profileId: string, suffix: string): SecretId | null {
   const encodedProfileId = encodeURIComponent(profileId.trim());
   if (!encodedProfileId) return null;
   const id = `${domain}/${encodedProfileId}/${suffix}`;
@@ -124,6 +126,8 @@ function canonicalizeActiveSecrets(config: AppConfig, input: ConfigSecrets, pref
   synchronizeSecret(secrets, profileSecretId('tts', config.activeTtsProfileId, 'volcengine/secretAccessKey'), 'tts/@active/volcengine/secretAccessKey', preferActiveWhenProfileMissing);
   synchronizeSecret(secrets, profileSecretId('tts', config.activeTtsProfileId, 'volcengine/accessKey'), 'tts/@active/volcengine/accessKey', preferActiveWhenProfileMissing);
   synchronizeSecret(secrets, profileSecretId('tts', config.activeTtsProfileId, 'minimax/apiKey'), 'tts/@active/minimax/apiKey', preferActiveWhenProfileMissing);
+  synchronizeSecret(secrets, profileSecretId('speechToText', config.activeSpeechToTextProfileId, 'apiKey'), 'speechToText/apiKey', preferActiveWhenProfileMissing);
+  synchronizeSecret(secrets, profileSecretId('viralVision', config.viral.activeVisionProfileId, 'apiKey'), 'viralVision/apiKey', preferActiveWhenProfileMissing);
   return secrets;
 }
 
@@ -161,7 +165,7 @@ export class ConfigService {
 
   async migrateLegacySecrets(): Promise<void> {
     if (this.migrationComplete) return;
-    this.migrationPromise ??= this.performMigration();
+    this.migrationPromise ??= this.performMigration().then(() => this.migrateModelProfileSecrets());
     try {
       await this.migrationPromise;
       this.migrationComplete = true;
@@ -232,13 +236,13 @@ export class ConfigService {
       this.options.database.getBootstrapMetadata(),
     ]);
     const normalizedInput = normalizeAppConfig(input.config);
-    const nextSecrets = canonicalizeActiveSecrets(
+    const nextSecrets = retainReferencedConfigSecrets(normalizedInput, canonicalizeActiveSecrets(
       normalizedInput,
       mergeSecretChanges(storedSecrets, input.secretChanges),
       false,
-    );
+    ));
     const sanitized = stripConfigSecrets(normalizeConfigWithSecrets(normalizedInput, nextSecrets));
-    if (Object.keys(input.secretChanges).length > 0) {
+    if (Object.keys(input.secretChanges).length > 0 || JSON.stringify(nextSecrets) !== JSON.stringify(storedSecrets)) {
       await this.options.vault.save(nextSecrets);
       assertVaultRoundTrip(nextSecrets, await this.options.vault.load());
     }
@@ -287,5 +291,26 @@ export class ConfigService {
       await mkdir(this.options.dataDir, { recursive: true });
       await writeFile(markerPath, '1\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     }
+  }
+
+  private async migrateModelProfileSecrets(): Promise<void> {
+    const markerPath = join(this.options.dataDir, MODEL_PROFILES_MIGRATION_MARKER);
+    if (await fileExists(markerPath)) return;
+    const [metadata, stored] = await Promise.all([this.options.database.getBootstrapMetadata(), this.options.vault.load()]);
+    const config = normalizeAppConfig(metadata.config);
+    const migrated = { ...stored };
+    const transferLegacy = (domain: 'speechToText' | 'viralVision', activeId: string, legacyId: 'speechToText/apiKey' | 'viralVision/apiKey') => {
+      const hasProfiles = Object.keys(stored).some((id) => id.startsWith(`${domain}/`) && id !== legacyId);
+      const target = profileSecretId(domain, activeId, 'apiKey');
+      if (!hasProfiles && target && stored[legacyId]) migrated[target] = stored[legacyId];
+    };
+    transferLegacy('speechToText', config.activeSpeechToTextProfileId, 'speechToText/apiKey');
+    transferLegacy('viralVision', config.viral.activeVisionProfileId, 'viralVision/apiKey');
+    if (JSON.stringify(migrated) !== JSON.stringify(stored)) {
+      await this.options.vault.save(migrated);
+      assertVaultRoundTrip(migrated, await this.options.vault.load());
+    }
+    await mkdir(this.options.dataDir, { recursive: true });
+    await writeFile(markerPath, '1\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
   }
 }

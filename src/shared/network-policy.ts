@@ -129,6 +129,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
       'accept',
       'accept-language',
       'anthropic-version',
+      'idempotency-key',
       'authorization',
       'content-type',
       'range',

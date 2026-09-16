@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FileDatabase } from '@shared/storage';
-import type { AiHotQueryRequest, AiHotQueryResult, HotBoardSnapshot } from '@shared/types';
+import type { AiHotQueryRequest, AiHotQueryResult, HotBoardSnapshot, MusicMvTaskUpdateInput } from '@shared/types';
 import { defaultConfig } from '@shared/config';
 import { convertCozeWorkflowToDraftTemplate } from '@shared/coze-workflow-converter';
 import {
@@ -1214,10 +1214,43 @@ describe('file database', () => {
       expect(updated).toMatchObject({
         title: 'New MV', inputText: 'new line one\nnew line two', status: 'paused', currentStep: 0,
         retryFromStep: 0, storyboardSceneCount: 6, targetScenes: 6, processingMode: 'scene-review',
+        completedAt: null, outputDir: '', ratio: '9:16',
         musicMv: { rhythmMode: 'fast-cut', captionStyle: 'minimal', visualMotif: 'red stage', audioPath: 'D:/music/new.wav' },
       });
       await db.close();
+      const reopened = await FileDatabase.open(file);
+      expect(await reopened.getTaskDetail(created.id)).toMatchObject(updated);
+      await reopened.updateTask(created.id, { templateId: 'landscape', ratio: '16:9' });
+      expect(await reopened.getTaskDetail(created.id)).toMatchObject({ templateId: 'landscape', ratio: '16:9' });
+      await reopened.close();
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects MV edits for another task kind, active jobs, and archived records', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-db-music-mv-guards-'));
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    try {
+      const mv = await db.createTask({ title: 'MV', inputText: 'original lyric', taskKind: 'music-mv' });
+      const story = await db.createTask({ title: 'Story', inputText: 'original story' });
+      const input: MusicMvTaskUpdateInput = {
+        id: mv.id, title: 'Changed', lyrics: 'new lyric', style: 'photo-real', ratio: '16:9',
+        templateId: 'default-portrait-9-16', bgmId: '', storyboardSceneCount: 6,
+        processingMode: 'full-auto', pausePoints: [],
+        musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'karaoke', visualMotif: '', audioPath: '' },
+      };
+      await expect(db.updateMusicMvTask({ ...input, id: story.id })).rejects.toThrow('MUSIC_MV_TASK_INVALID');
+      await expect(db.updateMusicMvTask(input)).rejects.toThrow('MUSIC_MV_TASK_ACTIVE');
+      await db.updateTask(mv.id, { status: 'running' });
+      await expect(db.updateMusicMvTask(input)).rejects.toThrow('MUSIC_MV_TASK_ACTIVE');
+      await db.updateTask(mv.id, { status: 'paused' });
+      await db.archiveTask(mv.id);
+      await expect(db.updateMusicMvTask(input)).rejects.toThrow('HISTORY_ARCHIVED');
+      expect(await db.getTaskDetail(mv.id)).toMatchObject({ title: 'MV', inputText: 'original lyric' });
+      expect(await db.getTaskDetail(story.id)).toMatchObject({ title: 'Story', inputText: 'original story' });
+    } finally {
+      await db.close();
       await rm(dir, { recursive: true, force: true });
     }
   });

@@ -694,3 +694,26 @@ VOX skills 接入：现有 VideoGenerationRequest 已支持 lastFramePath 与 fi
 VOX skills 接入完成：四个镜头制作方式已持久化。Paper Cut 真正传原画参考给背景/主体生成；Nantian 的尾帧参与能力路由、请求字节、输入哈希与旧视频失效。VOX 旁白模式复用 Remotion，按词编舞使用 AI 代码及真实 cues；gbro 的视觉隐喻与组装约束进入实际图像/视频提示。
 
 两种尺寸截图实看通过：正常窗口三栏，紧凑窗口收起左栏，右侧独立滚动且主要操作保持可访问。全部截图为本地夹具，未宣称真实模型出片。技能已安装不等于上游脚本全套能在 Windows 运行，macOS Vision 限制及产品自有适配已写入交付文档。
+
+## 2026-09-16 联网搜索备用源扩充
+
+- Tavily Keyless 当前现场返回 `429 monthly_cap_reached_bonus_eligible`，适合作为可降级来源，不能作为唯一免费源。
+- 候选准入标准：无需新增凭据、公开 HTTP 可直接验证、结果能可靠结构化解析、失败可快速降级、不依赖登录态。
+- Exa 在本机未配置，不能作为零配置产品后端；浏览器 CDP 超时，不影响公开 API 核验。
+- Jina Search 匿名请求现场返回 `401 AuthenticationRequiredError`，理由是出口 IP 信誉不佳；不适合作为默认零配置后端，可保留为未来可选 Key 渠道。
+- DuckDuckGo HTML 与 Lite 页面现场均返回 200 和真实结果，但不是结构化官方 API；可作为现有“兼容搜索源”的新增引擎，需接受页面结构变化风险。
+- 中文维基 MediaWiki Search API 匿名请求返回 200 和结构化结果，适合在通用搜索全部失效时提供知识型末级兜底，不应冒充全网实时搜索。
+- Bing RSS 虽结构化且匿名可用，但响应版权声明仅允许个人非商业 RSS 聚合展示，不能作为默认产品集成的新后端。
+- GDELT DOC API 是匿名结构化新闻来源，但现场连续请求立即收到“每 5 秒仅 1 次”的限流文本，不适合桌面应用的默认搜索链。
+- Brave Search API 与 Jina Search 产品接口均有正式文档，但稳定使用需要 API Key；它们可作为未来可配置渠道，不满足本轮零配置准入标准。
+- DuckDuckGo HTML 对英文和中文单次查询均现场返回 10 条结果；短时间连续探测会返回 202 challenge，因此适合补入并行兼容引擎，但必须独立失败降级，不能替换百度/搜狗。
+- 当前推荐实现：新增 DuckDuckGo 兼容引擎；在所有通用搜索无结果时再尝试 MediaWiki 中文/英文 API，避免知识库结果提前截断实时网页搜索。
+- 实现后真实端到端查询 `OpenAI GPT-5` 返回 10 条 DuckDuckGo 结果，前三条成功解包到 arXiv、Wikipedia 与 OpenAI 原站，正文读取链可用。
+- MediaWiki 自动兜底采用“成功才出现”策略：失败或无结果时不增加新的告警/状态，避免末级补充源反过来制造噪声。
+
+## 2026-09-16 热榜联网补搜修复
+
+- 截图中的 Tavily 提示证明限额识别已生效；失败发生在后续热榜兼容搜索没有返回候选。
+- `HotBoardPage.searchItemContent` 仍硬编码 `bing/sogou/baidu`，未包含已经接入的 DuckDuckGo。
+- 用截图标题真实复现：三源返回 0 条；加入 DuckDuckGo 后返回 3 条，包含知乎原问题、什么值得买文章和 Iscbj 页面。
+- 热榜把任意 `context.warnings` 当作最终错误，导致 Tavily `limited` 被错误渲染成“联网搜索失败”；应只把 `backendStatuses.state === failed` 视为失败。

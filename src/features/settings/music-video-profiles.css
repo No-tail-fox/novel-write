@@ -1,0 +1,47 @@
+.media-profile-manager,
+.media-profile-switcher {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 14px;
+  min-width: 0;
+}
+.media-profile-heading,
+.media-profile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.media-profile-heading > div { display: grid; gap: 5px; }
+.media-profile-heading span,
+.media-profile-toolbar > span,
+.media-profile-footnote,
+.media-profile-key-source p { color: var(--shell-muted); font-size: var(--sd-text-caption); }
+.media-profile-list { display: grid; gap: 6px; max-height: 264px; overflow: auto; }
+.media-profile-list .media-profile-row {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 64px;
+  text-align: left;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+  background: var(--shell-surface);
+}
+.media-profile-list .media-profile-row[aria-pressed='true'] { border-color: var(--shell-accent); background: var(--shell-selected); }
+.media-profile-row .sd-button__content { display: grid; gap: 5px; width: 100%; min-width: 0; }
+.media-profile-row-name { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.media-profile-row-name small { color: var(--shell-accent); font-size: var(--sd-text-caption); flex: none; }
+.media-profile-row-detail { color: var(--shell-muted); font-size: var(--sd-text-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-profile-toolbar > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.media-profile-toolbar strong { color: var(--shell-text); }
+.media-profile-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding-top: 14px; border-top: 1px solid var(--shell-border); }
+.media-profile-wide { grid-column: 1 / -1; min-width: 0; }
+.media-profile-key-source p { margin: 4px 0 0; }
+.media-profile-footnote { margin: 0; line-height: 1.6; }
+.media-profile-secret .sd-icon-button { min-width: 30px; min-height: 30px; }
+.settings-profile-explanation { margin: 0 0 16px; color: var(--shell-muted); font-size: var(--sd-text-caption); }
+@media (max-width: 900px) {
+  .media-profile-editor { grid-template-columns: minmax(0, 1fr); }
+  .media-profile-row-name { align-items: flex-start; flex-wrap: wrap; }
+}

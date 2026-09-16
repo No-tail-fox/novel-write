@@ -26,9 +26,18 @@ const SEARXNG_ENGINE_MAP: Record<WebSearchProvider, string> = {
   baidu: 'baidu',
   sogou: 'sogou',
   toutiao: 'toutiao',
+  duckduckgo: 'duckduckgo',
+  wikipedia: 'wikipedia',
 };
 
 const SEARCH_MAX_BYTES = 2 * 1024 * 1024;
+
+class SearchBackendLimitedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SearchBackendLimitedError';
+  }
+}
 
 export async function searchConfiguredBackends(
   config: WebSearchConfig,
@@ -39,6 +48,7 @@ export async function searchConfiguredBackends(
 ): Promise<WebSearchBackendResult> {
   const statuses: WebSearchBackendStatus[] = [];
   const warnings: string[] = [];
+  const deferredWarnings: string[] = [];
 
   if (config.searxngBaseUrl.trim()) {
     try {
@@ -63,8 +73,13 @@ export async function searchConfiguredBackends(
       warnings.push('Tavily Keyless 没有返回结果，正在尝试兼容搜索源。');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      statuses.push({ backend: 'tavily', label: BACKEND_LABELS.tavily, state: 'failed', count: 0, message });
-      warnings.push(`Tavily Keyless 搜索失败：${message}`);
+      if (error instanceof SearchBackendLimitedError) {
+        statuses.push({ backend: 'tavily', label: BACKEND_LABELS.tavily, state: 'limited', count: 0, message });
+        deferredWarnings.push(`Tavily Keyless 暂不可用：${message}`);
+      } else {
+        statuses.push({ backend: 'tavily', label: BACKEND_LABELS.tavily, state: 'failed', count: 0, message });
+        warnings.push(`Tavily Keyless 搜索失败：${message}`);
+      }
     }
   } else {
     statuses.push({ backend: 'tavily', label: BACKEND_LABELS.tavily, state: 'disabled', count: 0, message: '已关闭备用搜索' });
@@ -74,7 +89,7 @@ export async function searchConfiguredBackends(
     try {
       const items = await legacySearch();
       statuses.push({ backend: 'legacy', label: BACKEND_LABELS.legacy, state: items.length ? 'ready' : 'empty', count: items.length });
-      return { items, statuses, warnings };
+      return { items, statuses, warnings: items.length ? warnings : [...warnings, ...deferredWarnings] };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       statuses.push({ backend: 'legacy', label: BACKEND_LABELS.legacy, state: 'failed', count: 0, message });
@@ -84,7 +99,7 @@ export async function searchConfiguredBackends(
     statuses.push({ backend: 'legacy', label: BACKEND_LABELS.legacy, state: 'disabled', count: 0, message: '已关闭兼容降级' });
   }
 
-  return { items: [], statuses, warnings };
+  return { items: [], statuses, warnings: [...warnings, ...deferredWarnings] };
 }
 
 export async function searchSearxng(
@@ -130,7 +145,7 @@ export async function searchTavilyKeyless(query: string, fetchImpl: FetchLike = 
       'X-Client-Source': 'tavily-js-keyless',
     },
   });
-  if (!response.ok) throw new Error(`Tavily returned ${response.status}`);
+  if (!response.ok) throw tavilyResponseError(response.status, response.json);
   const payload = response.json as unknown;
   if (!payload || typeof payload !== 'object' || !Array.isArray((payload as { results?: unknown }).results)) {
     throw new Error('Tavily 返回格式无效。');
@@ -139,6 +154,21 @@ export async function searchTavilyKeyless(query: string, fetchImpl: FetchLike = 
     .map((entry, index) => normalizeTavilyResult(entry, index))
     .filter((item): item is AiSourceSection => Boolean(item))
     .slice(0, 10);
+}
+
+function tavilyResponseError(status: number, payload: unknown): Error {
+  const errorPayload = payload && typeof payload === 'object'
+    ? (payload as { error?: unknown }).error
+    : undefined;
+  const details = errorPayload && typeof errorPayload === 'object'
+    ? errorPayload as { code?: unknown; message?: unknown }
+    : undefined;
+  const code = String(details?.code ?? '').trim().toLowerCase();
+  if (status === 429 && (code.includes('cap_reached') || code.includes('rate_limit'))) {
+    return new SearchBackendLimitedError('免费额度已用完，已自动改用其他搜索源。');
+  }
+  const message = String(details?.message ?? '').trim();
+  return new Error(message ? `Tavily 返回 ${status}：${message}` : `Tavily 返回 ${status}`);
 }
 
 async function fetchSearchJson(

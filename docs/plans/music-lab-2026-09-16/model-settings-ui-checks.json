@@ -1,0 +1,31 @@
+{
+  "passed": 26,
+  "results": [
+    "llm: save standby preserves active",
+    "llm: test selected without activation",
+    "llm: explicit activation persisted",
+    "image: save standby preserves active",
+    "image: test selected without activation",
+    "image: explicit activation persisted",
+    "video: save standby preserves active",
+    "video: test selected without activation",
+    "video: explicit activation persisted",
+    "music: save standby preserves active",
+    "music: test selected without activation",
+    "music: explicit activation persisted",
+    "tts: save standby preserves active",
+    "tts: test selected without activation",
+    "tts: explicit activation persisted",
+    "speechToText: save standby preserves active",
+    "speechToText: test selected without activation",
+    "speechToText: explicit activation persisted",
+    "vision: save standby preserves active",
+    "vision: test selected without activation",
+    "vision: explicit activation persisted",
+    "all seven active profiles survive reload",
+    "dark 1440: no page overflow",
+    "dark 1040: no page overflow",
+    "light 1440: no page overflow",
+    "light 1040: no page overflow"
+  ]
+}

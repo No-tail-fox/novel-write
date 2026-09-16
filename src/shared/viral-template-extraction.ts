@@ -18,6 +18,7 @@ export interface ViralTemplateDrafts {
 }
 
 export function createViralTemplateDrafts(result: ViralAnalysisResult, options: ViralTemplateDraftOptions): ViralTemplateDrafts {
+  if (result.recreationState === 'not-requested') throw new Error('整体拆解尚未生成复刻模板，请先完成复刻规划。');
   const storyTemplateName = options.storyTemplateName.trim();
   const imageTemplateName = options.imageTemplateName.trim();
   if (!storyTemplateName) throw new Error('故事模板名不能为空。');

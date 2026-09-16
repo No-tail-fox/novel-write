@@ -154,7 +154,7 @@ export function LlmProfileManager({
                 <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
                   <Copy size={14} />
                 </button>
-                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                <button className="icon-button" type="button" title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
                   <XCircle size={14} />
                 </button>
               </div>
@@ -412,7 +412,7 @@ export function ImageProfileManager({
                 <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
                   <Copy size={14} />
                 </button>
-                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                <button className="icon-button" type="button" title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
                   <XCircle size={14} />
                 </button>
               </div>
@@ -639,7 +639,7 @@ export function TtsProfileManager({
                 <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
                   <Copy size={14} />
                 </button>
-                <button className="icon-button" type="button" title="删除" disabled={profiles.length <= 1} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
+                <button className="icon-button" type="button" title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
                   <XCircle size={14} />
                 </button>
               </div>

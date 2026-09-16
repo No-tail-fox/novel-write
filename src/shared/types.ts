@@ -14,6 +14,7 @@ export const SHELL_VIEWS = [
   'image-lab',
   'voice-lab',
   'video-lab',
+  'music-lab',
   'music-mv',
   'book-selection',
   'benchmark',
@@ -121,7 +122,7 @@ export interface VolcengineSpeakerListResult {
   requestId: string | null;
 }
 
-export type ConfigTestTarget = 'llm' | 'image' | 'video' | 'tts' | 'speechToText' | 'jianying' | 'creative' | 'webSearch';
+export type ConfigTestTarget = 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'creative' | 'webSearch';
 
 export interface ConfigTestResult {
   status: 'pass' | 'warn' | 'fail';
@@ -236,6 +237,22 @@ export interface VideoConfig {
   automation: VideoAutomationConfig;
 }
 
+export interface MusicProviderProfile {
+  id: string;
+  name: string;
+  provider: 'suno-api';
+  baseUrl: string;
+  apiKey: string;
+  model: 'suno-v6' | 'suno-v6-wild' | 'suno-v6-mini';
+  useEnvironmentKey: boolean;
+}
+
+export interface MusicConfig {
+  enabled: boolean;
+  activeProfileId: string;
+  profiles: MusicProviderProfile[];
+}
+
 export interface ImageProviderProfile {
   id?: string;
   name?: string;
@@ -304,6 +321,18 @@ export interface SpeechToTextConfig {
   timeoutMs: number;
 }
 
+export interface SpeechToTextProviderProfile extends SpeechToTextConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
+export interface VisionProviderProfile extends LlmConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
 export interface BgmItem {
   id: string;
   title: string;
@@ -333,7 +362,7 @@ export interface ImaConfig {
 }
 
 export type ViralPlatform = 'douyin' | 'kuaishou' | 'bilibili' | 'unknown';
-export type ViralDownloadProvider = 'douyin-internal' | 'kuaishou-playwright' | 'bilibili-internal';
+export type ViralDownloadProvider = 'douyin-internal' | 'kuaishou-playwright' | 'bilibili-internal' | 'local-import';
 export type ViralCookieSource = 'none' | 'browser-chrome' | 'browser-edge' | 'cookie-file';
 export type ViralCookieFallbackMode = 'browser-first-after-failure';
 export type ViralBrowserCookieSource = 'auto' | 'chrome' | 'edge';
@@ -359,6 +388,8 @@ export interface ViralAnalyzerConfig {
   huggingFaceEndpoint: string;
   downloadTimeoutMs: number;
   vision: LlmConfig;
+  visionProfiles: VisionProviderProfile[];
+  activeVisionProfileId: string;
 }
 
 export interface AppConfig {
@@ -373,10 +404,13 @@ export interface AppConfig {
   imageProfiles: ImageProviderProfile[];
   activeImageProfileId: string;
   video: VideoConfig;
+  music: MusicConfig;
   tts: TtsConfig;
   ttsProfiles: TtsProviderProfile[];
   activeTtsProfileId: string;
   speechToText: SpeechToTextConfig;
+  speechToTextProfiles: SpeechToTextProviderProfile[];
+  activeSpeechToTextProfileId: string;
   jianying: JianyingConfig;
   ima: ImaConfig;
   viral: ViralAnalyzerConfig;
@@ -1538,7 +1572,7 @@ export interface AiSourceSection {
   content: string;
 }
 
-export type WebSearchProvider = 'bing' | 'baidu' | 'sogou' | 'toutiao';
+export type WebSearchProvider = 'bing' | 'baidu' | 'sogou' | 'toutiao' | 'duckduckgo' | 'wikipedia';
 
 export type WebSearchBackend = 'searxng' | 'tavily' | 'legacy';
 
@@ -1564,7 +1598,7 @@ export interface WebSearchProviderStatus {
 export interface WebSearchBackendStatus {
   backend: WebSearchBackend;
   label: string;
-  state: 'ready' | 'empty' | 'failed' | 'disabled';
+  state: 'ready' | 'empty' | 'failed' | 'disabled' | 'limited';
   count: number;
   message?: string;
 }
@@ -1790,6 +1824,12 @@ export interface ResearchCopyComposeResult {
 }
 
 export interface ViralAnalysisSettings {
+  analysisMode?: 'quick' | 'deep';
+  /** Explicit provider capability selection; never inferred from a model name. */
+  referenceVisualInput?: 'frames' | 'video';
+  referenceAudioInput?: boolean;
+  /** Total paid requests for this run; batches never reset this budget. */
+  maxAnalysisRequests?: number;
   track: string;
   style: string;
   ratio: string;
@@ -1808,6 +1848,7 @@ export interface CreateViralAnalysisInput {
 
 export interface ViralAnalysisCheckpoint {
   runGeneration: number;
+  referenceIndex?: { path: string; hash: string; revision: number };
   downloaded?: {
     source: ViralVideoSource;
     videoPath: string;
@@ -1833,6 +1874,7 @@ export interface ViralTemplateSaveInput {
 
 export interface ViralAnalysisRecord {
   id: string;
+  referenceIndex?: { path: string; hash: string; revision: number } | null;
   archivedAt?: string | null;
   managedStorageKey?: string | null;
   url: string;
@@ -1869,6 +1911,7 @@ export interface ViralAnalysisEvent {
 }
 
 export interface ViralVideoSource {
+  kind?: 'url' | 'local';
   platform: ViralPlatform;
   url: string;
   normalizedUrl: string;
@@ -1981,6 +2024,9 @@ export interface ViralRecreationDraft {
 }
 
 export interface ViralAnalysisResult {
+  schemaVersion?: 2;
+  recreationState?: 'not-requested' | 'completed';
+  referenceAnalysisRef?: { path: string; hash: string; revision: number };
   source: ViralVideoSource;
   transcript: ViralTranscriptSegment[];
   frames: ViralFrameAnalysis[];

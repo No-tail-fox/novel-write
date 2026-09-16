@@ -1,6 +1,10 @@
 import { z } from 'zod';
+import { musicVoiceRequestSchema } from './music-voice';
+import { musicEnhancedRequestSchema } from './music-enhanced';
 import { voxPropsSchema, voxSavedTemplateSchema } from './vox-animation';
 import { videoLabGenerateInputSchema, videoLabRecordIdSchema } from './video-lab';
+import { musicLabBoostStyleInputSchema, musicLabDownloadInputSchema, musicLabGenerateInputSchema, musicLabLyricsInputSchema, musicLabRecordIdSchema, musicLabTrackInputSchema } from './music-lab';
+import { musicOperationInputSchema, musicUploadSourceInputSchema } from './music-operations';
 import { isProviderPortalUrl } from './provider-portals';
 import { SHELL_VIEWS, type AppConfig, type HtmlVideoCaptionLayout, type ImageLabImportInput } from './types';
 import { draftTemplateSchema } from './draft-template-contract';
@@ -183,12 +187,12 @@ const llmConfigSchema = bounded(
     .strict(),
 );
 
-const configTestTargetSchema = z.enum(['llm', 'image', 'tts', 'speechToText', 'jianying', 'creative', 'webSearch']);
+const configTestTargetSchema = z.enum(['llm', 'image', 'video', 'music', 'tts', 'speechToText', 'vision', 'jianying', 'creative', 'webSearch']);
 const taskStatusValueSchema = z.enum(['draft', 'pending', 'running', 'paused', 'completed', 'failed', 'cancelled']);
 const viralStatusValueSchema = z.enum(['pending', 'running', 'paused', 'completed', 'failed', 'cancelled']);
 const taskStepRerunModeSchema = z.enum(['regenerate', 'rewrite']);
 const viralPlatformSchema = z.enum(['douyin', 'kuaishou', 'bilibili', 'unknown']);
-const webSearchProviderSchema = z.enum(['bing', 'baidu', 'sogou', 'toutiao']);
+const webSearchProviderSchema = z.enum(['bing', 'baidu', 'sogou', 'toutiao', 'duckduckgo', 'wikipedia']);
 
 const sourceSectionSchema = bounded(
   z
@@ -800,7 +804,11 @@ export const createViralAnalysisSchema = z
         style: nonEmptyText(1024),
         ratio: nonEmptyText(128),
         templateId: nonEmptyText(256),
-        keyFrameCount: nonNegativeInteger.max(500).optional(),
+    analysisMode: z.enum(['quick', 'deep']).optional(),
+    referenceVisualInput: z.enum(['frames', 'video']).optional(),
+    referenceAudioInput: z.boolean().optional(),
+        maxAnalysisRequests: z.number().int().min(1).max(10000).optional(),
+        keyFrameCount: z.number().int().min(1).max(40).optional(),
         storyboardSceneCount: nonNegativeInteger.max(500).optional(),
         extraRequirements: optionalText(MAX_TASK_TEXT),
       })
@@ -832,12 +840,20 @@ const webSearchRequestSchema = z
     providers: z
       .array(webSearchProviderSchema)
       .min(1)
-      .max(4)
+      .max(6)
       .refine((providers) => new Set(providers).size === providers.length, 'Search providers must be unique.'),
   })
   .strict();
 
 export const ipcInputSchemas = {
+  'viral:import-local': z.object({ title: optionalText(MAX_IPC_TEXT), settings: createViralAnalysisSchema.shape.settings }).strict(),
+  'viral:analyze-prepared': idSchema,
+  'viral:get-reference-index': idSchema,
+  'viral:get-reference-part': z.object({ id: idSchema, partId: idSchema, expectedRevision: z.number().int().positive() }).strict(),
+  'viral:media-url': z.object({ id: idSchema, mediaId: idSchema }).strict(),
+  'viral:save-reference-edit': z.object({ analysisId: idSchema, expectedRevision: z.number().int().positive(), partId: idSchema, observationId: idSchema, text: z.string().min(1).max(8000) }).strict(),
+  'viral:export-reference': z.object({ analysisId: idSchema, format: z.enum(['markdown', 'json', 'csv']) }).strict(),
+  'viral:configure-reference': z.object({ analysisId: idSchema, maxAnalysisRequests: z.number().int().min(1).max(10000), referenceVisualInput: z.enum(['frames', 'video']), referenceAudioInput: z.boolean(), retryReviewedRequests: z.boolean() }).strict(),
   'app:get-state': z.void(),
   'app:get-bootstrap': z.void(),
   'app:reconcile-deltas': z
@@ -903,6 +919,21 @@ export const ipcInputSchemas = {
   'video-lab:list': z.void(),
   'video-lab:generate': videoLabGenerateInputSchema,
   'video-lab:open-output-directory': videoLabRecordIdSchema,
+  'music-lab:service-status': z.void(),
+  'music-lab:balance': z.void(),
+  'music-lab:list': z.void(),
+  'music-lab:generate': musicLabGenerateInputSchema,
+  'music-lab:refresh': musicLabRecordIdSchema,
+  'music-lab:lyrics': musicLabLyricsInputSchema,
+  'music-lab:boost-style': musicLabBoostStyleInputSchema,
+  'music-lab:download': musicLabDownloadInputSchema,
+  'music-lab:import-bgm': musicLabTrackInputSchema,
+  'music-lab:open-output-directory': musicLabRecordIdSchema,
+  'music-lab:operation': musicOperationInputSchema,
+  'music-lab:upload-source': musicUploadSourceInputSchema,
+  'music-lab:sync-history': z.void(),
+  'music-lab:voice': musicVoiceRequestSchema,
+  'music-lab:enhanced': musicEnhancedRequestSchema,
   'account:save': z
     .object({
       displayName: z.string().max(1024),

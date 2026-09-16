@@ -187,7 +187,7 @@ async function resolveBundledFfmpeg(signal?: AbortSignal): Promise<string> {
   }
 }
 
-async function transcribeViralAudio(audioPath: string, config: AppConfig, signal?: AbortSignal) {
+export async function transcribeViralAudio(audioPath: string, config: AppConfig, signal?: AbortSignal) {
   try {
     return await transcribeViralAudioWithOpenAiApi(audioPath, config, signal);
   } catch (error) {

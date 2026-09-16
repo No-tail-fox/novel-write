@@ -1,0 +1,29 @@
+{
+  "checks": [
+    "select music draft loads own model",
+    "save music draft preserves active configuration",
+    "music key saved in selected profile slot",
+    "saved music key is not echoed",
+    "music save-and-test preserves active and tests selected",
+    "explicit enable changes active configuration",
+    "active music profile survives reload",
+    "copy starts with empty credential",
+    "copy remains inactive",
+    "deleting inactive copy preserves remaining profiles",
+    "typing URL retains intermediate slashes",
+    "custom URL cannot use registered environment key",
+    "custom URL clears environment-key selection",
+    "video save-and-test isolates selected profile",
+    "speechToText save-and-test isolates selected profile",
+    "vision save-and-test isolates selected profile",
+    "llm save-and-test keeps previous active",
+    "image save-and-test keeps previous active",
+    "tts save-and-test keeps previous active",
+    "no browser runtime errors",
+    "no horizontal overflow light 1440",
+    "no horizontal overflow light 1040",
+    "no horizontal overflow dark 1440",
+    "no horizontal overflow dark 1040"
+  ],
+  "errors": []
+}

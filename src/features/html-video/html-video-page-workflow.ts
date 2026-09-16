@@ -1,12 +1,13 @@
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AiSourceContext, AiSourceSection, Task, TaskSummary, WebSearchProvider } from '../../shared/types';
 
-export const HTML_VIDEO_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao'];
+export const HTML_VIDEO_SEARCH_PROVIDERS: readonly WebSearchProvider[] = ['bing', 'baidu', 'sogou', 'toutiao', 'duckduckgo'];
 export const HTML_VIDEO_SEARCH_PROVIDER_OPTIONS: ReadonlyArray<{ id: WebSearchProvider; label: string; domain: string }> = [
   { id: 'bing', label: '必应', domain: 'bing.com' },
   { id: 'baidu', label: '百度', domain: 'baidu.com' },
   { id: 'sogou', label: '搜狗', domain: 'sogou.com' },
   { id: 'toutiao', label: '头条', domain: 'toutiao.com' },
+  { id: 'duckduckgo', label: 'DuckDuckGo', domain: 'duckduckgo.com' },
 ];
 
 export interface HtmlVideoTaskOption {
@@ -74,6 +75,7 @@ export async function composeHtmlVideoResearchCopy(
 }
 
 export function htmlVideoSearchProviderLabel(provider: WebSearchProvider | undefined): string {
+  if (provider === 'wikipedia') return '维基百科';
   return HTML_VIDEO_SEARCH_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ?? '网页';
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Save, Wand2 } from 'lucide-react';
-import { FormField as Field } from '../../components/FormField';
+import { Button, SegmentedControl, TextAreaField, TextField } from '../../ui';
 import type { ViralAnalysisResult } from '../../shared/types';
 import { trimForPreview } from '../tasks/task-formatters';
 
@@ -27,6 +27,7 @@ export function ViralReport({
   const frames = uniqueViralPromptFrames(result.frames);
   const keyFrameCount = frames.length;
   const originalCopy = viralTranscriptText(result);
+  const recreationAvailable = result.recreationState !== 'not-requested';
 
   useEffect(() => {
     setStoryTemplateName(`爆款故事模板 - ${defaultTemplateBaseName}`);
@@ -58,9 +59,8 @@ export function ViralReport({
         <ViralReportCard title="爆点" value={breakdown.viralPoint.summary} detail={breakdown.viralPoint.reusablePattern} />
       </div>
       <div className="viral-frame-insights">
-        <div className="viral-insight-tabs" role="tablist" aria-label="图文拆解">
-          <button type="button" className={insightTab === 'copy' ? 'active' : ''} onClick={() => setInsightTab('copy')}>文案拆解</button>
-          <button type="button" className={insightTab === 'prompt' ? 'active' : ''} onClick={() => setInsightTab('prompt')}>提示词拆解</button>
+        <div className="viral-insight-tabs">
+          <SegmentedControl label="图文拆解视图" value={insightTab} onChange={setInsightTab} options={[{ value: 'copy', label: '文案拆解' }, { value: 'prompt', label: '提示词拆解' }]} />
           <span className="viral-keyframe-count">关键帧数量：{keyFrameCount}</span>
         </div>
         {insightTab === 'copy' ? (
@@ -89,30 +89,26 @@ export function ViralReport({
           </div>
         )}
       </div>
-      <div className="viral-followup-panel">
+      {recreationAvailable ? <div className="viral-followup-panel">
         <h3>后续操作</h3>
         <p>{result.recreation.blueprint}</p>
-        <textarea className="small-textarea" value={result.recreation.script} readOnly />
+        <TextAreaField label="复刻文案" value={result.recreation.script} readOnly />
         <div className="viral-template-name-grid">
-          <Field label="故事模板名">
-            <input className="text-input" value={storyTemplateName} onChange={(event) => setStoryTemplateName(event.target.value)} />
-          </Field>
-          <Field label="图片模板名">
-            <input className="text-input" value={imageTemplateName} onChange={(event) => setImageTemplateName(event.target.value)} />
-          </Field>
+          <TextField label="故事模板名" value={storyTemplateName} onChange={(event) => setStoryTemplateName(event.target.value)} />
+          <TextField label="图片模板名" value={imageTemplateName} onChange={(event) => setImageTemplateName(event.target.value)} />
         </div>
         {templateSaveError ? <p className="form-error">{templateSaveError}</p> : null}
         <div className="viral-followup-actions">
-          <button className="primary-action" disabled={readOnly || savingTemplates || !storyTemplateName.trim() || !imageTemplateName.trim()} onClick={() => void handleSaveTemplates()}>
+          <Button variant="primary" disabled={readOnly || savingTemplates || !storyTemplateName.trim() || !imageTemplateName.trim()} onClick={() => void handleSaveTemplates()}>
             {savingTemplates ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
             {savingTemplates ? '保存中' : '保存为模板'}
-          </button>
-          <button className="ghost-action viral-create-production-task" disabled={readOnly} onClick={createProductionTask}>
+          </Button>
+          <Button className="viral-create-production-task" disabled={readOnly} onClick={createProductionTask}>
             <Wand2 size={16} />
             生成新任务
-          </button>
+          </Button>
         </div>
-      </div>
+      </div> : null}
     </div>
   );
 }

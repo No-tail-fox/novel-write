@@ -376,6 +376,7 @@ export function buildViralRecreationPrompt(input: ViralRecreationPromptInput): s
 }
 
 export function createViralProductionTaskInput(result: ViralAnalysisResult, options: ViralProductionTaskOptions = {}): CreateTaskInput {
+  if (result.recreationState === 'not-requested') throw new Error('整体拆解尚未创建复刻蓝图，请先完成复刻规划。');
   const defaults = result.recreation.taskDefaults;
   const storyContent = result.recreation.storyContent?.trim() || '';
   const script = result.recreation.script?.trim() || '';
@@ -419,7 +420,7 @@ export function buildViralImagePromptReference(frames: ViralFrameAnalysis[]): st
     .join('\n');
 }
 
-function emptyRecreation(settings: ViralAnalysisSettings): ViralRecreationDraft {
+export function emptyRecreation(settings: ViralAnalysisSettings): ViralRecreationDraft {
   return {
     formula: {
       main: '',

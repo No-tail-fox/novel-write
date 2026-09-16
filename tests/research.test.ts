@@ -466,6 +466,67 @@ describe('AI source research', () => {
     ]);
   });
 
+  it('searches DuckDuckGo HTML results and unwraps redirect links before reading the page', async () => {
+    const requests: string[] = [];
+    const context = await searchWebSourcesDetailed(
+      { query: 'OpenAI GPT-5', providers: ['duckduckgo'] },
+      async (url) => {
+        const rawUrl = String(url);
+        requests.push(rawUrl);
+        if (rawUrl.startsWith('https://html.duckduckgo.com/html/')) {
+          return new Response(`
+            <div class="result results_links results_links_deep web-result">
+              <h2 class="result__title"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fopenai.com%2Fgpt-5%2F&amp;rut=hash">GPT-5 is here - OpenAI</a></h2>
+              <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fopenai.com%2Fgpt-5%2F&amp;rut=hash">OpenAI introduces GPT-5.</a>
+              <div class="clear"></div>
+            </div>
+          `, { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        if (rawUrl === 'https://openai.com/gpt-5/') {
+          return new Response('<main>OpenAI GPT-5 is a unified system with built-in thinking.</main>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        throw new Error(`unexpected request: ${rawUrl}`);
+      },
+    );
+
+    expect(requests).toContain('https://openai.com/gpt-5/');
+    expect(context.sections[0]).toMatchObject({ provider: 'duckduckgo', title: 'GPT-5 is here - OpenAI' });
+    expect(context.sections[0].content).toContain('built-in thinking');
+    expect(context.providerStatuses).toEqual([expect.objectContaining({ provider: 'duckduckgo', state: 'ready', count: 1 })]);
+  });
+
+  it('uses MediaWiki as a knowledge fallback after general search produces no precise result', async () => {
+    const requests: string[] = [];
+    const context = await searchWebSourcesDetailed(
+      { query: '钱学森', providers: ['duckduckgo'] },
+      async (url) => {
+        const rawUrl = String(url);
+        requests.push(rawUrl);
+        if (rawUrl.startsWith('https://html.duckduckgo.com/html/')) {
+          return new Response('<html><body></body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        if (rawUrl.startsWith('https://zh.wikipedia.org/w/api.php')) {
+          return new Response(JSON.stringify({ query: { search: [{ title: '钱学森', pageid: 123, snippet: '<span class="searchmatch">钱学森</span>是中国空气动力学家。' }] } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (rawUrl === 'https://zh.wikipedia.org/?curid=123') {
+          return new Response('<main>钱学森是中国航天事业的重要奠基人之一。</main>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+        }
+        throw new Error(`unexpected request: ${rawUrl}`);
+      },
+    );
+
+    expect(requests.some((url) => url.startsWith('https://zh.wikipedia.org/w/api.php'))).toBe(true);
+    expect(context.sections[0]).toMatchObject({ provider: 'wikipedia', title: '钱学森', url: 'https://zh.wikipedia.org/?curid=123' });
+    expect(context.sections[0].content).toContain('中国航天事业');
+    expect(context.providerStatuses).toEqual([
+      expect.objectContaining({ provider: 'duckduckgo', state: 'empty', count: 0 }),
+      expect.objectContaining({ provider: 'wikipedia', state: 'ready', count: 1 }),
+    ]);
+  });
+
   it('rejects a search-snippet hit when neither the result title nor fetched article contains the exact subject', async () => {
     const context = await searchWebSourcesDetailed(
       { query: '李在明', providers: ['bing'] },

@@ -9,6 +9,7 @@ import { isProviderPortalUrl } from '../shared/provider-portals';
 import {
   applyHtmlVideoConfigChanges,
   applyHtmlVideoSceneChanges,
+  applyHtmlVideoSceneStructureChange,
   prepareHtmlVideoPipelineForRerender,
   htmlVideoVisibleSteps,
   parseHtmlVideoPipelineData,
@@ -20,6 +21,7 @@ import type { StoryDreamApi } from '../shared/storydream-api';
 import { validateDirectorGenerateShotVideoRequest } from '../shared/director-video-request';
 import { taskSpeakerLabel } from '../shared/tts-voices';
 import { normalizeBenchmarkGroupInput, normalizeBenchmarkPostInput } from '../shared/benchmark-monitoring';
+import { htmlVideoSceneStructureUpdateSchema, musicMvTaskUpdateSchema } from '../shared/ipc-contract';
 import { buildBookDiscoveryFallback } from '../shared/book-discovery-fallback';
 import {
   EDITORIAL_COLLAGE_TASK_TYPE,
@@ -710,6 +712,53 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async openVideoLabOutputDirectory() {
       throw new Error('浏览器预览不能打开本地视频生成目录，请在 Electron 桌面端操作。');
+    },
+    async getMusicLabServiceStatus() {
+      return { configured: false, providerName: 'Suno-API' };
+    },
+    async getMusicLabBalance() {
+      throw new Error('余额查询需要 Electron 桌面端的音乐服务凭据。');
+    },
+    async listMusicLabRecords() {
+      return [];
+    },
+    async generateMusicLab() {
+      throw new Error('音乐创作需要 Electron 桌面端，请在桌面应用中生成。');
+    },
+    async refreshMusicLabRecord() {
+      throw new Error('音乐任务查询需要 Electron 桌面端。');
+    },
+    async generateMusicLabLyrics() {
+      throw new Error('歌词生成需要 Electron 桌面端的音乐服务。');
+    },
+    async boostMusicLabStyle() {
+      throw new Error('风格增强需要 Electron 桌面端的音乐服务。');
+    },
+    async downloadMusicLabTrack() {
+      throw new Error('音乐下载需要 Electron 桌面端。');
+    },
+    async importMusicLabTrackAsBgm() {
+      throw new Error('加入配乐库需要 Electron 桌面端的本地音乐文件。');
+    },
+    async openMusicLabOutputDirectory() {
+      throw new Error('打开音乐文件夹需要 Electron 桌面端。');
+    },
+    async performMusicLabOperation() {
+      throw new Error('歌曲再创作需要 Electron 桌面端的音乐服务。');
+    },
+    async uploadMusicLabSource() {
+      throw new Error('上传音频需要 Electron 桌面端。');
+    },
+    async syncMusicLabHistory() {
+      throw new Error('同步云端作品需要 Electron 桌面端的音乐服务。');
+    },
+    async musicLabVoice(input) {
+      if (input.action === 'list') return { voices: [], jobs: [] };
+      throw new Error('请在桌面端使用人声克隆与指定人声作曲。');
+    },
+    async musicLabEnhanced(input) {
+      if (input.action === 'list') return [];
+      throw new Error('请在桌面端使用强化上传。');
     },
     async listVoiceLabRecords(request: HistoryListInput<'voice-lab'> = {}) {
       return fallbackHistoryPage(
@@ -1408,6 +1457,39 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const updated: Task = { ...task, pipelineData: JSON.stringify(pipeline), lastHeartbeatAt: new Date().toISOString() };
       return persist({ ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) });
     },
+    async updateHtmlVideoSceneStructure(id, change) {
+      const validated = htmlVideoSceneStructureUpdateSchema.parse({ id, change });
+      const state = read();
+      const task = state.tasks.find((item) => item.id === validated.id);
+      if (!task || task.taskType !== 'html-video') throw new Error(`HTML_VIDEO_TASK_NOT_FOUND: ${id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('HTML_VIDEO_CONFIG_ACTIVE: 运行中的任务不能编辑场景。');
+      const pipeline = applyHtmlVideoSceneStructureChange(parseHtmlVideoPipelineData(task.pipelineData), validated.change);
+      const updated: Task = {
+        ...task, pipelineData: JSON.stringify(pipeline), pipelineStep: pipeline.current,
+        currentStep: pipeline.current === 'done' ? htmlVideoVisibleSteps.length : htmlVideoVisibleSteps.indexOf(pipeline.current), status: 'paused',
+        completedAt: null, outputDir: '', errorMessage: '', failedStep: null, retryFromStep: null,
+        lastHeartbeatAt: new Date().toISOString(),
+      };
+      return commitFallbackHistoryUpsert('task', { ...state, tasks: state.tasks.map((item) => item.id === id ? updated : item) }, id);
+    },
+    async updateMusicMvTask(input) {
+      const validated = musicMvTaskUpdateSchema.parse(input);
+      const state = read();
+      const task = state.tasks.find((item) => item.id === validated.id);
+      if (!task) throw new Error(`MUSIC_MV_TASK_NOT_FOUND: ${validated.id}`);
+      if (task.taskKind !== 'music-mv' && task.taskType !== 'music-mv') throw new Error('MUSIC_MV_TASK_INVALID: 只能编辑音乐 MV 任务。');
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      if (task.status === 'pending' || task.status === 'running') throw new Error('MUSIC_MV_TASK_ACTIVE: 运行中的音乐 MV 不能编辑。');
+      const { lyrics, ...settings } = validated;
+      const updated: Task = {
+        ...task, ...settings, title: settings.title.trim(), inputText: lyrics,
+        targetScenes: settings.storyboardSceneCount, status: 'paused', currentStep: 0,
+        retryFromStep: 0, failedStep: null, completedAt: null, outputDir: '', errorMessage: '',
+        lastHeartbeatAt: new Date().toISOString(),
+      };
+      return commitFallbackHistoryUpsert('task', { ...state, tasks: state.tasks.map((item) => item.id === updated.id ? updated : item) }, updated.id);
+    },
     async addHtmlVideoAsset() {
       throw new Error('浏览器预览不能添加本地素材，请在 Electron 桌面端操作。');
     },
@@ -1529,6 +1611,14 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       ];
       return persist({ ...state, tasks: [task, ...state.tasks], events: [...state.events, ...events] });
     },
+    async importLocalViralAnalysis() { throw new Error('本地视频导入需要桌面版。'); },
+    async analyzePreparedViralAnalysis() { throw new Error('整体拆解执行需要桌面版。'); },
+    async getViralReferenceIndex() { return null; },
+    async getViralReferencePart() { throw new Error('浏览器预览没有本地拆解分片。'); },
+    async getViralMediaUrl() { throw new Error('原片回放需要桌面版。'); },
+    async saveViralReferenceEdit() { throw new Error('拆解修订保存需要桌面版。'); },
+    async exportViralReference() { throw new Error('拆解文件导出需要桌面版。'); },
+    async configureViralReferenceRun() { throw new Error('拆解恢复设置需要桌面版。'); },
     async createAndRunViralAnalysis(input: CreateViralAnalysisInput) {
       const state = read();
       const now = new Date().toISOString();

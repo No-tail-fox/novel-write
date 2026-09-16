@@ -9,6 +9,7 @@ export type SecretId =
   | `image/${string}/jimeng/secretAccessKey`
   | `image/${string}/customImage/apiKey`
   | `video/${string}/apiKey`
+  | `music/${string}/apiKey`
   | `tts/${string}/accessKey`
   | `tts/${string}/volcengine/apiKey`
   | `tts/${string}/volcengine/accessKeyId`
@@ -16,8 +17,10 @@ export type SecretId =
   | `tts/${string}/volcengine/accessKey`
   | `tts/${string}/minimax/apiKey`
   | 'speechToText/apiKey'
+  | `speechToText/${string}/apiKey`
   | 'ima/apiKey'
-  | 'viralVision/apiKey';
+  | 'viralVision/apiKey'
+  | `viralVision/${string}/apiKey`;
 
 export type ConfigSecrets = Partial<Record<SecretId, string>>;
 export type SecretStatus = Partial<Record<SecretId, boolean>>;
@@ -39,7 +42,7 @@ interface SecretSlot {
   write: (value: string) => void;
 }
 
-const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|video\/[^/]+\/apiKey|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|speechToText\/apiKey|ima\/apiKey|viralVision\/apiKey)$/u;
+const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|(?:video|music)\/[^/]+\/apiKey|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|(?:speechToText|viralVision)\/(?:[^/]+\/)?apiKey|ima\/apiKey)$/u;
 
 export function isSecretId(value: string): value is SecretId {
   return value.length <= 1024 && SECRET_ID_PATTERN.test(value);
@@ -65,6 +68,7 @@ function cloneConfig(config: AppConfig): AppConfig {
       providers: config.video.providers.map((provider) => ({ ...provider, capabilities: [...provider.capabilities] })),
       automation: { ...config.video.automation, providerWhitelist: [...config.video.automation.providerWhitelist] },
     },
+    music: { ...config.music, profiles: config.music.profiles.map((profile) => ({ ...profile })) },
     tts: {
       ...config.tts,
       volcengine: { ...config.tts.volcengine },
@@ -76,8 +80,9 @@ function cloneConfig(config: AppConfig): AppConfig {
       minimax: profile.minimax ? { ...profile.minimax } : undefined,
     })),
     speechToText: { ...config.speechToText },
+    speechToTextProfiles: config.speechToTextProfiles.map((profile) => ({ ...profile, timestampGranularities: [...profile.timestampGranularities] })),
     ima: { ...config.ima },
-    viral: { ...config.viral, vision: { ...config.viral.vision } },
+    viral: { ...config.viral, vision: { ...config.viral.vision }, visionProfiles: config.viral.visionProfiles.map((profile) => ({ ...profile })) },
   };
 }
 
@@ -151,6 +156,22 @@ function secretSlots(config: AppConfig): SecretSlot[] {
   }
 
   const ttsIds = new Set<string>();
+  const speechToTextIds = new Set<string>();
+  for (const profile of config.speechToTextProfiles) {
+    const segment = stableProfileSegment('speechToText', profile.id, speechToTextIds);
+    add(`speechToText/${segment}/apiKey`, () => profile.apiKey, (value) => { profile.apiKey = value; });
+  }
+  const visionIds = new Set<string>();
+  for (const profile of config.viral.visionProfiles) {
+    const segment = stableProfileSegment('vision', profile.id, visionIds);
+    add(`viralVision/${segment}/apiKey`, () => profile.apiKey, (value) => { profile.apiKey = value; });
+  }
+  const musicIds = new Set<string>();
+  for (const profile of config.music.profiles) {
+    const segment = stableProfileSegment('music', profile.id, musicIds);
+    add(`music/${segment}/apiKey`, () => profile.apiKey, (value) => { profile.apiKey = value; });
+  }
+
   for (const profile of config.ttsProfiles) {
     const segment = stableProfileSegment('TTS', profile.id, ttsIds);
     add(`tts/${segment}/accessKey`, () => profile.accessKey, (value) => { profile.accessKey = value; });
@@ -177,6 +198,11 @@ export function extractConfigSecrets(config: AppConfig): ConfigSecrets {
     if (value !== undefined && value.length > 0) secrets[slot.id] = value;
   }
   return secrets;
+}
+
+export function retainReferencedConfigSecrets(config: AppConfig, secrets: ConfigSecrets): ConfigSecrets {
+  const referenced = new Set(secretSlots(config).map((slot) => slot.id));
+  return Object.fromEntries(Object.entries(secrets).filter(([id]) => referenced.has(id as SecretId))) as ConfigSecrets;
 }
 
 export function stripConfigSecrets(config: AppConfig): AppConfig {

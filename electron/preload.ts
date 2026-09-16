@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { MusicVoiceRequest, MusicVoiceState } from '../src/shared/music-voice';
+import type { MusicEnhancedRequest, MusicEnhancedJob } from '../src/shared/music-enhanced';
 import type { VideoLabGenerateInput, VideoLabRecord } from '../src/shared/video-lab';
+import type { MusicBalance, MusicBoostStyleInput, MusicBoostStyleResult, MusicDownloadInput, MusicLabGenerateInput, MusicLabRecord, MusicLyricsInput, MusicLyricsResult, MusicServiceStatus, MusicTrackInput } from '../src/shared/music-lab';
+import type { MusicHistorySyncResult, MusicOperationInput, MusicUploadSourceInput } from '../src/shared/music-operations';
 import type {
   AccountProfile,
   ActivationState,
@@ -214,6 +218,21 @@ export const storyDreamApi: StoryDreamApi = {
   listVideoLabRecords: (): Promise<VideoLabRecord[]> => invokeTrusted('video-lab:list'),
   generateVideoLab: (input: VideoLabGenerateInput): Promise<VideoLabRecord> => invokeTrusted('video-lab:generate', input),
   openVideoLabOutputDirectory: (id: string): Promise<void> => invokeTrusted('video-lab:open-output-directory', id),
+  getMusicLabServiceStatus: (): Promise<MusicServiceStatus> => invokeTrusted('music-lab:service-status'),
+  getMusicLabBalance: (): Promise<MusicBalance> => invokeTrusted('music-lab:balance'),
+  listMusicLabRecords: (): Promise<MusicLabRecord[]> => invokeTrusted('music-lab:list'),
+  generateMusicLab: (input: MusicLabGenerateInput): Promise<MusicLabRecord> => invokeTrusted('music-lab:generate', input),
+  refreshMusicLabRecord: (id: string): Promise<MusicLabRecord> => invokeTrusted('music-lab:refresh', id),
+  generateMusicLabLyrics: (input: MusicLyricsInput): Promise<MusicLyricsResult> => invokeTrusted('music-lab:lyrics', input),
+  boostMusicLabStyle: (input: MusicBoostStyleInput): Promise<MusicBoostStyleResult> => invokeTrusted('music-lab:boost-style', input),
+  downloadMusicLabTrack: (input: MusicDownloadInput): Promise<MusicLabRecord> => invokeTrusted('music-lab:download', input),
+  importMusicLabTrackAsBgm: (input: MusicTrackInput): Promise<{ record: MusicLabRecord; mutation: AppMutationResult | null }> => invokeTrusted('music-lab:import-bgm', input),
+  openMusicLabOutputDirectory: (id: string): Promise<void> => invokeTrusted('music-lab:open-output-directory', id),
+  performMusicLabOperation: (input: MusicOperationInput): Promise<MusicLabRecord> => invokeTrusted('music-lab:operation', input),
+  uploadMusicLabSource: (input: MusicUploadSourceInput): Promise<MusicLabRecord> => invokeTrusted('music-lab:upload-source', input),
+  syncMusicLabHistory: (): Promise<MusicHistorySyncResult> => invokeTrusted('music-lab:sync-history'),
+  musicLabVoice: (input: MusicVoiceRequest): Promise<MusicVoiceState> => invokeTrusted('music-lab:voice', input),
+  musicLabEnhanced: (input: MusicEnhancedRequest): Promise<MusicEnhancedJob[]> => invokeTrusted('music-lab:enhanced', input),
   listPromptTemplates: (request: CursorRequest = {}): Promise<CursorPage<PromptTemplateSummary>> => invokeTrusted('prompt-template:list', request),
   getPromptTemplateDetail: (id: string): Promise<PromptTemplate | null> => invokeTrusted('prompt-template:get-detail', id),
   listDraftTemplates: (request: CursorRequest = {}): Promise<CursorPage<DraftTemplateSummary>> => invokeTrusted('draft-template:list', request),
@@ -339,6 +358,14 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('html-video:media-url', { id, path }),
   createAndRunTask: (input: CreateTaskInput) => invokeTrusted('task:create-and-run', input),
   updateMusicMvTask: (input: MusicMvTaskUpdateInput) => invokeTrusted('music-mv:update', input),
+  importLocalViralAnalysis: (input) => invokeTrusted('viral:import-local', input),
+  analyzePreparedViralAnalysis: (id) => invokeTrusted('viral:analyze-prepared', id),
+  getViralReferenceIndex: (id) => invokeTrusted('viral:get-reference-index', id),
+  getViralReferencePart: (id, partId, expectedRevision) => invokeTrusted('viral:get-reference-part', { id, partId, expectedRevision }),
+  getViralMediaUrl: (id, mediaId) => invokeTrusted('viral:media-url', { id, mediaId }),
+  saveViralReferenceEdit: (input) => invokeTrusted('viral:save-reference-edit', input),
+  exportViralReference: (input) => invokeTrusted('viral:export-reference', input),
+  configureViralReferenceRun: (input) => invokeTrusted('viral:configure-reference', input),
   createAndRunViralAnalysis: (input: CreateViralAnalysisInput) => invokeTrusted('viral:create-and-run', input),
   updateViralAnalysisStatus: (id: string, status: ViralAnalysisStatus) => invokeTrusted('viral:update-status', { id, status }),
   retryViralAnalysis: (id: string) => invokeTrusted('viral:retry', id),

@@ -36,6 +36,9 @@ describe('hot board workbench ui', () => {
     expect(page).toContain('重新读取');
     expect(page).not.toContain("sourceReadErrors[readerItem.id] ? <Button density=\"compact\" variant=\"primary\"");
     expect(page).toContain('api.searchWebSources');
+    expect(page).toContain("providers: ['bing', 'sogou', 'baidu', 'duckduckgo']");
+    expect(page).toContain("status.state === 'failed'");
+    expect(page).toContain('setSearchEmpty');
     expect(page).toContain('联网搜索结果');
     expect(page).toContain('正在联网搜索相关内容');
     expect(page).toContain('重试联网搜索');

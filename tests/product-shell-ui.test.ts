@@ -907,8 +907,8 @@ describe('product shell ui', () => {
 
     expect(assetNav).toContain("view: 'person-assets'");
     expect(assetNav).toContain('...generationNavItems');
-    expect(assetLabNavItems.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab']);
-    for (const view of ['image-lab', 'voice-lab', 'video-lab']) {
+    expect(assetLabNavItems.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab', 'music-lab']);
+    for (const view of ['image-lab', 'voice-lab', 'video-lab', 'music-lab']) {
       expect(generationNav).toContain(`view: '${view}'`);
     }
     for (const view of ['music-mv', 'html-video', 'viral-analyzer', 'prompt-templates']) {
@@ -1169,6 +1169,7 @@ describe('product shell ui', () => {
       'image-lab',
       'voice-lab',
       'video-lab',
+      'music-lab',
       'music-mv',
       'editorial-collage',
       'motion-comic',
@@ -1180,7 +1181,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(24);
+    expect(new Set(routedViews).size).toBe(25);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {
@@ -1700,12 +1701,11 @@ describe('product shell ui', () => {
     const page = (await rendererSourcesPromise).requiredFile('src/features/viral/ViralAnalyzerPage.tsx');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    expect(page).toContain('<Field label="草稿模板">');
+    expect(page).toContain('<SelectField label="草稿模板"');
     expect(page).toContain('className="viral-draft-template-select"');
     expect(page).toContain('value={templateId}');
     expect(page).toContain('onChange={(event) => setTemplateId(event.target.value)}');
-    expect(page).toContain('state.draftTemplates.map((template) => (');
-    expect(page).toContain('<option key={template.id} value={template.id}>');
+    expect(page).toContain('options={state.draftTemplates.map((template) => ({ value: template.id, label: `${template.name} · ${template.canvas.ratio}` }))}');
     expect(page).not.toContain('ViralChoiceGroup title="草稿模板"');
     expect(css).toContain('.viral-draft-template-select');
   });
@@ -3026,15 +3026,18 @@ describe('product shell ui', () => {
     expect(settingsPage).toContain('testCurrentConfig');
     expect(settingsPage).toContain('保存并测试');
     expect(settingsPage).toContain('buildConfigForSelectedProfileTest');
-    expect(settingsPage).toContain('activateSelectedProviderProfileForTarget');
+    expect(settingsPage).not.toContain('activateSelectedProviderProfileForTarget');
+    const plainSaveSnippet = settingsPage.slice(settingsPage.indexOf('async function save()'), settingsPage.indexOf('async function activateLlmProfile'));
+    expect(plainSaveSnippet).toContain('commitAndApplySettingsDraft(draft)');
     expect(settingsPage).toContain('const saveAction = useAsyncAction();');
     const saveSnippet = settingsPage.slice(settingsPage.indexOf('async function commitAndApplySettingsDraft'), settingsPage.indexOf('function clearProviderModels'));
     expect(saveSnippet).toContain('await saveAction.run(');
     expect(saveSnippet).not.toContain('await settingsAction.run(');
     expect(settingsPage).toContain('disabled={savingConfig || saveAction.busy}');
     const testSnippet = settingsPage.slice(settingsPage.indexOf('async function testCurrentConfig()'), settingsPage.indexOf('async function refreshProviderModels'));
-    const secureSaveCall = 'api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges })';
-    expect(testSnippet.indexOf('const nextDraft = activateSelectedProviderProfileForTarget')).toBeLessThan(testSnippet.indexOf(secureSaveCall));
+    const secureSaveCall = 'api.saveConfig({ config: normalizeEditableConfigProviders(draft), secretChanges })';
+    expect(testSnippet).toContain(secureSaveCall);
+    expect(testSnippet.indexOf(secureSaveCall)).toBeLessThan(testSnippet.indexOf('buildConfigForSelectedProfileTest(savedConfig, target, selectedProviderProfileIds)'));
     expect(testSnippet.indexOf(secureSaveCall)).toBeLessThan(testSnippet.indexOf('api.testAppConfig(target, testConfig)'));
     expect(settingsOwners).toContain('selectedLlmProfileId');
     expect(settingsOwners).toContain('selectedImageProfileId');
@@ -3438,7 +3441,7 @@ describe('product shell ui', () => {
     expect(errors).toContain('Python 运行时缺少依赖');
     expect(errors).toContain('Python 运行时依赖缺失');
     expect(errors).toContain('图片服务暂无可用账号');
-    expect(errorOwners).toContain('className="mini-button viral-retry-button"');
+    expect(errorOwners).toContain('className="viral-retry-button"');
     expect(errorOwners).toContain('fullMessage');
     expect(errorOwners).not.toContain('<small className="danger-text">{task.errorMessage}</small>');
     expect(errorOwners).not.toContain("stepEvent?.detail ?? statusLabelForStep(status)");

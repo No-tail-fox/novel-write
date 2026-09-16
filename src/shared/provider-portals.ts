@@ -6,6 +6,8 @@ export interface ProviderPortal {
 }
 
 export const PROVIDER_KEY_PORTALS = {
+  sunoCreate: { label: 'Suno 音乐创作与授权', url: 'https://www.suno-api.io/create/' },
+  sunoAccount: { label: 'Suno 服务账户', url: 'https://www.suno-api.io/console' },
   openai: { label: 'OpenAI API Key', url: 'https://platform.openai.com/api-keys' },
   anthropic: { label: 'Claude API Key', url: 'https://platform.claude.com/settings/keys' },
   minimax: { label: 'MiniMax API Key', url: 'https://platform.minimax.cn/console/access?tab=api-keys' },

@@ -17,13 +17,16 @@ import type {
   ConfigTestTarget,
   ImageProviderProfile,
   LlmModelTestResult,
+  MusicProviderProfile,
   SpeechToTextChunkingStrategy,
   SpeechToTextProvider,
+  SpeechToTextProviderProfile,
   SpeechToTextResponseFormat,
   SpeechToTextTimestampGranularity,
   TtsProviderProfile,
   VideoCapability,
   VideoProviderConfig,
+  VisionProviderProfile,
 } from './types';
 
 type TestStatus = ConfigTestResult['status'];
@@ -367,7 +370,7 @@ function normalizeTtsProfiles(partial: Partial<AppConfig>): {
   return { tts, ttsProfiles, activeTtsProfileId: active.id! };
 }
 
-function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToText']> | undefined): AppConfig['speechToText'] {
+export function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToText']> | undefined): AppConfig['speechToText'] {
   const merged = { ...defaultConfig.speechToText, ...(input ?? {}) };
   const provider = normalizeSpeechToTextProvider(merged.provider);
   const defaultBaseUrl = speechToTextDefaultBaseUrl(provider);
@@ -389,6 +392,64 @@ function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToText']> |
       provider === 'siliconflow' ? ['segment'] : normalizeSpeechToTextTimestampGranularities(merged.timestampGranularities),
     chunkingStrategy: provider === 'siliconflow' ? 'none' : normalizeSpeechToTextChunkingStrategy(merged.chunkingStrategy),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.speechToText.timeoutMs),
+  };
+}
+
+export function normalizeSpeechToTextProfile(profile: Partial<SpeechToTextProviderProfile>, index: number): SpeechToTextProviderProfile {
+  return {
+    ...normalizeSpeechToTextConfig(profile),
+    id: String(profile.id ?? '').trim() || `speech-to-text-${index + 1}`,
+    name: String(profile.name ?? '').trim() || `转写配置 ${index + 1}`,
+    enabled: profile.enabled === true,
+  };
+}
+
+export function normalizeVisionProfile(profile: Partial<VisionProviderProfile>, index: number): VisionProviderProfile {
+  return {
+    ...normalizeLlmProfile({ ...defaultConfig.viral.vision, ...profile }, index),
+    id: String(profile.id ?? '').trim() || `vision-${index + 1}`,
+    name: String(profile.name ?? '').trim() || `视觉配置 ${index + 1}`,
+    enabled: profile.enabled === true,
+  };
+}
+
+function matchesDefaultProfile(profile: object, fallback: object): boolean {
+  return Object.entries(fallback).every(([key, value]) => JSON.stringify((profile as Record<string, unknown>)[key]) === JSON.stringify(value));
+}
+
+function normalizeSpeechToTextProfiles(partial: Partial<AppConfig>): Pick<AppConfig, 'speechToText' | 'speechToTextProfiles' | 'activeSpeechToTextProfileId'> {
+  const defaults = defaultConfig.speechToTextProfiles[0];
+  const legacy = normalizeSpeechToTextProfile({ ...defaults, ...partial.speechToText }, 0);
+  const supplied = partial.speechToTextProfiles;
+  const raw = Array.isArray(supplied) && supplied.length ? supplied : [legacy];
+  const compatibleLegacy = raw.length === 1 && raw[0]?.id === defaults.id && matchesDefaultProfile(raw[0], defaults);
+  const profilesById = new Map<string, SpeechToTextProviderProfile>();
+  (compatibleLegacy ? [legacy] : raw).forEach((profile, index) => {
+    const normalized = normalizeSpeechToTextProfile(profile, index);
+    profilesById.set(normalized.id, normalized);
+  });
+  const selected = profilesById.get(partial.activeSpeechToTextProfileId ?? '') ?? [...profilesById.values()].find((profile) => profile.enabled) ?? profilesById.values().next().value!;
+  const speechToTextProfiles = [...profilesById.values()].map((profile) => ({ ...profile, enabled: profile.id === selected.id }));
+  const { id: _id, name: _name, enabled: _enabled, ...speechToText } = selected;
+  return { speechToText, speechToTextProfiles, activeSpeechToTextProfileId: selected.id };
+}
+
+function normalizeVisionProfiles(partial: Partial<AppConfig['viral']> | undefined): Pick<AppConfig['viral'], 'vision' | 'visionProfiles' | 'activeVisionProfileId'> {
+  const defaults = defaultConfig.viral.visionProfiles[0];
+  const legacy = normalizeVisionProfile({ ...defaults, ...partial?.vision }, 0);
+  const supplied = partial?.visionProfiles;
+  const raw = Array.isArray(supplied) && supplied.length ? supplied : [legacy];
+  const compatibleLegacy = raw.length === 1 && raw[0]?.id === defaults.id && matchesDefaultProfile(raw[0], defaults);
+  const profilesById = new Map<string, VisionProviderProfile>();
+  (compatibleLegacy ? [legacy] : raw).forEach((profile, index) => {
+    const normalized = normalizeVisionProfile(profile, index);
+    profilesById.set(normalized.id, normalized);
+  });
+  const selected = profilesById.get(partial?.activeVisionProfileId ?? '') ?? [...profilesById.values()].find((profile) => profile.enabled) ?? profilesById.values().next().value!;
+  return {
+    vision: { ...selected, enabled: true },
+    visionProfiles: [...profilesById.values()].map((profile) => ({ ...profile, enabled: profile.id === selected.id })),
+    activeVisionProfileId: selected.id,
   };
 }
 
@@ -432,7 +493,7 @@ const VIDEO_CAPABILITIES: readonly VideoCapability[] = [
   'synchronized-audio',
 ];
 
-function normalizeVideoProvider(input: Partial<VideoProviderConfig> | undefined, index: number): VideoProviderConfig {
+export function normalizeVideoProvider(input: Partial<VideoProviderConfig> | undefined, index: number): VideoProviderConfig {
   const fallback = defaultConfig.video.providers[0];
   const source = { ...fallback, ...(input ?? {}) };
   const capabilities = Array.isArray(source.capabilities)
@@ -502,6 +563,41 @@ function normalizeVideoConfig(input: Partial<AppConfig['video']> | undefined): A
   };
 }
 
+export function normalizeMusicProfile(input: Partial<MusicProviderProfile>, index: number): MusicProviderProfile {
+  const fallback = defaultConfig.music.profiles[0];
+  return {
+    id: String(input.id ?? '').trim() || `music-${index + 1}`,
+    name: String(input.name ?? '').trim() || (index === 0 ? 'Suno-API' : `音乐配置 ${index + 1}`),
+    provider: 'suno-api',
+    baseUrl: String(input.baseUrl ?? fallback.baseUrl).trim().replace(/\/+$/u, ''),
+    apiKey: String(input.apiKey ?? '').trim(),
+    model: input.model === 'suno-v6-wild' || input.model === 'suno-v6-mini' ? input.model : 'suno-v6',
+    useEnvironmentKey: input.useEnvironmentKey === true,
+  };
+}
+
+function normalizeMusicConfig(value: unknown): AppConfig['music'] {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value as Partial<AppConfig['music']> : undefined;
+  const legacy = input as (Partial<AppConfig['music']> & Partial<MusicProviderProfile>) | undefined;
+  const rawProfiles = Array.isArray(input?.profiles) && input.profiles.length
+    ? input.profiles
+    : legacy && ('apiKey' in legacy || 'baseUrl' in legacy || 'model' in legacy)
+      ? [{ ...legacy, id: legacy.id || 'default-music' }]
+      : defaultConfig.music.profiles;
+  const profilesById = new Map<string, MusicProviderProfile>();
+  rawProfiles.forEach((profile, index) => {
+    const normalized = normalizeMusicProfile(profile && typeof profile === 'object' ? profile : {}, index);
+    profilesById.set(normalized.id, normalized);
+  });
+  const profiles = [...profilesById.values()];
+  const requestedId = String(input?.activeProfileId ?? '').trim();
+  return {
+    enabled: input?.enabled !== false,
+    activeProfileId: profilesById.has(requestedId) ? requestedId : profiles[0].id,
+    profiles,
+  };
+}
+
 export function normalizeAppConfig(input: unknown): AppConfig {
   const partial = (input && typeof input === 'object' ? input : {}) as Partial<AppConfig>;
   const llm = normalizeLlmProfile({ ...defaultConfig.llm, ...(partial.llm ?? {}) }, 0);
@@ -534,8 +630,9 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     activeLlmProfileId,
     ...imageConfig,
     video: normalizeVideoConfig(partial.video),
+    music: normalizeMusicConfig(partial.music),
     ...ttsConfig,
-    speechToText: normalizeSpeechToTextConfig(partial.speechToText),
+    ...normalizeSpeechToTextProfiles(partial),
     jianying: {
       ...defaultConfig.jianying,
       ...(partial.jianying ?? {}),
@@ -565,7 +662,7 @@ export function normalizeAppConfig(input: unknown): AppConfig {
       whisperModel: String(partial.viral?.whisperModel ?? defaultConfig.viral.whisperModel).trim() || defaultConfig.viral.whisperModel,
       huggingFaceEndpoint: String(partial.viral?.huggingFaceEndpoint ?? defaultConfig.viral.huggingFaceEndpoint).trim().replace(/\/+$/, ''),
       downloadTimeoutMs: normalizePositiveNumber(partial.viral?.downloadTimeoutMs, defaultConfig.viral.downloadTimeoutMs),
-      vision: normalizeLlmProfile({ ...defaultConfig.viral.vision, ...(partial.viral?.vision ?? {}) }, 0),
+      ...normalizeVisionProfiles(partial.viral),
     },
     webSearch: {
       ...defaultConfig.webSearch,
@@ -595,6 +692,18 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
       status: fieldsReady ? 'pass' : 'fail',
       endpoint,
       detail: fieldsReady ? `LLM 字段已填写：${config.llm.model}` : 'LLM API Key 和模型不能为空。',
+    });
+  }
+
+  if (target === 'vision') {
+    const vision = config.viral.vision;
+    const fieldsReady = Boolean(vision.apiKey.trim() && vision.model.trim());
+    return buildResult({
+      target,
+      startedAt,
+      status: fieldsReady ? 'pass' : 'fail',
+      endpoint: llmEndpoint(vision),
+      detail: fieldsReady ? `视觉模型字段已填写：${vision.model}` : '视觉模型 API Key 和模型不能为空。',
     });
   }
 
@@ -630,6 +739,30 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
           : endpointValid
             ? `云端视频 API 字段完整：${provider.model}`
             : '云端视频 API 地址必须是 HTTP/HTTPS 地址。',
+    });
+  }
+
+  if (target === 'music') {
+    const profile = config.music.profiles.find((item) => item.id === config.music.activeProfileId)!;
+    let endpoint = '';
+    let validUrl = false;
+    try {
+      const parsed = new URL(profile.baseUrl);
+      validUrl = parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+      endpoint = `${profile.baseUrl}/api/user/balance`;
+    } catch {
+      validUrl = false;
+    }
+    const hasKey = Boolean(profile.apiKey.trim() || profile.useEnvironmentKey);
+    return buildResult({
+      target,
+      startedAt,
+      status: config.music.enabled && validUrl && hasKey ? 'pass' : 'fail',
+      endpoint,
+      detail: !config.music.enabled ? '请先启用音乐创作 API。'
+        : !validUrl ? '音乐 API 地址必须是没有账号密码、查询参数的 HTTPS 地址。'
+          : !hasKey ? '音乐 API Key 不能为空，也可以选择使用本机已保存的凭据。'
+            : `音乐 API 字段完整：${profile.model}；连接测试只查询余额，不生成音乐。`,
     });
   }
 

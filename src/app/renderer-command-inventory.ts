@@ -48,6 +48,7 @@ const routeBehaviorEvidence: Partial<Record<ShellView | 'shell', BehaviorEvidenc
   'image-lab': { disabled: 'disabled={', loading: 'imageLabAction.busy', error: 'InlineActionFeedback' },
   'voice-lab': { disabled: 'disabled={', loading: 'Loader2', error: 'InlineActionFeedback' },
   'video-lab': { disabled: 'disabled={', loading: 'generationBusy', error: 'submitError' },
+  'music-lab': { disabled: 'disabled={', loading: 'busy', error: 'error' },
   'music-mv': { disabled: 'disabled={', loading: 'musicAction.busy', error: 'InlineActionFeedback' },
   'book-selection': { disabled: 'disabled={', loading: 'pendingAction', error: 'InlineActionFeedback' },
   benchmark: { disabled: 'disabled={', loading: 'Loader2', error: 'InlineActionFeedback' },
@@ -99,8 +100,42 @@ const productShellTest = 'tests/product-shell-ui.test.ts';
 const historyTest = 'tests/history-governance.test.ts';
 const htmlVideoStudioTest = 'tests/html-video-studio-ui.test.ts';
 const videoLabTest = 'tests/video-lab-ui.test.ts';
+const musicLabTest = 'tests/music-lab-ipc.test.ts';
+const musicLabSource = 'src/features/labs/MusicLabPage.tsx';
+const musicOperationSource = 'src/features/labs/MusicSourceTools.tsx';
+const musicVoiceSource = 'src/features/labs/MusicVoicePanel.tsx';
+const musicEnhancedSource = 'src/features/labs/MusicEnhancedPanel.tsx';
 
 export const rendererCommandInventory = {
+  generateMusicLab: command(owner('music-lab', musicLabSource, 'generateMusic', 'onClick={() => void generateMusic()}', '生成音乐', musicLabTest)),
+  refreshMusicLabRecord: command(owner('music-lab', musicLabSource, 'refreshSelected', 'onClick={() => void refreshSelected()}', '刷新音乐作品', musicLabTest)),
+  generateMusicLabLyrics: command(owner('music-lab', musicLabSource, 'generateLyrics', 'onClick={() => void generateLyrics()}', '生成歌词', musicLabTest)),
+  boostMusicLabStyle: command(owner('music-lab', musicLabSource, 'boostStyle', 'onClick={() => void boostStyle()}', '润色风格', musicLabTest)),
+  downloadMusicLabTrack: command(
+    owner('music-lab', musicLabSource, 'downloadTrack', "onClick={() => void downloadTrack('mp3')}", 'MP3', musicLabTest),
+    owner('music-lab', musicLabSource, 'downloadTrack', "onClick={() => void downloadTrack('wav')}", 'WAV', musicLabTest),
+    owner('music-lab', musicLabSource, 'downloadTrack', 'onClick={() => void downloadTrack(exportFormat)}', '导出', musicLabTest),
+    owner('music-lab', musicLabSource, 'useInMv', 'onClick={() => void useInMv()}', '用于音乐 MV', musicLabTest),
+    owner('music-lab', musicLabSource, 'togglePlayback', 'onClick={() => void togglePlayback()}', '播放音乐', musicLabTest),
+  ),
+  importMusicLabTrackAsBgm: command(owner('music-lab', musicLabSource, 'importBgm', 'onClick={() => void importBgm()}', '加入背景音乐库', musicLabTest)),
+  openMusicLabOutputDirectory: command(owner('music-lab', musicLabSource, 'openOutput', 'onClick={() => void openOutput()}', '打开音乐文件夹', musicLabTest)),
+  performMusicLabOperation: command(owner('music-lab', musicOperationSource, 'submitOperation', 'onClick={() => void submitOperation()}', '开始', musicLabTest)),
+  uploadMusicLabSource: command(owner('music-lab', musicLabSource, 'uploadSource', 'onClick={() => void uploadSource()}', '上传源音频', musicLabTest),owner('music-lab',musicOperationSource,'uploadSource','onClick={() => void uploadSource()}','上传为来源音频',musicLabTest)),
+  syncMusicLabHistory: command(owner('music-lab', musicLabSource, 'syncHistory', 'onClick={() => void syncHistory()}', '同步云端曲库', musicLabTest)),
+  openProviderPortal: command(owner('music-lab', musicLabSource, 'openServiceSite', 'onClick={()=>void openServiceSite()}', '打开服务网站', 'tests/provider-portals.test.ts')),
+  musicLabVoice: command(
+    owner('music-lab', musicVoiceSource, 'loadVoices', 'onClick={() => void loadVoices()}', '读取声音库', musicLabTest),
+    ...[
+      ["action:'validate'", '开始人声校验'], ["action:'refresh'", '查询进度'], ["action:'check'", '检查可用性'],
+      ["action:'regenerate'", '重新获取验证文字'], ["action:'verify'", '提交验证录音并创建人声'],
+      ["action:'generate'", '用此人声生成'], ["action:'poll'", '查询歌曲'], ["action:'delete'", '删除人声'],
+    ].map(([binding, control]) => owner('music-lab', musicVoiceSource, 'performVoiceAction', binding, control, musicLabTest)),
+  ),
+  musicLabEnhanced: command(
+    owner('music-lab',musicEnhancedSource,'loadJobs','onClick={()=>void loadJobs()}','刷新上传记录','tests/music-voice-enhanced.test.ts',undefined,{disabled:'disabled={!!pendingAction',loading:'pendingAction',error:'error'}),
+    ...[["action:'submit'",'强化上传'],["action:'poll'",'查询进度'],["action:'cancel'",'取消排队任务']].map(([binding,control])=>owner('music-lab',musicEnhancedSource,'performEnhanced',binding,control,'tests/music-voice-enhanced.test.ts',undefined,{disabled:'disabled={!!pendingAction',loading:'pendingAction',error:'error'})),
+  ),
   addHtmlVideoAsset: command(owner(
     'html-video',
     'src/features/html-video/HtmlVideoStoryboundPanels.tsx',
@@ -471,6 +506,10 @@ export const rendererCommandInventory = {
     ),
   ),
   importBgmAudio: command(
+    owner('music-lab',musicOperationSource,'selectAudio','onClick={() => void selectAudio()}','选择本地音频',musicLabTest),
+    owner('music-lab', musicLabSource, 'chooseUpload', 'onClick={() => void chooseUpload()}', '选择音频文件', musicLabTest),
+    owner('music-lab', musicVoiceSource, 'chooseRecording', 'onClick={() => void chooseRecording(false)}', '选择源人声录音', musicLabTest),
+    owner('music-lab', musicVoiceSource, 'chooseRecording', 'onClick={() => void chooseRecording(true)}', '选择验证录音', musicLabTest),
     owner('editorial-collage', 'src/features/editorial-collage/EditorialCollagePage.tsx', 'importSoundDirect', 'onClick={() => void importSound()}', '导入本地音频', 'tests/director-sound.test.ts', 'src/features/director-desk/DirectorSoundInspector.tsx', { disabled: 'disabled={disabled}', loading: '正在导入音频', error: 'role="alert"' }, 'src/features/director-desk/DirectorSoundInspector.tsx', undefined, bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onImportSound={'], ['src/features/director-desk/DirectorDeskWorkspace.tsx', 'onImport={(track) => onImportSound(selectedShot.id, track)}'])),
     owner('motion-comic', 'src/features/motion-comic/MotionComicPage.tsx', 'importSoundDirect', 'onClick={() => void importSound()}', '导入本地音频', 'tests/director-sound.test.ts', 'src/features/director-desk/DirectorSoundInspector.tsx', { disabled: 'disabled={disabled}', loading: '正在导入音频', error: 'role="alert"' }, 'src/features/director-desk/DirectorSoundInspector.tsx', undefined, bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onImportSound={'], ['src/features/director-desk/DirectorDeskWorkspace.tsx', 'onImport={(track) => onImportSound(selectedShot.id, track)}'])),
     owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'selectMusicMvAudio', 'onClick={selectMusicMvAudio}', '选择音频', productShellTest),

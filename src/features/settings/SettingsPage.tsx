@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useUnsavedChanges } from '../../app/workspace-navigation';
-import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Eye, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Music2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, ThemeName, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
 import type { StoryDreamApi } from "../../shared/storydream-api";
@@ -9,12 +9,13 @@ import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/tas
 import type { SecretChanges, SecretId } from "../../shared/config-secrets";
 import { changeRuntimeTheme, type RuntimeThemeStateSynchronizer } from "./theme-controller";
 import { configTargetStatus } from "../../shared/config-utils";
-import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, activateSelectedProviderProfileForTarget, buildConfigForSelectedProfileTest, enableImageProfile, enableLlmProfile, enableTtsProfile, normalizeEditableConfigProviders, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
+import { activeImageProfileId, activeLlmProfileId, activeMusicProfileId, activeTtsProfileId, activeVideoProfileId, buildConfigForSelectedProfileTest, enableImageProfile, enableLlmProfile, enableMusicProfile, enableTtsProfile, enableVideoProfile, getMusicProfile, getVideoProfile, normalizeEditableConfigProviders, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
+import { activeSpeechToTextProfileId, activeVisionProfileId, enableSpeechToTextProfile, enableVisionProfile, getSpeechToTextProfile, getVisionProfile } from '../../shared/provider-profile-utils';
 import { useAsyncAction } from "../../ui/async-action";
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import { ToggleField } from "../../components/ToggleField";
-import { Button, SelectField, SwitchField } from '../../ui';
+import { Button, SelectField, SwitchField, TextField } from '../../ui';
 import { RangeField } from "../../components/RangeField";
 import { AsyncActionFeedback as InlineActionFeedback } from "../../components/AsyncActionFeedback";
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
@@ -22,6 +23,7 @@ import { siliconFlowSpeechToTextBaseUrl, siliconFlowSpeechToTextModels } from ".
 import { ImageProfileManager, LlmProfileManager, TtsProfileManager } from './ProviderProfileManagers';
 import { MinimaxCloneVoiceManager } from './MinimaxCloneVoiceManager';
 import { ProviderPortalLinks } from './ProviderPortalLinks';
+import { MusicProfileManager, ProfileSecretField, TranscriptionVisionProfileSwitcher, VideoProfileSwitcher, VisionProfileManager } from './MusicVideoProfileManagers';
 import { providerKeyPortals } from '../../shared/provider-portals';
 import {
   ConfigInput,
@@ -42,7 +44,7 @@ import {
   type SecretEditor,
 } from './settings-controls';
 
-export type SettingsSection = 'appearance' | 'llm' | 'image' | 'video' | 'tts' | 'speechToText' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
+export type SettingsSection = 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
 
 export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; returnView?: ShellView; onReturn?: () => void }) {
   const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm');
@@ -65,6 +67,10 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const [selectedLlmProfileId, setSelectedLlmProfileId] = useState(() => activeLlmProfileId(state.config));
   const [selectedImageProfileId, setSelectedImageProfileId] = useState(() => activeImageProfileId(state.config));
   const [selectedTtsProfileId, setSelectedTtsProfileId] = useState(() => activeTtsProfileId(state.config));
+  const [selectedMusicProfileId, setSelectedMusicProfileId] = useState(() => activeMusicProfileId(state.config));
+  const [selectedVideoProfileId, setSelectedVideoProfileId] = useState(() => activeVideoProfileId(state.config));
+  const [selectedSpeechToTextProfileId, setSelectedSpeechToTextProfileId] = useState(() => activeSpeechToTextProfileId(state.config));
+  const [selectedVisionProfileId, setSelectedVisionProfileId] = useState(() => activeVisionProfileId(state.config));
   const [minimaxCloneVoiceCatalog, setMinimaxCloneVoiceCatalog] = useState(() => state.minimaxCloneVoices);
   const saveAction = useAsyncAction();
   const settingsAction = useAsyncAction();
@@ -165,11 +171,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     change: changeSecret,
   };
   async function save() {
-    return commitAndApplySettingsDraft(activateSelectedProviderProfileForTarget(draft, section as ConfigTestTarget, {
-      llm: selectedLlmProfileId,
-      image: selectedImageProfileId,
-      tts: selectedTtsProfileId,
-    }));
+    return commitAndApplySettingsDraft(draft);
   }
   async function activateLlmProfile(id: string) {
     await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '已启用 LLM 配置档案');
@@ -180,10 +182,22 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   async function activateTtsProfile(id: string) {
     await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用旁白服务配置档案');
   }
+  async function activateMusicProfile(id: string) {
+    await commitAndApplySettingsDraft(enableMusicProfile(draft, id), '已启用音乐创作配置');
+  }
+  async function activateVideoProfile(id: string) {
+    await commitAndApplySettingsDraft(enableVideoProfile(draft, id), '已启用视频生成配置');
+  }
+  async function activateSpeechToTextProfile(id: string) {
+    await commitAndApplySettingsDraft(enableSpeechToTextProfile(draft, id), '已启用语音转文字配置');
+  }
+  async function activateVisionProfile(id: string) {
+    await commitAndApplySettingsDraft(enableVisionProfile(draft, id), '已启用视觉分析配置');
+  }
   async function testCurrentConfig() {
     const submittedRevision = draftRevision.current;
     const target: ConfigTestTarget =
-      section === 'llm' || section === 'image' || section === 'video' || section === 'tts' || section === 'speechToText' || section === 'jianying' || section === 'creative' || section === 'webSearch'
+      section === 'llm' || section === 'image' || section === 'video' || section === 'music' || section === 'tts' || section === 'speechToText' || section === 'vision' || section === 'jianying' || section === 'creative' || section === 'webSearch'
         ? section
         : 'llm';
     await settingsAction.run(async () => {
@@ -191,12 +205,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
       setSavingConfig(true);
       setConfigTestResult('正在保存并测试当前配置...');
       try {
-        const nextDraft = activateSelectedProviderProfileForTarget(draft, target, {
-          llm: selectedLlmProfileId,
-          image: selectedImageProfileId,
-          tts: selectedTtsProfileId,
-        });
-        const next = await api.saveConfig({ config: normalizeEditableConfigProviders(nextDraft), secretChanges });
+        const next = await api.saveConfig({ config: normalizeEditableConfigProviders(draft), secretChanges });
         const savedConfig = configFromMutation(next);
         if (submittedRevision === draftRevision.current) commitSettingsDraft(savedConfig);
         applyState(next);
@@ -366,17 +375,11 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     const nextConfig = { ...draft, jianying: { ...draft.jianying, bgmLibrary, defaultBgmId: draft.jianying.defaultBgmId === id ? '' : draft.jianying.defaultBgmId } };
     setSettingsDraft({ ...nextConfig, jianying: { ...nextConfig.jianying, defaultBgmId: resolveDefaultBgmId(nextConfig) } });
   }
-  function updateSpeechToTextConfig(patch: Partial<AppConfig['speechToText']>) {
-    setSettingsDraft({ ...draft, speechToText: { ...draft.speechToText, ...patch } });
+  function updateSpeechToTextConfig(patch: Partial<AppConfig['speechToTextProfiles'][number]>) {
+    setSettingsDraft((current) => ({ ...current, speechToTextProfiles: current.speechToTextProfiles.map((profile) => profile.id === selectedSpeechToTextProfileId ? { ...profile, ...patch } : profile) }));
   }
-  function updateActiveVideoProvider(patch: Partial<AppConfig['video']['providers'][number]>) {
-    setSettingsDraft((current) => ({
-      ...current,
-      video: {
-        ...current.video,
-        providers: current.video.providers.map((provider) => provider.id === current.video.activeProviderId ? { ...provider, ...patch } : provider),
-      },
-    }));
+  function updateSelectedVideoProvider(patch: Partial<AppConfig['video']['providers'][number]>) {
+    setSettingsDraft((current) => ({ ...current, video: { ...current.video, providers: current.video.providers.map((profile) => profile.id === selectedVideoProfileId ? { ...profile, ...patch } : profile) } }));
   }
   function updateVideoAutomation(patch: Partial<AppConfig['video']['automation']>) {
     setSettingsDraft((current) => ({ ...current, video: { ...current.video, automation: { ...current.video.automation, ...patch } } }));
@@ -395,12 +398,12 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     }
     updateSpeechToTextConfig({
       provider,
-      baseUrl: draft.speechToText.baseUrl.includes('siliconflow') ? 'https://api.openai.com/v1' : draft.speechToText.baseUrl,
-      model: siliconFlowSpeechToTextModels.includes(draft.speechToText.model) ? 'whisper-1' : draft.speechToText.model,
+      baseUrl: selectedSpeechToTextProfile.baseUrl.includes('siliconflow') ? 'https://api.openai.com/v1' : selectedSpeechToTextProfile.baseUrl,
+      model: siliconFlowSpeechToTextModels.includes(selectedSpeechToTextProfile.model) ? 'whisper-1' : selectedSpeechToTextProfile.model,
     });
   }
   function toggleSpeechToTextTimestamp(granularity: AppConfig['speechToText']['timestampGranularities'][number], checked: boolean) {
-    const current = draft.speechToText.timestampGranularities.filter((item) => item !== granularity);
+    const current = selectedSpeechToTextProfile.timestampGranularities.filter((item) => item !== granularity);
     updateSpeechToTextConfig({ timestampGranularities: checked ? [...current, granularity] : current });
   }
   async function selectTheme(nextTheme: AppState['ui']['theme']) {
@@ -418,6 +421,10 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     llm: selectedLlmProfileId,
     image: selectedImageProfileId,
     tts: selectedTtsProfileId,
+    music: selectedMusicProfileId,
+    video: selectedVideoProfileId,
+    speechToText: selectedSpeechToTextProfileId,
+    vision: selectedVisionProfileId,
   };
   const draftWithCredentialStatus = useMemo(
     () => configWithCredentialStatus(draft, state.secretStatus, secretChanges),
@@ -430,24 +437,32 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const selectedLlmTestBlocked = selectedLlmSecretPending || !selectedLlmProfilePersisted;
   const selectedImageTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'image', selectedProviderProfileIds);
   const selectedTtsTestConfig = buildConfigForSelectedProfileTest(draftWithCredentialStatus, 'tts', selectedProviderProfileIds);
-  const activeVideoProvider = draft.video.providers.find((provider) => provider.id === draft.video.activeProviderId) ?? draft.video.providers[0];
-  const activeVideoSecretId = profileSecretId('video', activeVideoProvider.id, 'apiKey');
+  const selectedVideoProvider = draft.video.providers.find((profile) => profile.id === selectedVideoProfileId) ?? getVideoProfile(draft, selectedVideoProfileId);
+  const selectedVideoSecretId = profileSecretId('video', selectedVideoProvider.id, 'apiKey');
+  const selectedVideoTestConfig = buildConfigForSelectedProfileTest(draft, 'video', selectedProviderProfileIds);
+  const selectedMusicProfile = getMusicProfile(draft, selectedMusicProfileId);
+  const selectedSpeechToTextProfile = draft.speechToTextProfiles.find((profile) => profile.id === selectedSpeechToTextProfileId) ?? getSpeechToTextProfile(draft, selectedSpeechToTextProfileId);
+  const selectedSpeechToTextSecretId = profileSecretId('speechToText', selectedSpeechToTextProfile.id, 'apiKey');
+  const selectedSpeechToTextTestConfig = buildConfigForSelectedProfileTest(draft, 'speechToText', selectedProviderProfileIds);
+  const selectedVisionProfile = getVisionProfile(draft, selectedVisionProfileId);
   const settingsBgms = validBgmItems(draft);
-  const isSiliconFlowSpeechToText = draft.speechToText.provider === 'siliconflow';
+  const isSiliconFlowSpeechToText = selectedSpeechToTextProfile.provider === 'siliconflow';
   const sections = [
     ['appearance', Palette, '外观', '明暗主题', state.ui.theme === 'dark' ? '深色' : '浅色'],
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draftWithCredentialStatus))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draftWithCredentialStatus))],
     ['video', Film, 'AI 视频', '云端生成 · 调度', settingsStatusLabel(configTargetStatus('video', draftWithCredentialStatus))],
+    ['music', Music2, '音乐创作', 'Suno · 生成与音色', draft.music.enabled ? (getMusicProfile(draft).useEnvironmentKey ? '系统密钥' : settingsStatusLabel(configTargetStatus('music', draftWithCredentialStatus))) : '已关闭'],
     ['tts', Bot, '旁白服务', '每镜配音（TTS）', settingsStatusLabel(configTargetStatus('tts', draftWithCredentialStatus))],
     ['speechToText', Mic2, '语音转文字', '爆款拆解转写 API', settingsStatusLabel(configTargetStatus('speechToText', draftWithCredentialStatus))],
+    ['vision', Eye, '视觉分析', '视频关键帧理解', settingsStatusLabel(configTargetStatus('vision', draftWithCredentialStatus))],
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
     ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draftWithCredentialStatus))],
     ['webSearch', Globe2, '联网搜索', 'SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
-  const returnLabel = returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
+  const returnLabel = returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
   return (
     <div className="settings-layout">
       <section className="settings-menu">
@@ -492,6 +507,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
+        {section === 'llm' || section === 'image' || section === 'tts' ? <p className="settings-profile-explanation">可保存多个模型配置，选中用于编辑，启用用于创作。保存或测试所选配置会保留当前启用项。</p> : null}
         {section === 'appearance' ? (
           <SettingsCard title="界面主题" status={state.ui.theme === 'dark' ? '深色' : '浅色'}>
             <Segmented
@@ -554,35 +570,26 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         ) : null}
         {section === 'video' ? (
           <>
-            <SettingsCard title="视频生成服务" status={secrets.configured(activeVideoSecretId) ? '已配置' : '待配置'}>
+            <SettingsCard title="视频生成服务" status={secrets.configured(selectedVideoSecretId) ? '已配置' : '待配置'}>
+              <VideoProfileSwitcher config={draft} selectedProfileId={selectedVideoProfileId} saving={savingConfig || testingConfig}
+                onChange={setSettingsDraft} onSelectedProfileIdChange={setSelectedVideoProfileId} onActivate={activateVideoProfile} />
               <ProviderConfigNote
                 title="统一视频生成合同"
                 value="支持同步 URL/base64 返回，也支持 task_id 异步轮询。业务任务只依赖能力声明，不绑定具体供应商名称。"
               />
-              <SwitchField
-                checked={activeVideoProvider.enabled}
-                onChange={(_, data) => updateActiveVideoProvider({ enabled: data.checked })}
-                label="启用当前云端视频 Provider"
-              />
-              <ConfigInput label="Provider 名称" value={activeVideoProvider.name} onChange={(value) => updateActiveVideoProvider({ name: value })} />
-              <ConfigInput label="接口地址" value={activeVideoProvider.baseUrl} onChange={(value) => updateActiveVideoProvider({ baseUrl: value })} />
-              <SecretInput
-                label="接口密钥"
-                value={secrets.value(activeVideoSecretId)}
-                configured={secrets.configured(activeVideoSecretId)}
-                onChange={(value) => secrets.change(activeVideoSecretId, value)}
-                onClear={() => secrets.change(activeVideoSecretId, null)}
-              />
-              <ConfigInput label="视频模型" value={activeVideoProvider.model} onChange={(value) => updateActiveVideoProvider({ model: value })} />
-              <ConfigInput label="提交路径" value={activeVideoProvider.submitPath} onChange={(value) => updateActiveVideoProvider({ submitPath: value })} />
-              <ConfigInput label="状态路径模板" value={activeVideoProvider.statusPathTemplate} onChange={(value) => updateActiveVideoProvider({ statusPathTemplate: value })} />
-              <ConfigNumberInput label="轮询间隔（秒）" value={activeVideoProvider.pollIntervalMs / 1000} min={0.25} step={0.25} onChange={(value) => updateActiveVideoProvider({ pollIntervalMs: value * 1000 })} />
-              <ConfigNumberInput label="任务超时（秒）" value={activeVideoProvider.timeoutMs / 1000} min={10} step={10} onChange={(value) => updateActiveVideoProvider({ timeoutMs: value * 1000 })} />
-              <ConfigNumberInput label="每秒费用" value={activeVideoProvider.pricePerSecond} min={0} step={0.01} onChange={(value) => updateActiveVideoProvider({ pricePerSecond: value })} />
-              <ConfigNumberInput label="最长时长（秒）" value={activeVideoProvider.maxDurationSec} min={1} step={1} onChange={(value) => updateActiveVideoProvider({ maxDurationSec: value })} />
-              <ConfigInput label="最高分辨率" value={activeVideoProvider.maxResolution} onChange={(value) => updateActiveVideoProvider({ maxResolution: value })} />
-              <ConfigInput label="许可证说明" value={activeVideoProvider.license} onChange={(value) => updateActiveVideoProvider({ license: value })} />
-              <ConfigInput label="附加请求参数（JSON）" value={activeVideoProvider.requestParamsJson} onChange={(value) => updateActiveVideoProvider({ requestParamsJson: value })} />
+              <ConfigInput label="Provider 名称" value={selectedVideoProvider.name} onChange={(value) => updateSelectedVideoProvider({ name: value })} />
+              <ConfigInput label="接口地址" value={selectedVideoProvider.baseUrl} onChange={(value) => updateSelectedVideoProvider({ baseUrl: value })} />
+              <ProfileSecretField domain="video" profileId={selectedVideoProvider.id} secrets={secrets} />
+              <ConfigInput label="视频模型" value={selectedVideoProvider.model} onChange={(value) => updateSelectedVideoProvider({ model: value })} />
+              <ConfigInput label="提交路径" value={selectedVideoProvider.submitPath} onChange={(value) => updateSelectedVideoProvider({ submitPath: value })} />
+              <ConfigInput label="状态路径模板" value={selectedVideoProvider.statusPathTemplate} onChange={(value) => updateSelectedVideoProvider({ statusPathTemplate: value })} />
+              <ConfigNumberInput label="轮询间隔（秒）" value={selectedVideoProvider.pollIntervalMs / 1000} min={0.25} step={0.25} onChange={(value) => updateSelectedVideoProvider({ pollIntervalMs: value * 1000 })} />
+              <ConfigNumberInput label="任务超时（秒）" value={selectedVideoProvider.timeoutMs / 1000} min={10} step={10} onChange={(value) => updateSelectedVideoProvider({ timeoutMs: value * 1000 })} />
+              <ConfigNumberInput label="每秒费用" value={selectedVideoProvider.pricePerSecond} min={0} step={0.01} onChange={(value) => updateSelectedVideoProvider({ pricePerSecond: value })} />
+              <ConfigNumberInput label="最长时长（秒）" value={selectedVideoProvider.maxDurationSec} min={1} step={1} onChange={(value) => updateSelectedVideoProvider({ maxDurationSec: value })} />
+              <ConfigInput label="最高分辨率" value={selectedVideoProvider.maxResolution} onChange={(value) => updateSelectedVideoProvider({ maxResolution: value })} />
+              <ConfigInput label="许可证说明" value={selectedVideoProvider.license} onChange={(value) => updateSelectedVideoProvider({ license: value })} />
+              <ConfigInput label="附加请求参数（JSON）" value={selectedVideoProvider.requestParamsJson} onChange={(value) => updateSelectedVideoProvider({ requestParamsJson: value })} />
               <Field label="能力声明">
                 <div className="settings-inline-actions">
                   {([
@@ -596,17 +603,17 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                     <ToggleField
                       key={capability}
                       label={label}
-                      checked={activeVideoProvider.capabilities.includes(capability)}
-                      onChange={(checked) => updateActiveVideoProvider({
+                      checked={selectedVideoProvider.capabilities.includes(capability)}
+                      onChange={(checked) => updateSelectedVideoProvider({
                         capabilities: checked
-                          ? Array.from(new Set([...activeVideoProvider.capabilities, capability]))
-                          : activeVideoProvider.capabilities.filter((item) => item !== capability),
+                          ? Array.from(new Set([...selectedVideoProvider.capabilities, capability]))
+                          : selectedVideoProvider.capabilities.filter((item) => item !== capability),
                       })}
                     />
                   ))}
                 </div>
               </Field>
-              <ProviderPortalLinks links={providerKeyPortals('video', draft)} onOpen={api.openProviderPortal} />
+              <ProviderPortalLinks links={providerKeyPortals('video', selectedVideoTestConfig)} onOpen={api.openProviderPortal} />
             </SettingsCard>
             <SettingsCard title="自动化与预算" status={draft.video.automation.mode === 'full-auto' ? '全自动' : '受控'}>
               <Segmented
@@ -621,13 +628,13 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               <ConfigNumberInput label="失败重试次数" value={draft.video.automation.retryCount} min={0} step={1} onChange={(value) => updateVideoAutomation({ retryCount: value })} />
               <RangeField label="质量阈值" min={0} max={1} step={0.05} value={draft.video.automation.qualityThreshold} onChange={(value) => updateVideoAutomation({ qualityThreshold: value })} />
               <SwitchField
-                checked={draft.video.automation.providerWhitelist.includes(activeVideoProvider.id)}
+                checked={draft.video.automation.providerWhitelist.includes(selectedVideoProvider.id)}
                 onChange={(_, data) => updateVideoAutomation({
                   providerWhitelist: data.checked
-                    ? Array.from(new Set([...draft.video.automation.providerWhitelist, activeVideoProvider.id]))
-                    : draft.video.automation.providerWhitelist.filter((id) => id !== activeVideoProvider.id),
+                    ? Array.from(new Set([...draft.video.automation.providerWhitelist, selectedVideoProvider.id]))
+                    : draft.video.automation.providerWhitelist.filter((id) => id !== selectedVideoProvider.id),
                 })}
-                label="允许调度当前 Provider"
+                label="允许自动调度正在编辑的配置"
               />
               <Segmented
                 label="失败降级"
@@ -638,6 +645,12 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               />
             </SettingsCard>
           </>
+        ) : null}
+        {section === 'music' ? (
+          <SettingsCard title="音乐创作 API" status={selectedMusicProfile.useEnvironmentKey ? '使用系统密钥' : secrets.configured(profileSecretId('music', selectedMusicProfile.id, 'apiKey')) ? '已配置' : '待配置'}>
+            <MusicProfileManager config={draft} selectedProfileId={selectedMusicProfileId} saving={savingConfig || testingConfig} secrets={secrets}
+              onChange={setSettingsDraft} onSelectedProfileIdChange={setSelectedMusicProfileId} onActivate={activateMusicProfile} />
+          </SettingsCard>
         ) : null}
         {section === 'tts' ? (
           <SettingsCard title="旁白服务（TTS）" status={secrets.configured(profileSecretId('tts', selectedTtsProfileId, selectedTtsTestConfig.tts.provider === 'minimax' ? 'minimax/apiKey' : 'volcengine/apiKey')) ? '已配置' : '待配置'}>
@@ -665,53 +678,50 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           </SettingsCard>
         ) : null}
         {section === 'speechToText' ? (
-          <SettingsCard title="语音转文字" status={secrets.configured('speechToText/apiKey') ? '已配置' : '待配置'}>
+          <SettingsCard title="语音转文字" status={secrets.configured(selectedSpeechToTextSecretId) ? '已配置' : '待配置'}>
+            <TranscriptionVisionProfileSwitcher domain="speechToText" config={draft} selectedProfileId={selectedSpeechToTextProfileId} saving={savingConfig || testingConfig}
+              onChange={setSettingsDraft} onSelectedProfileIdChange={setSelectedSpeechToTextProfileId} onActivate={activateSpeechToTextProfile} />
             <ProviderConfigNote
               title="转写 API"
               value="OpenAI 兼容 /audio/transcriptions；SiliconFlow 使用 file、model，默认 FunAudioLLM/SenseVoiceSmall，也可选 TeleAI/TeleSpeechASR。"
             />
             <Segmented
               label="供应商"
-              value={draft.speechToText.provider}
+              value={selectedSpeechToTextProfile.provider}
               options={['openai-compatible', 'siliconflow']}
               labels={['OpenAI 兼容', 'SiliconFlow']}
               onChange={(value) => switchSpeechToTextProvider(value as AppConfig['speechToText']['provider'])}
             />
-            <ConfigInput label="接口地址" value={draft.speechToText.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
-            <SecretInput
-              label="接口密钥"
-              value={secrets.value('speechToText/apiKey')}
-              configured={secrets.configured('speechToText/apiKey')}
-              onChange={(value) => secrets.change('speechToText/apiKey', value)}
-              onClear={() => secrets.change('speechToText/apiKey', null)}
-            />
+            <TextField label="配置名称" value={selectedSpeechToTextProfile.name} onChange={(_, data) => updateSpeechToTextConfig({ name: data.value })} />
+            <ConfigInput label="接口地址" value={selectedSpeechToTextProfile.baseUrl} onChange={(value) => updateSpeechToTextConfig({ baseUrl: value })} />
+            <ProfileSecretField domain="speechToText" profileId={selectedSpeechToTextProfile.id} secrets={secrets} />
             {isSiliconFlowSpeechToText ? (
               <Segmented
                 label="转写模型"
-                value={draft.speechToText.model}
+                value={selectedSpeechToTextProfile.model}
                 options={siliconFlowSpeechToTextModels}
                 onChange={(value) => updateSpeechToTextConfig({ model: value })}
               />
             ) : (
-              <ConfigInput label="转写模型" value={draft.speechToText.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
+              <ConfigInput label="转写模型" value={selectedSpeechToTextProfile.model} onChange={(value) => updateSpeechToTextConfig({ model: value })} />
             )}
-            <ConfigInput label="语言" value={draft.speechToText.language} onChange={(value) => updateSpeechToTextConfig({ language: value })} />
-            <ConfigInput label="提示词" value={draft.speechToText.prompt} onChange={(value) => updateSpeechToTextConfig({ prompt: value })} />
+            <ConfigInput label="语言" value={selectedSpeechToTextProfile.language} onChange={(value) => updateSpeechToTextConfig({ language: value })} />
+            <ConfigInput label="提示词" value={selectedSpeechToTextProfile.prompt} onChange={(value) => updateSpeechToTextConfig({ prompt: value })} />
             {isSiliconFlowSpeechToText ? (
               <LocalInfo title="SiliconFlow 参数" value="按官方接口只提交 file 和 model，上传上限 50MB。language、prompt、temperature、时间戳和切分策略不会随请求发送。" />
             ) : (
               <Segmented
                 label="响应格式"
-                value={draft.speechToText.responseFormat}
+                value={selectedSpeechToTextProfile.responseFormat}
                 options={['json', 'verbose_json', 'text', 'srt', 'vtt']}
                 labels={['JSON', 'Verbose JSON', 'Text', 'SRT', 'VTT']}
                 onChange={(value) => updateSpeechToTextConfig({ responseFormat: value as AppConfig['speechToText']['responseFormat'] })}
               />
             )}
-            {!isSiliconFlowSpeechToText ? <RangeField label="温度" min={0} max={1} step={0.1} value={draft.speechToText.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} /> : null}
+            {!isSiliconFlowSpeechToText ? <RangeField label="温度" min={0} max={1} step={0.1} value={selectedSpeechToTextProfile.temperature} onChange={(value) => updateSpeechToTextConfig({ temperature: value })} /> : null}
             <ConfigNumberInput
               label="请求超时（秒）"
-              value={Math.round(draft.speechToText.timeoutMs / 1000)}
+              value={Math.round(selectedSpeechToTextProfile.timeoutMs / 1000)}
               min={10}
               step={10}
               onChange={(value) => updateSpeechToTextConfig({ timeoutMs: value * 1000 })}
@@ -721,12 +731,12 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                 <div className="settings-inline-actions">
                   <ToggleField
                     label="段落级"
-                    checked={draft.speechToText.timestampGranularities.includes('segment')}
+                    checked={selectedSpeechToTextProfile.timestampGranularities.includes('segment')}
                     onChange={(checked) => toggleSpeechToTextTimestamp('segment', checked)}
                   />
                   <ToggleField
                     label="词级"
-                    checked={draft.speechToText.timestampGranularities.includes('word')}
+                    checked={selectedSpeechToTextProfile.timestampGranularities.includes('word')}
                     onChange={(checked) => toggleSpeechToTextTimestamp('word', checked)}
                   />
                 </div>
@@ -735,13 +745,19 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             {!isSiliconFlowSpeechToText ? (
               <Segmented
                 label="切分策略"
-                value={draft.speechToText.chunkingStrategy}
+                value={selectedSpeechToTextProfile.chunkingStrategy}
                 options={['none', 'auto']}
                 labels={['不启用', '自动']}
                 onChange={(value) => updateSpeechToTextConfig({ chunkingStrategy: value as AppConfig['speechToText']['chunkingStrategy'] })}
               />
             ) : null}
-            <ProviderPortalLinks links={providerKeyPortals('speechToText', draft)} onOpen={api.openProviderPortal} />
+            <ProviderPortalLinks links={providerKeyPortals('speechToText', selectedSpeechToTextTestConfig)} onOpen={api.openProviderPortal} />
+          </SettingsCard>
+        ) : null}
+        {section === 'vision' ? (
+          <SettingsCard title="视觉分析模型" status={secrets.configured(profileSecretId('viralVision', selectedVisionProfile.id, 'apiKey')) ? '已配置' : '待配置'}>
+            <VisionProfileManager config={draft} selectedProfileId={selectedVisionProfileId} saving={savingConfig || testingConfig} secrets={secrets}
+              onChange={setSettingsDraft} onSelectedProfileIdChange={setSelectedVisionProfileId} onActivate={activateVisionProfile} />
           </SettingsCard>
         ) : null}
         {section === 'jianying' ? (

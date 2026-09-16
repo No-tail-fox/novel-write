@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net,
 import { execFile } from 'node:child_process';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -21,6 +21,8 @@ import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-u
 import { generateImageLabRecord } from '../src/shared/image-lab';
 import { removeEditorialGreenBackground } from '../src/shared/editorial-cutout';
 import { createVideoLabRuntime } from '../src/shared/video-lab-runtime';
+import { createMusicProfileService } from './music-profile-service';
+import type { MusicTrackInput } from '../src/shared/music-lab';
 import { loadAiHotArchive, loadHotBoardArchive } from '../src/shared/hotboard-archive';
 import { fetchImaKnowledge } from '../src/shared/ima-knowledge';
 import { detectJianyingDraftPathResult, resolveRuntimeJianyingDraftPath } from '../src/shared/jianying-paths';
@@ -40,7 +42,7 @@ import {
   type OrdinaryTaskCoverImageProcessor,
   type OrdinaryTaskCoverInspection,
 } from '../src/shared/ordinary-task-cover';
-import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
+import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, applyHtmlVideoSceneStructureChange, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
@@ -57,8 +59,16 @@ import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
 import { createConfiguredVideoProvider, requiredVideoCapabilities, selectVideoGenerationRoute, type VideoGenerationRequest } from '../src/shared/video-provider';
 import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
-import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState } from '../src/shared/viral-analysis';
+import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState, type RunViralAnalysisOptions } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
+import { parseViralAnalysisResult } from '../src/shared/viral-result';
+import { runWholeReferenceAnalysis } from '../src/shared/viral-whole-analysis';
+import { createReferenceProviders } from '../src/shared/viral-reference-providers';
+import { probeReferenceMedia } from '../src/shared/viral-reference-media';
+import { authorizeReferenceRequestRetries } from '../src/shared/viral-reference-requests';
+import { referenceManifestSchema, referencePartSchema } from '../src/shared/viral-reference';
+import { exportReferenceReport, readReferenceManifest, readReferencePart, registerReferenceMedia, resolveReferenceMedia, writeReferenceJson } from '../src/shared/viral-reference-store';
+import { createViralReferenceMediaUrl, openViralReferenceMediaResponse } from './viral-reference-media-protocol';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
 import { resolveVolcengineTtsApiVersion } from '../src/shared/volcengine-tts';
 import { getRendererIndexPath } from './paths';
@@ -86,7 +96,7 @@ import { hashDirectorRenderOutput } from './director-render-output';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
-import { importManagedBgm, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
+import { importManagedBgm, resolveManagedBgmFilePath, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
 import { writeWindowsManagedFile } from './windows-managed-file';
 import type { LocalSubtitleTimestampFile } from '../src/shared/storydream-api';
 import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
@@ -1086,6 +1096,13 @@ async function htmlVideoTaskDirectory(taskId: string) {
 function registerHtmlVideoMediaProtocol(): void {
   protocol.handle(htmlVideoMediaScheme, async (request) => {
     try {
+      if (new URL(request.url).hostname === 'viral') {
+        return await openViralReferenceMediaResponse(request, async (id) => {
+          const record = await (await getDb()).getViralAnalysisDetail(id);
+          if (!record) throw new Error('VIRAL_ANALYSIS_NOT_FOUND');
+          return viralAnalysisWorkDir(record);
+        });
+      }
       return await fetchHtmlVideoMediaResponse(
         request.url,
         htmlVideoTaskDirectory,
@@ -1210,10 +1227,11 @@ function viralCookieFilePath(): string {
 }
 
 async function readViralAnalysisResult(path: string): Promise<ViralAnalysisResult> {
+  if ((await stat(path)).size > 8 * 1024 * 1024) throw new Error('VIRAL_REPORT_TOO_LARGE: Report exceeds 8 MiB.');
   const bytes = await readFile(path);
   if (bytes.byteLength > 8 * 1024 * 1024) throw new Error('VIRAL_REPORT_TOO_LARGE: Report exceeds 8 MiB.');
   try {
-    return JSON.parse(bytes.toString('utf8')) as ViralAnalysisResult;
+    return parseViralAnalysisResult(JSON.parse(bytes.toString('utf8')));
   } catch (error) {
     throw new Error(`VIRAL_REPORT_INVALID: ${boundViralDiagnosticText(error)}`);
   }
@@ -1899,7 +1917,7 @@ function startViralAnalysisRun(
         lastHeartbeatAt: startedAt,
       })) return;
       await publishViralUpsert(database, record.id);
-      const completed = await runViralAnalysis(record, {
+      const commonOptions: Pick<RunViralAnalysisOptions, 'workDir' | 'signal' | 'resumeFrom' | 'persistCheckpoint' | 'emit'> = {
         workDir,
         signal: controller.signal,
         resumeFrom: record.checkpoint,
@@ -1908,7 +1926,6 @@ function startViralAnalysisRun(
             throw new Error('STALE_VIRAL_RUN: Checkpoint generation is no longer current.');
           }
         },
-        ...createViralRuntimeProviders(runtimeConfig, workDir),
         emit: async (event) => {
           lastStage = event.stage as ViralAnalysisRecord['currentStage'];
           await database.addViralAnalysisEvent(record.id, {
@@ -1928,28 +1945,43 @@ function startViralAnalysisRun(
           })) throw new Error('STALE_VIRAL_RUN: Event generation is no longer current.');
           await publishViralUpsert(database, record.id);
         },
-      });
+      };
+      const completed = record.settings.analysisMode === 'deep'
+        ? await runWholeReferenceAnalysis(record, {
+          ...commonOptions,
+          providers: createReferenceProviders(runtimeConfig, record.settings),
+          download: createViralRuntimeProviders(runtimeConfig, workDir).download,
+          publishIndex: async (expectedRevision, pointer) => {
+            await database.publishViralReferenceIndex(record.id, runGeneration, expectedRevision, pointer);
+            await publishViralUpsert(database, record.id);
+          },
+        })
+        : await runViralAnalysis(record, { ...commonOptions, ...createViralRuntimeProviders(runtimeConfig, workDir) });
+      const partial = 'partial' in completed && completed.partial === true;
       const completedAt = new Date().toISOString();
       await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
-        status: 'completed',
-        currentStage: 'completed',
-        progress: 1,
+        status: partial ? 'paused' : 'completed',
+        currentStage: partial ? 'breaking_down' : 'completed',
+        progress: partial ? 0.99 : 1,
         resultPath: completed.resultPath,
         videoPath: completed.videoPath,
         resultGeneration: runGeneration,
         title: completed.result.source.title || record.title,
-        completedAt,
+        errorMessage: partial ? '整体拆解已保存部分报告；仍有未分析的视听维度，请查看覆盖情况。配置支持相应能力的模型后可继续。' : '',
+        completedAt: partial ? null : completedAt,
         lastHeartbeatAt: completedAt,
       });
     } catch (error) {
       const message = boundViralDiagnosticText(error);
-      const paused = controller.signal.aborted && /暂停/i.test(String(controller.signal.reason ?? message));
+      const userPaused = controller.signal.aborted && /暂停/i.test(String(controller.signal.reason ?? message));
+      const requiresReview = /VIRAL_REFERENCE_(?:BUDGET|OUTCOME_UNKNOWN|REQUEST_REVIEW|CONFLICT)/.test(message);
+      const paused = userPaused || requiresReview;
       const cancelled = controller.signal.aborted && !paused;
       const terminalStatus = paused ? 'paused' : cancelled ? 'cancelled' : 'failed';
       await database.addViralAnalysisEvent(record.id, {
         type: paused ? 'paused' : cancelled ? 'cancelled' : 'error',
         stage: paused || cancelled ? lastStage : 'failed',
-        detail: paused ? '用户暂停' : cancelled ? '用户取消' : message,
+        detail: userPaused ? '用户暂停' : cancelled ? '用户取消' : message,
         runGeneration,
       }).catch((eventError) => {
         if (!/STALE_VIRAL_RUN/.test(String(eventError))) throw eventError;
@@ -1957,7 +1989,7 @@ function startViralAnalysisRun(
       await database.updateViralAnalysisForGeneration(record.id, runGeneration, {
         status: terminalStatus,
         currentStage: paused || cancelled ? lastStage : 'failed',
-        errorMessage: paused ? '' : cancelled ? '用户取消' : message,
+        errorMessage: userPaused ? '' : cancelled ? '用户取消' : message,
         lastHeartbeatAt: new Date().toISOString(),
       });
     } finally {
@@ -2114,6 +2146,116 @@ trustedHandle('video-lab:open-output-directory', async (_event, id: string) => {
   const directory = await getVideoLabRuntime().outputDirectory(id);
   await openExistingDirectory(directory, (path) => shell.openPath(path), { allowedRoot: join(appDataDir(), 'video-lab') });
 });
+let musicProfileService: ReturnType<typeof createMusicProfileService> | undefined;
+function getMusicProfileService() {
+  return musicProfileService ??= createMusicProfileService({
+    dataDir: appDataDir(), getConfig: async () => (await getConfigService()).getRuntimeConfig(),
+    resolveEnvironmentApiKey: resolveMusicLabApiKey,
+  });
+}
+async function getMusicLabRuntime(requireEnabled = true) { return (await getMusicProfileService().active(requireEnabled)).lab; }
+
+async function resolveMusicLabApiKey(): Promise<string> {
+  const environmentKey = process.env.SUNO_API_KEY?.trim();
+  if (environmentKey) return environmentKey;
+  if (process.platform !== 'win32') return '';
+  // The running app can predate a newly saved user environment variable. Read
+  // only this known credential; never return process output or errors to IPC.
+  try {
+    const executable = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const { stdout } = await execFileAsync(executable, [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      "[Console]::Write([Environment]::GetEnvironmentVariable('SUNO_API_KEY', 'User'))",
+    ], { windowsHide: true, timeout: 5_000, maxBuffer: 16_384, encoding: 'utf8' });
+    const key = stdout.trim();
+    return key.length <= 4096 && !/[\r\n\s]/u.test(key) ? key : '';
+  } catch {
+    return '';
+  }
+}
+
+trustedHandle('music-lab:service-status', async () => getMusicProfileService().getServiceStatus());
+trustedHandle('music-lab:enhanced', async (_event, input) => {
+  if (isShuttingDown) throw new Error('应用正在退出，请稍后重试。');
+  const context = await getMusicProfileService().active(input.action !== 'list');
+  const pending=context.enhanced.execute(input); activeMusicSubmissions.add(pending);
+  try{return await pending;}finally{activeMusicSubmissions.delete(pending);}
+});
+trustedHandle('music-lab:voice', async (_event, input) => {
+  if (isShuttingDown) throw new Error('应用正在退出，请稍后重试。');
+  const context = await getMusicProfileService().active(input.action !== 'list');
+  const pending = context.voice.execute(input);
+  activeMusicSubmissions.add(pending);
+  try { return await pending; } finally { activeMusicSubmissions.delete(pending); }
+});
+trustedHandle('music-lab:balance', async () => (await getMusicLabRuntime()).getBalance());
+trustedHandle('music-lab:list', async () => (await getMusicLabRuntime(false)).list());
+const activeMusicSubmissions = new Set<Promise<unknown>>();
+async function runMusicSubmission<T>(operation: () => Promise<T>): Promise<T> {
+  if (isShuttingDown) throw new Error('应用正在退出，请稍后重新打开音乐创作。');
+  const submission = operation();
+  activeMusicSubmissions.add(submission);
+  try { return await submission; }
+  finally { activeMusicSubmissions.delete(submission); }
+}
+trustedHandle('music-lab:generate', async (_event, input) => runMusicSubmission(async () => (await getMusicLabRuntime()).generate(input)));
+trustedHandle('music-lab:refresh', async (_event, id) => (await getMusicLabRuntime()).refresh(id));
+trustedHandle('music-lab:lyrics', async (_event, input) => (await getMusicLabRuntime()).generateLyrics(input));
+trustedHandle('music-lab:boost-style', async (_event, input) => (await getMusicLabRuntime()).boostStyle(input));
+trustedHandle('music-lab:download', async (_event, input) => (await getMusicLabRuntime()).downloadTrack(input));
+let musicBgmImportQueue: Promise<unknown> = Promise.resolve();
+trustedHandle('music-lab:import-bgm', async (_event, input) => {
+  if (isShuttingDown) throw new Error('应用正在退出，请稍后重新打开音乐创作。');
+  const runtime = await getMusicLabRuntime();
+  const pending = musicBgmImportQueue.then(() => importMusicLabBgm(input, runtime));
+  musicBgmImportQueue = pending.catch(() => undefined);
+  return pending;
+});
+async function importMusicLabBgm(input: MusicTrackInput, runtime: Awaited<ReturnType<typeof getMusicLabRuntime>>) {
+  const record = await runtime.downloadTrack({ ...input, format: 'mp3' });
+  const track = record.tracks.find((candidate) => candidate.id === input.trackId);
+  if (!track) throw new Error('音乐候选不存在，请刷新记录后重试。');
+  const sourcePath = track.localMp3Path || track.localWavPath;
+  if (!sourcePath) throw new Error(track.downloadError || '歌曲尚未下载完成，请重试下载。');
+  const service = await getConfigService();
+  const config = await service.getRuntimeConfig();
+  const bgmId = `bgm-music-${track.id}`;
+  if (config.jianying.bgmLibrary.some((candidate) => candidate.id === bgmId)) {
+    return { record: await runtime.markTrackAsBgm(input, bgmId), mutation: null };
+  }
+  const imported = await importManagedBgm(sourcePath, appDataDir());
+  const bgm = {
+    ...imported, id: bgmId, title: track.title || imported.title,
+    durationMs: Math.max(0, Math.round((track.durationSec ?? 0) * 1000)), volume: 0.25,
+  };
+  const saved = await service.save({
+    config: { ...config, jianying: {
+      ...config.jianying, bgmLibrary: [...config.jianying.bgmLibrary, bgm],
+      defaultBgmId: config.jianying.bgmLibrary.some((candidate) => candidate.id === config.jianying.defaultBgmId)
+        ? config.jianying.defaultBgmId : bgmId,
+    } },
+    secretChanges: {},
+  });
+  const mutation = await publishStatePatch({ kind: 'config', ...saved });
+  return { record: await runtime.markTrackAsBgm(input, bgmId), mutation };
+}
+trustedHandle('music-lab:open-output-directory', async (_event, id) => {
+  const directory = await (await getMusicLabRuntime(false)).getOutputDirectory(id);
+  await openExistingDirectory(directory, (path) => shell.openPath(path), { allowedRoot: join(appDataDir(), 'music-lab') });
+});
+trustedHandle('music-lab:operation', async (_event, input) => runMusicSubmission(async () => (await getMusicLabRuntime()).performOperation(input)));
+trustedHandle('music-lab:upload-source', async (_event, input) => runMusicSubmission(async () => {
+  const runtime = await getMusicLabRuntime();
+  const expectedPath = resolveManagedBgmFilePath(appDataDir(), basename(input.audioPath));
+  const normalizePath = (path: string) => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path);
+  if (!expectedPath || normalizePath(input.audioPath) !== normalizePath(expectedPath)) {
+    throw new Error('请先通过选择音频导入文件，再上传为音乐来源。');
+  }
+  const [sourcePath, managedRoot] = await Promise.all([realpath(expectedPath), realpath(join(appDataDir(), 'bgm'))]);
+  if (normalizePath(dirname(sourcePath)) !== normalizePath(managedRoot)) throw new Error('音频文件不在受管素材目录内。');
+  return runtime.uploadSource({ ...input, audioPath: sourcePath });
+}));
+trustedHandle('music-lab:sync-history', async () => (await getMusicLabRuntime()).syncHistory());
 trustedHandle('task:archive', (_event, id: string) =>
   runHistoryGovernanceMutation('task', id, async (database) => {
     const task = await database.archiveTask(id);
@@ -2226,8 +2368,10 @@ trustedHandle('volcengine:speakers:list', async (_event, request: VolcengineSpea
 
 trustedHandle('config:test', async (_event, input) => {
   const runtimeConfig = await (await getConfigService()).getRuntimeConfigFor(input);
-  if (input.target === 'llm') {
-    return fromLlmModelTestResult(await testConfiguredLlm(runtimeConfig.llm));
+  if (input.target === 'music') return getMusicProfileService().testConfiguration(runtimeConfig);
+  if (input.target === 'llm' || input.target === 'vision') {
+    const profile = input.target === 'vision' ? runtimeConfig.viral.vision : runtimeConfig.llm;
+    return { ...fromLlmModelTestResult(await testConfiguredLlm(profile)), target: input.target };
   }
   return testConfigTarget(input.target, runtimeConfig, { pathExists: existsSync });
 });
@@ -3312,6 +3456,18 @@ trustedHandle('html-video:update-scene', (_event, input: { id: string; sceneInde
     });
   }));
 
+trustedHandle('html-video:update-scene-structure', (_event, input: { id: string; change: import('../src/shared/types').HtmlVideoSceneStructureChange }) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await getEditableHtmlVideoTask(database, input.id);
+    const pipeline = applyHtmlVideoSceneStructureChange(parseHtmlVideoPipelineData(task.pipelineData), input.change);
+    return persistHtmlVideoEditorialMutation(database, task, pipeline, {
+      type: 'html_video_scene_structure_update',
+      tool: 'scene-editor',
+      detail: '已更新场景结构，后续素材、配音和动画需重新生成。',
+      data: input.change,
+    });
+  }));
+
 trustedHandle('html-video:add-asset', (_event, input: { id: string; sceneIndex: number; prompt: string }) =>
   runHistoryGovernanceMutation('task', input.id, async (database) => {
     const task = await getEditableHtmlVideoTask(database, input.id);
@@ -3701,13 +3857,13 @@ async function persistHtmlVideoEditorialMutation(
   const currentStep = persistedPipeline.current === 'done'
     ? htmlVideoVisibleSteps.length
     : Math.max(0, htmlVideoVisibleSteps.indexOf(persistedPipeline.current));
-  const needsRender = persistedPipeline.current === 'render';
+  const needsResume = persistedPipeline.current !== 'done';
   const now = new Date().toISOString();
   await database.updateTask(task.id, {
     pipelineData: JSON.stringify(persistedPipeline),
     pipelineStep: persistedPipeline.current,
     currentStep,
-    ...(needsRender ? { status: 'paused', completedAt: null } : {}),
+    ...(needsResume ? { status: 'paused', completedAt: null, outputDir: '' } : {}),
     errorMessage: '',
     failedStep: null,
     retryFromStep: null,
@@ -3988,6 +4144,181 @@ trustedHandle('task:create-and-run', async (_event, input: CreateTaskInput) => {
   }
 });
 
+trustedHandle('viral:import-local', async (_event, input) => {
+  const selected = await dialog.showOpenDialog({
+    title: '导入要整体拆解的视频', properties: ['openFile'],
+    filters: [{ name: '视频', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'] }],
+  });
+  if (selected.canceled || !selected.filePaths[0]) return null;
+  const sourcePath = selected.filePaths[0];
+  const sourceInfo = await stat(sourcePath);
+  if (!sourceInfo.isFile() || sourceInfo.size <= 0) throw new Error('VIRAL_LOCAL_SOURCE_INVALID: 请选择非空视频文件。');
+  const extension = extname(sourcePath).toLowerCase();
+  const mimeTypes: Record<string, string> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.webm': 'video/webm', '.avi': 'video/x-msvideo' };
+  if (!mimeTypes[extension]) throw new Error('VIRAL_LOCAL_SOURCE_INVALID: 不支持此视频容器。');
+  const database = await getDb();
+  const record = await database.createViralAnalysis({
+    url: '', platform: 'unknown', title: input.title?.trim() || basename(sourcePath, extension),
+    settings: { ...input.settings, analysisMode: 'deep' },
+  });
+  const reservation = historyActivityRegistry.reserveActive('viral-analysis', record.id);
+  try {
+    const workDir = viralAnalysisWorkDir(record);
+    await mkdir(workDir, { recursive: true });
+    const disk = await statfs(workDir, { bigint: true });
+    if (disk.bavail * disk.bsize < BigInt(sourceInfo.size)) throw new Error('VIRAL_LOCAL_DISK_SPACE: 工作磁盘空间不足以保存视频副本。');
+    const videoPath = join(workDir, `source${extension}`);
+    const pendingPath = join(workDir, `${randomUUID()}.partial`);
+    await copyFile(sourcePath, pendingPath);
+    await rename(pendingPath, videoPath);
+    const probe = await probeReferenceMedia(videoPath);
+    await registerReferenceMedia(workDir, 'source', videoPath, mimeTypes[extension]);
+    await database.updateViralAnalysis(record.id, {
+      status: 'paused', currentStage: 'queued', videoPath,
+      checkpoint: {
+        runGeneration: record.runGeneration ?? 0,
+        downloaded: {
+          videoPath, provider: 'local-import', normalizedUrl: '', usedCookieSource: 'none',
+          source: {
+            kind: 'local', platform: 'unknown', url: '', normalizedUrl: '', downloadProvider: 'local-import',
+            usedCookieSource: 'none', videoPath, coverPath: '', title: record.title, author: '',
+            duration: probe.durationMs / 1000, stats: { likes: null, comments: null, shares: null },
+          },
+        },
+      },
+      errorMessage: '', lastHeartbeatAt: new Date().toISOString(),
+    });
+    await database.addViralAnalysisEvent(record.id, {
+      type: 'local-import', stage: 'queued', detail: '视频已复制到受管目录。点击开始整体拆解后才会调用分析模型。',
+      runGeneration: record.runGeneration ?? 0, dataJson: JSON.stringify(probe),
+    });
+    return await publishViralUpsert(database, record.id);
+  } catch (error) {
+    await database.updateViralAnalysis(record.id, { status: 'failed', currentStage: 'failed', errorMessage: boundViralDiagnosticText(error) });
+    await publishViralUpsert(database, record.id);
+    throw error;
+  } finally { reservation.release(); }
+});
+
+trustedHandle('viral:analyze-prepared', async (_event, id) => {
+  return runLatestTaskControlRequest(latestViralControlRequests, id, async (isCurrent, transferReservation) => {
+    if (runningViralAnalyses.has(id)) throw new Error('VIRAL_REFERENCE_BUSY: 分析已经在运行。');
+    const database = await getDb();
+    const record = await database.getViralAnalysisDetail(id);
+    if (!record) throw new Error('VIRAL_ANALYSIS_NOT_FOUND');
+    if (record.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档分析只读。');
+    if (record.checkpoint?.downloaded?.provider !== 'local-import') throw new Error('VIRAL_LOCAL_NOT_PREPARED: 请先导入本地视频。');
+    if (record.status !== 'paused' || record.currentStage !== 'queued') throw new Error('VIRAL_LOCAL_NOT_PREPARED: 此视频已启动过分析，请使用继续功能。');
+    await resumeViralAnalysisRun(database, record, viralAnalysisWorkDir(record), isCurrent, transferReservation);
+    if (!isCurrent()) return null;
+    return publishViralUpsert(database, id);
+  }, () => historyActivityRegistry.reserveActive('viral-analysis', id));
+});
+
+async function loadViralReferenceIndex(id: string, expectedRevision?: number) {
+  const database = await getDb();
+  const record = await database.getViralAnalysisDetail(id);
+  if (!record?.referenceIndex) throw new Error('VIRAL_REFERENCE_NOT_AVAILABLE: 整体拆解索引尚未生成。');
+  if (expectedRevision !== undefined && record.referenceIndex.revision !== expectedRevision) {
+    throw new Error('VIRAL_REFERENCE_CONFLICT: 拆解已更新，请刷新后重试。');
+  }
+  const workDir = viralAnalysisWorkDir(record);
+  const manifest = await readReferenceManifest(workDir, record.referenceIndex);
+  return { database, record, workDir, manifest };
+}
+
+trustedHandle('viral:get-reference-index', async (_event, id) => {
+  const record = await (await getDb()).getViralAnalysisDetail(id);
+  if (!record?.referenceIndex) return null;
+  return readReferenceManifest(viralAnalysisWorkDir(record), record.referenceIndex);
+});
+
+trustedHandle('viral:get-reference-part', async (_event, input) => {
+  const { database, workDir, manifest } = await loadViralReferenceIndex(input.id, input.expectedRevision);
+  const part = await readReferencePart(workDir, manifest, input.partId);
+  const latest = await database.getViralAnalysisDetail(input.id);
+  if (latest?.referenceIndex?.revision !== input.expectedRevision) throw new Error('VIRAL_REFERENCE_CONFLICT: 拆解已更新，请刷新。');
+  return part;
+});
+
+trustedHandle('viral:media-url', async (_event, input) => {
+  const record = await (await getDb()).getViralAnalysisDetail(input.id);
+  if (!record) throw new Error('VIRAL_ANALYSIS_NOT_FOUND');
+  await resolveReferenceMedia(viralAnalysisWorkDir(record), input.mediaId);
+  return createViralReferenceMediaUrl(input.id, input.mediaId);
+});
+
+trustedHandle('viral:save-reference-edit', async (_event, input) => {
+  const reservation = historyActivityRegistry.reserveActive('viral-analysis', input.analysisId);
+  try {
+    const { database, record, workDir, manifest } = await loadViralReferenceIndex(input.analysisId, input.expectedRevision);
+    if (record.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档分析只读。');
+    const part = await readReferencePart(workDir, manifest, input.partId);
+    const observation = [...part.observations, ...part.shots.flatMap(shot => shot.observations)]
+      .find(item => item.id === input.observationId);
+    if (!observation) throw new Error('VIRAL_REFERENCE_OBSERVATION_NOT_FOUND');
+    const text = input.text.trim();
+    if (!text) throw new Error('VIRAL_REFERENCE_EDIT_EMPTY: 修订内容不能为空。');
+    observation.text = text;
+    observation.origin = 'user';
+    const validatedPart = referencePartSchema.parse(part);
+    const partPointer = await writeReferenceJson(workDir, 'part', validatedPart);
+    const previousPart = manifest.parts.find(item => item.partId === input.partId)!;
+    const nextManifest = referenceManifestSchema.parse({
+      ...manifest, summary: manifest.summary ? { ...manifest.summary,
+        limitations: [...new Set([...manifest.summary.limitations, '逐段观察已有人工修订；此全片总结保留修订前的分析，请以当前逐段观察为准。'])] } : undefined,
+      revision: manifest.revision + 1, createdAt: new Date().toISOString(),
+      parts: manifest.parts.map(item => item.partId === input.partId
+        ? { ...item, artifactPath: partPointer.path, artifactHash: partPointer.hash } : item),
+    });
+    const pointer = await writeReferenceJson(workDir, 'manifest', nextManifest);
+    await database.publishViralReferenceIndex(record.id, record.runGeneration ?? 0, input.expectedRevision, {
+      ...pointer, revision: nextManifest.revision,
+    });
+    await database.addViralAnalysisEvent(record.id, {
+      type: 'reference-edit', stage: record.currentStage, detail: '已保存人工修订，原始观察分片保留。',
+      runGeneration: record.runGeneration ?? 0,
+      dataJson: JSON.stringify({ observationId: input.observationId, previousPart, nextPart: partPointer, revision: nextManifest.revision }),
+    });
+    await publishViralUpsert(database, record.id);
+    return nextManifest;
+  } finally { reservation.release(); }
+});
+
+trustedHandle('viral:export-reference', async (_event, input) => {
+  const reservation = historyActivityRegistry.reserveActive('viral-analysis', input.analysisId);
+  try {
+    const { record, workDir, manifest } = await loadViralReferenceIndex(input.analysisId);
+    const extension = input.format === 'markdown' ? 'md' : input.format;
+    const selected = await dialog.showSaveDialog({
+      title: '导出整体拆解报告', defaultPath: `${record.title.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 100) || '整体拆解'}.${extension}`,
+      filters: [{ name: input.format.toUpperCase(), extensions: [extension] }],
+    });
+    if (selected.canceled || !selected.filePath) return null;
+    const content = await exportReferenceReport(workDir, manifest, input.format);
+    await writeFile(selected.filePath, content, 'utf8');
+    return selected.filePath;
+  } finally { reservation.release(); }
+});
+
+trustedHandle('viral:configure-reference', async (_event, input) => {
+  return runLatestTaskControlRequest(latestViralControlRequests, input.analysisId, async (isCurrent) => {
+    if (runningViralAnalyses.has(input.analysisId)) throw new Error('VIRAL_REFERENCE_BUSY: 请等待当前分析停止。');
+    const database = await getDb();
+    const record = await database.getViralAnalysisDetail(input.analysisId);
+    if (!record) throw new Error('VIRAL_ANALYSIS_NOT_FOUND');
+    if (record.archivedAt) throw new Error('HISTORY_ARCHIVED');
+    if (!isCurrent()) return null;
+    await database.configureViralReferenceRun(record.id, { maxAnalysisRequests: input.maxAnalysisRequests,
+      referenceVisualInput: input.referenceVisualInput, referenceAudioInput: input.referenceAudioInput });
+    if (!isCurrent()) return null;
+    const reviewedRequests = input.retryReviewedRequests ? await authorizeReferenceRequestRetries(viralAnalysisWorkDir(record)) : 0;
+    await database.addViralAnalysisEvent(record.id, { type: 'reference-configured', stage: record.currentStage,
+      detail: `已更新恢复设置${reviewedRequests ? `；用户核对后允许重发 ${reviewedRequests} 个未成功请求` : ''}。`, runGeneration: record.runGeneration ?? 0 });
+    return publishViralUpsert(database, record.id);
+  }, () => historyActivityRegistry.reserveActive('viral-analysis', input.analysisId));
+});
+
 trustedHandle('viral:create-and-run', async (_event, input: CreateViralAnalysisInput) => {
   const database = await getDb();
   const record = await database.createViralAnalysis({
@@ -4227,6 +4558,23 @@ trustedHandle('task:update-status', async (_event, input: { id: string; status: 
       ? takeHistoryActivityReservation(existingControlRun)
       : historyActivityRegistry.reserveActive('task', input.id));
 });
+
+trustedHandle('music-mv:update', (_event, input: import('../src/shared/types').MusicMvTaskUpdateInput) =>
+  runHistoryGovernanceMutation('task', input.id, async (database) => {
+    const task = await database.getTaskDetail(input.id);
+    if (!task) throw new Error(`MUSIC_MV_TASK_NOT_FOUND: ${input.id}`);
+    if (task.taskKind !== 'music-mv' && task.taskType !== 'music-mv') throw new Error('MUSIC_MV_TASK_INVALID: 只能编辑音乐 MV 任务。');
+    if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+    if (task.status === 'pending' || task.status === 'running') throw new Error('MUSIC_MV_TASK_ACTIVE: 运行中的音乐 MV 不能编辑。');
+    if (task.artifactStatePath) await markTaskStepForRerun(task.artifactStatePath, 0, 'regenerate');
+    await database.updateMusicMvTask(input);
+    const event = await database.addTaskEvent(input.id, {
+      type: 'music_mv_updated', step: 0, agent: 'Music MV',
+      detail: '音乐 MV 参数已保存，将从内容阶段重新生成。',
+    });
+    await publishTaskEvent(event);
+    return publishTaskUpsert(database, input.id);
+  }));
 
 trustedHandle('task:update-template', async (_event, input: { id: string; templateId: string }) => {
   const database = await getDb();
@@ -5224,6 +5572,8 @@ async function shutdownApplication(): Promise<void> {
   isShuttingDown = true;
   acceptingAppDeltas = false;
   historyActivityRegistry.close();
+  musicProfileService?.close();
+  await Promise.allSettled([...activeMusicSubmissions, musicBgmImportQueue]);
   const completions: Promise<void>[] = [];
 
   for (const run of runningTasks.values()) {

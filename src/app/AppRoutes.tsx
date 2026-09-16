@@ -6,6 +6,7 @@ import { routeComponents } from './route-registry';
 import type { ApplyMutationResult, RendererAppState as AppState } from './route-types';
 import type { SettingsSection } from '../features/settings/SettingsPage';
 import { createProjectHomeSession } from '../features/projects/project-home-session';
+import type { MusicMvHandoff } from '../features/music-mv/music-mv-handoff';
 
 const {
   'projects': ProjectHomePage,
@@ -21,6 +22,7 @@ const {
   'image-lab': ImageLabPage,
   'voice-lab': VoiceLabPage,
   'video-lab': VideoLabPage,
+  'music-lab': MusicLabPage,
   'music-mv': MusicMvPage,
   'book-selection': BookSelectionPage,
   'benchmark': BenchmarkImportPage,
@@ -90,6 +92,7 @@ export function AppRoutes({
   isBrowserPreview: boolean;
 }) {
   const [projectHomeSession] = useState(createProjectHomeSession);
+  const [musicMvHandoff, setMusicMvHandoff] = useState<MusicMvHandoff>();
   return (
     <Suspense fallback={<RouteLoadingState />}>
       {activeView === 'projects' ? (
@@ -124,7 +127,8 @@ export function AppRoutes({
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'video-lab' ? <VideoLabPage api={api} state={state} openSettings={() => openSettings('video', 'video-lab')} /> : null}
-      {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, taskDetailReturnView)} isBrowserPreview={isBrowserPreview} /> : null}
+      {activeView === 'music-lab' ? <MusicLabPage api={api} applyState={applyState} musicConfig={state.config.music} openSettings={() => openSettings('music', 'music-lab')} onUseInMv={(song) => { setMusicMvHandoff({ ...song, id: crypto.randomUUID() }); navigate('music-mv'); }} /> : null}
+      {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, taskDetailReturnView)} isBrowserPreview={isBrowserPreview} initialMusic={musicMvHandoff} onInitialMusicHandled={(id) => setMusicMvHandoff((current) => current?.id === id ? undefined : current)} /> : null}
       {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
