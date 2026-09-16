@@ -5,6 +5,7 @@ import { MUSIC_MODELS, type MusicLabRecord, type MusicModel, type MusicTrack } f
 import { estimateMusicOperationCost, MUSIC_OPERATION_LABELS, musicOperationInputSchema, type MusicOperation, type MusicOperationInput } from '../../shared/music-operations';
 import { Button, CheckboxField, Dialog, SegmentedControl, SelectField, SliderField, TextAreaField, TextField } from '../../ui';
 import './music-source-tools.css';
+import { MusicStylePickerButton } from './MusicStylePicker';
 
 export interface MusicSourceToolsProps {
   open: boolean;
@@ -211,6 +212,7 @@ export function MusicSourceTools({ open, initialMode = 'operation', initialOpera
         {creative && <>
           <TextAreaField label={draft.operation === 'replace' ? '替换片段的歌词' : draft.operation === 'add-vocal' ? '演唱歌词' : '歌词 / 创作要求（选填）'} value={draft.lyrics} maxLength={30000} rows={5} disabled={busy} onChange={(_, data) => patch({ lyrics: data.value })} />
           <TextAreaField label={draft.operation === 'cover' ? '目标音乐风格' : '音乐风格（选填）'} value={draft.style} maxLength={5000} rows={3} disabled={busy} onChange={(_, data) => patch({ style: data.value })} />
+          <MusicStylePickerButton value={draft.style} disabled={busy} onChange={style => patch({ style })} />
           {draft.operation === 'add-stem' && <TextField label="乐器与演奏指令" hint="例如：warm piano, gentle arpeggio" value={draft.stemControlTags} maxLength={120} disabled={busy} onChange={(_, data) => patch({ stemControlTags: data.value })} />}
           {draft.operation === 'add-instrumental' && <TextField label="目标时长（秒，选填）" type="number" min={1} max={480} step={1} value={draft.durationSec} disabled={busy} onChange={(_, data) => patch({ durationSec: data.value })} />}
           {['cover', 'mashup', 'inspo'].includes(draft.operation) && <CheckboxField label="生成纯音乐" checked={draft.instrumental} disabled={busy} onChange={(_, data) => patch({ instrumental: data.checked === true })} />}

@@ -62,6 +62,16 @@ export function isMusicMediaBytes(bytes: Uint8Array, format: MusicMediaFormat, c
 type JsonObject = Record<string, unknown>;
 function object(value: unknown): JsonObject { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}; }
 function string(value: unknown): string { return typeof value === 'string' ? value : ''; }
+function musicErrorMessage(value: unknown, depth = 0): string {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object' || depth >= 4) return '';
+  const item = object(value);
+  for (const key of ['message', 'error', 'detail']) {
+    const message = musicErrorMessage(item[key], depth + 1);
+    if (message) return message;
+  }
+  return '';
+}
 function safeUrl(value: unknown): string | undefined {
   try {
     const url = new URL(string(value));
@@ -116,6 +126,13 @@ export function createMusicProvider(options: { apiKey: string; baseUrl?: string;
   const apiKey = options.apiKey.trim();
   if (!apiKey) throw new MusicProviderError('MUSIC_KEY_MISSING: 尚未配置音乐生成服务。', true);
   const redact = (value: string) => value.split(apiKey).join('[已隐藏]').replace(/Bearer\s+[^\s"']+/giu, 'Bearer [已隐藏]').slice(0, 2_000);
+  function apiError(path: string, message: string, definitive: boolean, retryAfterMs?: number): MusicProviderError {
+    // The upload service reports this explicit rejection using HTTP 500.
+    if (path === '/api/music/upload-source' && /this audio matches an existing recording in our catalog/iu.test(message)) {
+      return new MusicProviderError('MUSIC_UPLOAD_REJECTED: 这段音频与服务曲库中的现有录音匹配，服务拒绝上传。请更换音频后重试。', true);
+    }
+    return new MusicProviderError(redact(`MUSIC_API_ERROR: ${message}`), definitive, retryAfterMs);
+  }
   async function request(path: string, body?: unknown, binary = false): Promise<Response> {
     try {
       const response = await fetchWithTimeout(`${baseUrl}${path}`, {
@@ -128,9 +145,9 @@ export function createMusicProvider(options: { apiKey: string; baseUrl?: string;
       });
       if (!response.ok) {
         const data = await response.clone().json().catch(() => ({}));
-        const message = string(object(data).message ?? object(data).error) || `服务返回 HTTP ${response.status}`;
+        const message = musicErrorMessage(data) || `服务返回 HTTP ${response.status}`;
         const retryAfter = Number(response.headers.get('retry-after'));
-        throw new MusicProviderError(redact(`MUSIC_API_ERROR: ${message}`), response.status >= 400 && response.status < 500 && ![408, 409, 429].includes(response.status),
+        throw apiError(path, message, response.status >= 400 && response.status < 500 && ![408, 409, 429].includes(response.status),
           Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined);
       }
       return response;
@@ -144,7 +161,7 @@ export function createMusicProvider(options: { apiKey: string; baseUrl?: string;
     const value: unknown = await response.json().catch(() => { throw new MusicProviderError('MUSIC_RESPONSE_INVALID: 音乐服务未返回有效数据。'); });
     const result = object(value);
     if (result.success === false || result.error || (result.code !== undefined && ![0, 200, '0', '200', 'success'].includes(result.code as string | number))) {
-      throw new MusicProviderError(redact(`MUSIC_API_ERROR: ${string(result.message ?? result.error) || '音乐服务拒绝了请求。'}`), true);
+      throw apiError(path, musicErrorMessage(result) || '音乐服务拒绝了请求。', true);
     }
     return { value, response };
   }

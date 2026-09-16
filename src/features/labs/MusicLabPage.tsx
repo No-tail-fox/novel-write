@@ -13,6 +13,7 @@ import { MusicSourceTools, musicOperationGroups } from './MusicSourceTools';
 import { MUSIC_OPERATION_LABELS, type MusicOperation } from '../../shared/music-operations';
 import { MusicVoicePanel } from './MusicVoicePanel';
 import { MusicEnhancedPanel } from './MusicEnhancedPanel';
+import { MusicStylePickerButton } from './MusicStylePicker';
 
 const statusLabels = { submitting: '提交中', pending: '排队中', processing: '创作中', completed: '已完成', partial: '部分完成', failed: '失败', 'needs-recovery': '待核对' } as const;
 const inspirations = [
@@ -20,7 +21,6 @@ const inspirations = [
   { title: '中文流行', icon: Music2, prompt: '一首关于离开故乡、在陌生城市重新出发的中文流行歌。温暖的人声，木吉他与轻鼓点，主歌像讲故事，副歌有希望感、容易跟唱。', instrumental: false },
   { title: '氛围电子', icon: AudioLines, prompt: '夜晚雨中的未来城市，氛围电子音乐，细腻合成器与低频脉冲，安静、空灵、有电影感，适合作为视觉短片背景。', instrumental: true },
 ];
-const styles = ['流行', '电影配乐', 'Lo-fi', '电子', '民谣', '国风'];
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSettings }: {
@@ -285,7 +285,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
             <TextAreaField label="歌词" hint={draft.instrumental ? '纯音乐模式下不发送歌词，已写内容会保留。' : '支持 [Verse]、[Chorus] 等段落标记。'} placeholder={'[Verse]\n在这里写下第一句\n\n[Chorus]\n让故事随旋律展开'} rows={7} maxLength={30000} value={draft.lyrics} disabled={draft.instrumental} onChange={(_, data) => patchDraft({ lyrics: data.value })} />
             <div className="music-lab__inline-actions"><Button density="compact" variant="subtle" icon={<Wand2 size={14} />} disabled={busy || !service?.configured || draft.instrumental} onClick={() => { setLyricInstruction(draft.description); setHelperOpen(true); }}>帮我写歌词</Button><Button density="compact" variant="subtle" disabled={draft.instrumental} onClick={() => patchDraft({ lyrics: `${draft.lyrics}${draft.lyrics ? '\n\n' : ''}[Verse]\n\n[Chorus]\n\n[Outro]\n` })}>插入结构</Button><Button density="compact" variant="subtle" disabled={busy || !draft.lyrics.trim() || draft.instrumental || !service?.configured} onClick={()=>{setLyricInstruction(`请把以下歌词转换为便于演唱的拼音，保留段落结构，只输出转换后的完整歌词：\n${draft.lyrics}`);setHelperOpen(true);}}>拼音辅助</Button></div>
             <TextAreaField label="音乐风格" placeholder="如：Chinese pop, warm vocal, acoustic guitar" rows={3} maxLength={5000} value={draft.style} onChange={(_, data) => patchDraft({ style: data.value })} />
-            <div className="music-lab__tags">{styles.map((style) => <Button key={style} density="compact" variant="subtle" onClick={() => patchDraft({ style: [draft.style, style].filter(Boolean).join(', ') })}>{style}</Button>)}</div>
+            <MusicStylePickerButton value={draft.style} disabled={busy} onChange={style => patchDraft({ style })} />
             <Button density="compact" variant="subtle" icon={<Sparkles size={14} />} disabled={busy || !service?.configured || !draft.style.trim()} onClick={() => void boostStyle()}>{pendingAction === 'style' ? '正在润色…' : '润色风格'}</Button>
             <p className="music-lab__hint">歌词与风格辅助：额度内免费，超额 ¥0.10 / 次。</p>
           </>}
@@ -327,7 +327,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
         <div className="music-lab__pane-title"><h3>歌曲详情</h3>{track && <div><span className="music-lab__status">{statusLabels[track.status]}</span><IconButton label={favoriteIds.includes(track.id)?'取消收藏':'收藏歌曲'} icon={<Star size={14} fill={favoriteIds.includes(track.id)?'currentColor':'none'} />} variant="subtle" onClick={toggleFavorite} /></div>}</div>
         {record ? <div className="music-lab__detail-body">
           <div className="music-lab__cover">{track?.imageUrl ? <img src={track.imageUrl} alt={`${track.title}的封面`} /> : <Music2 size={44} strokeWidth={1} />}</div>
-          <h3>{track?.title || '正在创作'}</h3><p className="music-lab__hint">{track?.style || '生成后显示风格与歌曲信息'}</p>
+          <h3>{track?.title || (record.origin === 'upload' ? `上传${statusLabels[record.status]}` : statusLabels[record.status])}</h3><p className="music-lab__hint">{track?.style || (record.origin === 'upload' ? '上传成功后可用于翻唱、续写和分轨' : '生成后显示风格与歌曲信息')}</p>
           <div className="music-lab__metadata"><span>{record.model}</span><span>{track?.durationSec ? musicTime(track.durationSec) : '时长待返回'}</span><span>{record.origin === 'history' ? '云端导入' : record.origin === 'upload' ? '上传素材' : `预计 ¥${record.estimatedCost.toFixed(2)} / 次`}</span>{record.operation && <span>{MUSIC_OPERATION_LABELS[record.operation.operation]}</span>}{track?.stemType && <span>{track.stemType}</span>}</div>
           {(record.errorMessage || track?.errorMessage || track?.downloadError) && <p className="music-lab__error" role="alert">{record.errorMessage || track?.errorMessage || track?.downloadError}</p>}
           {record.status === 'needs-recovery' && <p className="music-lab__hint">提交结果不明确，请先在服务网站核对记录，避免重复付费提交。</p>}

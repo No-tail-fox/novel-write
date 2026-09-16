@@ -116,6 +116,33 @@ describe('Suno music provider', () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
+  it.each([200, 500])('explains catalog upload rejection and marks it definitive even with HTTP %s', async (status) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ error: {
+      message: 'This audio matches an existing recording in our catalog.', type: 'bad_response_status_code', code: 'bad_response_status_code',
+    } }), { status, headers: { 'Content-Type': 'application/json' } }));
+    await expect(createMusicProvider({ apiKey: 'test-only-key', fetchImpl }).uploadSource({
+      bytes: new Uint8Array([1, 2]), fileName: 'source.mp3', model: 'suno-v6',
+    })).rejects.toMatchObject({ definitive: true, message: expect.stringContaining('MUSIC_UPLOAD_REJECTED: 这段音频与服务曲库中的现有录音匹配') });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('preserves nested server errors without leaking credentials or making an uncertain submission definitive', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ error: {
+      message: 'upstream unavailable: test-only-key / Bearer another-secret',
+    } }), { status: 500, headers: { 'Retry-After': '12' } }));
+    await expect(createMusicProvider({ apiKey: 'test-only-key', fetchImpl }).generate(basic)).rejects.toMatchObject({
+      definitive: false, retryAfterMs: 12000, message: 'MUSIC_API_ERROR: upstream unavailable: [已隐藏] / Bearer [已隐藏]',
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to HTTP status for a non-JSON server failure', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('<html>Server error</html>', { status: 500 }));
+    await expect(createMusicProvider({ apiKey: 'test-only-key', fetchImpl }).getBalance()).rejects.toMatchObject({
+      definitive: false, message: 'MUSIC_API_ERROR: 服务返回 HTTP 500',
+    });
+  });
+
   it('queries all IDs with the documented comma-separated string', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(json([]));
     await createMusicProvider({ apiKey: 'test-only-key', fetchImpl }).query(['first', 'second']);

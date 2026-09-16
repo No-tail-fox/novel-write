@@ -208,6 +208,22 @@ describe('persistent music lab runtime', () => {
     expect(provider.uploadSource).toHaveBeenCalledOnce();
   });
 
+  it('persists a definitive upload rejection as failed and never resubmits it on refresh', async () => {
+    const { runtime, provider, dataDir } = await setup();
+    const directory = join(dataDir, 'bgm'); await mkdir(directory);
+    const file = join(directory, 'source.mp3');
+    await writeFile(file, Buffer.concat([Buffer.from('ID3'), Buffer.alloc(24)]));
+    const errorMessage = 'MUSIC_UPLOAD_REJECTED: 这段音频与服务曲库中的现有录音匹配，服务拒绝上传。请更换音频后重试。';
+    provider.uploadSource.mockRejectedValue(new MusicProviderError(errorMessage, true));
+    const rejected = await runtime.uploadSource({ audioPath: file, title: '本地音频', model: 'suno-v6' });
+    expect(rejected).toMatchObject({ origin: 'upload', status: 'failed', errorMessage, estimatedCost: 0, tracks: [] });
+    expect(rejected.finishedAt).toBeTruthy();
+    expect((await runtime.list())[0]).toMatchObject({ status: 'failed', errorMessage });
+    await runtime.refresh(rejected.id);
+    expect(provider.uploadSource).toHaveBeenCalledOnce();
+    expect(provider.query).not.toHaveBeenCalled();
+  });
+
   it('synchronizes history without duplicate paid jobs and stops repeated server pages', async () => {
     const { runtime, provider } = await setup(); const existing = await runtime.generate(input);
     provider.getHistoryPage.mockResolvedValue({ tracks: [remote('first', 'completed'), remote('cloud-only', 'completed')], hasMore: true });
