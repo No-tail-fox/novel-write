@@ -140,7 +140,7 @@ Write-Host "[python-runtime] Installing pip"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[python-runtime] Installing Python packages"
-& $PythonExe -m pip install --no-warn-script-location --upgrade pip --index-url $PipIndexUrl
+& $PythonExe -m pip install --no-warn-script-location --upgrade pip setuptools wheel --index-url $PipIndexUrl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $PythonExe -m pip install --no-warn-script-location @PackageNames --index-url $PipIndexUrl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -288,6 +288,7 @@ export const defaultConfig: AppConfig = {
     activeVisionProfileId: 'viral-vision',
   },
   webSearch: {
+    agentSearchEnabled: true,
     searxngBaseUrl: '',
     tavilyKeylessEnabled: true,
     legacyFallbackEnabled: true,

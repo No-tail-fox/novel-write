@@ -57,6 +57,7 @@ import type {
 import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_PAGE_DURATION_MS, ordinaryTaskCoverDimensions, validateOrdinaryTaskCoverSelection } from '../../shared/ordinary-task-cover';
 import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
 import { createOrdinaryTaskPipelineData } from '../../shared/ordinary-task-options';
+import { formatWebSearchBackendStatus, formatWebSearchProviderStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
 import { useAsyncAction } from '../../ui/async-action';
 import { buildTaskCreateInput } from './task-create-input';
 import { TaskCreationTypePicker, taskCreationTarget, type TaskCreationType } from './TaskCreationTypePicker';
@@ -129,11 +130,6 @@ const WEB_SEARCH_PROVIDER_OPTIONS: ReadonlyArray<{ id: WebSearchProvider; label:
 
 function isWebSearchProvider(value: unknown): value is WebSearchProvider {
   return WEB_SEARCH_PROVIDER_OPTIONS.some((option) => option.id === value);
-}
-
-function webSearchProviderLabel(provider: WebSearchProvider | undefined): string {
-  if (provider === 'wikipedia') return '维基百科';
-  return WEB_SEARCH_PROVIDER_OPTIONS.find((option) => option.id === provider)?.label ?? '网页';
 }
 
 function ContentMetricsSummary({
@@ -1134,11 +1130,20 @@ export function NewTaskPage({
                               <div><h3>网页候选（前 10 条）</h3><small>实际查询：{searchContext.query}</small></div>
                               <small>{selectedSources.length}/{searchSections.length} 已选择</small>
                             </div>
+                            {searchContext.backendStatuses?.length ? (
+                              <div className="web-search-provider-statuses" aria-label="搜索后端状态">
+                                {searchContext.backendStatuses.map((status) => (
+                                  <span className="web-search-provider-status" data-state={status.state} key={status.backend} title={status.message}>
+                                    {formatWebSearchBackendStatus(status)}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
                             {searchContext.providerStatuses?.length ? (
-                              <div className="web-search-provider-statuses">
+                              <div className="web-search-provider-statuses" aria-label="搜索渠道状态">
                                 {searchContext.providerStatuses.map((status) => (
-                                  <span className="web-search-provider-status" data-state={status.state} key={status.provider}>
-                                    {status.label} · {status.state === 'ready' ? `${status.count} 条` : status.state === 'empty' ? '无精准结果' : '失败'}
+                                  <span className="web-search-provider-status" data-state={status.state} key={status.provider} title={status.message}>
+                                    {formatWebSearchProviderStatus(status)}
                                   </span>
                                 ))}
                               </div>
@@ -1150,7 +1155,7 @@ export function NewTaskPage({
                                 <label className="search-source-card" key={id}>
                                   <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => handleSelectedSearchSourceChange(id)} />
                                   <div>
-                                    <div className="search-source-heading"><span className="search-source-provider">{webSearchProviderLabel(source.provider)}</span><strong>{source.title}</strong></div>
+                                    <div className="search-source-heading"><span className="search-source-provider">{formatWebSearchSourceLabel(source)}</span><strong>{source.title}</strong></div>
                                     {source.url ? <span className="search-source-url">{source.url}</span> : null}
                                     <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
                                   </div>

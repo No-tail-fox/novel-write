@@ -1574,9 +1574,10 @@ export interface AiSourceSection {
 
 export type WebSearchProvider = 'bing' | 'baidu' | 'sogou' | 'toutiao' | 'duckduckgo' | 'wikipedia';
 
-export type WebSearchBackend = 'searxng' | 'tavily' | 'legacy';
+export type WebSearchBackend = 'agent-search' | 'searxng' | 'tavily' | 'legacy';
 
 export interface WebSearchConfig {
+  agentSearchEnabled: boolean;
   searxngBaseUrl: string;
   tavilyKeylessEnabled: boolean;
   legacyFallbackEnabled: boolean;

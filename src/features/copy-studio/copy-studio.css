@@ -6,6 +6,11 @@
 .copy-studio-heading h2, .copy-studio-editor-toolbar h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0; }
 .copy-studio-heading span, .copy-studio-editor-toolbar span, .copy-studio-handoff p { margin: 0; color: var(--shell-muted); font-size: var(--sd-text-caption); line-height: 1.55; }
 .copy-studio-provider-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+.copy-studio-backend-statuses { display: flex; flex-wrap: wrap; gap: 6px; }
+.copy-studio-backend-status { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid var(--shell-border); border-radius: var(--sd-radius); color: var(--shell-muted); background: var(--shell-surface); font-size: 11px; line-height: 1.4; }
+.copy-studio-backend-status[data-state='ready'] { border-color: color-mix(in srgb, var(--shell-accent) 46%, var(--shell-border)); color: var(--shell-accent-strong); }
+.copy-studio-backend-status[data-state='failed'] { border-color: color-mix(in srgb, var(--danger) 44%, var(--shell-border)); color: var(--danger); }
+.copy-studio-backend-status[data-state='limited'] { border-color: color-mix(in srgb, var(--warn) 44%, var(--shell-border)); color: var(--warn); }
 .copy-studio-source-list, .copy-studio-revisions { display: grid; min-height: 0; align-content: start; }
 .copy-studio-source { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px; padding: 10px 5px; border-bottom: 1px solid var(--shell-border); cursor: pointer; }
 .copy-studio-source[data-selected='true'] { background: var(--shell-selected); box-shadow: inset 3px 0 0 var(--shell-focus); }

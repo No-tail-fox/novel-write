@@ -26,6 +26,8 @@
   "description": "",
   "dependencies": {
     "@fluentui/react-components": "^9.74.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "agent-search-mcp": "3.2.1",
     "sql.js": "^1.14.1",
     "undici": "^6.27.0",
     "zod": "^4.4.3"

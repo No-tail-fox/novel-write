@@ -459,7 +459,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['jianying', FolderOpen, '剪映', '草稿目录 · BGM', settingsStatusLabel(configTargetStatus('jianying', draftWithCredentialStatus))],
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
     ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draftWithCredentialStatus))],
-    ['webSearch', Globe2, '联网搜索', 'SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
+    ['webSearch', Globe2, '联网搜索', 'Agent Search · SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
   const returnLabel = returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
@@ -836,12 +836,18 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         ) : null}
         {section === 'webSearch' ? (
           <SettingsCard title="联网搜索" status={settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))}>
+            <SwitchField
+              checked={draft.webSearch.agentSearchEnabled}
+              onChange={(_, data) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, agentSearchEnabled: data.checked } })}
+              label="启用 Agent Search 聚合搜索"
+            />
+            <div className="settings-help-text">内置免 Key 多引擎搜索。不可用、超时或没有结果时会自动尝试后续搜索源。</div>
             <ConfigInput
               label="SearXNG 服务地址（可选）"
               value={draft.webSearch.searxngBaseUrl}
               onChange={(value) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, searxngBaseUrl: value } })}
             />
-            <div className="settings-help-text">推荐填写自己部署的 SearXNG，例如 http://127.0.0.1:8080。留空时直接使用 Tavily Keyless 备用搜索。</div>
+            <div className="settings-help-text">推荐填写自己部署的 SearXNG，例如 http://127.0.0.1:8080。留空时跳过该后端。</div>
             <SwitchField
               checked={draft.webSearch.tavilyKeylessEnabled}
               onChange={(_, data) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, tavilyKeylessEnabled: data.checked } })}
@@ -852,7 +858,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               onChange={(_, data) => setSettingsDraft({ ...draft, webSearch: { ...draft.webSearch, legacyFallbackEnabled: data.checked } })}
               label="启用 Bing / 百度 / 搜狗 / 头条兼容降级"
             />
-            <div className="settings-help-text">搜索顺序：SearXNG → Tavily Keyless → 兼容搜索源。搜索结果发现与正文读取分离，正文打不开不会丢失搜索结果。</div>
+            <div className="settings-help-text">搜索顺序：Agent Search → SearXNG → Tavily Keyless → 兼容搜索源。搜索结果发现与正文读取分离，正文打不开不会丢失搜索结果。</div>
           </SettingsCard>
         ) : null}
         {section === 'about' ? (

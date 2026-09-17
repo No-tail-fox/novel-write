@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check, FileClock, Loader2, Search, Sparkles, Wand2 } from 'lucide-react';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AiSourceContext, AiSourceSection, ShellView, WebSearchProvider } from '../../shared/types';
+import { formatWebSearchBackendStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
 import { Button, CheckboxField, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { copySourceKey, createCopyRevision, handoffCopyToVideo, readCopyStudioDocument, writeCopyStudioDocument, type CopyRevision, type CopyRevisionKind } from './copy-studio';
@@ -14,10 +15,6 @@ const trackOptions = [
   { value: 'character-story', label: '人物故事' }, { value: 'book-product', label: '好书带货' },
   { value: 'knowledge', label: '知识科普' }, { value: 'food-vlog', label: '美食探店' }, { value: 'custom', label: '自定义赛道' },
 ] as const;
-
-function sourceLabel(source: AiSourceSection): string {
-  try { return new URL(source.url || '').hostname.replace(/^www\./u, '') || source.source; } catch { return source.source || '网页'; }
-}
 
 function revisionLabel(kind: CopyRevisionKind, count: number): string {
   if (kind === 'draft') return '来源初稿';
@@ -114,9 +111,10 @@ export function CopyStudioPage({ api, navigate }: { api: StoryDreamApi; navigate
       <TextField label="搜索主题" value={topic} placeholder="人物、事件、产品或选题" onChange={(_, data) => setTopic(data.value)} />
       <div className="copy-studio-provider-list" aria-label="搜索渠道">{providers.map((provider) => <CheckboxField key={provider.value} label={provider.label} checked={selectedProviders.includes(provider.value)} onChange={() => toggleProvider(provider.value)} />)}</div>
       <Button variant="primary" icon={searchAction.busy ? <Loader2 className="spin" size={16} /> : <Search size={16} />} disabled={searchAction.busy} onClick={() => void searchSources()}>{searchAction.busy ? '搜索中' : '搜索来源'}</Button>
+      {searchContext?.backendStatuses?.length ? <div className="copy-studio-backend-statuses" aria-label="搜索后端状态">{searchContext.backendStatuses.map((status) => <span className="copy-studio-backend-status" data-state={status.state} key={status.backend} title={status.message}>{formatWebSearchBackendStatus(status)}</span>)}</div> : null}
       <div className="copy-studio-source-list">{searchContext?.sections.map((source) => { const key = copySourceKey(source); return <label key={key} className="copy-studio-source" data-selected={sourceIds.includes(key)}>
         <CheckboxField checked={sourceIds.includes(key)} onChange={() => setSourceIds((current) => current.includes(key) ? current.filter((id) => id !== key) : [...current, key])} />
-        <span><strong>{source.title}</strong><small>{sourceLabel(source)}</small><em>{source.content}</em></span>
+        <span><strong>{source.title}</strong><small>{formatWebSearchSourceLabel(source)}</small><em>{source.content}</em></span>
       </label>; })}</div>
     </aside>
 

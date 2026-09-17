@@ -717,3 +717,16 @@ VOX skills 接入完成：四个镜头制作方式已持久化。Paper Cut 真�
 - `HotBoardPage.searchItemContent` 仍硬编码 `bing/sogou/baidu`，未包含已经接入的 DuckDuckGo。
 - 用截图标题真实复现：三源返回 0 条；加入 DuckDuckGo 后返回 3 条，包含知乎原问题、什么值得买文章和 Iscbj 页面。
 - 热榜把任意 `context.warnings` 当作最终错误，导致 Tavily `limited` 被错误渲染成“联网搜索失败”；应只把 `backendStatuses.state === failed` 视为失败。
+
+## 2026-09-17 Agent Search 联网搜索接入
+
+- 目标包为 `agent-search-mcp@3.2.1`（Node >=18.17），默认支持多个免 Key 搜索引擎；旧 `SciPhi-AI/agent-search` 需要 Key，不采用。
+- 所有桌面入口最终进入 `searchWebSourcesDetailed -> searchConfiguredBackends`；Agent Search 应新增为 `WebSearchBackend`，不应加入 Bing/百度等 `WebSearchProvider` 复选框。
+- 搜索在 Electron 主进程执行；适合以参数数组启动项目内固定版本 CLI，限制运行时间和输出大小，并在异常时进入现有回退链。
+- 选中的来源在文案创作时会经过 `sourceSectionSchema`，因此类型枚举与 IPC 的 backend 枚举必须同时加入 `agent-search`。
+- 打包不能依赖运行时 `npx -y` 下载。计划在构建阶段把依赖 CLI 打成独立主进程脚本，开发/生产均从固定本地文件执行。
+- 最终采用单文件 CJS 服务和长驻 MCP 会话；会话级恢复避免并发旧请求关闭新连接，stderr 持续消费并保留限长诊断。
+- Agent Search 会标记疑似提示注入结果；这类结果必须整条丢弃并给出可见警告，不能只删除警示前缀后继续送入文案模型。
+- Bing 聚合结果可能把域名与完整 URL 拼接进标题；展示前需清理这一重复前缀，同时保留实际 URL 和来源引擎。
+- Windows 包必须同时携带服务、主许可证和打包依赖许可证。最终 notices 包含 42 个条目，打包 exe 从 ASAR 握手返回 3.2.1 和 7 个工具。
+- 嵌入式 Python 3.12 运行时的现代 `pip` 不保证预装 `setuptools`；`jieba` 源码构建依赖 `setuptools.build_meta`，运行时准备脚本需先安装 `setuptools` 与 `wheel`。

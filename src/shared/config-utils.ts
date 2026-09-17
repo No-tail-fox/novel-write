@@ -667,6 +667,7 @@ export function normalizeAppConfig(input: unknown): AppConfig {
     webSearch: {
       ...defaultConfig.webSearch,
       ...(partial.webSearch ?? {}),
+      agentSearchEnabled: partial.webSearch?.agentSearchEnabled !== false,
       searxngBaseUrl: String(partial.webSearch?.searxngBaseUrl ?? defaultConfig.webSearch.searxngBaseUrl).trim().replace(/\/+$/u, ''),
       tavilyKeylessEnabled: partial.webSearch?.tavilyKeylessEnabled !== false,
       legacyFallbackEnabled: partial.webSearch?.legacyFallbackEnabled !== false,
@@ -797,13 +798,20 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
         validEndpoint = false;
       }
     }
-    const hasFallback = config.webSearch.tavilyKeylessEnabled || config.webSearch.legacyFallbackEnabled;
+    const hasBackend = config.webSearch.agentSearchEnabled
+      || Boolean(endpoint)
+      || config.webSearch.tavilyKeylessEnabled
+      || config.webSearch.legacyFallbackEnabled;
     return buildResult({
       target,
       startedAt,
-      status: validEndpoint && hasFallback ? 'pass' : 'fail',
-      endpoint,
-      detail: !validEndpoint ? 'SearXNG 地址必须是没有账号密码的 HTTP/HTTPS 地址。' : hasFallback ? '联网搜索会按 SearXNG、Tavily、兼容搜索源顺序自动降级。' : '至少保留一个备用搜索源。',
+      status: validEndpoint && hasBackend ? 'pass' : 'fail',
+      endpoint: endpoint || (config.webSearch.agentSearchEnabled ? 'agent-search-mcp' : ''),
+      detail: !validEndpoint
+        ? 'SearXNG 地址必须是没有账号密码的 HTTP/HTTPS 地址。'
+        : hasBackend
+          ? '联网搜索会按 Agent Search、SearXNG、Tavily、兼容搜索源顺序自动降级。'
+          : '至少启用一个联网搜索后端。',
     });
   }
 

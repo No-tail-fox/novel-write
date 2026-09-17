@@ -937,3 +937,11 @@ Standalone generation complete. Final focused suite: 267/267 passed (11 files). 
 - 热榜、研究与搜索后端聚焦测试 39/39 通过；`git diff --check` 无空白错误；Electron main/preload 生产构建产物已更新。
 - 已实看 1440x900 与 920x720 热榜内容弹窗截图，布局可用。QA 脚本随后在无关的旧“去创作交接”夹具等待选中项时超时。
 - 全量类型检查仍有两处既有阻塞：`browser-fallback` 缺 `updateHtmlVideoSceneStructure`/`updateMusicMvTask`，以及 `FileDatabase` 缺 `updateMusicMvTask`；本轮改动未新增类型错误。
+
+## 2026-09-17 Agent Search 联网搜索接入
+
+- 已使用 agent-reach 核对目标仓库/npm 包，使用 StoryDream UI 规范审计设置与搜索结果状态。
+- 已接入固定版本 `agent-search-mcp@3.2.1`，默认启用并置于 SearXNG、Tavily Keyless、兼容搜索源之前；普通视频、HTML 视频、文案工作台、热榜均共用该链路并展示来源及后端状态。
+- 已完成长驻 MCP 会话、超时和故障重连、并发恢复、stderr 限长诊断、提示注入结果过滤、标题重复 URL 清理、版本注入及 42 项第三方许可证汇总。
+- 16 个聚焦测试文件 391 项、完整 typecheck、生产 build、Electron 六项冒烟通过；真实免 Key 搜索成功，四张 1440/1040 桌面截图无溢出、运行错误或付费调用。
+- `npm run package:win` 通过，产物为 `release/StoryDream-Portable-1.0.0.zip`；ASAR 三项资源齐全，打包 exe 从 ASAR 完成 MCP 3.2.1 握手并列出 7 个工具。

@@ -7,6 +7,11 @@ describe('copy studio UI', () => {
     for (const text of ['来源搜索', '搜索渠道', '根据', '条来源生成初稿', '文案精修', '本轮修改要求', '按要求精修一轮', '增加赛道特色', '版本记录', '特色赛道', '保留预审', '跳过预审', '回传并继续视频制作']) expect(page).toContain(text);
     expect(page).toContain('api.searchWebSources');
     expect(page).toContain('api.composeResearchCopy');
+    expect(page).toContain('searchContext?.backendStatuses?.length');
+    expect(page).toContain('copy-studio-backend-statuses');
+    expect(page).toContain('aria-label="搜索后端状态"');
+    expect(page).toContain('formatWebSearchBackendStatus(status)');
+    expect(page).toContain('formatWebSearchSourceLabel(source)');
     expect(page).toContain("navigate('new-task')");
     expect(page).toContain('useBuiltinKnowledge: false');
     expect(page).not.toMatch(/<(button|input|select|textarea)\b/u);
@@ -17,6 +22,8 @@ describe('copy studio UI', () => {
     expect(css).toContain('grid-template-columns: minmax(250px, 300px) minmax(420px, 1fr) minmax(260px, 320px)');
     expect(css).toContain('@media (max-width: 1120px)');
     expect(css).toContain('@media (max-width: 760px)');
+    expect(css).toContain('.copy-studio-backend-status[data-state=\'ready\']');
+    expect(css).toContain('.copy-studio-backend-status[data-state=\'failed\']');
     expect(css).toContain('letter-spacing: 0');
   });
 });

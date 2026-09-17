@@ -651,3 +651,13 @@
 - [completed] 跑热榜与搜索回归，真实复测该标题并验证桌面弹窗。
 - 验收：截图标题在 SearXNG 禁用、Tavily 额度耗尽时仍由兼容源返回 2 条可用结果；聚焦测试 39/39 通过，生产构建产物已更新，正常与紧凑窗口截图实看通过。
 - 已知限制：完整类型检查仍被既有 `browser-fallback` API 缺失和 `FileDatabase.updateMusicMvTask` 缺失阻塞；截图 QA 后续在无关的旧“去创作交接”夹具处超时，不影响本轮搜索弹窗验证。
+
+## 2026-09-17 Agent Search 联网搜索接入
+
+- [completed] 确认目标为 `lennney/agent-search-mcp`，并审计 StoryDream 统一搜索入口、IPC 校验与设置页。
+- [completed] 固定 `agent-search-mcp@3.2.1`，以长驻 MCP 子进程接入 Electron；完成结构化结果、部分失败、执行元数据、故障重连、并发恢复和 stderr 限长诊断。
+- [completed] 接入 Agent Search -> SearXNG -> Tavily Keyless -> 兼容源回退链，完成配置迁移和普通视频、HTML 视频、文案工作台、热榜的来源与后端状态展示。
+- [completed] 过滤提示注入结果，修复聚合标题重复 URL；391 项聚焦测试、类型检查、生产构建、Electron 冒烟和四张真实桌面截图通过。
+- [completed] Windows 便携包生成成功；ASAR 内服务与许可证齐全，打包后的 `StoryDream.exe` 从 ASAR 完成 MCP 3.2.1 握手并列出 7 个工具。
+- 边界：不把 Agent Search 当成用户可勾选的网页来源；它是统一搜索后端，所有现有入口自动共用。无需 API Key，不写入任何凭据。
+- 构建错误：首次 ESM 单文件因 Pino 动态 require 失败；CJS 初试又因 `import.meta.url` 为空失败。改用 CJS 并在构建 banner 中提供当前文件 URL，随后重新验收。

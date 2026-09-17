@@ -262,10 +262,10 @@ describe('IPC runtime contract', () => {
     })).toMatchObject({ id: 'music-1', storyboardSceneCount: 8 });
     expect(() => musicMvUpdateSchema.parse({ id: 'music-1', title: '', lyrics: '' })).toThrow();
     expect(contract.ipcInputSchemas['editorial-collage:create'].parse({
-      title: 'Flexible VOX', sourceText: 'source', ratio: '16:9', beatCount: 8, totalDurationMs: 60_000,
-    })).toMatchObject({ beatCount: 8, totalDurationMs: 60_000 });
+      title: 'Flexible VOX', sourceText: 'source', ratio: '16:9', durationMs: 60_000,
+    })).toMatchObject({ durationMs: 60_000 });
     expect(() => contract.ipcInputSchemas['editorial-collage:create'].parse({
-      title: 'Too long', sourceText: 'source', beatCount: 2, totalDurationMs: 60_000,
+      title: 'Unsupported duration', sourceText: 'source', durationMs: 45_000,
     })).toThrow();
     expect(() => htmlVideoUpdateSchema.parse({ id: 'html-task-1', changes: [] })).toThrow();
     expect(() => htmlVideoUpdateSchema.parse({
@@ -369,9 +369,10 @@ describe('IPC runtime contract', () => {
         extraRequirements: '',
         selectedSources: [{
           source: 'web',
-          provider: 'baidu',
+          backend: 'agent-search',
+          provider: 'bing',
           title: 'Title',
-          url: 'https://baijiahao.baidu.com/s?id=1',
+          url: 'https://example.test/agent-search',
           snippet: 'Search result summary',
           content: 'Body',
         }],
@@ -381,7 +382,7 @@ describe('IPC runtime contract', () => {
     ).toMatchObject({
       keyword: 'topic',
       targetLength: 1200,
-      selectedSources: [{ provider: 'baidu' }],
+      selectedSources: [{ backend: 'agent-search', provider: 'bing' }],
       useBuiltinKnowledge: false,
     });
     expect(contract.researchCopyComposeSchema.parse({
@@ -399,6 +400,12 @@ describe('IPC runtime contract', () => {
       keyword: 'topic',
       extraRequirements: '',
       selectedSources: [{ source: 'web', provider: 'unknown', title: 'Title', content: 'Body' }],
+      useBuiltinKnowledge: false,
+    })).toThrow();
+    expect(() => contract.researchCopyComposeSchema.parse({
+      keyword: 'topic',
+      extraRequirements: '',
+      selectedSources: [{ source: 'web', backend: 'unknown', title: 'Title', content: 'Body' }],
       useBuiltinKnowledge: false,
     })).toThrow();
     expect(

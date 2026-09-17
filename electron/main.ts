@@ -19,6 +19,7 @@ import { evaluateDirectorSubtitleLayout } from '../src/shared/production-subtitl
 import { isCancellation, normalizeAppError } from '../src/shared/app-error';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
+import { AgentSearchMcpService } from './agent-search';
 import { removeEditorialGreenBackground } from '../src/shared/editorial-cutout';
 import { createVideoLabRuntime } from '../src/shared/video-lab-runtime';
 import { createMusicProfileService } from './music-profile-service';
@@ -1135,6 +1136,10 @@ function appDataDir(): string {
   return join(app.getPath('userData'), appDataName);
 }
 
+const agentSearchService = new AgentSearchMcpService({
+  dataDirectory: () => join(appDataDir(), 'agent-search'),
+});
+
 function sceneVideoLibraryRoot(): string {
   return join(appDataDir(), 'scene-video-library');
 }
@@ -1243,7 +1248,7 @@ async function buildRunOptions(database: FileDatabase, task: Task, workDir: stri
     appDataDir: appDataDir(),
     workDir,
     signal: controller.signal,
-    resolveAiSourceContext: createAiSourceResearcher(runtimeConfig, fetch, true),
+    resolveAiSourceContext: createAiSourceResearcher(runtimeConfig, fetch, true, agentSearchService.search),
     ...createTaskRuntimeProviders(runtimeConfig, workDir, task),
     draftWriterOptions: { runBridge: runPyJianYingDraftBridge },
     customCoverTemplates: state.customCoverTemplates,
@@ -2389,9 +2394,9 @@ trustedHandle('research:web-search', async (_event, input: string | WebSearchReq
   try {
     const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
     if (typeof input !== 'string') {
-      return await searchWebSourcesDetailed({ query: trimmed, providers: input.providers }, fetch, runtimeConfig.webSearch);
+      return await searchWebSourcesDetailed({ query: trimmed, providers: input.providers }, fetch, runtimeConfig.webSearch, agentSearchService.search);
     }
-    return await searchWebSourcesDetailed({ query: trimmed, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] }, fetch, runtimeConfig.webSearch);
+    return await searchWebSourcesDetailed({ query: trimmed, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] }, fetch, runtimeConfig.webSearch, agentSearchService.search);
   } catch (error) {
     return { query: trimmed, sections: [], warnings: [researchSearchErrorMessage(error)] };
   }
@@ -5587,6 +5592,7 @@ async function shutdownApplication(): Promise<void> {
   }
 
   await Promise.allSettled(completions);
+  await agentSearchService.close();
   await historyActivityRegistry.waitForIdle();
   await deltaPublishQueue;
   const databaseInitialization = dbInitializationPromise;

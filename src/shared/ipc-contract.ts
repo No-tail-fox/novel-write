@@ -199,7 +199,7 @@ const sourceSectionSchema = bounded(
     .object({
       source: z.string().max(1024),
       provider: webSearchProviderSchema.optional(),
-      backend: z.enum(['searxng', 'tavily', 'legacy']).optional(),
+      backend: z.enum(['agent-search', 'searxng', 'tavily', 'legacy']).optional(),
       title: z.string().max(MAX_IPC_TEXT),
       url: optionalText(MAX_IPC_TEXT),
       snippet: optionalText(MAX_IPC_TEXT),

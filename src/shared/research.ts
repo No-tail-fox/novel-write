@@ -16,7 +16,7 @@ import type {
   WebSearchProviderStatus,
   WebSearchRequest,
 } from './types';
-import { searchConfiguredBackends } from './web-search-backends';
+import { searchConfiguredBackends, type AgentSearchExecutor } from './web-search-backends';
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 type SearchResultItem = Omit<AiSourceSection, 'source' | 'provider'>;
@@ -193,7 +193,12 @@ function storyboundAiCreationTimeoutMs(promptLength: number): number {
   return Math.min(300_000, Math.max(90_000, dynamic));
 }
 
-export function createAiSourceResearcher(config: AppConfig, fetchImpl: FetchLike = fetch, useConfiguredBackends = false): AiSourceResearcher {
+export function createAiSourceResearcher(
+  config: AppConfig,
+  fetchImpl: FetchLike = fetch,
+  useConfiguredBackends = false,
+  agentSearch?: AgentSearchExecutor,
+): AiSourceResearcher {
   return async (task) => {
     const query = (task.aiKeyword || task.inputText || '').trim();
     const context: AiSourceContext = { query, sections: [], warnings: [] };
@@ -208,7 +213,7 @@ export function createAiSourceResearcher(config: AppConfig, fetchImpl: FetchLike
       } else {
         try {
           const webContext = useConfiguredBackends
-            ? await searchWebSourcesDetailed({ query, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] }, fetchImpl, config.webSearch)
+            ? await searchWebSourcesDetailed({ query, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] }, fetchImpl, config.webSearch, agentSearch)
             : { query, sections: await searchWebSources(query, fetchImpl), warnings: [] };
           if (webContext.sections.length === 0) context.warnings.push(...webContext.warnings, 'web search returned no usable results.');
           else context.sections.push(...webContext.sections);
@@ -258,11 +263,17 @@ export function formatAiSourceContext(task: Pick<Task, 'aiKeyword' | 'aiSources'
   return lines.join('\n\n');
 }
 
-export async function searchWebSources(query: string, fetchImpl: FetchLike = fetch, config?: AppConfig['webSearch']): Promise<AiSourceSection[]> {
+export async function searchWebSources(
+  query: string,
+  fetchImpl: FetchLike = fetch,
+  config?: AppConfig['webSearch'],
+  agentSearch?: AgentSearchExecutor,
+): Promise<AiSourceSection[]> {
   const context = await searchWebSourcesDetailed(
     { query, providers: [...DEFAULT_WEB_SEARCH_PROVIDERS] },
     fetchImpl,
     config,
+    agentSearch,
   );
   if (context.sections.length === 0 && context.providerStatuses?.every((status) => status.state === 'failed')) {
     throw new Error(context.warnings.join('; ') || 'All web search providers failed.');
@@ -318,6 +329,7 @@ export async function searchWebSourcesDetailed(
   input: WebSearchRequest,
   fetchImpl: FetchLike = fetch,
   config?: AppConfig['webSearch'],
+  agentSearch?: AgentSearchExecutor,
 ): Promise<AiSourceContext> {
   const query = input.query.trim();
   const providers = normalizeWebSearchProviders(input.providers);
@@ -330,6 +342,7 @@ export async function searchWebSourcesDetailed(
       providers,
       fetchImpl,
       () => searchLegacySourcesDetailed(query, providers, fetchImpl).then((result) => result.sections),
+      agentSearch,
     );
     const providerStatuses = backendResult.items.some((item) => item.provider)
       ? providers.map((provider) => {

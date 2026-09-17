@@ -1242,6 +1242,40 @@
   gap: 5px;
 }
 
+.hot-board-search-backend-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hot-board-search-backend-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+  color: var(--shell-muted);
+  background: var(--shell-surface);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hot-board-search-backend-status[data-state='ready'] {
+  border-color: color-mix(in srgb, var(--shell-accent) 46%, var(--shell-border));
+  color: var(--shell-accent-strong);
+}
+
+.hot-board-search-backend-status[data-state='failed'] {
+  border-color: color-mix(in srgb, var(--danger) 44%, var(--shell-border));
+  color: var(--danger);
+}
+
+.hot-board-search-backend-status[data-state='limited'] {
+  border-color: color-mix(in srgb, var(--warn) 44%, var(--shell-border));
+  color: var(--warn);
+}
+
 .hot-board-search-result-list {
   display: grid;
   gap: 8px;
@@ -1278,8 +1312,12 @@
 
 .hot-board-search-result-heading span {
   flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
   color: var(--shell-muted);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hot-board-search-result p {

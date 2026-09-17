@@ -15,9 +15,23 @@ describe('config validation utilities', () => {
 
   it('migrates web search defaults and validates a configured SearXNG endpoint', () => {
     const normalized = normalizeAppConfig({ ...defaultConfig, webSearch: { searxngBaseUrl: ' http://127.0.0.1:8080/ ', tavilyKeylessEnabled: false } });
-    expect(normalized.webSearch).toEqual({ searxngBaseUrl: 'http://127.0.0.1:8080', tavilyKeylessEnabled: false, legacyFallbackEnabled: true });
+    expect(normalized.webSearch).toEqual({ agentSearchEnabled: true, searxngBaseUrl: 'http://127.0.0.1:8080', tavilyKeylessEnabled: false, legacyFallbackEnabled: true });
     expect(validateConfigTarget('webSearch', normalized).status).toBe('pass');
     expect(validateConfigTarget('webSearch', normalizeAppConfig({ ...defaultConfig, webSearch: { searxngBaseUrl: 'javascript:alert(1)' } })).status).toBe('fail');
+  });
+
+  it('accepts Agent Search as the only backend and rejects a fully disabled search chain', () => {
+    const agentOnly = normalizeAppConfig({
+      ...defaultConfig,
+      webSearch: { agentSearchEnabled: true, searxngBaseUrl: '', tavilyKeylessEnabled: false, legacyFallbackEnabled: false },
+    });
+    const disabled = normalizeAppConfig({
+      ...defaultConfig,
+      webSearch: { agentSearchEnabled: false, searxngBaseUrl: '', tavilyKeylessEnabled: false, legacyFallbackEnabled: false },
+    });
+
+    expect(validateConfigTarget('webSearch', agentOnly)).toMatchObject({ status: 'pass', endpoint: 'agent-search-mcp' });
+    expect(validateConfigTarget('webSearch', disabled)).toMatchObject({ status: 'fail', endpoint: '' });
   });
 
   it('rejects an oversized image-provider probe response', async () => {

@@ -14,7 +14,8 @@ try {
   await db.updateTask(html.id, { status: 'draft', pipelineData: JSON.stringify(pipeline) });
   const mv = await db.createTask({ title: '音乐 MV 返回验证', taskType: 'music-mv', taskKind: 'music-mv', inputText: '第一句歌词\n第二句歌词' });
   await db.updateTask(mv.id, { status: 'draft' });
-  await db.upsertUiPreferences({ activeView: 'projects', theme: 'light' });
+  await db.upsertUiPreferences({ activeView: 'projects' });
+  await db.upsertUiPreferences({ theme: 'light' });
 } finally {
   await db.close();
 }

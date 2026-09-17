@@ -46,6 +46,7 @@ try {
     width: 1280, height: 720, sizeBytes: bytes.length, sha256: digest, mimeType: 'image/png', ratio: '16:9', createdAt: html.createdAt });
   await db.updateTask(html.id, { status: 'draft', pipelineData: JSON.stringify(pipeline) });
   projects.push({ id: html.id, name: 'HTML 封面' });
-  await db.upsertUiPreferences({ activeView: 'projects', theme: 'dark' });
+  await db.upsertUiPreferences({ activeView: 'projects' });
+  await db.upsertUiPreferences({ theme: 'dark' });
   await writeFile(join(profile, 'covers.json'), JSON.stringify(projects), 'utf8');
 } finally { await db.close(); }

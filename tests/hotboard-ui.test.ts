@@ -38,6 +38,10 @@ describe('hot board workbench ui', () => {
     expect(page).toContain('api.searchWebSources');
     expect(page).toContain("providers: ['bing', 'sogou', 'baidu', 'duckduckgo']");
     expect(page).toContain("status.state === 'failed'");
+    expect(page).toContain('hot-board-search-backend-statuses');
+    expect(page).toContain('aria-label="搜索后端状态"');
+    expect(page).toContain('formatWebSearchBackendStatus(status)');
+    expect(page).toContain('formatWebSearchSourceLabel(result)');
     expect(page).toContain('setSearchEmpty');
     expect(page).toContain('联网搜索结果');
     expect(page).toContain('正在联网搜索相关内容');
@@ -110,6 +114,8 @@ describe('hot board workbench ui', () => {
     expect(css).toContain('aspect-ratio: 4 / 3');
     expect(css).toContain('max-height: min(72vh, 720px)');
     expect(css).toContain('.hot-board-search-results');
+    expect(css).toContain('.hot-board-search-backend-status[data-state=\'ready\']');
+    expect(css).toContain('.hot-board-search-backend-status[data-state=\'failed\']');
     expect(css).toContain('text-overflow: ellipsis');
     expect(aiHot).toContain('用途与授权条款');
     expect(aiHot).toContain('hotboard_topic');

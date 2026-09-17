@@ -21,11 +21,12 @@ import { createHtmlVideoMediaCache, htmlVideoMediaElementScopeMatches, loadHtmlV
 import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, htmlVideoSteps, htmlVideoTabs, htmlVideoUserFacingError, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from '../../shared/html-video-workflow';
 import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { taskDetailRefreshKey } from '../../shared/state-reconciliation';
+import { formatWebSearchBackendStatus, formatWebSearchProviderStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
 import { useAsyncAction } from '../../ui/async-action';
 import { resolveDefaultBgmId, sourceKey, taskFromMutation, toggleArray, validBgmItems } from '../tasks/task-formatters';
 import { HtmlVideoAuthoringWorkspace } from './HtmlVideoAuthoringWorkspace';
 import { HtmlVideoTabPanel } from './HtmlVideoTabPanel';
-import { HTML_VIDEO_SEARCH_PROVIDER_OPTIONS, HTML_VIDEO_SEARCH_PROVIDERS, composeHtmlVideoResearchCopy, htmlVideoSearchProviderLabel, htmlVideoTaskOptionsFromTasks, listAllHtmlVideoTaskOptions, searchHtmlVideoResearchSources, synchronizedHtmlVideoTaskId } from './html-video-page-workflow';
+import { HTML_VIDEO_SEARCH_PROVIDER_OPTIONS, HTML_VIDEO_SEARCH_PROVIDERS, composeHtmlVideoResearchCopy, htmlVideoTaskOptionsFromTasks, listAllHtmlVideoTaskOptions, searchHtmlVideoResearchSources, synchronizedHtmlVideoTaskId } from './html-video-page-workflow';
 import '../../styles/features/html-video.css';
 
 type HtmlVideoWorkspaceMode = 'automatic' | 'authoring';
@@ -690,11 +691,20 @@ export function HtmlVideoPage({
                           <div><h3>网页资料</h3><small>实际查询：{searchContext.query}</small></div>
                           <small>{selectedSources.length}/{searchSections.length} 已选择</small>
                         </div>
+                        {searchContext.backendStatuses?.length ? (
+                          <div className="hv-research-provider-statuses" aria-label="搜索后端状态">
+                            {searchContext.backendStatuses.map((status) => (
+                              <span className="hv-research-provider-status" data-state={status.state} key={status.backend} title={status.message}>
+                                {formatWebSearchBackendStatus(status)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                         {searchContext.providerStatuses?.length ? (
                           <div className="hv-research-provider-statuses" aria-label="搜索渠道状态">
                             {searchContext.providerStatuses.map((status) => (
                               <span className="hv-research-provider-status" data-state={status.state} key={status.provider} title={status.message}>
-                                {status.label} · {status.state === 'ready' ? `${status.count} 条` : status.state === 'empty' ? '无精准结果' : '失败'}
+                                {formatWebSearchProviderStatus(status)}
                               </span>
                             ))}
                           </div>
@@ -712,7 +722,7 @@ export function HtmlVideoPage({
                                 <label className="hv-research-source" key={id}>
                                   <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} disabled={researchAction.busy} onChange={() => handleSearchSourceChange(id)} />
                                   <span>
-                                    <span className="hv-research-source-heading"><small>{htmlVideoSearchProviderLabel(source.provider)}</small><strong>{source.title}</strong></span>
+                                    <span className="hv-research-source-heading"><small>{formatWebSearchSourceLabel(source)}</small><strong>{source.title}</strong></span>
                                     {source.url ? <span className="hv-research-source-url">{source.url}</span> : null}
                                     <span className="hv-research-source-excerpt">{(source.content || source.snippet || '').slice(0, 240)}</span>
                                   </span>

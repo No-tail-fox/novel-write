@@ -3550,7 +3550,8 @@ describe('product shell ui', () => {
     expect(main).toContain('searchContext.query === aiKeyword.trim()');
     expect(main).toContain('实际查询：{searchContext.query}');
     expect(main).toContain('searchContext.providerStatuses.map');
-    expect(main).toContain('webSearchProviderLabel(source.provider)');
+    expect(main).toContain('formatWebSearchSourceLabel(source)');
+    expect(main).toContain('searchContext.backendStatuses.map');
     expect(main).toContain('selectedSearchSourceIds');
     expect(main).toContain('selectedSources');
     expect(main).toContain("const webSearchEnabled = aiSources.includes('web')");

@@ -22,6 +22,7 @@ import {
 import type { AiSourceSection, InformationArchiveOrigin, ShellView, HotBoardCategory, HotBoardItem, HotBoardPlatform, HotBoardSnapshot, HotBoardSourceContent, WebSearchBackendStatus } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
+import { formatWebSearchBackendStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
 import { EmptyState } from '../../components/EmptyState';
 import { Button, Dialog, IconButton } from '../../ui';
 import { AiHotSourceView } from './AiHotSourceView';
@@ -563,13 +564,14 @@ function HotBoardSourceReader({
       {searching ? <div className="hot-board-reader-search-state" role="status" aria-live="polite"><Loader2 className="spin" size={15} />正在联网搜索相关内容…</div> : null}
       {searchError ? <div className="hot-board-reader-state hot-board-reader-state--error" role="alert"><TriangleAlert size={17} /><div><strong>联网搜索失败</strong><p>{searchError}</p><Button density="compact" variant="secondary" type="button" disabled={searching} onClick={onRetrySearch}>重试联网搜索</Button></div></div> : null}
       {searchEmpty && !searchError ? <div className="hot-board-reader-state" role="status"><Search size={17} /><div><strong>没有找到可用的联网结果</strong><p>可以稍后重试，或直接打开原文查看。</p><Button density="compact" variant="secondary" type="button" disabled={searching} onClick={onRetrySearch}>再次联网搜索</Button></div></div> : null}
+      {searchBackendStatuses.length ? <div className="hot-board-search-backend-statuses" aria-label="搜索后端状态">{searchBackendStatuses.map((status) => <span className="hot-board-search-backend-status" data-state={status.state} key={status.backend} title={status.message}>{formatWebSearchBackendStatus(status)}</span>)}</div> : null}
       {searchResults.length > 0 ? (
         <section className="hot-board-search-results" aria-label="联网搜索结果">
           <div className="hot-board-reader-content-head"><span><Search size={13} />联网搜索结果</span><small>{searchBackendStatuses.filter((status) => status.state === 'ready').map((status) => status.label).join(' · ') || '已搜索'} · {searchResults.length} 条</small></div>
           <div className="hot-board-search-result-list">
             {searchResults.map((result, index) => (
               <article className="hot-board-search-result" key={`${result.url || result.title}-${index}`}>
-                <div className="hot-board-search-result-heading"><strong>{result.title}</strong><span>{result.source}</span></div>
+                <div className="hot-board-search-result-heading"><strong>{result.title}</strong><span>{formatWebSearchSourceLabel(result)}</span></div>
                 <p>{result.content || result.snippet || '该来源没有返回可读摘要。'}</p>
                 {result.url ? <Button density="compact" variant="subtle" type="button" onClick={() => onOpenUrl(result.url!)}>打开来源 <ExternalLink size={12} /></Button> : null}
               </article>
