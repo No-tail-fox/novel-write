@@ -14,6 +14,12 @@
   color: var(--shell-text);
 }
 
+.app-shell[data-editorial-shell] .window-version {
+  color: var(--shell-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .app-shell[data-editorial-shell] .window-controls.sd-toolbar {
   min-height: 34px;
   padding: 0;

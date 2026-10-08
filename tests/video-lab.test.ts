@@ -22,7 +22,7 @@ function configured() {
   const config = normalizeAppConfig(defaultConfig);
   config.video.providers = ['first', 'selected'].map((id) => ({
     ...config.video.providers[0], id, name: id, enabled: true, apiKey: 'local-test-secret',
-    baseUrl: 'https://video.example/v1', model: `model-${id}`, capabilities: ['t2v', 'i2v', 'first-last-frame', 'reference-image'],
+    baseUrl: 'https://video.example/v1', model: `model-${id}`, capabilities: ['t2v', 'i2v', 'first-last-frame', 'reference-image', 'reference-video', 'reference-audio'],
   }));
   config.video.activeProviderId = 'first';
   config.video.automation.providerWhitelist = ['first'];
@@ -35,19 +35,29 @@ describe('standalone video generation', () => {
     expect(videoLabGenerateInputSchema.parse(input)).toEqual(input);
     for (const invalid of [
       { ...input, prompt: '   ' }, { ...input, durationSec: Infinity }, { ...input, durationSec: 0 },
-      { ...input, firstFramePath: '../secret.png' }, { ...input, firstFramePath: 'https://host/image.png' },
+      { ...input, firstFramePath: '../secret.png' }, { ...input, firstFramePath: 'http://host/image.png' },
       { ...input, lastFramePath: 'C:/frame.png' }, { ...input, apiKey: 'should-not-be-accepted' },
     ]) expect(ipcInputSchemas['video-lab:generate'].safeParse(invalid).success).toBe(false);
     expect(ipcInputSchemas['video-lab:open-output-directory'].safeParse('../../outside').success).toBe(false);
     expect(ipcInputSchemas['video-lab:list'].safeParse(undefined).success).toBe(true);
+    expect(videoLabGenerateInputSchema.safeParse({ ...input, firstFramePath: 'C:/first.png', referenceImages: [
+      { path: 'C:/person.png', kind: 'character', description: '保持人物外观' },
+    ] }).success).toBe(false);
+    for (const path of ['https://media.example/image.png', 'asset://person-reference', 'mm_file://person-reference']) {
+      expect(videoLabGenerateInputSchema.safeParse({ ...input, referenceImages: [{ path, kind: 'opening', description: '开场' }] }).success).toBe(true);
+    }
   });
 
   it('pins manual generation to the selected provider without changing the saved configuration', () => {
     const config = configured();
+    config.video.providers[1].enabled = false;
     const selected = videoLabProviderConfig(config, 'selected');
     expect(selected.video.providers.map((provider) => provider.id)).toEqual(['selected']);
     expect(selected.video.automation).toMatchObject({ providerWhitelist: ['selected'], fallback: 'disabled', retryCount: 0 });
     expect(config.video.automation.providerWhitelist).toEqual(['first']);
+    expect(selected.video.providers[0].enabled).toBe(true);
+    expect(config.video.providers[1].enabled).toBe(false);
+    expect(config.video.activeProviderId).toBe('first');
     expect(() => videoLabProviderConfig(config, 'missing')).toThrow('VIDEO_LAB_PROVIDER_UNAVAILABLE');
     config.video.providers[1].apiKey = '';
     expect(() => videoLabProviderConfig(config, 'selected')).toThrow('VIDEO_LAB_PROVIDER_NOT_CONFIGURED');
@@ -56,8 +66,12 @@ describe('standalone video generation', () => {
   it('saves UTF-8 history and snapshots references independently of projects, disabling submit retries', async () => {
     const dir = await workDirectory();
     const sources = [join(dir, '首帧.png'), join(dir, '参考图.png')];
+    const referenceVideo = join(dir, '动作参考.mp4');
+    const referenceAudio = join(dir, '节奏参考.mp3');
     const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
     for (const source of sources) await writeFile(source, png);
+    await writeFile(referenceVideo, Buffer.from([0, 0, 0, 16, 102, 116, 121, 112, 0]));
+    await writeFile(referenceAudio, Buffer.from('ID3-reference-audio'));
     let requestReceived: unknown;
     const createProvider = vi.fn<typeof createConfiguredVideoProvider>((config, recordDir): VideoProvider => ({
       id: 'selected', name: 'selected', model: 'model-selected', capabilities: ['i2v'], license: '', estimateCost: () => 0.5,
@@ -70,16 +84,25 @@ describe('standalone video generation', () => {
     }));
     const options = { rootDirectory: join(dir, 'records'), getConfig: async () => configured(), createProvider };
     const runtime = createVideoLabRuntime(options);
-    const result = await runtime.generate({ ...input, firstFramePath: sources[0], referenceImagePaths: sources });
+    const result = await runtime.generate({
+      ...input,
+      referenceImagePaths: sources,
+      referenceVideoPaths: [referenceVideo],
+      referenceAudioPaths: [referenceAudio],
+    });
     expect(result).toMatchObject({ status: 'completed', prompt: input.prompt, providerId: 'selected', remoteTaskId: 'remote-1' });
     expect(createProvider).toHaveBeenCalledTimes(1);
     expect(createProvider.mock.calls[0][0].video.providers.map((provider: { id: string }) => provider.id)).toEqual(['selected']);
     expect(createProvider.mock.calls[0]).toHaveLength(4);
     expect((createProvider.mock.calls[0] as unknown[])[3]).toEqual({ submitRetryCount: 0 });
-    expect(requestReceived).toMatchObject({ firstFramePath: result.referenceImagePaths![0] });
+    expect((requestReceived as { referenceImages: Array<{ path: string }> }).referenceImages[0].path).toBe(result.referenceImages![0].path);
+    expect((requestReceived as { referenceVideoPaths: string[] }).referenceVideoPaths).toEqual(result.referenceVideoPaths);
+    expect((requestReceived as { referenceAudioPaths: string[] }).referenceAudioPaths).toEqual(result.referenceAudioPaths);
     expect(new Set(result.referenceImagePaths).size).toBe(2);
-    for (const source of sources) await rm(source);
-    expect(await readFile(result.firstFramePath!)).toEqual(png);
+    for (const source of [...sources, referenceVideo, referenceAudio]) await rm(source);
+    expect(await readFile(result.referenceImages![0].path)).toEqual(png);
+    expect(await readFile(result.referenceVideoPaths![0])).toEqual(Buffer.from([0, 0, 0, 16, 102, 116, 121, 112, 0]));
+    expect(await readFile(result.referenceAudioPaths![0], 'utf8')).toBe('ID3-reference-audio');
     expect(await createVideoLabRuntime(options).listRecords()).toEqual([result]);
     expect(await runtime.outputDirectory(result.id)).toBe(await realpath(join(dir, 'records', result.id)));
     expect(await readFile(join(dir, 'records', result.id, 'record.json'), 'utf8')).toContain(input.prompt);
@@ -91,7 +114,7 @@ describe('standalone video generation', () => {
     const runtime = createVideoLabRuntime({ rootDirectory: dir, getConfig: async () => configured(), createProvider });
     const missingProvider = await runtime.generate({ ...input, providerId: 'missing' });
     expect(missingProvider).toMatchObject({ status: 'failed', videoPath: '' });
-    expect(missingProvider.errorMessage).toContain('配置并启用');
+    expect(missingProvider.errorMessage).toContain('配置所选');
     const invalidImage = join(dir, 'invalid.png');
     await writeFile(invalidImage, 'not an image');
     const invalidReference = await runtime.generate({ ...input, firstFramePath: invalidImage });
@@ -147,5 +170,24 @@ describe('standalone video generation', () => {
     }
     expect((await generation).status).toBe('completed');
     expect((await runtime.listRecords())[0].status).toBe('completed');
+  });
+
+  it('persists remote references unchanged without fetching or copying the media', async () => {
+    const dir = await workDirectory();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const generate = vi.fn(async () => { throw new Error('intentional test stop after receiving references'); });
+    const createProvider = vi.fn((): VideoProvider => ({
+      id: 'selected', name: 'selected', model: 'model-selected', capabilities: ['reference-image'], license: '', estimateCost: () => 0, generate,
+    }));
+    const runtime = createVideoLabRuntime({ rootDirectory: dir, getConfig: async () => configured(), createProvider });
+    const references = [{ path: 'https://media.example/scene.png', kind: 'opening' as const, description: '作为开场' }, { path: 'asset://person', kind: 'character' as const, description: '保持身份' }];
+    try {
+      const record = await runtime.generate({ ...input, referenceImages: references, referenceVideoPaths: ['https://media.example/motion.mp4'] });
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ referenceImages: references, referenceVideoPaths: ['https://media.example/motion.mp4'] }));
+      expect(record.referenceImages).toEqual(references);
+      expect((await runtime.listRecords())[0].referenceImages).toEqual(references);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
   });
 });

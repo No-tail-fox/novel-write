@@ -100,6 +100,8 @@ import type { PersonAssetImage, PersonAssetSummary, RecycledPersonAsset } from '
 import type { JianyingDraftPathDetection } from './jianying-paths';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
+import type { MotionComicEpisodePlanInput, MotionComicEpisodePlanResult } from './motion-comic-episode-planning';
+import type { MotionComicApplyPlanInput, MotionComicPlanInput, MotionComicPlanResponse } from './motion-comic-planning';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from './director-batch-persistence';
 import type { VideoLabGenerateInput, VideoLabRecord } from './video-lab';
@@ -110,6 +112,12 @@ import type { MusicEnhancedRequest, MusicEnhancedJob } from './music-enhanced';
 
 export interface LocalSubtitleTimestampFile {
   path: string;
+  contents: string;
+}
+
+export interface LocalTextFile {
+  path: string;
+  name: string;
   contents: string;
 }
 
@@ -189,6 +197,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'custom-style:save',
   'viral:save-templates',
   'custom-style:generate-draft',
+  'custom-style:generate-preview',
   'draft-template:save',
   'image-lab:generate',
   'image-lab:add-record',
@@ -222,6 +231,9 @@ export const INVOKE_CHANNELS = Object.freeze([
   'director:generate-shot-video',
   'motion-comic:create',
   'motion-comic:save',
+  'motion-comic:plan-episodes',
+  'motion-comic:plan',
+  'motion-comic:apply-plan',
   'director:render',
   'director:recheck-subtitles',
   'director:recheck-media',
@@ -286,6 +298,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:media-url',
   'asset:read-data-url',
   'local-image:select',
+  'local-video:select',
+  'motion-comic-source:select',
   'local-audio:select',
   'local-subtitle-timestamps:select',
   'local-folder:select',
@@ -412,6 +426,7 @@ export type StoryDreamApi = {
   saveCustomStyle: (style: CustomStyle) => Promise<AppMutationResult | null>;
   saveViralTemplates: (input: ViralTemplateSaveInput) => Promise<AppMutationResult | null>;
   generateCustomStyleDraft: (input: CustomStyleGenerateInput) => Promise<CustomStyle>;
+  generateCustomStylePreview: (style: CustomStyle) => Promise<CustomStyle>;
   saveDraftTemplate: (template: DraftTemplate) => Promise<AppMutationResult | null>;
   deleteDraftTemplate: (id: string) => Promise<AppMutationResult | null>;
   generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>;
@@ -425,6 +440,9 @@ export type StoryDreamApi = {
   generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest) => Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }>;
   createMotionComic: (input: MotionComicCreateInput) => Promise<AppMutationResult | null>;
   saveMotionComic: (input: MotionComicSaveInput) => Promise<AppMutationResult | null>;
+  planMotionComicEpisodes: (input: MotionComicEpisodePlanInput) => Promise<MotionComicEpisodePlanResult>;
+  planMotionComic: (input: MotionComicPlanInput) => Promise<MotionComicPlanResponse>;
+  applyMotionComicPlan: (input: MotionComicApplyPlanInput) => Promise<AppMutationResult | null>;
   renderDirectorProject: (input: DirectorRenderRequest) => Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }>;
   recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest) => Promise<DirectorSubtitleRecheckResult>;
   recheckDirectorMedia: (input: DirectorMediaRecheckRequest) => Promise<DirectorMediaRecheckResult>;
@@ -481,11 +499,14 @@ export type StoryDreamApi = {
   getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
   getTaskMediaUrl: (id: string, path: string) => Promise<string>;
   readAssetDataUrl: (path: string) => Promise<string>;
-  selectLocalImage: () => Promise<string | null>;
+  selectLocalImage: (purpose?: 'video-reference') => Promise<string | null>;
+  selectLocalVideo: () => Promise<string | null>;
+  selectMotionComicSourceFile: () => Promise<LocalTextFile | null>;
   importBgmAudio: () => Promise<ManagedBgmImport | null>;
   selectLocalAudio: {
     (): Promise<string | null>;
     (purpose: 'managed-bgm'): Promise<ManagedBgmImport | null>;
+    (purpose: 'video-reference'): Promise<string | null>;
   };
   selectLocalSubtitleTimestampFile: () => Promise<LocalSubtitleTimestampFile | null>;
   selectLocalFolder: () => Promise<string | null>;

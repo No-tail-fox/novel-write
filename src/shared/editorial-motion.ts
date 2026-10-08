@@ -1,4 +1,5 @@
 import type { EditorialCollageLayer, EditorialLayerKind, EditorialLayerMotionKeyframe } from './editorial-collage';
+import { buildEditorialLayerPrompt, isEditorialAutoLayerPrompt } from './editorial-image-prompts';
 
 export const EDITORIAL_MOTION_STYLE_IDS = ['cutout-slide', 'focus-reveal', 'evidence-stack', 'path-progress', 'comparison'] as const;
 export type EditorialMotionStyle = (typeof EDITORIAL_MOTION_STYLE_IDS)[number];
@@ -56,8 +57,7 @@ export function selectEditorialMotionStyle(input: Pick<EditorialMotionLayerInput
 
 /** Keep the environment and actor prompts separate so they can actually move independently. */
 export function editorialLayerPrompt(kind: EditorialLayerKind, narration: string): string {
-  if (kind === 'background') return `Editorial documentary collage environment for: ${narration}. Background plate only: textured paper and contextual scenery, generous negative space. No people, no foreground hero objects, no labels, no letters, no numbers, no watermark. The subject will be composited separately.`;
-  return `One isolated editorial photographic cutout representing: ${narration}. A single complete subject or evidence object, centered and fully in frame with clear silhouette and generous margin. Solid pure green chroma-key background (#00FF00), no green on the subject. No scene background, no floor, no cast shadow, no text, no labels, no watermark. The background will be removed for paper collage animation.`;
+  return buildEditorialLayerPrompt(kind, narration);
 }
 
 /** Separate artwork and native text, with choreography chosen for the narration. */
@@ -212,8 +212,10 @@ export function recomposeEditorialMotionLayers(previousLayers: readonly Editoria
               : next.id.startsWith(`${input.shotId}-comparison-label-`) ? previousLayers.filter((layer) => layer.kind === 'label' && layer.content?.type === 'text')[Number(next.id.at(-1)) + 1] : undefined);
     if (!previous || used.has(previous.id)) return next;
     used.add(previous.id);
-    const generatedPrompt = previous.prompt?.startsWith('Editorial documentary collage environment for:')
-      || previous.prompt?.startsWith('One isolated editorial photographic cutout representing:');
+    const generatedPrompt = isEditorialAutoLayerPrompt(previous.prompt, previous.kind, [
+      input.narration, ...(editorialComparisonSubjects(input.narration) ?? []),
+      ...input.narration.split(/[。！？!?；;]/).map(part => part.trim()).filter(Boolean),
+    ]);
     return {
       ...previous, ...next, id: previous.id,
       ...(previous.assetVersionId ? { assetVersionId: previous.assetVersionId } : {}),

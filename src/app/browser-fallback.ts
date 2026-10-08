@@ -1,4 +1,5 @@
 import { cloneState, hydrateState, initialState } from './app-state';
+import { withoutStaleCustomStylePreview } from '../shared/custom-style-preview';
 import { stripConfigSecrets, type PublicAppState } from '../shared/config-secrets';
 import { HOT_BOARD_SOURCE_ASSESSMENTS } from '../shared/hotboard-catalog';
 import { fallbackEffectCatalog, volcengineVoicePresets } from '../shared/editorial-options';
@@ -34,11 +35,14 @@ import {
 import {
   MOTION_COMIC_TASK_TYPE,
   createMotionComicDraft,
+  createMotionComicImportedProject,
   createMotionComicStarterProject,
   motionComicCreateInputSchema,
   motionComicSaveInputSchema,
   parseMotionComicPipelineData,
 } from '../shared/motion-comic';
+import { motionComicEpisodePlanInputSchema } from '../shared/motion-comic-episode-planning';
+import { applyMotionComicPlan, motionComicApplyPlanInputSchema, motionComicPlanInputSchema } from '../shared/motion-comic-planning';
 import type { DirectorGenerateShotVideoRequest, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from '../shared/director-render';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from '../shared/director-batch-persistence';
 import type {
@@ -970,7 +974,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const state = read();
       const next = state.customStyles.filter((item) => item.id !== style.id);
       const now = new Date().toISOString();
-      return persist({ ...state, customStyles: [{ ...style, updatedAt: now, createdAt: style.createdAt || now }, ...next] });
+      return persist({ ...state, customStyles: [withoutStaleCustomStylePreview({ ...style, updatedAt: now, createdAt: style.createdAt || now }), ...next] });
     },
     async saveViralTemplates(input) {
       const state = read();
@@ -980,13 +984,16 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       ];
       const now = new Date().toISOString();
       const customStyles = [
-        { ...input.imageTemplate, createdAt: input.imageTemplate.createdAt || now, updatedAt: input.imageTemplate.updatedAt || now },
+        withoutStaleCustomStylePreview({ ...input.imageTemplate, createdAt: input.imageTemplate.createdAt || now, updatedAt: input.imageTemplate.updatedAt || now }),
         ...state.customStyles.filter((item) => item.id !== input.imageTemplate.id),
       ];
       return persist({ ...state, promptTemplates, customStyles });
     },
     async generateCustomStyleDraft(input) {
-      return { ...input.baseStyle, ...buildImageStyleDraftFromPrompt(input.prompt, input.baseStyle) };
+      return withoutStaleCustomStylePreview({ ...input.baseStyle, ...buildImageStyleDraftFromPrompt(input.prompt, input.baseStyle) });
+    },
+    async generateCustomStylePreview() {
+      throw new Error('CUSTOM_STYLE_PREVIEW_REQUIRES_ELECTRON: 浏览器预览无法调用真实生图模型，请在 Electron 桌面端生成模板样图。');
     },
     async saveDraftTemplate(template: DraftTemplate) {
       const state = read();
@@ -1155,7 +1162,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const state = read();
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
-      const draft = createEditorialCollageDraft({ id, title: validated.title, ratio: validated.ratio, now });
+      const draft = createEditorialCollageDraft({ id, title: validated.title, ratio: validated.ratio, now, writingStyleId: validated.writingStyleId, writingRequirements: validated.writingRequirements });
       const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now, validated.durationMs);
       const task: Task = {
         id,
@@ -1245,11 +1252,13 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       const draft = createMotionComicDraft({ id, title: validated.title, premise: validated.premise, ratio: validated.ratio, now });
-      const document = createMotionComicStarterProject(draft, validated.episodeTitle, now);
+      const document = validated.source
+        ? createMotionComicImportedProject(draft, validated.source, now)
+        : createMotionComicStarterProject(draft, validated.episodeTitle, now);
       const task: Task = {
         id,
         title: document.title,
-        inputText: validated.premise,
+        inputText: validated.source?.originalText ?? validated.premise,
         taskKind: 'story',
         processingMode: 'manual',
         publishMode: 'review-rewrite',
@@ -1318,6 +1327,44 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         pipelineStep: document.stage,
         pipelineData: JSON.stringify(document),
         completedAt: document.stage === 'completed' ? updatedAt : null,
+      };
+      return commitFallbackHistoryUpsert('task', {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === task.id ? updated : item),
+      }, task.id);
+    },
+    async planMotionComicEpisodes(input) {
+      motionComicEpisodePlanInputSchema.parse(input);
+      throw new Error('MOTION_COMIC_EPISODE_PLAN_DESKTOP_ONLY: AI 分集需要 Electron 桌面端读取已配置的模型服务。');
+    },
+    async planMotionComic(input) {
+      motionComicPlanInputSchema.parse(input);
+      throw new Error('MOTION_COMIC_PLAN_DESKTOP_ONLY: AI 编剧需要 Electron 桌面端读取已配置的模型服务。');
+    },
+    async applyMotionComicPlan(input) {
+      const validated = motionComicApplyPlanInputSchema.parse(input);
+      const state = read();
+      const task = state.tasks.find((item) => item.id === validated.id);
+      if (!task) throw new Error(`MOTION_COMIC_NOT_FOUND: ${validated.id}`);
+      if (task.taskType !== MOTION_COMIC_TASK_TYPE) throw new Error('MOTION_COMIC_TASK_INVALID: The selected task is not an AI motion-comic project.');
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
+      const current = parseMotionComicPipelineData(task.pipelineData);
+      if (current.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: The project changed after it was loaded.');
+      const applied = applyMotionComicPlan(current, validated.plan, {
+        replaceStarter: validated.replaceStarter,
+        sourceEpisodeId: validated.sourceEpisodeId,
+        reviewedAdjustments: validated.reviewedAdjustments,
+      });
+      const updatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
+      const document = parseMotionComicPipelineData({ ...applied, updatedAt });
+      const updated: Task = {
+        ...task,
+        title: document.title,
+        ratio: document.ratio,
+        status: 'draft',
+        pipelineStep: document.stage,
+        pipelineData: JSON.stringify(document),
+        completedAt: null,
       };
       return commitFallbackHistoryUpsert('task', {
         ...state,
@@ -1763,13 +1810,19 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async getTaskMediaUrl() {
       throw new Error('浏览器预览不能读取本地视频，请在 Electron 应用中查看。');
     },
-    async selectLocalImage() {
+    async selectLocalImage(_purpose?: 'video-reference') {
+      return null;
+    },
+    async selectLocalVideo() {
+      return null;
+    },
+    async selectMotionComicSourceFile() {
       return null;
     },
     async importBgmAudio() {
       return null;
     },
-    async selectLocalAudio(_purpose?: 'managed-bgm') {
+    async selectLocalAudio(_purpose?: 'managed-bgm' | 'video-reference') {
       return null;
     },
     async selectLocalSubtitleTimestampFile() {

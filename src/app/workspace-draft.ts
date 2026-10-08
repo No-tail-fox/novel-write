@@ -50,6 +50,11 @@ export function useWorkspaceDraft<T extends DraftFields>({ id, label, value, res
   return {
     ...guard,
     snapshot: () => ({ ...current.current.value }),
+    persist: (submitted: T) => {
+      localStorage.setItem(storageKey, JSON.stringify({ version: 1, values: submitted }));
+      saved.current = { ...submitted };
+      controller.refresh();
+    },
     complete: (submitted: T) => {
       localStorage.removeItem(storageKey);
       saved.current = { ...submitted };

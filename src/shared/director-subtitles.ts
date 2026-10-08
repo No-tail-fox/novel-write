@@ -1,3 +1,4 @@
+import type { MotionComicSpeakerRole, MotionComicBubbleStyle, MotionComicBubblePosition } from "./motion-comic-dialogue";
 import { z } from 'zod';
 import { alignSubtitleCue, alignSubtitleCueFromTimestampFile, hashSubtitleAlignment, invalidateSubtitleAlignment } from './audio-alignment';
 import {
@@ -11,7 +12,14 @@ import type { ProductionSubtitleCue, ProductionTimeline, ProductionTimelineClip 
 import { validatePersistedSubtitleCue } from './production-subtitle-schema';
 
 export type DirectorSubtitleDocument = EditorialCollagePipelineData | MotionComicPipelineData;
-export type DirectorSubtitleCueUpdate = Partial<Pick<ProductionSubtitleCue, 'text' | 'startMs' | 'endMs' | 'styleRef'>> & { characterId?: string };
+export type DirectorSubtitleCueUpdate = Partial<Pick<ProductionSubtitleCue, 'text' | 'startMs' | 'endMs' | 'styleRef'>> & {
+  characterId?: string;
+  emotion?: string;
+  speakerRole?: MotionComicSpeakerRole;
+  bubbleStyle?: MotionComicBubbleStyle;
+  bubblePosition?: MotionComicBubblePosition;
+  speakerName?: string;
+};
 type DirectorCue = EditorialSubtitleCue | MotionComicDialogueCue;
 type DirectorShot = EditorialCollageShot | MotionComicShot;
 
@@ -21,6 +29,15 @@ const updateSchema = z.object({
   endMs: z.number().finite().nonnegative().optional(),
   styleRef: z.string().max(256).optional(),
   characterId: z.string().max(256).optional(),
+  emotion: z.string().max(256).optional(),
+  speakerRole: z.enum(["dialogue", "monologue", "narrative"]).optional(),
+  bubbleStyle: z.enum(["speech", "thought", "shout", "caption"]).optional(),
+  bubblePosition: z.object({
+    x: z.number().min(0).max(100),
+    y: z.number().min(0).max(100),
+    tailDirection: z.enum(["bottom-left", "bottom-right", "top-left", "top-right", "none"]).optional(),
+  }).strict().optional(),
+  speakerName: z.string().max(256).optional(),
 }).strict();
 
 /** Edits one existing cue using the document's stored, global millisecond range. */
@@ -51,6 +68,21 @@ export function updateDirectorSubtitleCue<T extends DirectorSubtitleDocument>(
       const dialogue = next as MotionComicDialogueCue;
       if (parsed.data.characterId) dialogue.characterId = parsed.data.characterId;
       else delete dialogue.characterId;
+    }
+    if (parsed.data.emotion !== undefined) {
+      (next as MotionComicDialogueCue).emotion = parsed.data.emotion;
+    }
+    if (parsed.data.speakerRole !== undefined) {
+      (next as MotionComicDialogueCue).speakerRole = parsed.data.speakerRole;
+    }
+    if (parsed.data.bubbleStyle !== undefined) {
+      (next as MotionComicDialogueCue).bubbleStyle = parsed.data.bubbleStyle;
+    }
+    if (parsed.data.bubblePosition !== undefined) {
+      (next as MotionComicDialogueCue).bubblePosition = parsed.data.bubblePosition;
+    }
+    if (parsed.data.speakerName !== undefined) {
+      (next as MotionComicDialogueCue).speakerName = parsed.data.speakerName;
     }
     if (textChanged && 'voiceAssetVersionId' in next) delete next.voiceAssetVersionId;
     return next;

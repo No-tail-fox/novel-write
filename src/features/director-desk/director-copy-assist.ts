@@ -1,6 +1,7 @@
 import { AppError, normalizeAppError } from '../../shared/app-error';
 import type { ResearchCopyComposeInput } from '../../shared/types';
 import type { EditorialScriptDuration } from '../../shared/editorial-script';
+import { editorialWritingStyle, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
 
 export type DirectorCopyAssistIntent = 'create' | 'revise';
 export type DirectorCopyAssistMode = 'vox' | 'motion-comic';
@@ -11,6 +12,7 @@ export interface DirectorCopyAssistRequestInput {
   title: string;
   copy: string;
   requirements?: string;
+  writingStyleId?: EditorialWritingStyleId;
   durationMs?: EditorialScriptDuration;
 }
 
@@ -46,7 +48,8 @@ export function buildDirectorCopyAssistRequest(input: DirectorCopyAssistRequestI
     keyword: title || (isVox ? 'VOX 解释型视频' : 'AI 漫剧系列'),
     extraRequirements: [
       revisionRequirements,
-      ...(requirements ? [`用户创作方向与要求：\n${requirements}`] : []),
+      ...(isVox ? [`文案创作风格：${editorialWritingStyle(input.writingStyleId).label}。${editorialWritingStyle(input.writingStyleId).guidance}`] : []),
+      ...(requirements ? [`用户创作方向与要求：\n${requirements}${isVox ? '\n如表达偏好与预设风格冲突，以用户的具体要求为准；保持事实准确和正文输出格式。' : ''}`] : []),
       formatRequirements,
     ].join('\n'),
     selectedSources: isRevision ? [{

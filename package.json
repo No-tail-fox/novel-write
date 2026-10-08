@@ -80,6 +80,14 @@
       {
         "from": "vendor/python",
         "to": "python"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "THIRD_PARTY_LICENSES",
+        "to": "THIRD_PARTY_LICENSES"
       }
     ],
     "extraMetadata": {

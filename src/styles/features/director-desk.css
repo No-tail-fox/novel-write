@@ -1,4 +1,4 @@
-.director-desk {
+﻿.director-desk {
   position: relative;
   display: grid;
   grid-template-rows: 56px minmax(0, 1fr) 38px;
@@ -936,7 +936,9 @@
 .director-series-page { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: auto; background: var(--shell-bg); color: var(--shell-text); }
 
 [data-editorial-collage-workbench='true']:has(> .director-create-panel),
-[data-motion-comic-workbench='true']:has(> .director-create-panel) {
+[data-motion-comic-workbench='true']:has(> .director-create-panel),
+[data-motion-comic-workbench='true']:has(> .motion-comic-create),
+[data-motion-comic-workbench='true']:has(> .comic-workbench) {
   min-height: 0;
   height: 100%;
   overflow-y: auto;
@@ -1306,4 +1308,30 @@
   .director-desk[data-workspace-layout] .director-asset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .director-desk[data-workspace-layout] .director-status-footer { display: flex; padding-inline: 12px; overflow: hidden; }
   .director-desk[data-workspace-layout] .director-status-footer > span { overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* 解决左侧长篇小说文本撑爆高度与右侧底部裁切 */
+.director-series-summary p {
+  max-height: 160px !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin !important;
+  white-space: pre-wrap !important;
+}
+
+.director-series-editor {
+  padding-bottom: 120px !important;
+}
+
+.motion-comic-asset-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  text-align: center;
+  gap: 8px;
+  color: var(--shell-muted);
+  border: 1px dashed var(--shell-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
 }

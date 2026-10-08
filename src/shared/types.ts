@@ -38,7 +38,7 @@ export type AutomationMode = 'full-auto' | 'milestone-review' | 'scene-review' |
 export type ProcessingMode = AutomationMode | 'semi-auto' | 'clip-only';
 export type VideoGenerationFallback = 'dynamic-image' | 'html-video' | 'disabled';
 export type ContentPlatform = 'douyin' | 'xiaohongshu' | 'shipinhao' | 'bilibili' | 'kuaishou';
-export type VideoCapability = 't2v' | 'i2v' | 'first-last-frame' | 'reference-image' | 'partial-redo' | 'synchronized-audio';
+export type VideoCapability = 't2v' | 'i2v' | 'first-last-frame' | 'reference-image' | 'reference-video' | 'reference-audio' | 'partial-redo' | 'synchronized-audio';
 export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
 export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
 export type ImageProvider = 'gpt_image' | 'jimeng' | 'custom' | 'mock';
@@ -208,6 +208,7 @@ export interface VideoProviderConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  modelPreset?: 'h3' | 'h3-max' | 'seedance-2.0' | 'seedance-2.5' | 'custom';
   submitPath: string;
   statusPathTemplate: string;
   pollIntervalMs: number;
@@ -1309,6 +1310,12 @@ export interface PromptTemplate {
 
 export type PromptTemplateSummary = Omit<PromptTemplate, 'content' | 'stepPrompts' | 'imageSeedPoolsJson'>;
 
+export interface CustomStylePreview {
+  imagePath: string;
+  styleSignature: string;
+  generatedAt: string;
+}
+
 export interface CustomStyle {
   id: string;
   name: string;
@@ -1321,6 +1328,7 @@ export interface CustomStyle {
   description: string;
   createdAt: string;
   updatedAt: string;
+  preview?: CustomStylePreview;
 }
 
 export interface CustomCoverTemplate {

@@ -1,0 +1,21 @@
+.director-option-sample{width:100%;aspect-ratio:16/9;position:relative;overflow:hidden;background:var(--shell-bg)}
+.director-option-sample iframe{display:block;border:0;transform-origin:top left;max-width:none}
+.director-workflow-sample{display:grid;gap:14px;padding:20px;background:var(--shell-surface);color:var(--shell-text);min-width:0}
+.director-workflow-sample>div:nth-child(2){display:grid;gap:9px}
+.director-workflow-sample>div:nth-child(2)>span{display:flex;gap:10px;align-items:center;font-size:12px}
+.director-workflow-sample b{display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--shell-border);border-radius:var(--sd-radius);color:var(--shell-accent-strong)}
+.director-workflow-sample small{color:var(--shell-muted);font-size:11px;line-height:1.5}
+.director-workflow-sample__layers{height:68px;position:relative;width:132px;margin:auto}
+.director-workflow-sample__layers span{position:absolute;width:78px;height:48px;border:1px solid var(--shell-border);background:var(--shell-surface-raised);transform:rotate(-9deg);inset:9px auto auto 9px}
+.director-workflow-sample__layers span:nth-child(2){left:26px;top:4px;transform:rotate(4deg);background:var(--shell-selected)}
+.director-workflow-sample__layers span:nth-child(3){left:45px;top:12px;transform:rotate(-3deg);border-left:4px solid var(--shell-accent)}
+.director-transition-sample{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:var(--shell-surface);color:var(--shell-text)}
+.director-transition-scene{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;gap:10px;padding:12%;background:var(--shell-surface-raised)}
+.director-transition-scene span{font-size:36px;line-height:1;font-weight:750;color:var(--shell-muted)}
+.director-transition-scene strong{font-size:18px}
+.director-transition-scene--after{background:var(--shell-selected);border-left:8px solid var(--shell-accent);animation:director-transition-dissolve 4s linear infinite}
+.director-transition-sample.is-cut .director-transition-scene--after{animation-name:director-transition-cut}
+.director-transition-sample>small{position:absolute;bottom:8px;left:12px;right:12px;font-size:10px;color:var(--shell-muted)}
+@keyframes director-transition-dissolve{0%,40%{opacity:0}45%,90%{opacity:1}95%,100%{opacity:0}}
+@keyframes director-transition-cut{0%,39.99%{opacity:0}40%,94.99%{opacity:1}95%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.director-transition-scene--after{animation:none;opacity:.5}.director-transition-sample.is-cut .director-transition-scene--after{opacity:1}}

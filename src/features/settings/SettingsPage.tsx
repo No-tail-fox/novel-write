@@ -25,6 +25,8 @@ import { MinimaxCloneVoiceManager } from './MinimaxCloneVoiceManager';
 import { ProviderPortalLinks } from './ProviderPortalLinks';
 import { MusicProfileManager, ProfileSecretField, TranscriptionVisionProfileSwitcher, VideoProfileSwitcher, VisionProfileManager } from './MusicVideoProfileManagers';
 import { providerKeyPortals } from '../../shared/provider-portals';
+import { createVideoModelProfile } from '../../shared/video-model-presets';
+import { VIDEO_MODEL_PRESETS, videoModelPreset, type VideoModelPreset } from '../../shared/video-models';
 import {
   ConfigInput,
   ConfigNumberInput,
@@ -46,7 +48,7 @@ import {
 
 export type SettingsSection = 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
 
-export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; returnView?: ShellView; onReturn?: () => void }) {
+export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, initialVideoPreset, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; initialVideoPreset?: VideoModelPreset; returnView?: ShellView; onReturn?: () => void }) {
   const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm');
   const [draft, setDraft] = useState<AppConfig>(() => normalizeEditableConfigProviders(state.config));
   const [settingsDirty, setSettingsDirty] = useState(false);
@@ -76,6 +78,19 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const settingsAction = useAsyncAction();
   const themeAction = useAsyncAction();
   const draftRevision = useRef(0);
+  const videoPresetApplied = useRef(false);
+  useEffect(() => {
+    if (!initialVideoPreset || videoPresetApplied.current) return;
+    videoPresetApplied.current = true;
+    const existing = state.config.video.providers.find((profile) => videoModelPreset(profile) === initialVideoPreset);
+    if (existing) { setSelectedVideoProfileId(existing.id); return; }
+    addVideoPreset(initialVideoPreset);
+  }, [initialVideoPreset]);
+  function addVideoPreset(preset: VideoModelPreset) {
+    const profile = createVideoModelProfile(preset, `video-${crypto.randomUUID()}`);
+    setSettingsDraft((current) => ({ ...current, video: { ...current.video, providers: [...current.video.providers, profile] } }));
+    setSelectedVideoProfileId(profile.id);
+  }
   useUnsavedChanges({
     id: 'settings', label: '系统设置', dirty: settingsDirty, busy: savingConfig,
     onSave: async () => Boolean(await save()),
@@ -462,7 +477,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['webSearch', Globe2, '联网搜索', 'Agent Search · SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
-  const returnLabel = returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
+  const returnLabel = returnView === 'video-lab' ? '返回视频生成' : returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
   return (
     <div className="settings-layout">
       <section className="settings-menu">
@@ -573,6 +588,10 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             <SettingsCard title="视频生成服务" status={secrets.configured(selectedVideoSecretId) ? '已配置' : '待配置'}>
               <VideoProfileSwitcher config={draft} selectedProfileId={selectedVideoProfileId} saving={savingConfig || testingConfig}
                 onChange={setSettingsDraft} onSelectedProfileIdChange={setSelectedVideoProfileId} onActivate={activateVideoProfile} />
+              <div className="settings-inline-actions" aria-label="新增视频模型预设">
+                {VIDEO_MODEL_PRESETS.filter((item) => item.id !== 'custom').map((preset) => <Button key={preset.id} density="compact" disabled={savingConfig} onClick={() => addVideoPreset(preset.id)}>添加 {preset.label}</Button>)}
+              </div>
+              <SelectField label="模型能力类型" value={videoModelPreset(selectedVideoProvider)} options={VIDEO_MODEL_PRESETS.map((item) => ({ value: item.id, label: item.label }))} onChange={(_, data) => updateSelectedVideoProvider({ modelPreset: data.value as VideoModelPreset })} hint="部署 ID 或中转模型别名也按此类型匹配参数；接口地址和模型 ID 以服务商提供的为准。" />
               <ProviderConfigNote
                 title="统一视频生成合同"
                 value="支持同步 URL/base64 返回，也支持 task_id 异步轮询。业务任务只依赖能力声明，不绑定具体供应商名称。"
@@ -597,6 +616,8 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                     ['i2v', '图生视频'],
                     ['first-last-frame', '首尾帧'],
                     ['reference-image', '参考图'],
+                    ['reference-video', '参考视频'],
+                    ['reference-audio', '参考音频'],
                     ['partial-redo', '局部重做'],
                     ['synchronized-audio', '同步音视频'],
                   ] as const).map(([capability, label]) => (

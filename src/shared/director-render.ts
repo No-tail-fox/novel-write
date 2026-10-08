@@ -10,6 +10,8 @@ import { evaluateDirectorSubtitleLayout, type ProductionSubtitleLayoutEvidence }
 import { directorSceneLayoutClass, directorSceneSubtitleClass } from './director-scene-layout';
 import { evaluateDirectorVisualContinuity, type ProductionVisualContinuityEvidence } from './production-visual-continuity';
 import { measureProductionNarrationAlignment, type ProductionNarrationAlignmentEvidence } from './production-audio-alignment';
+import { resolveDirectorTransition, type DirectorTransition } from './director-transitions';
+import { motionComicVideoInputHash } from './motion-comic-video';
 
 export interface DirectorRenderRequest {
   id: string;
@@ -72,6 +74,7 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
           title: beat.title, narration: beat.narration, startMs: beat.startMs,
           shots: beat.shots.map((shot) => ({
             id: shot.id, title: shot.title, animation: shot.animation, motionStyle: shot.motionStyle, durationMs: shot.durationMs, renderStrategy: shot.renderStrategy,
+            transitionIn: resolveDirectorTransition(shot.transitionIn),
             scenePrompt: shot.scenePrompt, motionPrompt: shot.motionPrompt,
             layers: shot.layers, camera: shot.camera, subtitleCueIds: shot.subtitleCueIds,
             keyframeAssetVersionId: shot.keyframeAssetVersionId,
@@ -114,7 +117,7 @@ function motionComicRenderFingerprintSource(document: MotionComicPipelineData, e
   const shotIds = episode.scenes.flatMap((scene) => scene.shots);
   const referencedIds = new Set<string>();
   for (const shot of shotIds) {
-    for (const id of [shot.firstFrameAssetVersionId, shot.lastFrameAssetVersionId, shot.voiceAssetVersionId]) if (id) referencedIds.add(id);
+    for (const id of [shot.firstFrameAssetVersionId, shot.lastFrameAssetVersionId, shot.videoAssetVersionId, shot.voiceAssetVersionId]) if (id) referencedIds.add(id);
     for (const cue of episode.dialogueCues.filter((cue) => shot.dialogueCueIds.includes(cue.id))) {
       for (const id of [cue.audioAssetVersionId, cue.voiceAssetVersionId]) if (id) referencedIds.add(id);
     }
@@ -431,6 +434,7 @@ export interface DirectorRenderScene {
   subtitleCues?: DirectorRenderSubtitleCue[];
   durationMs: number;
   renderStrategy: DirectorRenderableStrategy;
+  transitionIn?: DirectorTransition;
   animation?: VoxAnimation;
   animationAssets?: Array<{id:string;kind:'image'|'audio';path:string}>;
   layers: DirectorRenderLayer[];
@@ -551,7 +555,7 @@ export function buildDirectorRenderScenes(
           const asset = assets.get(id); if (!asset || (asset.kind !== 'image' && asset.kind !== 'audio')) return [];
           const path = resolveAssetPath(id, asset.kind, `${shotLabel}动画素材`); return [{id,kind:asset.kind as 'image'|'audio',path}];
         });
-        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',animation:shot.animation,animationAssets,layers:[],camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
+        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',transitionIn:resolveDirectorTransition(shot.transitionIn),animation:shot.animation,animationAssets,layers:[],camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
         return;
       }
 
@@ -576,6 +580,7 @@ export function buildDirectorRenderScenes(
           subtitleCues,
           durationMs: shot.durationMs,
           renderStrategy: 'living-poster',
+          transitionIn: resolveDirectorTransition(shot.transitionIn),
           layers: [],
           camera: [],
           videoPath,
@@ -627,6 +632,7 @@ export function buildDirectorRenderScenes(
         subtitleCues,
         durationMs: shot.durationMs,
         renderStrategy: 'deterministic-layers',
+        transitionIn: resolveDirectorTransition(shot.transitionIn),
         layers,
         camera: shot.camera.map((frame) => ({ ...frame })),
         audioPath,
@@ -645,7 +651,7 @@ export function buildDirectorRenderScenes(
       if (selectedShotIds && !selectedShotIds.has(shot.id)) return;
       const index = scenes.length + 1;
       const shotLabel = `镜头 ${index}`;
-      const imagePath = resolveAssetPath(shot.firstFrameAssetVersionId, 'image', shotLabel);
+      const imagePath = shot.renderStrategy === 'remote-video' ? '' : resolveAssetPath(shot.firstFrameAssetVersionId, 'image', shotLabel);
       const subtitleCues = sceneSubtitleCues(shot.dialogueCueIds.flatMap((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId) ?? []), episode.timeline.clips.find((clip) => clip.shotId === shot.id)?.startMs ?? 0);
       const dialogue = shot.dialogueCueIds.flatMap((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId && cue.text.trim()) ?? []);
       if (!shot.voiceAssetVersionId) {
@@ -654,19 +660,51 @@ export function buildDirectorRenderScenes(
         }
       }
       const authoredAudio = productionAudioClipsForShot(episode.timeline, shot);
+      const silentActionShot = dialogue.length === 0 && !shot.voiceAssetVersionId && authoredAudio === undefined;
       const audioClips = resolveProductionAudioClips(
-        authoredAudio?.map((clip) => ({
+        (authoredAudio ?? (silentActionShot ? [] : undefined))?.map((clip) => ({
           ...clip,
           startMs: clip.startMs - (episode.timeline.clips.find((timelineClip) => timelineClip.shotId === shot.id)?.startMs ?? 0),
         })),
         assets,
         shot.durationMs,
       );
-      const audioPath = authoredAudio !== undefined ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
+      const hasExplicitAudioMix = authoredAudio !== undefined || silentActionShot;
+      const audioPath = hasExplicitAudioMix ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
       const caption = shot.dialogueCueIds
         .map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text)
         .filter((text): text is string => Boolean(text))
         .join(' ');
+      if (shot.renderStrategy === 'remote-video') {
+        const videoPath = resolveAssetPath(shot.videoAssetVersionId, 'video', shotLabel);
+        const videoAsset = shot.videoAssetVersionId ? assets.get(shot.videoAssetVersionId) : undefined;
+        const videoJob = shot.videoJobId ? jobs.get(shot.videoJobId) : undefined;
+        if (!shot.videoJobId || !videoJob) issues.push(`${shotLabel}缺少远程视频任务`);
+        else if (videoJob.nodeId !== shot.id || videoJob.capability !== 'image-to-video' || videoJob.episodeId !== episode.id) issues.push(`${shotLabel}的远程视频任务归属或能力错误`);
+        else if (videoJob.status !== 'completed') issues.push(`${shotLabel}的远程视频任务尚未成功完成`);
+        if (videoAsset && videoAsset.providerJobId !== shot.videoJobId) issues.push(`${shotLabel}的视频资产与生成任务不匹配`);
+        if (videoJob && videoJob.inputHash !== motionComicVideoInputHash(document, shot, videoJob.providerId, videoJob.model)) issues.push(`${shotLabel}的远程视频输入已变化，请重新生成视频`);
+        scenes.push({
+          id: shot.id,
+          index,
+          title: shot.title || scene.title,
+          caption,
+          subtitleCues,
+          durationMs: shot.durationMs,
+          renderStrategy: 'living-poster',
+          layers: [],
+          camera: [],
+          videoPath,
+          videoAssetVersionId: shot.videoAssetVersionId,
+          videoJobId: shot.videoJobId,
+          audioPath,
+          ...(hasExplicitAudioMix ? { audioClips } : {}),
+          layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先',
+          motionPreset: shot.motionPreset,
+          subtitleStyle: shot.subtitleStyle,
+        });
+        return;
+      }
       scenes.push({
         id: shot.id,
         index,
@@ -685,7 +723,7 @@ export function buildDirectorRenderScenes(
         }] : [],
         camera: [],
         audioPath,
-        ...(authoredAudio !== undefined ? { audioClips } : {}),
+        ...(hasExplicitAudioMix ? { audioClips } : {}),
         layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先',
         motionPreset: shot.motionPreset,
         subtitleStyle: shot.subtitleStyle,

@@ -908,7 +908,7 @@ describe('electron ipc contract', () => {
     expect(main).toContain("properties: ['openFile']");
     expect(preload).toContain('selectLocalImage');
     expect(preload).toContain('local-image:select');
-    expect(apiContract).toContain('selectLocalImage: () => Promise<string | null>');
+    expect(apiContract).toContain("selectLocalImage: (purpose?: 'video-reference') => Promise<string | null>");
   });
 
   it('keeps raw audio selection for voice cloning and exposes managed BGM imports', async () => {
@@ -921,12 +921,15 @@ describe('electron ipc contract', () => {
     expect(main).toContain("purpose === 'managed-bgm' ? importManagedBgm(selectedPath, appDataDir()) : selectedPath");
     expect(main).toContain('await ensureRuntimeManagedBgmPaths(database, service, dir)');
     expect(main).toContain('resolveRuntimeManagedBgmLibrary(dataDir, current)');
-    expect(main).toContain("extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']");
+    expect(main).toContain("purpose === 'video-reference'");
+    expect(main).toContain("? ['mp3', 'wav']");
+    expect(main).toContain(": ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac']");
     expect(preload).toContain('selectLocalAudio');
     expect(preload).toContain('importBgmAudio');
     expect(preload).toContain('local-audio:select');
     expect(apiContract).toContain('(): Promise<string | null>');
     expect(apiContract).toContain("(purpose: 'managed-bgm'): Promise<ManagedBgmImport | null>");
+    expect(apiContract).toContain("(purpose: 'video-reference'): Promise<string | null>");
     expect(apiContract).toContain('importBgmAudio: () => Promise<ManagedBgmImport | null>');
   });
 

@@ -10,7 +10,8 @@ import type { ApplyMutationResult, RendererAppState as AppState } from '../../ap
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { PausePoint, ProcessingMode, Task } from '../../shared/types';
 import type { TemplateOption } from '../../shared/prompt-templates';
-import { pauseOptions, storyboardSceneCountOptions, styleOptions } from '../../shared/editorial-options';
+import { pauseOptions, storyboardSceneCountOptions } from '../../shared/editorial-options';
+import { ImageStylePicker } from '../image-style-preview/ImageStylePreview';
 import { useAsyncAction } from '../../ui/async-action';
 import { Button } from '../../ui';
 import { addUploadedBgm, resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
@@ -77,7 +78,6 @@ export function MusicMvPage({
   const pendingMusic = initialMusic && initialMusic.id !== handledMusicId ? initialMusic : undefined;
   const bgmOptions = validBgmItems(state.config);
   const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
-  const musicMvStyleOptions = styleOptions;
   const musicMvDraftTemplateOptions = state.draftTemplates.map((template): TemplateOption => [template.id, template.name, `出图 ${template.image.ratio}`]);
 
   function handleInitialMusic(useMusic: boolean) {
@@ -199,7 +199,7 @@ export function MusicMvPage({
           <Segmented label="分镜数量" value={String(storyboardSceneCount)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count} 条`)} onChange={(value) => setStoryboardSceneCount(Number(value))} />
         </div>
 
-        <OptionCloud title="画面风格" options={musicMvStyleOptions} value={style} onChange={setStyle} />
+        <ImageStylePicker styles={state.customStyles} value={style} onChange={setStyle} />
         <div className="option-two-col">
           <OptionCloud title="草稿模板" options={musicMvDraftTemplateOptions} value={templateId} onChange={setTemplateId} />
           <div>

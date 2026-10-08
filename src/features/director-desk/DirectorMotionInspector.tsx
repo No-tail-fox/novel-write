@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, Gauge, Plus, Trash2, SkipBack, SkipForward, Play, Pause } from 'lucide-react';
-import { IconButton, SelectField, SliderField, TextAreaField, TextField, Toolbar, Button } from '../../ui';
+import { IconButton, SelectField, PreviewSelectField, SliderField, TextAreaField, TextField, Toolbar, Button } from '../../ui';
+import { DirectorOptionPreview, DIRECTOR_CAMERA_OPTIONS } from './DirectorOptionPreview';
+import { DirectorTransitionField } from './DirectorTransitionField';
 import type { DirectorCameraKeyframe, DirectorLayerKeyframe, DirectorDeskMode, DirectorDeskWorkspaceProps, DirectorMotionPreset, DirectorShot } from './DirectorDeskWorkspace';
 import type { EditorialMotionEdit } from '../../shared/editorial-collage';
 
@@ -32,9 +34,10 @@ export function DirectorMotionInspector({ mode, shot, onUpdate, onEdit, busy, ti
     catch (reason) { setError(reason instanceof Error ? reason.message : '运动参数更新失败。'); return false; }
   }
   return <div className="director-form-stack" data-director-motion-editor={shot.id}>
+    {mode === 'vox' ? <DirectorTransitionField shot={shot} onUpdate={onUpdate} busy={busy} /> : null}
     <TextAreaField fieldClassName="director-prompt-field" label="运动提示词" value={shot.motionPrompt} disabled={busy} onChange={(_, data) => onUpdate(shot.id, { motionPrompt: data.value })} resize="vertical" hint={mode === 'vox' && shot.renderStrategy !== 'living-poster' ? '此提示词供图生视频使用。本地动画请在生成面板选择叙事动作，或在下方编辑关键帧。' : undefined} />
     {shot.renderStrategy === 'living-poster' ? <div className="director-inspector-note"><Gauge size={14} /><span>图生视频直接播放模型生成的视频。切换到“本地拼贴动画”可编辑已保留的图层与相机；运动提示词在下次视频生成时生效。</span></div> : <>
-      <SelectField label={mode === 'vox' ? '相机运动' : '运动控制'} hint="套用预设会替换相机关键帧" value={shot.motionPreset ?? '平移 + 缓慢推进'} options={(['平移 + 缓慢推进', '轻微视差', '固定机位'] as const).map((label) => ({ value: label, label }))} disabled={busy} onChange={(event) => onUpdate(shot.id, { motionPreset: event.target.value as DirectorMotionPreset })} />
+      <PreviewSelectField label={mode === 'vox' ? '相机运动' : '运动控制'} hint="套用预设会替换相机关键帧" value={shot.motionPreset ?? DIRECTOR_CAMERA_OPTIONS[0]} options={DIRECTOR_CAMERA_OPTIONS.map(value => ({ value, label: value, preview: () => <DirectorOptionPreview kind="camera" value={value} /> }))} disabled={busy} onChange={(value) => onUpdate(shot.id, { motionPreset: value as DirectorMotionPreset })} />
       <div className="director-two-col"><TextField label="起始缩放" value={`${Math.round(start.zoom * 100)}%`} readOnly /><TextField label="结束缩放" value={`${Math.round(end.zoom * 100)}%`} readOnly /></div>
       <div className="director-motion-facts"><span><strong>{camera.length}</strong> 个相机关键帧</span><span>起点 {Math.round(start.x * 100)}%, {Math.round(start.y * 100)}%</span><span>终点 {Math.round(end.x * 100)}%, {Math.round(end.y * 100)}%</span></div>
       <SelectField label="运动轨道" value={layer ? `layer:${layer.id}` : 'camera'} options={[{ value: 'camera', label: '相机' }, ...(shot.previewLayers ?? []).map((item) => ({ value: `layer:${item.id}`, label: item.label }))]} onChange={(event) => setTarget(event.target.value)} />

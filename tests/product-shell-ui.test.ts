@@ -849,7 +849,7 @@ describe('product shell ui', () => {
       '设置',
       '账户中心',
       '积分明细',
-      '新建任务',
+      '新建项目',
       '任务队列',
       '历史任务',
       '图片生成',
@@ -872,6 +872,8 @@ describe('product shell ui', () => {
     expect(groupLabels).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
     expect(main).toContain('className="trial-activation-bar"');
     expect(main).toContain('className="recent-task-strip"');
+    expect(main).toContain('<span className="window-version">V1.0.0</span>');
+    expect(main).not.toContain('className="brand-block"');
     expect(main).toContain('navigate(\'account\')');
     expect(main).toContain('navigate(\'activation\')');
     expect(main.match(/aria-current=\{activeView === 'account' \? 'page' : undefined\}/gu)).toHaveLength(2);
@@ -2666,7 +2668,7 @@ describe('product shell ui', () => {
     expect(main).toContain('参考图类型');
     expect(main).toContain('Step 3 骨架');
     expect(main).toContain('setRatio(draftTemplateImageRatio');
-    expect(main).toContain('defaultStyles: [style.id]');
+    expect(main).toContain('defaultStyles: [id]');
     expect(main).toContain('defaultDraftTemplateId');
     expect(main).not.toContain('toggleArray(resolvePromptTemplateDefaultStyleIds(draft), style.id)');
     expect(main).not.toContain('OptionCloud title="草稿模板" options={state.draftTemplates.map((template) => [template.id, template.name, `出图 ${template.image.ratio}`])} value={templateId} onChange={setTemplateId}');
@@ -3306,8 +3308,8 @@ describe('product shell ui', () => {
     expect(main).toContain('options={storyTemplateOptions}');
     expect(main).toContain('value={selectedStoryTemplateId}');
     expect(main).toContain('handleStoryTemplateChange');
-    expect(main).toContain('imageTemplateStyleOptions.map(([id, label, hint])');
-    expect(main).toContain('onChange={(event) => handleStyleChange(event.target.value)}');
+    expect(main).toContain('options={imageTemplateStyleOptions}');
+    expect(main).toContain('onChange={handleStyleChange}');
     expect(main).toContain('state.draftTemplates.map((template) => <option');
     expect(main).toContain('onChange={(event) => handleDraftTemplateChange(event.target.value)}');
     expect(main).toContain('buildTaskPromptTemplateOptions(state.promptTemplates, track)');

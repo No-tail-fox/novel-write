@@ -1,0 +1,21 @@
+{
+  "styleId": "swiss-signal",
+  "provider": "VllmProxy",
+  "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+  "requestedModel": "gpt-image-2.5",
+  "returnedModel": null,
+  "requestedSize": "3840x2160",
+  "actualOriginalSize": [
+    3840,
+    2160
+  ],
+  "previewSize": [
+    768,
+    432
+  ],
+  "completedAt": "2026-09-16T11:05:30.0626295Z",
+  "originalSha256": "b78ae2f83c6bd2805587a9bf88246361d6479bbd06f0ea57d2b9e620bbdbceef",
+  "previewSha256": "4c8925dd79652c3274b62ffb496dbc174804ce2c3e86524e1907092f01cbe8f2",
+  "previewBytes": 66364,
+  "note": "AI-generated style reference; resized locally for hover previews. The provider did not independently verify upstream model identity."
+}

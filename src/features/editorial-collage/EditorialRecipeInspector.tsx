@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Button, SelectField } from '../../ui';
+import { Button, PreviewSelectField } from '../../ui';
+import { DirectorOptionPreview } from '../director-desk/DirectorOptionPreview';
 import { EDITORIAL_RECIPES, editorialRecipe, type EditorialRecipeId } from '../../shared/editorial-recipe-catalog';
 import { editorialKeyframeAssetId, editorialVideoFrames } from '../../shared/editorial-media';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
@@ -24,12 +25,12 @@ export function EditorialRecipeInspector({ document, shotId, busy, onRecipe, onK
   const canUseNext = Boolean(nextId && images.some(asset => asset.id === nextId));
   const showFrames = recipe?.id === 'paper-cut' || shot.renderStrategy === 'living-poster';
   return <section className="editorial-recipe" aria-label="镜头制作方式">
-    <SelectField label="制作方式" value={shot.productionRecipe ?? ''} disabled={busy || importing} options={[{ value: '', label: '自定义制作' }, ...EDITORIAL_RECIPES.map(item => ({ value: item.id, label: item.label }))]} onChange={event => onRecipe(event.target.value as EditorialRecipeId || undefined)} />
+    <PreviewSelectField label="制作方式" value={shot.productionRecipe ?? ''} disabled={busy || importing} options={[{ value: '', label: '自定义制作', preview: () => <DirectorOptionPreview kind="recipe" value="" /> }, ...EDITORIAL_RECIPES.map(item => ({ value: item.id, label: item.label, description: item.description, preview: () => <DirectorOptionPreview kind="recipe" value={item.id} /> }))]} onChange={value => onRecipe(value as EditorialRecipeId || undefined)} />
     {recipe ? <p className="editorial-recipe__hint">{recipe.description}</p> : null}
     {showFrames ? <>
-      <SelectField label={recipe?.id === 'paper-cut' ? '构图原画' : '首帧图片'} value={shot.keyframeAssetVersionId ?? ''} disabled={busy || importing} options={[{ value: '', label: '使用生成的关键帧' }, ...options]} onChange={event => onKeyframe(event.target.value)} />
+      <PreviewSelectField label={recipe?.id === 'paper-cut' ? '构图原画' : '首帧图片'} value={shot.keyframeAssetVersionId ?? ''} disabled={busy || importing} options={[{ value: '', label: '使用生成的关键帧', preview: () => frames.first?.localPath ? <img src={toLocalImageUrl(frames.first.localPath)} alt="当前关键帧" /> : <p>尚未生成关键帧</p> }, ...options.map(option => ({ ...option, preview: () => <img src={toLocalImageUrl(images.find(asset => asset.id === option.value)!.localPath!)} alt={option.label} /> }))]} onChange={onKeyframe} />
       {shot.renderStrategy === 'living-poster' ? <>
-        <SelectField label="尾帧图片" value={shot.lastFrameAssetVersionId ?? ''} disabled={busy || importing} options={[{ value: '', label: recipe?.id === 'nantian' ? '请选择尾帧（必填）' : '不指定尾帧' }, ...options]} onChange={event => onLastFrame(event.target.value)} />
+        <PreviewSelectField label="尾帧图片" value={shot.lastFrameAssetVersionId ?? ''} disabled={busy || importing} options={[{ value: '', label: recipe?.id === 'nantian' ? '请选择尾帧（必填）' : '不指定尾帧', preview: () => <p>{recipe?.id === 'nantian' ? '此制作方式需要尾帧图片。' : '视频模型自由演绎镜头结尾。'}</p> }, ...options.map(option => ({ ...option, preview: () => <img src={toLocalImageUrl(images.find(asset => asset.id === option.value)!.localPath!)} alt={option.label} /> }))]} onChange={onLastFrame} />
         <Button density="compact" variant="subtle" disabled={busy || importing || !canUseNext} onClick={() => nextId && onLastFrame(nextId)}>使用下一镜头关键帧</Button>
       </> : null}
       <div className="editorial-recipe__frames">{[{ label: recipe?.id === 'paper-cut' ? '构图原画' : '首帧', asset: frames.first }, ...(shot.renderStrategy === 'living-poster' ? [{ label: '尾帧', asset: frames.last }] : [])].map(({ label, asset }) => <figure key={label}>{asset?.localPath ? <img src={toLocalImageUrl(asset.localPath)} alt={`${label}预览`} /> : <div className="editorial-recipe__empty">待选择</div>}<figcaption>{label}</figcaption></figure>)}</div>

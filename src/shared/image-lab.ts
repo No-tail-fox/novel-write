@@ -3,15 +3,16 @@ import { defaultConfig, defaultCustomStyles } from './config';
 import { normalizeImageGenerationQuality } from './image-quality';
 import { createConfiguredImageGenerator } from './media-providers';
 import { enableImageProfile, normalizedImageProfiles } from './provider-profile-utils';
-import type { AppConfig, ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
+import type { AppConfig, CustomStyle, ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
 
-export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal): Promise<ImageLabRecord> {
+export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal, customStyle?: CustomStyle | null): Promise<ImageLabRecord> {
   const providerConfig = selectImageLabProviderConfig(config, input.provider);
   const id = input.id ?? randomUUID();
   const createdAt = input.createdAt ?? new Date().toISOString();
   const baseRecord = createBaseRecord(providerConfig, input, id, createdAt);
   const referenceImagePaths = normalizeReferenceImagePaths(input);
-  const prompt = buildImageLabPrompt(input.prompt, input.style, input.smartMode ?? 'text-to-image', referenceImagePaths.length > 0);
+  const style = customStyle?.id === input.style ? customStyle : defaultCustomStyles.find(item => item.id === input.style);
+  const prompt = buildImageLabPrompt(input.prompt, style, input.smartMode ?? 'text-to-image', referenceImagePaths.length > 0);
   const generator = createConfiguredImageGenerator(applyImageLabRequestSize(providerConfig, input), workDir);
   const scene: StoryboardScene = {
     id: 1,
@@ -23,7 +24,7 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
     sceneId: scene.id,
     cap: scene.cap,
     prompt,
-    negativePrompt: imageLabNegativePrompt(input.style),
+    negativePrompt: style?.negativePrompt ?? '',
     style: input.style,
     ratio: input.ratio,
     characterProfile: referenceImagePaths.length ? `Reference images: ${referenceImagePaths.join(', ')}` : '',
@@ -181,12 +182,17 @@ function activeImageQuality(config: AppConfig): ImageGenerationQuality {
   return normalizeImageGenerationQuality(config.gptImage.quality ?? config.image.quality);
 }
 
-function buildImageLabPrompt(prompt: string, styleId: string, smartMode: ImageLabSmartMode, hasReferenceImages: boolean): string {
-  const style = defaultCustomStyles.find((item) => item.id === styleId);
+function buildImageLabPrompt(prompt: string, style: CustomStyle | undefined, smartMode: ImageLabSmartMode, hasReferenceImages: boolean): string {
   const smartPrefix = smartImagePromptPrefix(smartMode, hasReferenceImages);
   const basePrompt = [smartPrefix, prompt].filter(Boolean).join('\n');
   if (!style) return basePrompt;
-  return [style.prefix, basePrompt, style.suffix].filter(Boolean).join('，');
+  return [
+    style.prefix,
+    basePrompt,
+    style.suffix,
+    style.allowColor ? '' : '严格使用黑白灰单色，不使用彩色或彩色点缀。',
+    style.negativePrompt ? `避免出现：${style.negativePrompt}` : '',
+  ].filter(Boolean).join('，');
 }
 
 function smartImagePromptPrefix(smartMode: ImageLabSmartMode, hasReferenceImages: boolean): string {
@@ -212,8 +218,4 @@ function smartImagePromptPrefix(smartMode: ImageLabSmartMode, hasReferenceImages
     return '基于参考图进行一致性改图，保留主体身份和关键特征，只改变用户指定内容。';
   }
   return '';
-}
-
-function imageLabNegativePrompt(styleId: string): string {
-  return defaultCustomStyles.find((item) => item.id === styleId)?.negativePrompt ?? '';
 }

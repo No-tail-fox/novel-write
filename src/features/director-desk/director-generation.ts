@@ -4,9 +4,10 @@ import { rebuildEditorialTimeline, type EditorialCollagePipelineData } from '../
 import { createEditorialMotionLayers, editorialLayerPrompt } from '../../shared/editorial-motion';
 import { editorialKeyframeAssetId, editorialNeedsLayerUpgrade } from '../../shared/editorial-media';
 import { editorialRecipe } from '../../shared/editorial-recipe-catalog';
+import { editorialImageTargetRules, resolveEditorialScenePrompt } from '../../shared/editorial-image-prompts';
 import { editorialShotNarration, editorialShotTitle, isEditorialStructureTitle } from '../../shared/editorial-storytelling';
 import { fitEditorialNarrationTiming } from '../../shared/editorial-narration-timing';
-import type { MotionComicPipelineData } from '../../shared/motion-comic';
+import { invalidateMotionComicShotVideo, type MotionComicPipelineData } from '../../shared/motion-comic';
 import type { ProductionAssetVersion, ProductionProviderJob, ProductionSubtitleCue } from '../../shared/production-workflow';
 import type { ProductionAudioClip } from '../../shared/production-audio';
 import { motionComicDialogueInputMatches, type MotionComicDialogueInput } from '../../shared/motion-comic-dialogue';
@@ -278,7 +279,8 @@ export function directorImageInput(document: EditorialCollagePipelineData | Moti
     const layer = layerId ? shot.layers.find((candidate) => candidate.id === layerId) : undefined;
     if (layerId && (!layer || layer.content)) throw new Error('当前镜头中没有可生成的图片图层。');
     const target = layer ? 'layer' as const : shot.renderStrategy === 'living-poster' || shot.productionRecipe === 'paper-cut' ? 'keyframe' as const : 'legacy' as const;
-    const layerPrompt = layer ? `${layer.prompt?.trim() || editorialLayerPrompt(layer.kind, shot.scenePrompt)}\nCurrent scene: ${shot.scenePrompt}` : shot.scenePrompt;
+    const scenePrompt = resolveEditorialScenePrompt({ scenePrompt: shot.scenePrompt, narration: editorialShotNarration(beat!, shot) || beat!.narration, ratio: document.ratio, motionStyle: shot.motionStyle, knownStylePrompts: document.styleCandidates.map(candidate => candidate.prompt) });
+    const layerPrompt = layer ? layer.prompt?.trim() || editorialLayerPrompt(layer.kind, scenePrompt) : undefined;
     const recipe = editorialRecipe(shot.productionRecipe);
     const hero = shot.productionRecipe === 'paper-cut' && layer ? document.assets.find(asset => asset.id === shot.keyframeAssetVersionId && asset.kind === 'image' && asset.localPath) : undefined;
     const derivation = hero ? layer!.kind === 'background'
@@ -288,7 +290,19 @@ export function directorImageInput(document: EditorialCollagePipelineData | Moti
       projectId: document.id, workflowKind: document.workflowKind, ownerId: beat!.id, shotId,
       target, layerId: layer?.id, layerKind: layer?.kind,
       ratio: document.ratio,
-      prompt: `${stylePrompt}${stylePrompt ? '\n' : ''}${layerPrompt}\n${recipe?.imagePrompt ?? ''}\n${derivation}\nLayout: ${shot.layoutTemplate ?? '对比拼贴 · 纸张撕裂'}. ${shot.seedLocked && shot.seed ? `Keep visual seed reference ${shot.seed}.` : ''}\nVOX documentary editorial ${target === 'layer' ? 'independent asset' : 'complete composed keyframe'}, preserve clean space for deterministic captions, no generated text, no watermark.`,
+      prompt: [
+        'Create one editorial collage image from the following visual brief. Narrative context explains meaning; it is not text to print on the image.',
+        stylePrompt,
+        `SCENE VISUAL BRIEF${layer ? ' (context only; render only the requested layer below)' : ''}:\n${scenePrompt}`,
+        layerPrompt ? `REQUESTED LAYER — this layer description chooses the subject; do not add other actors from the scene:\n${layerPrompt}` : '',
+        // Recipe and layout describe a whole frame. Adding them to green-screen
+        // cutouts previously asked the same image to be both a scene and a layer.
+        !layer ? recipe?.imagePrompt : '',
+        !layer ? `Layout: ${shot.layoutTemplate ?? '对比拼贴 · 纸张撕裂'}.` : '',
+        derivation,
+        shot.seedLocked && shot.seed ? `Keep visual seed reference ${shot.seed}.` : '',
+        editorialImageTargetRules(layer?.kind),
+      ].filter(Boolean).join('\n\n'),
       references: hero ? [{ assetVersionId: hero.id, path: hero.localPath! }] : [] as Array<{ assetVersionId: string; path: string }>,
       selectedAssetIds: layer ? (layer.assetVersionId ? [layer.assetVersionId] : []) : target === 'keyframe' ? [editorialKeyframeAssetId(shot)].filter((id): id is string => Boolean(id)) : shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []),
       styleCandidateId: selectedStyle?.id,
@@ -583,7 +597,10 @@ export function restoreMotionComicImageVersion(document: MotionComicPipelineData
     ...document,
     episodes: document.episodes.map((item) => item.id === episode!.id ? {
       ...item,
-      scenes: item.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((candidate) => candidate.id === shotId ? { ...candidate, firstFrameAssetVersionId: versionId } : candidate) })),
+      scenes: item.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((candidate) => candidate.id === shotId ? {
+        ...candidate,
+        firstFrameAssetVersionId: versionId,
+      } : candidate) })),
       timeline: {
         ...item.timeline,
         clips: item.timeline.clips.map((clip) => clip.shotId === shotId ? {
@@ -593,7 +610,8 @@ export function restoreMotionComicImageVersion(document: MotionComicPipelineData
       },
     } : item),
   };
-  return { ...next, assets: reconcileRestoredImageSelection(next, previousVersionId, versionId) };
+  const restored = { ...next, assets: reconcileRestoredImageSelection(next, previousVersionId, versionId) };
+  return previousVersionId === versionId ? restored : invalidateMotionComicShotVideo(restored, shotId);
 }
 
 function reconcileRestoredImageSelection(document: EditorialCollagePipelineData | MotionComicPipelineData, previousVersionId: string | undefined, versionId: string): ProductionAssetVersion[] {
@@ -637,7 +655,11 @@ export function applyMotionComicImageRecord(
   const matches = isCurrentRequest && (!expectedInput || (expectedInput.shotId === shotId && directorImageInputMatches(document, expectedInput)));
   const completedAsset = record.status === 'generated' ? production.asset : null;
   const generated = matches ? completedAsset : null;
-  return {
+  const owner = generated
+    ? document.episodes.find((episode) => episode.scenes.some((scene) => scene.shots.some((shot) => shot.id === shotId)))
+    : undefined;
+  const previousVersionId = owner?.scenes.flatMap((scene) => scene.shots).find((shot) => shot.id === shotId)?.firstFrameAssetVersionId;
+  const next: MotionComicPipelineData = {
     ...document,
     stage: generated ? 'keyframes' : document.stage,
     assets: completedAsset ? (matches ? appendAssetVersion(document.assets, completedAsset) : [...document.assets, { ...completedAsset, selected: false }]) : document.assets,
@@ -653,6 +675,9 @@ export function applyMotionComicImageRecord(
       })),
     })),
   };
+  return generated && owner && previousVersionId !== generated.id
+    ? invalidateMotionComicShotVideo(next, shotId)
+    : next;
 }
 
 export function applyEditorialVoiceRecord(

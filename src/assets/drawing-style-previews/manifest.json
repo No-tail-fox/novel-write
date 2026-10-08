@@ -1,0 +1,408 @@
+[
+  {
+    "id": "cinematic",
+    "name": "电影感封面",
+    "description": "StoryDream 默认电影感封面与短视频主图风格。",
+    "prefix": "cinematic short-video poster, dramatic lighting, strong subject focus, editorial composition",
+    "suffix": "sharp focal hierarchy, high contrast, premium social video cover, readable empty space",
+    "negativePrompt": "low quality, blurry, watermark, extra text, malformed hands, cluttered background",
+    "allowColor": true,
+    "styleSignature": "[\"cinematic short-video poster, dramatic lighting, strong subject focus, editorial composition\",\"sharp focal hierarchy, high contrast, premium social video cover, readable empty space\",\"low quality, blurry, watermark, extra text, malformed hands, cluttered background\",true]",
+    "file": "cinematic.webp",
+    "prompt": "cinematic short-video poster, dramatic lighting, strong subject focus, editorial composition\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\nsharp focal hierarchy, high contrast, premium social video cover, readable empty space\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: low quality, blurry, watermark, extra text, malformed hands, cluttered background",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:22:18.1045967Z",
+    "originalSha256": "94dd8b5326364db4a273a2f9398eb4b869cb1daa7fe2c57374a5a2bde042a749",
+    "previewSha256": "2deba8ccd4ec2b0320bfbb8857ded7ab0a67064fdcfc3a4137e7e0137ab9d0e2",
+    "previewBytes": 64338
+  },
+  {
+    "id": "ancient-cinematic",
+    "name": "古风电影封面",
+    "description": "对应参考包内 ancient-cinematic 风格，用于历史与文化故事封面。",
+    "prefix": "ancient cinematic poster, historical Chinese atmosphere, restrained costume detail, dramatic rim light",
+    "suffix": "epic but grounded, textured set, strong vertical composition, premium cover art",
+    "negativePrompt": "modern objects, low quality, watermark, random text, overdecorated fantasy armor",
+    "allowColor": true,
+    "styleSignature": "[\"ancient cinematic poster, historical Chinese atmosphere, restrained costume detail, dramatic rim light\",\"epic but grounded, textured set, strong vertical composition, premium cover art\",\"modern objects, low quality, watermark, random text, overdecorated fantasy armor\",true]",
+    "file": "ancient-cinematic.webp",
+    "prompt": "ancient cinematic poster, historical Chinese atmosphere, restrained costume detail, dramatic rim light\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\nepic but grounded, textured set, strong vertical composition, premium cover art\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: modern objects, low quality, watermark, random text, overdecorated fantasy armor",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:22:34.2803296Z",
+    "originalSha256": "b8c1b723eb704313773b3348a7c59bf8268e56bea58b558308c6ed1381cf1ae3",
+    "previewSha256": "ab7bb8440fabee53ed1bb4982fe8a4c30e315e1e38ba0f5b511b5318f59892f6",
+    "previewBytes": 69302
+  },
+  {
+    "id": "black-white",
+    "name": "黑白摄影",
+    "description": "适合人物传记和纪实叙事。",
+    "prefix": "黑白纪实摄影，高对比光影，颗粒感，真实人物质感",
+    "suffix": "自然构图，电影级光线，真实细节",
+    "negativePrompt": "卡通，动漫，低质量，模糊，变形，水印，文字",
+    "allowColor": false,
+    "styleSignature": "[\"黑白纪实摄影，高对比光影，颗粒感，真实人物质感\",\"自然构图，电影级光线，真实细节\",\"卡通，动漫，低质量，模糊，变形，水印，文字\",false]",
+    "file": "black-white.webp",
+    "prompt": "黑白纪实摄影，高对比光影，颗粒感，真实人物质感\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n自然构图，电影级光线，真实细节\n\nColor rule: Strictly monochrome black-and-white grayscale only; no color accents or sepia tint.\nAvoid: 卡通，动漫，低质量，模糊，变形，水印，文字",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:22:49.0445153Z",
+    "originalSha256": "e3630412e972e9591f487ead9fd64904055c87d5083714b3d418b652a559f1a8",
+    "previewSha256": "c182436481dd276446fd938a2a729c1008373f48d72d6ffda6af4685eb1cbd99",
+    "previewBytes": 52184
+  },
+  {
+    "id": "photo-real",
+    "name": "写实彩色",
+    "description": "通用短视频分镜风格。",
+    "prefix": "写实摄影，电影级布光，真实人物，清晰细节",
+    "suffix": "高质量，浅景深，真实色彩",
+    "negativePrompt": "卡通，油画，低质量，额外肢体，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"写实摄影，电影级布光，真实人物，清晰细节\",\"高质量，浅景深，真实色彩\",\"卡通，油画，低质量，额外肢体，文字，水印\",true]",
+    "file": "photo-real.webp",
+    "prompt": "写实摄影，电影级布光，真实人物，清晰细节\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n高质量，浅景深，真实色彩\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 卡通，油画，低质量，额外肢体，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:23:02.1100801Z",
+    "originalSha256": "f7b6bd0d26fa5fe189c08dee8e53cf973fe938276681a22ad4f4f6d54fe12eac",
+    "previewSha256": "5f1beabfb7f2d240b8653b95d2cf0b839334afec6f5f2d1f9e468d72554ea228",
+    "previewBytes": 53570
+  },
+  {
+    "id": "oil-paint",
+    "name": "油画风格",
+    "description": "适合书摘、知识类和情绪表达偏柔和的内容。",
+    "prefix": "油画质感，厚涂笔触，柔和自然光，人物和场景带有手工绘制的层次",
+    "suffix": "写意构图，丰富肌理，柔和色彩，画面有叙事感",
+    "negativePrompt": "照片写实，卡通，低质量，过度锐化，文字，水印，畸形肢体",
+    "allowColor": true,
+    "styleSignature": "[\"油画质感，厚涂笔触，柔和自然光，人物和场景带有手工绘制的层次\",\"写意构图，丰富肌理，柔和色彩，画面有叙事感\",\"照片写实，卡通，低质量，过度锐化，文字，水印，畸形肢体\",true]",
+    "file": "oil-paint.webp",
+    "prompt": "油画质感，厚涂笔触，柔和自然光，人物和场景带有手工绘制的层次\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n写意构图，丰富肌理，柔和色彩，画面有叙事感\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 照片写实，卡通，低质量，过度锐化，文字，水印，畸形肢体",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:23:53.6761454Z",
+    "originalSha256": "eacb28e1ba722f8c672e6a000bf4bb02010f64e8726618cc802ec2390bf96034",
+    "previewSha256": "131f3b1000a2fd2463f847d418ff6b9a16b65aa735e802e0cb6ece0498186687",
+    "previewBytes": 81888
+  },
+  {
+    "id": "modern-film",
+    "name": "现代电影",
+    "description": "适合情感、都市、通用叙事和剧情感较强的短视频。",
+    "prefix": "现代电影镜头，真实场景，宽屏构图，克制高级的电影调色",
+    "suffix": "自然表演，空间纵深，氛围光，电影级细节",
+    "negativePrompt": "卡通，插画，低质量，过曝，文字，水印，畸形肢体",
+    "allowColor": true,
+    "styleSignature": "[\"现代电影镜头，真实场景，宽屏构图，克制高级的电影调色\",\"自然表演，空间纵深，氛围光，电影级细节\",\"卡通，插画，低质量，过曝，文字，水印，畸形肢体\",true]",
+    "file": "modern-film.webp",
+    "prompt": "现代电影镜头，真实场景，宽屏构图，克制高级的电影调色\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n自然表演，空间纵深，氛围光，电影级细节\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 卡通，插画，低质量，过曝，文字，水印，畸形肢体",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:23:30.1506752Z",
+    "originalSha256": "c32d7417b6190f86ae35e0a7923cd1b211bb684345b4e6d14b4196e50ccd5804",
+    "previewSha256": "c75b57473f22a47a499ef5033c616612889210dac48a18383e12851ee8c87ff6",
+    "previewBytes": 57498
+  },
+  {
+    "id": "ancient-film",
+    "name": "古风电影",
+    "description": "适合古代人物和文化内容。",
+    "prefix": "古装电影质感，历史场景，细腻服饰，庄重光影",
+    "suffix": "电影构图，真实布景，古代建筑",
+    "negativePrompt": "现代物件，卡通，低质量，水印，文字",
+    "allowColor": true,
+    "styleSignature": "[\"古装电影质感，历史场景，细腻服饰，庄重光影\",\"电影构图，真实布景，古代建筑\",\"现代物件，卡通，低质量，水印，文字\",true]",
+    "file": "ancient-film.webp",
+    "prompt": "古装电影质感，历史场景，细腻服饰，庄重光影\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n电影构图，真实布景，古代建筑\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 现代物件，卡通，低质量，水印，文字",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:23:50.9697517Z",
+    "originalSha256": "280e244f68fdcef30c69da73750082fa31f62f189d6b206caf59d2f20999a9c6",
+    "previewSha256": "3a5d52a60bf5860bcf0b13f51be14668bcb9f5446dcd2e58c574753ad675781b",
+    "previewBytes": 78218
+  },
+  {
+    "id": "retro-film",
+    "name": "复古胶片",
+    "description": "适合美食探店、街角小店、城市烟火气和怀旧叙事。",
+    "prefix": "复古胶片摄影，80年代生活气息，暖色颗粒，街头纪实质感",
+    "suffix": "自然抓拍，真实环境光，胶片颗粒，怀旧但清晰",
+    "negativePrompt": "未来科技感，卡通，低质量，过度磨皮，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"复古胶片摄影，80年代生活气息，暖色颗粒，街头纪实质感\",\"自然抓拍，真实环境光，胶片颗粒，怀旧但清晰\",\"未来科技感，卡通，低质量，过度磨皮，文字，水印\",true]",
+    "file": "retro-film.webp",
+    "prompt": "复古胶片摄影，80年代生活气息，暖色颗粒，街头纪实质感\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n自然抓拍，真实环境光，胶片颗粒，怀旧但清晰\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 未来科技感，卡通，低质量，过度磨皮，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:24:14.9794331Z",
+    "originalSha256": "8152e56c17c4030f25e5edc67ca7987d66f1ba80d5eeaeb82d519636fd09e389",
+    "previewSha256": "c1bcf3ce87ee9b6eb89a85dfeb24bc4c1fb7241069cc2e924eaded69c7639e5f",
+    "previewBytes": 59686
+  },
+  {
+    "id": "watercolor",
+    "name": "水彩治愈",
+    "description": "适合绘本故事、睡前故事和温柔治愈内容。",
+    "prefix": "水彩插画，柔和晕染，温暖治愈，轻盈干净的童书画面",
+    "suffix": "纸张纹理，柔和边缘，清透色彩，温柔光线",
+    "negativePrompt": "写实照片，暗黑恐怖，强冲突，低质量，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"水彩插画，柔和晕染，温暖治愈，轻盈干净的童书画面\",\"纸张纹理，柔和边缘，清透色彩，温柔光线\",\"写实照片，暗黑恐怖，强冲突，低质量，文字，水印\",true]",
+    "file": "watercolor.webp",
+    "prompt": "水彩插画，柔和晕染，温暖治愈，轻盈干净的童书画面\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n纸张纹理，柔和边缘，清透色彩，温柔光线\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 写实照片，暗黑恐怖，强冲突，低质量，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:24:52.1836316Z",
+    "originalSha256": "3c1bfe9f3e79c5e9a5cccc3d06a519672ede3ccd4d620606afe4f8a724ca1b15",
+    "previewSha256": "4ee4bb418464bfbadd80cfe7f360956322aa60b3bdb67959c11e97acfa65600c",
+    "previewBytes": 49908
+  },
+  {
+    "id": "magazine",
+    "name": "杂志插画",
+    "description": "适合健康科普、图书拆解、电商卖点和知识说明。",
+    "prefix": "现代杂志插画，极简色块，清晰主体，信息图式构图",
+    "suffix": "干净背景，平衡留白，高级配色，适合知识传播",
+    "negativePrompt": "复杂脏乱，恐怖，低质量，模糊，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"现代杂志插画，极简色块，清晰主体，信息图式构图\",\"干净背景，平衡留白，高级配色，适合知识传播\",\"复杂脏乱，恐怖，低质量，模糊，文字，水印\",true]",
+    "file": "magazine.webp",
+    "prompt": "现代杂志插画，极简色块，清晰主体，信息图式构图\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n干净背景，平衡留白，高级配色，适合知识传播\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 复杂脏乱，恐怖，低质量，模糊，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:24:52.5178647Z",
+    "originalSha256": "9eeb703432badb4eeb7abbe92cc0859616915bb6a5b446c2e4624f88b1e0ec9b",
+    "previewSha256": "cf0156dfee0867c6a4142a7645ddbb2f5391a0b2a894fb887488944fa401e37a",
+    "previewBytes": 49652
+  },
+  {
+    "id": "pixar-3d",
+    "name": "皮克斯 3D",
+    "description": "适合轻松、有角色表现需求的动画化内容。",
+    "prefix": "高质量 3D 动画质感，友好的角色比例，柔和体积光，精致材质",
+    "suffix": "明亮色彩，电影动画构图，表情自然，细节丰富",
+    "negativePrompt": "恐怖，写实血腥，低质量，材质粗糙，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"高质量 3D 动画质感，友好的角色比例，柔和体积光，精致材质\",\"明亮色彩，电影动画构图，表情自然，细节丰富\",\"恐怖，写实血腥，低质量，材质粗糙，文字，水印\",true]",
+    "file": "pixar-3d.webp",
+    "prompt": "高质量 3D 动画质感，友好的角色比例，柔和体积光，精致材质\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n明亮色彩，电影动画构图，表情自然，细节丰富\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 恐怖，写实血腥，低质量，材质粗糙，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:25:20.7578327Z",
+    "originalSha256": "ef0c93b53a28427f23a5be3cbbc41e39437f8270bfc74d694a7b4472b75386dd",
+    "previewSha256": "73398de0620cafbc02aca23cbc54d5d9ed4747cba86ae2e9389585bd7e96fc1c",
+    "previewBytes": 58408
+  },
+  {
+    "id": "ink",
+    "name": "中国水墨",
+    "description": "适合文化科普、传统器物、诗词意境和历史知识。",
+    "prefix": "中国水墨画，留白构图，淡墨层次，传统文化意境",
+    "suffix": "宣纸纹理，水墨晕染，克制色彩，东方美学",
+    "negativePrompt": "现代霓虹，3D，低质量，脏乱背景，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"中国水墨画，留白构图，淡墨层次，传统文化意境\",\"宣纸纹理，水墨晕染，克制色彩，东方美学\",\"现代霓虹，3D，低质量，脏乱背景，文字，水印\",true]",
+    "file": "ink.webp",
+    "prompt": "中国水墨画，留白构图，淡墨层次，传统文化意境\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n宣纸纹理，水墨晕染，克制色彩，东方美学\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 现代霓虹，3D，低质量，脏乱背景，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:26:56.7440490Z",
+    "originalSha256": "6d1c21acb145a7fc1bc0d2b99e43a902a7f20f0d9b7ee597dc7a8e4732385918",
+    "previewSha256": "db2862764142f13076dab32222ebc9f5e32a0ca9204e06ca8b2aeabf0acf3d40",
+    "previewBytes": 72850
+  },
+  {
+    "id": "folk",
+    "name": "民间故事工笔风",
+    "description": "适合民间传说、寓言、乡土叙事和古朴故事。",
+    "prefix": "民间故事工笔画风，乡土场景，细腻线描，传统叙事画面",
+    "suffix": "村镇山林，古朴服饰，层次清晰，带有传说感",
+    "negativePrompt": "现代城市，赛博朋克，低质量，卡通过度，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"民间故事工笔画风，乡土场景，细腻线描，传统叙事画面\",\"村镇山林，古朴服饰，层次清晰，带有传说感\",\"现代城市，赛博朋克，低质量，卡通过度，文字，水印\",true]",
+    "file": "folk.webp",
+    "prompt": "民间故事工笔画风，乡土场景，细腻线描，传统叙事画面\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n村镇山林，古朴服饰，层次清晰，带有传说感\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 现代城市，赛博朋克，低质量，卡通过度，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:25:46.1157634Z",
+    "originalSha256": "0064b004034a1833a57c8297f5be6bc5240971cdccd2a811c312af6fddff2c39",
+    "previewSha256": "a1390a1b01712f68b477a720881589d71188ade560422e5bd2ed94c708d0a923",
+    "previewBytes": 103508
+  },
+  {
+    "id": "ghibli",
+    "name": "吉卜力",
+    "description": "适合治愈、成长、幻想和温暖日常故事。",
+    "prefix": "治愈日漫电影感，自然风景，温暖人物，柔和手绘动画质感",
+    "suffix": "明亮天空，丰富生活细节，温柔氛围，干净构图",
+    "negativePrompt": "真实照片，恐怖，低质量，过度商业海报感，文字，水印",
+    "allowColor": true,
+    "styleSignature": "[\"治愈日漫电影感，自然风景，温暖人物，柔和手绘动画质感\",\"明亮天空，丰富生活细节，温柔氛围，干净构图\",\"真实照片，恐怖，低质量，过度商业海报感，文字，水印\",true]",
+    "file": "ghibli.webp",
+    "prompt": "治愈日漫电影感，自然风景，温暖人物，柔和手绘动画质感\n\nCreate one finished artwork serving as a drawing-style reference. Same subject across the style collection: a quiet traditional riverside bookshop in a Chinese water town, an adult bookbinder sitting on the left at a wooden desk repairing a plain cloth-bound book, a small clay teapot and cup in the right foreground, a window and open doorway revealing a stone bridge over the river in the middle distance. The person wears simple timeless cotton clothing; the shop contains wooden shelves and a few neatly stacked unmarked books. Three-quarter view from inside the shop, clear readable silhouette of the person, desk in the lower third, rich depth from foreground cup to bookbinder to riverside bridge, clean visual hierarchy, calm human warmth. Landscape 16:9 framing. Render the entire scene in the specified style, not a photograph of artwork, not a split screen, not a UI mockup. No visible writing, no lettering, no captions, no logos, no watermark. Let the style specification control lighting, palette, texture, level of realism, historical atmosphere and brushwork. Preserve the described subject and relative arrangement while adapting the treatment to the style.\n\n明亮天空，丰富生活细节，温柔氛围，干净构图\n\nColor rule: Use the palette appropriate to the exact style above.\nAvoid: 真实照片，恐怖，低质量，过度商业海报感，文字，水印",
+    "provider": "VllmProxy",
+    "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+    "requestedModel": "gpt-image-2.5",
+    "returnedModel": null,
+    "requestedSize": "3840x2160",
+    "actualOriginalSize": [
+      3840,
+      2160
+    ],
+    "previewSize": [
+      768,
+      432
+    ],
+    "completedAt": "2026-09-17T02:26:17.8221149Z",
+    "originalSha256": "c815cb98d90862781577ff40ad9321d10c943e7014dfeae04a455a5836b54723",
+    "previewSha256": "c870c7db2434bfae31574fa41ee174a412bf54bf47fe108ab836958b5fee4d13",
+    "previewBytes": 63192
+  }
+]

@@ -1,3 +1,35 @@
+﻿/* ==========================================================================
+   0. AI 漫剧全局容器约束与现代滚动条 (修复小屏截断与滚轮失效)
+   ========================================================================== */
+[data-motion-comic-workbench="true"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+[data-motion-comic-workbench="true"]::-webkit-scrollbar {
+  width: 8px;
+}
+
+[data-motion-comic-workbench="true"]::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+[data-motion-comic-workbench="true"]::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+[data-motion-comic-workbench="true"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 107, 74, 0.6);
+}
 .comic-workbench {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -418,4 +450,2187 @@
   .comic-frame {
     width: min(30vh, 270px);
   }
+}
+
+/* ==========================================================================
+   Motion Comic Desktop Display & Episode/Scene Optimization
+   ========================================================================== */
+
+/* 1. 保证分幕分场等工作流阶段底部在桌面端有足够的安全留白，不被底边裁切 */
+
+/* 2. 彻底解决顶部分集条按钮被挤压成 8px 扁缝的问题 */
+.motion-comic-scenes-panel__episodes {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  min-height: 48px !important;
+  padding: 4px 2px 8px !important;
+  overflow-x: auto !important;
+  scrollbar-width: thin !important;
+  flex-shrink: 0 !important;
+}
+
+.motion-comic-scenes-panel__episodes > .sd-button {
+  flex: 0 0 auto !important;
+  min-width: fit-content !important;
+  max-width: 320px !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  line-height: normal !important;
+  box-sizing: border-box !important;
+  border-radius: 6px !important;
+  white-space: nowrap !important;
+}
+
+.motion-comic-scenes-panel__episodes > .sd-button.is-active {
+  border-color: var(--shell-accent) !important;
+  background: color-mix(in srgb, var(--shell-accent) 14%, var(--shell-surface)) !important;
+  color: var(--shell-text) !important;
+}
+
+/* 分集状态徽章 */
+.motion-comic-ep-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--shell-muted);
+}
+
+.motion-comic-ep-pill.is-planned {
+  background: rgba(16, 185, 129, 0.16);
+  color: #10b981;
+}
+
+/* 92集长篇小说分段切片筛选条 */
+.motion-comic-scenes-panel__episodes-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.motion-comic-scenes-panel__episodes-filter > button {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--shell-border) 60%, transparent);
+  color: var(--shell-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.motion-comic-scenes-panel__episodes-filter > button.is-active {
+  background: var(--shell-surface);
+  border-color: var(--shell-accent);
+  color: var(--shell-text);
+  font-weight: 600;
+}
+
+/* 3. 强化每一集对应每一个分幕的卡片化容器结构（集 -> 幕 -> 场） */
+.motion-comic-act-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.motion-comic-act-card:focus-within,
+.motion-comic-act-card:hover {
+  border-color: color-mix(in srgb, var(--shell-accent) 40%, var(--shell-border));
+}
+
+.motion-comic-act-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--shell-border) 80%, transparent);
+}
+
+.motion-comic-act-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--shell-accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--shell-accent) 45%, transparent);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--shell-accent-strong);
+  letter-spacing: 0.5px;
+}
+
+.motion-comic-act-card__phase-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--shell-muted);
+}
+
+.motion-comic-act-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--shell-muted);
+}
+
+.motion-comic-act-card__title-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+/* 4. 未规划分幕集的卡片化引导 */
+.motion-comic-scenes-unplanned-box {
+  display: grid;
+  gap: 14px;
+  padding: 32px 24px;
+  background: var(--shell-surface);
+  border: 1px dashed var(--shell-border);
+  border-radius: 8px;
+  text-align: center;
+  align-items: center;
+  justify-items: center;
+}
+
+.motion-comic-scenes-unplanned-box h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.motion-comic-scenes-unplanned-box p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--shell-muted);
+  max-width: 600px;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   5. 新建 AI 漫剧创建流 (Motion Comic Create Flow) - 现代 Fluent UI 深色质感
+   ========================================================================== */
+
+.motion-comic-create {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 107, 74, 0.04) 0%, transparent 70%);
+}
+
+.motion-comic-create__page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 1160px;
+  min-height: 0;
+  height: 100%;
+}
+
+.motion-comic-create__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.motion-comic-create__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(255, 107, 74, 0.12);
+  border: 1px solid rgba(255, 107, 74, 0.25);
+  color: var(--shell-accent, #ff6b4a);
+  box-shadow: 0 4px 12px rgba(255, 107, 74, 0.15);
+  flex-shrink: 0;
+}
+
+.motion-comic-create__header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--shell-text);
+}
+
+.motion-comic-create__header p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+/* 步骤指示条 */
+.motion-comic-create__steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.motion-comic-create__steps button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.motion-comic-create__steps button.is-active {
+  background: rgba(255, 107, 74, 0.2) !important;
+  border: 1px solid rgba(255, 107, 74, 0.4) !important;
+  color: var(--shell-accent-strong) !important;
+  box-shadow: 0 2px 8px rgba(255, 107, 74, 0.2) !important;
+}
+
+.motion-comic-create__steps button.is-complete {
+  color: var(--ok) !important;
+  background: color-mix(in srgb, var(--ok) 8%, transparent) !important;
+}
+
+/* 核心两栏 Grid 布局：左主区 1fr，右摘要 320px */
+.motion-comic-create__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 16px;
+  align-items: stretch;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+@media (max-width: 800px) {
+  .motion-comic-create__layout {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .motion-comic-create__main {
+    min-height: 420px !important;
+  }
+}
+
+/* 左侧主卡片 */
+.motion-comic-create__main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px !important;
+  background: var(--shell-surface-raised) !important;
+  border: 1px solid var(--shell-border) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.motion-comic-create__section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.motion-comic-create__section-title span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--shell-accent, #ff6b4a);
+}
+
+.motion-comic-create__section-title h2 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--shell-text);
+}
+
+.motion-comic-create__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 表单行排列：两两并排 */
+.motion-comic-create__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.motion-comic-create__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 680px) {
+  .motion-comic-create__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.motion-comic-act-card__source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--shell-border);
+  border-radius: 4px;
+  color: var(--shell-muted);
+  background: var(--shell-hover);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.motion-comic-act-card[data-act-source='ai-planned'] .motion-comic-act-card__source {
+  border-color: color-mix(in srgb, var(--ok) 42%, var(--shell-border));
+  color: var(--ok);
+}
+
+.motion-comic-act-card[data-act-source='manual'] .motion-comic-act-card__source {
+  border-color: color-mix(in srgb, var(--shell-accent) 42%, var(--shell-border));
+  color: var(--shell-accent-strong);
+}
+
+.motion-comic-act-card[data-act-source='rule-inferred'] .motion-comic-act-card__source {
+  border-color: color-mix(in srgb, var(--warn) 42%, var(--shell-border));
+  color: var(--warn);
+}
+
+.motion-comic-act-card__title-field {
+  width: min(420px, 100%);
+}
+
+/* 源文导入区 */
+.motion-comic-source-import {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.motion-comic-source-import > div[role="toolbar"] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.motion-comic-source-import > div[role="toolbar"] span {
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-source-import textarea {
+  min-height: 160px !important; resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--shell-surface-raised) !important;
+  border: 1px solid var(--shell-border) !important;
+  border-radius: 8px !important;
+}
+
+.motion-comic-source-import textarea:focus {
+  border-color: rgba(255, 107, 74, 0.6) !important;
+  box-shadow: 0 0 0 2px rgba(255, 107, 74, 0.15) !important;
+}
+
+/* 步骤 2：拆分规则工具栏 */
+.motion-comic-split-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.motion-comic-split-toolbar span {
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+  margin-left: auto;
+  align-self: center;
+}
+
+.motion-comic-ai-split-settings {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.38fr) minmax(260px, 1fr);
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: var(--shell-surface-raised);
+}
+
+.motion-comic-ai-split-settings .motion-comic-ai-split-note {
+  grid-column: 1 / -1;
+}
+
+.motion-comic-ai-split-note,
+.motion-comic-ai-split-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  color: var(--shell-text);
+  background: var(--shell-hover);
+}
+
+.motion-comic-ai-split-result {
+  border-color: color-mix(in srgb, var(--ok) 32%, var(--shell-border));
+  background: color-mix(in srgb, var(--ok) 10%, var(--shell-surface));
+  color: var(--ok);
+}
+
+.motion-comic-ai-split-note > span,
+.motion-comic-ai-split-result > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.motion-comic-ai-split-note strong,
+.motion-comic-ai-split-result strong {
+  color: var(--shell-text);
+  font-size: 12px;
+}
+
+.motion-comic-ai-split-note small,
+.motion-comic-ai-split-result small {
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.motion-comic-ai-split-warnings {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warn);
+  color: var(--shell-muted);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* 分集草稿列表 */
+.motion-comic-episode-drafts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.motion-comic-episode-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.motion-comic-episode-draft:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.motion-comic-episode-draft header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.motion-comic-episode-draft header span {
+  font-weight: 700;
+  color: var(--shell-accent, #ff6b4a);
+}
+
+.motion-comic-episode-draft header strong {
+  color: var(--shell-muted, #8e8e93);
+  font-weight: normal;
+}
+
+.motion-comic-episode-draft__evidence {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-hover);
+}
+
+.motion-comic-episode-draft__evidence > span {
+  display: grid;
+  gap: 2px;
+}
+
+.motion-comic-episode-draft__evidence strong {
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.motion-comic-episode-draft__evidence small {
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.motion-comic-episode-draft textarea[readonly] {
+  color: var(--shell-text);
+  cursor: text;
+}
+
+@media (max-width: 680px) {
+  .motion-comic-ai-split-settings {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 步骤 3：项目确认 review */
+.motion-comic-create__review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.motion-comic-create__review section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.motion-comic-create__review section span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgba(255, 107, 74, 0.1);
+  color: var(--shell-accent, #ff6b4a);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.motion-comic-create__review section strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+  color: var(--shell-text);
+}
+
+.motion-comic-create__review section small {
+  display: block;
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+/* 底部操作工具栏 */
+.motion-comic-create__footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+/* 右侧摘要卡片 (Summary Aside) */
+.motion-comic-create__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--shell-surface);
+  border: 1px solid var(--shell-border);
+  border-radius: 12px;
+}
+
+.motion-comic-create__summary h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--shell-text);
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.motion-comic-create__summary dl {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.motion-comic-create__summary dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+}
+
+.motion-comic-create__summary dt {
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-create__summary dd {
+  margin: 0;
+  font-weight: 500;
+  color: var(--shell-text);
+}
+
+.motion-comic-create__route {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.motion-comic-create__route strong {
+  font-size: 11px;
+  color: var(--shell-muted, #8e8e93);
+  text-transform: uppercase;
+}
+
+.motion-comic-create__route span {
+  font-size: 11px;
+  color: var(--shell-text);
+  line-height: 1.5;
+}
+
+.motion-comic-create__feedback {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.motion-comic-create__feedback.is-success {
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent);
+  color: var(--ok);
+}
+
+.motion-comic-create__feedback.is-error {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  color: var(--danger);
+}
+
+
+/* ==========================================================================
+   10. AI 漫剧生产工作台 (MotionComicProductionWorkspace) 全局布局约束
+   ========================================================================== */
+.motion-comic-production {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--shell-bg, #0d0f12);
+  color: var(--shell-text, #f0f3f6);
+  box-sizing: border-box;
+}
+
+.motion-comic-production__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--shell-border, rgba(255, 255, 255, 0.08));
+  background: var(--shell-surface, #14181f);
+}
+
+.motion-comic-production__stages {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--shell-border, rgba(255, 255, 255, 0.08));
+  background: rgba(0, 0, 0, 0.2);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.motion-comic-production__stages > button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.motion-comic-production__notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  font-size: 12px;
+}
+
+.motion-comic-production__notice.is-error {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.motion-comic-production__notice.is-success {
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  color: var(--ok);
+  border-bottom: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+}
+
+.motion-comic-production__body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   11. 工作流各阶段通用面板约束 (MotionComicStagePanel)
+   ========================================================================== */
+.motion-comic-stage-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  gap: 14px;
+}
+
+.motion-comic-stage-panel__heading {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--shell-border, rgba(255, 255, 255, 0.06));
+}
+
+.motion-comic-stage-panel__heading > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(255, 107, 74, 0.12);
+  color: var(--shell-accent, #ff6b4a);
+  flex-shrink: 0;
+}
+
+.motion-comic-stage-panel__heading > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.motion-comic-stage-panel__heading p {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--shell-accent, #ff6b4a);
+  letter-spacing: 0.05em;
+}
+
+.motion-comic-stage-panel__heading h1 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--shell-text, #fff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.motion-comic-stage-panel__heading small {
+  display: block;
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   12. 02·分集拆解 左右两栏高级布局与多维筛选体系
+   ========================================================================== */
+.motion-comic-episodes-panel__layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 30%) minmax(0, 1fr);
+  gap: 18px;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左侧：分集列表与筛选中心 */
+.motion-comic-episode-source-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--shell-surface, #14181f);
+  border: 1px solid var(--shell-border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 14px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+/* 结构化进度条 */
+.motion-comic-episodes-progress-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.motion-comic-episodes-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-episodes-progress-info strong {
+  font-size: 12px;
+  color: var(--shell-text, #fff);
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-comic-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.motion-comic-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff6b4a 0%, #34c759 100%);
+  border-radius: 999px;
+  transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 筛选与检索控制区 */
+.motion-comic-episodes-filter-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.motion-comic-episodes-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.motion-comic-episodes-search-box .search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--shell-muted, #8e8e93);
+  pointer-events: none;
+}
+
+.motion-comic-search-input {
+  width: 100%;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--shell-border, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  padding: 0 28px 0 32px;
+  color: var(--shell-text, #fff);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.motion-comic-search-input:focus {
+  border-color: var(--shell-accent, #ff6b4a);
+  box-shadow: 0 0 0 2px rgba(255, 107, 74, 0.2);
+}
+
+.motion-comic-episodes-search-box .search-clear-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--shell-muted, #8e8e93);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px;
+}
+
+.motion-comic-episodes-search-box .search-clear-btn:hover {
+  color: var(--shell-text, #fff);
+}
+
+/* 状态标签切换 */
+.motion-comic-episodes-status-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.motion-comic-episodes-status-tabs .status-tab {
+  flex: 1;
+  text-align: center;
+  background: none;
+  border: none;
+  color: var(--shell-muted, #8e8e93);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.motion-comic-episodes-status-tabs .status-tab:hover {
+  color: var(--shell-text, #fff);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.motion-comic-episodes-status-tabs .status-tab.is-active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* 集数区间切片胶囊按钮 */
+.motion-comic-episodes-chunk-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
+}
+
+.motion-comic-episodes-chunk-tabs .chunk-pill {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--shell-muted, #8e8e93);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.motion-comic-episodes-chunk-tabs .chunk-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--shell-text, #fff);
+}
+
+.motion-comic-episodes-chunk-tabs .chunk-pill.is-active {
+  background: rgba(255, 107, 74, 0.15);
+  border-color: rgba(255, 107, 74, 0.5);
+  color: var(--shell-accent, #ff6b4a);
+  font-weight: 600;
+}
+
+/* 列表条目容器，坚固内部滚动 */
+.motion-comic-episode-source-list__items {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.motion-comic-episode-empty-filter {
+  padding: 30px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+/* 单集条目按钮 */
+.motion-comic-source-episode {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  text-align: left !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.motion-comic-source-episode:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.motion-comic-source-episode.is-selected {
+  background: rgba(255, 107, 74, 0.12) !important;
+  border-color: rgba(255, 107, 74, 0.5) !important;
+  box-shadow: 0 0 12px rgba(255, 107, 74, 0.15) !important;
+}
+
+.motion-comic-source-episode__tag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.motion-comic-source-episode__num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--shell-accent, #ff6b4a);
+  background: rgba(255, 107, 74, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-comic-source-episode__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.motion-comic-source-episode__meta strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--shell-text, #f0f3f6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.motion-comic-source-episode__meta small {
+  font-size: 11px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-source-episode__status {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.status-badge.is-planned {
+  background: color-mix(in srgb, var(--ok) 15%, transparent);
+  color: var(--ok);
+}
+
+.status-badge.is-available {
+  background: rgba(255, 107, 74, 0.15);
+  color: #ff6b4a;
+}
+
+.status-badge.is-locked {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--shell-muted, #8e8e93);
+}
+
+/* 右侧详情区 */
+.motion-comic-episode-source-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--shell-surface, #14181f);
+  border: 1px solid var(--shell-border, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 20px;
+  gap: 16px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+}
+
+.motion-comic-episode-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--shell-border, rgba(255, 255, 255, 0.06));
+}
+
+.motion-comic-episode-detail-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.motion-comic-episode-detail-badge > span {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--shell-accent, #ff6b4a);
+  background: rgba(255, 107, 74, 0.15);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.motion-comic-episode-detail-badge h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--shell-text, #fff);
+}
+
+.motion-comic-episode-detail-badge small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-episode-detail-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.motion-comic-episode-text-viewport {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+
+.motion-comic-source-boundary-evidence {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.34fr) minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--shell-accent);
+  background: var(--shell-hover);
+}
+
+.motion-comic-source-boundary-evidence > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.motion-comic-source-boundary-evidence strong {
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.motion-comic-source-boundary-evidence small {
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.motion-comic-episode-text-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-episode-plan-state {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: -4px 0 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--shell-surface, #14181f);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shell-shadow, #000) 18%, transparent);
+}
+
+.motion-comic-episode-plan-state.is-ready {
+  background: color-mix(in srgb, var(--ok) 10%, var(--shell-surface));
+  border-color: color-mix(in srgb, var(--ok) 25%, var(--shell-border));
+  color: var(--ok);
+}
+
+.motion-comic-episode-plan-state.is-pending {
+  background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface));
+  border-color: color-mix(in srgb, var(--shell-accent) 25%, var(--shell-border));
+  color: var(--shell-accent-strong);
+}
+
+.motion-comic-episode-plan-state.is-locked,
+.motion-comic-episode-plan-state.is-waiting {
+  background: var(--shell-surface-raised, var(--shell-surface));
+  border-color: var(--shell-border);
+  color: var(--shell-muted, #8e8e93);
+}
+
+.motion-comic-episode-plan-state strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--shell-text, #fff);
+  margin-bottom: 2px;
+}
+
+.motion-comic-episode-plan-state small {
+  display: block;
+  font-size: 12px;
+  color: var(--shell-muted, #8e8e93);
+  line-height: 1.5;
+}
+
+.motion-comic-episode-source-detail__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.sd-dialog-surface:has(.motion-comic-plan-dialog) {
+  width: min(960px, calc(100vw - 48px));
+}
+
+.motion-comic-source-panel__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  height: 100%;
+}
+
+.motion-comic-scene-editor__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.motion-comic-plan-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.motion-comic-video-readiness__checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.motion-comic-video-readiness__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
+}
+
+.motion-comic-video-readiness__mode {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .motion-comic-episodes-panel__layout,
+  .motion-comic-source-panel__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .motion-comic-episode-plan-state {
+    top: 0;
+  }
+
+  .motion-comic-episode-plan-state > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .sd-dialog-surface:has(.motion-comic-plan-dialog) {
+    width: calc(100vw - 24px);
+  }
+
+  .motion-comic-source-boundary-evidence {
+    grid-template-columns: 1fr;
+  }
+}
+
+.motion-comic-plan-act-evidence {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border-left: 3px solid var(--shell-accent);
+  color: var(--shell-accent-strong);
+  background: var(--shell-hover);
+}
+
+.motion-comic-plan-act-evidence > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.motion-comic-plan-act-evidence strong,
+.motion-comic-plan-act-evidence small {
+  color: var(--shell-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+
+.motion-comic-act-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Each authoring pane owns its scroll; the stage header and actions stay visible. */
+.motion-comic-source-panel__layout,
+.motion-comic-scenes-board,
+.motion-comic-scenes-unplanned-box {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.motion-comic-scenes-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.motion-comic-act-card { flex: 0 0 auto; }
+.motion-comic-act-card__header > div { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.motion-comic-act-card__header > span,
+.motion-comic-scene-editor > div > span { color: var(--shell-muted); font-size: 12px; }
+.motion-comic-scenes-panel__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 12px; }
+.motion-comic-scene-editor { min-width: 0; padding: 12px; border: 1px solid var(--shell-border); border-radius: 6px; background: var(--shell-surface-raised); }
+.motion-comic-scene-editor > div { display: grid; gap: 8px; margin-bottom: 8px; }
+.motion-comic-scenes-source-preview { max-height: 180px; overflow: auto; white-space: pre-wrap; text-align: left; width: 100%; color: var(--shell-text); }
+.motion-comic-split-hint { margin: 0; color: var(--shell-muted); font-size: 12px; }
+.motion-comic-create__section-heading,
+.motion-comic-create__header,
+.motion-comic-create__steps { flex-shrink: 0; }
+.motion-comic-stage-panel__heading { flex-wrap: wrap; }
+.motion-comic-scenes-panel__episodes-filter { flex-shrink: 0; }
+
+.motion-comic-production__identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.motion-comic-production__identity > div { display: grid; gap: 4px; min-width: 0; }
+.motion-comic-production__identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.motion-comic-production__identity small { color: var(--shell-muted); }
+.motion-comic-production__stages { background: var(--shell-surface); }
+.motion-comic-production__stages .is-active { color: var(--shell-accent-strong); background: var(--shell-selected); }
+.motion-comic-episode-source-list__header { display: grid; gap: 6px; }
+.motion-comic-episode-source-list__header small { color: var(--shell-muted); }
+.motion-comic-episode-detail-header h2 { margin: 4px 0 0; font-size: 16px; }
+.motion-comic-detail-eyebrow,
+.motion-comic-episode-nav-btns { display: flex; align-items: center; gap: 8px; }
+.motion-comic-detail-eyebrow { color: var(--shell-muted); font-size: 12px; }
+.motion-comic-episodes-status-tabs { background: var(--shell-hover); flex-wrap: wrap; }
+.motion-comic-source-episode {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  color: var(--shell-text) !important;
+  background: var(--shell-surface) !important;
+  border-color: var(--shell-border) !important;
+}
+.motion-comic-source-episode-item.is-selected .motion-comic-source-episode {
+  background: var(--shell-selected) !important;
+  border-color: var(--shell-accent) !important;
+}
+.motion-comic-source-episode > .sd-button__content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+}
+.motion-comic-ep-tag { grid-row: 1 / 3; color: var(--shell-accent-strong); font-variant-numeric: tabular-nums; }
+.motion-comic-ep-title { grid-column: 2 / 4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.motion-comic-ep-chars { grid-column: 2; color: var(--shell-muted); font-size: 11px; }
+.motion-comic-ep-badge { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--shell-muted); }
+.motion-comic-episode-plan-state { flex-wrap: wrap; flex-shrink: 0; }
+.motion-comic-episode-plan-state > div { flex: 1 1 260px; min-width: 160px; }
+.motion-comic-episode-plan-state > button { flex: 0 0 auto; }
+.motion-comic-episode-plan-state p { color: var(--shell-muted); font-size: 12px; }
+.motion-comic-episodes-footer { flex-shrink: 0; }
+.motion-comic-progress-track { background: var(--shell-hover); }
+.motion-comic-progress-fill { background: var(--shell-accent); }
+.motion-comic-production .director-desk[data-workspace-layout='preview-first']:not(:has(.director-phase-bar)) {
+  grid-template-rows: 56px minmax(0, 1fr) 34px;
+}
+.motion-comic-production .director-primary-stack { grid-template-columns: minmax(0, 1fr); }
+.motion-comic-video-readiness { display: grid; gap: 12px; }
+.motion-comic-video-readiness__heading { display: flex; align-items: center; gap: 8px; }
+.motion-comic-video-readiness__heading > span,
+.motion-comic-video-readiness__checks > span > span { display: grid; gap: 4px; }
+.motion-comic-video-readiness small { color: var(--shell-muted); }
+.motion-comic-video-readiness__checks > span { display: flex; align-items: flex-start; gap: 8px; }
+.motion-comic-video-readiness__checks svg { flex-shrink: 0; }
+
+@media (max-height: 760px) {
+  .motion-comic-create__page { gap: 10px; }
+  .motion-comic-create__header h1 { font-size: 18px; }
+  .motion-comic-create__section-heading { padding-bottom: 8px; }
+  .motion-comic-stage-panel { padding: 10px 12px; gap: 10px; }
+}
+
+/* AI planning uses the same dense index/detail structure as the authoring workbench. */
+.sd-dialog-surface:has(.motion-comic-plan-dialog) {
+  width: min(960px, calc(100vw - 48px));
+  max-width: 960px;
+  height: min(820px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 20px 22px 18px;
+}
+
+.sd-dialog-surface:has(.motion-comic-plan-dialog) .fui-DialogBody {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.sd-dialog-surface:has(.motion-comic-plan-dialog) .fui-DialogTitle {
+  color: var(--shell-text);
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.sd-dialog-surface:has(.motion-comic-plan-dialog) .fui-DialogContent {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sd-dialog-surface:has(.motion-comic-plan-dialog) .fui-DialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sd-dialog-surface:has(.motion-comic-plan-dialog) .fui-DialogActions > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.motion-comic-plan-dialog,
+.motion-comic-plan-source,
+.motion-comic-plan-preview {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.motion-comic-plan-dialog {
+  color: var(--shell-text);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.motion-comic-plan-source,
+.motion-comic-plan-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 0;
+  height: auto;
+}
+
+.motion-comic-plan-dialog > .motion-comic-plan-error {
+  flex: 0 0 auto;
+  max-height: 110px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.motion-comic-plan-retained-script {
+  flex: 0 0 auto;
+  max-height: 240px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+  scrollbar-gutter: stable;
+}
+.motion-comic-plan-retained-script[open] { flex-basis: 190px; height: 190px; }
+.motion-comic-plan-retained-script summary { position: sticky; top: 0; padding: 4px 0; background: var(--shell-surface); cursor: pointer; }
+.motion-comic-plan-retained-script section { display: grid; gap: 5px; padding: 10px 0; border-top: 1px solid var(--shell-border); }
+.motion-comic-plan-retained-script small { color: var(--shell-muted); overflow-wrap: anywhere; }
+.motion-comic-plan-retained-script p { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+
+.motion-comic-plan-review-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.motion-comic-script-issues {
+  flex: 0 0 auto;
+  height: min(360px, 45vh);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+  scrollbar-gutter: stable;
+}
+.motion-comic-script-issues .motion-comic-plan-pane-heading {
+  flex: 0 0 auto;
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  margin: -10px -10px 0;
+  padding: 10px;
+  background: var(--shell-surface);
+}
+.motion-comic-script-issue {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 1px solid var(--shell-border);
+}
+.motion-comic-script-issue > div:first-child { min-width: 0; }
+.motion-comic-script-issue strong,
+.motion-comic-script-issue small { display: block; overflow-wrap: anywhere; }
+.motion-comic-script-issue small { margin-top: 3px; color: var(--shell-muted); font-size: 11px; line-height: 1.4; }
+.motion-comic-script-issue p { margin: 7px 0 0; color: var(--shell-text); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .motion-comic-script-issue { grid-template-columns: 1fr; }
+  .motion-comic-script-issues { max-height: 420px; }
+}
+.motion-comic-plan-adjustments {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
+  padding: 0 8px;
+}
+.motion-comic-plan-adjustments ol { padding-left: 24px; }
+.motion-comic-plan-adjustments li { border-top: 1px solid var(--shell-border); padding: 10px 0; }
+.motion-comic-plan-adjustments li > small { display: block; color: var(--shell-text-muted); }
+.motion-comic-plan-adjustments p { margin: 6px 0; }
+.motion-comic-plan-preview > .sd-checkbox { flex: 0 0 auto; }
+
+.motion-comic-plan-source {
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.motion-comic-plan-lead,
+.motion-comic-plan-running,
+.motion-comic-plan-safety,
+.motion-comic-plan-starter-option,
+.motion-comic-plan-warnings,
+.motion-comic-plan-valid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--shell-border);
+  background: var(--shell-hover);
+}
+
+.motion-comic-plan-lead > span:last-child,
+.motion-comic-plan-running > span,
+.motion-comic-plan-safety > span,
+.motion-comic-plan-starter-option > span,
+.motion-comic-plan-warnings > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.motion-comic-plan-lead strong,
+.motion-comic-plan-running strong,
+.motion-comic-plan-safety strong,
+.motion-comic-plan-starter-option strong,
+.motion-comic-plan-warnings strong {
+  color: var(--shell-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.motion-comic-plan-lead small,
+.motion-comic-plan-running small,
+.motion-comic-plan-safety small,
+.motion-comic-plan-starter-option small,
+.motion-comic-plan-warnings small {
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.motion-comic-plan-lead,
+.motion-comic-plan-safety,
+.motion-comic-plan-starter-option {
+  border-left-color: var(--shell-accent);
+}
+
+.motion-comic-plan-running {
+  border-left-color: var(--timeline-blue);
+}
+
+.motion-comic-plan-warnings {
+  border-left-color: var(--warn);
+}
+
+.motion-comic-plan-valid {
+  align-items: center;
+  border-left-color: var(--ok);
+  color: var(--shell-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.motion-comic-plan-lead-icon,
+.motion-comic-plan-lead > svg,
+.motion-comic-plan-running > svg,
+.motion-comic-plan-safety > svg,
+.motion-comic-plan-starter-option > svg,
+.motion-comic-plan-warnings > svg,
+.motion-comic-plan-valid > svg {
+  color: var(--shell-accent-strong);
+}
+
+.motion-comic-plan-source-options {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.32fr) minmax(320px, 1fr);
+  align-items: start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.motion-comic-plan-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  min-width: 0;
+  border-block: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+}
+
+.motion-comic-plan-metrics > span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 8px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.motion-comic-plan-metrics > span + span {
+  border-left: 1px solid var(--shell-border);
+}
+
+.motion-comic-plan-metrics svg {
+  grid-row: 1 / 3;
+  color: var(--shell-accent-strong);
+}
+
+.motion-comic-plan-metrics strong {
+  overflow: hidden;
+  color: var(--shell-text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-comic-plan-metrics small {
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.motion-comic-plan-review {
+  display: grid;
+  grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-surface-raised);
+}
+
+.motion-comic-plan-scenes {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--shell-border);
+  background: var(--shell-surface);
+}
+
+.motion-comic-plan-pane-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.motion-comic-plan-pane-heading > span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.motion-comic-plan-pane-heading strong {
+  color: var(--shell-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.motion-comic-plan-pane-heading small,
+.motion-comic-plan-pane-heading > span:last-child {
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.motion-comic-plan-scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  scrollbar-gutter: stable;
+}
+
+.motion-comic-plan-scene {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 46px;
+  justify-content: stretch;
+  border-radius: 4px;
+  color: var(--shell-text);
+  text-align: left;
+}
+
+.motion-comic-plan-scene .sd-button__content {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.motion-comic-plan-scene .sd-button__content > span:first-child {
+  padding-top: 1px;
+  color: var(--shell-accent-strong);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-comic-plan-scene .sd-button__content > span:last-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.motion-comic-plan-scene strong,
+.motion-comic-plan-scene small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-comic-plan-scene strong {
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.motion-comic-plan-scene small {
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.motion-comic-plan-scene[aria-pressed='true'] {
+  background: var(--shell-selected);
+  box-shadow: inset 2px 0 var(--shell-accent);
+}
+
+.motion-comic-plan-entities {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-top: 1px solid var(--shell-border);
+}
+
+.motion-comic-plan-entities > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--shell-text);
+  font-size: 10px;
+}
+
+.motion-comic-plan-entities small {
+  overflow: hidden;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-comic-plan-shots {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.motion-comic-plan-shots .motion-comic-plan-act-evidence {
+  flex: 0 0 auto;
+  margin: 8px 12px 0;
+  border-radius: 0;
+}
+
+.motion-comic-plan-shots > ol {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 12px 10px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.motion-comic-plan-shots > ol > li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 2px;
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.motion-comic-plan-shot-index {
+  color: var(--shell-accent-strong);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-comic-plan-shots li > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.motion-comic-plan-shots li header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.motion-comic-plan-shots li header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--shell-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.motion-comic-plan-shots li header span {
+  flex: 0 0 auto;
+  color: var(--shell-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.motion-comic-plan-shots li p {
+  margin: 0;
+  color: var(--shell-text);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.motion-comic-plan-shots li small {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 6px;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.motion-comic-plan-shots li small strong {
+  color: var(--shell-text);
+}
+
+.motion-comic-plan-empty {
+  display: grid;
+  flex: 1 1 0;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-height: 120px;
+  padding: 24px;
+  color: var(--shell-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .motion-comic-plan-source-options,
+  .motion-comic-plan-review {
+    grid-template-columns: 1fr;
+  }
+
+  .motion-comic-plan-review {
+    overflow-y: auto;
+  }
+
+  .motion-comic-plan-scenes {
+    grid-template-rows: auto auto auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .motion-comic-plan-scene-list {
+    max-height: 150px;
+  }
+
+  .motion-comic-plan-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .motion-comic-plan-metrics > span:nth-child(4) {
+    border-left: 0;
+  }
+
+  .motion-comic-plan-metrics > span:nth-child(n + 4) {
+    border-top: 1px solid var(--shell-border);
+  }
+}
+
+@media (max-height: 760px) {
+  .sd-dialog-surface:has(.motion-comic-plan-dialog) {
+    width: min(960px, calc(100vw - 32px));
+    height: calc(100vh - 24px);
+    max-height: calc(100vh - 24px);
+    padding: 14px 18px 12px;
+  }
+
+  .sd-dialog-surface:has(.motion-comic-plan-dialog) .fui-DialogBody {
+    gap: 8px;
+  }
+
+  .motion-comic-plan-source,
+  .motion-comic-plan-preview {
+    gap: 8px;
+  }
+
+  .motion-comic-plan-lead,
+  .motion-comic-plan-running,
+  .motion-comic-plan-safety,
+  .motion-comic-plan-starter-option,
+  .motion-comic-plan-warnings,
+  .motion-comic-plan-valid {
+    padding-block: 7px;
+  }
+
+  .motion-comic-plan-metrics > span {
+    padding-block: 6px;
+  }
+}
+
+@media (max-width: 620px) {
+  .sd-dialog-surface:has(.motion-comic-plan-dialog) {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    padding-inline: 14px;
+  }
+}
+
+/* Script confirmation shares the planning dialog, with separate scene/beat scroll ownership. */
+.motion-comic-script-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 0;
+  min-height: 300px;
+  min-width: 0;
+}
+.motion-comic-script-review > .motion-comic-plan-safety,
+.motion-comic-script-review > .motion-comic-script-adjustments { flex: 0 0 auto; }
+.motion-comic-script-beats {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.motion-comic-script-beat { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--shell-border); }
+.motion-comic-script-beat > strong { font-size: 12px; }
+.motion-comic-script-beat details,
+.motion-comic-script-adjustments { font-size: 12px; color: var(--shell-muted); overflow-wrap: anywhere; }
+.motion-comic-script-beat summary,
+.motion-comic-script-adjustments summary { cursor: pointer; }
+.motion-comic-script-adjustments { max-height: 130px; overflow-y: auto; }
+.motion-comic-script-review .motion-comic-plan-entities { max-height: 110px; overflow-y: auto; }
+@media (max-width: 760px) {
+  .motion-comic-script-beats { overflow-y: visible; }
 }

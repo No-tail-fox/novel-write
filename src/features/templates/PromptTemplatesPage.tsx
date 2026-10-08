@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, Palette, Plus, RotateCcw, Sparkles } from 'lucide-react';
+import { Copy, Plus, RotateCcw, Sparkles } from 'lucide-react';
 import type { CustomStyle, PromptTemplate, PromptStepTemplateType, PromptTemplateType } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { defaultCustomStyles } from '../../shared/config';
@@ -9,6 +9,8 @@ import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { FormField as Field } from '../../components/FormField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EmptyState } from '../../components/EmptyState';
+import { Button, HoverPreview } from '../../ui';
+import { ImageStyleSample } from '../image-style-preview/ImageStylePreview';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { promptTemplateTypeOptions } from '../../shared/editorial-options';
 import {
@@ -30,6 +32,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   const [imageTemplateAiPrompt, setImageTemplateAiPrompt] = useState('');
   const [imageTemplateAiStatus, setImageTemplateAiStatus] = useState('');
   const [imageTemplateAiGenerating, setImageTemplateAiGenerating] = useState(false);
+  const [imageTemplatePreviewGenerating, setImageTemplatePreviewGenerating] = useState(false);
   const [baseImageTemplateId, setBaseImageTemplateId] = useState(state.customStyles[0]?.id ?? defaultCustomStyles[0]?.id ?? '');
   const filteredTemplates = state.promptTemplates.filter((template) => {
     const typeMatches = templateTypeFilter === 'all' || template.type === templateTypeFilter;
@@ -300,6 +303,27 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
     }, { onError: (error) => setImageTemplateAiStatus(`生成失败：${error.message}`) });
   }
 
+  async function generateImageTemplatePreview() {
+    const submitted = imageDraftRef.current;
+    if (!submitted || promptTemplateAction.busy) return;
+    const generation = promptDetailGeneration.current;
+    await promptTemplateAction.run(async () => {
+      setImageTemplatePreviewGenerating(true);
+      setImageTemplateAiStatus('正在使用当前图像模板生成示例图…');
+      try {
+        const generated = await api.generateCustomStylePreview(structuredClone(submitted));
+        if (generation !== promptDetailGeneration.current || imageDraftRef.current !== submitted) {
+          setImageTemplateAiStatus('模板已继续编辑，本次样图未覆盖当前内容。');
+          return;
+        }
+        setImageDraft({ ...submitted, preview: generated.preview });
+        setImageTemplateAiStatus('示例图已生成。保存修改后，各个画风选择入口都会显示这张样图。');
+      } finally {
+        setImageTemplatePreviewGenerating(false);
+      }
+    }, { onError: error => setImageTemplateAiStatus(`样图生成失败：${error.message}`) });
+  }
+
   function exportPromptTemplateJson() {
     if (!draft) return;
     const json = JSON.stringify(draft, null, 2);
@@ -456,6 +480,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
               <span>管理 prefix、suffix、负面提示词和色彩模式</span>
             </div>
             {state.customStyles.map((style) => (
+              <HoverPreview key={style.id} title={style.name} description={style.description} renderPreview={() => <ImageStyleSample style={style} />}>
               <article
                 className="prompt-template-row"
                 key={style.id}
@@ -463,28 +488,30 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                 tabIndex={0}
                 onClick={() => openImageTemplateDetail(style)}
                 onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     openImageTemplateDetail(style);
                   }
                 }}
               >
-                <Palette size={18} />
+                <ImageStyleSample style={style} thumbnail />
                 <div className="prompt-template-row-main">
                   <strong>{style.name}</strong>
                   <span>{style.description}</span>
                   <small>{style.tag} · {style.allowColor ? '彩色' : '黑白 / 单色'} · id: {style.id}</small>
                 </div>
                 <div className="prompt-template-row-actions">
-                  <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openImageTemplateDetail(style); }}>
+                  <Button variant="subtle" density="compact" onClick={(event) => { event.stopPropagation(); openImageTemplateDetail(style); }}>
                     查看
-                  </button>
-                  <button className="ghost-action compact-action" disabled={promptTemplateAction.busy} onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
+                  </Button>
+                  <Button variant="subtle" density="compact" disabled={promptTemplateAction.busy} onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
                     <Copy size={14} />
                     克隆
-                  </button>
+                  </Button>
                 </div>
               </article>
+              </HoverPreview>
             ))}
           </section>
         )}
@@ -523,6 +550,8 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
       duplicateImageTemplate={duplicateImageTemplate}
       applyBaseImageTemplate={applyBaseImageTemplate}
       fillImageTemplateFromAiPrompt={fillImageTemplateFromAiPrompt}
+      generateImageTemplatePreview={generateImageTemplatePreview}
+      imageTemplatePreviewGenerating={imageTemplatePreviewGenerating}
       exportImageTemplateJson={exportImageTemplateJson}
       importImageTemplateJson={importImageTemplateJson}
     />

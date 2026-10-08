@@ -74,3 +74,177 @@ export function updateMotionComicCharacterVoice(document: MotionComicPipelineDat
     }),
   };
 }
+
+
+export type MotionComicSpeakerRole = "dialogue" | "monologue" | "narrative";
+export type MotionComicBubbleStyle = "speech" | "thought" | "shout" | "caption";
+export interface MotionComicBubblePosition {
+  x: number;
+  y: number;
+  tailDirection?: "bottom-left" | "bottom-right" | "top-left" | "top-right" | "none";
+}
+
+export const BUBBLE_POSITION_PRESETS = {
+  auto: undefined,
+  'top-left': { x: 25, y: 22, tailDirection: 'bottom-left' as const },
+  'top-right': { x: 75, y: 22, tailDirection: 'bottom-right' as const },
+  'center-left': { x: 26, y: 48, tailDirection: 'bottom-left' as const },
+  'center-right': { x: 74, y: 48, tailDirection: 'bottom-right' as const },
+  'bottom-center': { x: 50, y: 82, tailDirection: 'none' as const },
+};
+
+export type BubblePositionPresetKey = keyof typeof BUBBLE_POSITION_PRESETS;
+
+export function resolvePresetFromPosition(pos?: MotionComicBubblePosition): BubblePositionPresetKey {
+  if (!pos) return 'auto';
+  if (pos.x <= 35 && pos.y <= 35) return 'top-left';
+  if (pos.x >= 65 && pos.y <= 35) return 'top-right';
+  if (pos.x <= 35 && pos.y > 35 && pos.y < 70) return 'center-left';
+  if (pos.x >= 65 && pos.y > 35 && pos.y < 70) return 'center-right';
+  if (pos.y >= 70) return 'bottom-center';
+  return 'auto';
+}
+
+export interface ExtractedDialogueItem {
+  speakerName?: string;
+  characterId?: string;
+  text: string;
+  emotion?: string;
+  speakerRole: MotionComicSpeakerRole;
+  bubbleStyle: MotionComicBubbleStyle;
+}
+
+/**
+ * Parses script or shot description text into structured dialogue items,
+ * identifying characters, emotional tones, monologues, shouts, and narration.
+ */
+export function extractDialogueFromScript(
+  scriptText: string,
+  characters?: readonly { value: string; label: string }[],
+): ExtractedDialogueItem[] {
+  if (!scriptText || !scriptText.trim()) return [];
+  const lines = scriptText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const result: ExtractedDialogueItem[] = [];
+
+  for (const rawLine of lines) {
+    // 1. Narration: 【旁白】... or 旁白: ...
+    const narrativeMatch = rawLine.match(/^(?:【(?:旁白|解说|独白)】|(?:旁白|解说|叙述)\s*[:：])\s*(.*)$/);
+    if (narrativeMatch) {
+      const text = narrativeMatch[1].trim();
+      if (text) {
+        result.push({
+          speakerName: "旁白",
+          characterId: undefined,
+          text,
+          emotion: "平静",
+          speakerRole: "narrative",
+          bubbleStyle: "caption",
+        });
+        continue;
+      }
+    }
+
+    // 2. Inner monologue: (心想: ...) or Character (心想): ...
+    const thoughtMatch = rawLine.match(/^(?:([^:：(（]{1,12})\s*)?[（(](?:心想|独白|思忖|暗想|自言自语)\s*[:：]?\s*([^）)]+)[)）]\s*(?:[:：]\s*(.*))?$/);
+    if (thoughtMatch) {
+      const speakerCandidate = thoughtMatch[1]?.trim();
+      const text = (thoughtMatch[3]?.trim() || thoughtMatch[2]?.trim()).replace(/^["“](.*)["”]$/, "$1");
+      const matchedChar = characters?.find((c) => speakerCandidate && (c.label === speakerCandidate || speakerCandidate.includes(c.label)));
+      if (text) {
+        result.push({
+          speakerName: matchedChar?.label ?? speakerCandidate ?? "内心独白",
+          characterId: matchedChar?.value,
+          text,
+          emotion: "沉思",
+          speakerRole: "monologue",
+          bubbleStyle: "thought",
+        });
+        continue;
+      }
+    }
+
+    // 3. Dialogue: Character (emotion): "speech" or Character: "speech"
+    const dialogueMatch = rawLine.match(/^([^:：(（]{1,12})(?:\s*[（(]([^）)]+)[)）])?\s*[:：]\s*["“]?([^"”]+)["”]?$/);
+    if (dialogueMatch) {
+      const speakerCandidate = dialogueMatch[1].trim();
+      const emotionCandidate = dialogueMatch[2]?.trim();
+      const text = dialogueMatch[3].trim();
+      const matchedChar = characters?.find((c) => c.label === speakerCandidate || speakerCandidate.includes(c.label));
+
+      const isShout = /[！!]{1,}|大喊|怒吼|咆哮|急促/.test(emotionCandidate || "") || /[！!]{2,}/.test(text);
+      const isThought = /心想|暗想|思索/.test(emotionCandidate || "");
+
+      result.push({
+        speakerName: matchedChar?.label ?? speakerCandidate,
+        characterId: matchedChar?.value,
+        text,
+        emotion: emotionCandidate || (isShout ? "激动" : "自然"),
+        speakerRole: isThought ? "monologue" : "dialogue",
+        bubbleStyle: isThought ? "thought" : isShout ? "shout" : "speech",
+      });
+      continue;
+    }
+
+    // 4. Quoted line: "speech"
+    const quoteMatch = rawLine.match(/^["“]([^"”]+)["”]$/);
+    if (quoteMatch) {
+      const text = quoteMatch[1].trim();
+      const isShout = /[！!]{2,}/.test(text);
+      result.push({
+        speakerName: undefined,
+        characterId: undefined,
+        text,
+        emotion: isShout ? "激动" : "自然",
+        speakerRole: "dialogue",
+        bubbleStyle: isShout ? "shout" : "speech",
+      });
+      continue;
+    }
+
+    // 5. Default line
+    const isShout = /[！!]{2,}/.test(rawLine);
+    result.push({
+      speakerName: undefined,
+      characterId: undefined,
+      text: rawLine,
+      emotion: "自然",
+      speakerRole: "dialogue",
+      bubbleStyle: isShout ? "shout" : "speech",
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Distributes startMs and endMs for extracted dialogue items inside shot boundary.
+ */
+export function distributeDialogueTiming(
+  items: readonly ExtractedDialogueItem[],
+  shotStartMs: number,
+  shotDurationMs: number,
+): Array<ExtractedDialogueItem & { startMs: number; endMs: number }> {
+  if (items.length === 0) return [];
+  const headMarginMs = Math.min(200, Math.floor(shotDurationMs * 0.05));
+  const tailMarginMs = Math.min(200, Math.floor(shotDurationMs * 0.05));
+  const usableDurationMs = Math.max(items.length * 500, shotDurationMs - headMarginMs - tailMarginMs);
+  const gapMs = items.length > 1 ? Math.min(100, Math.floor((usableDurationMs * 0.1) / (items.length - 1))) : 0;
+  const netDurationMs = usableDurationMs - gapMs * (items.length - 1);
+
+  const totalChars = items.reduce((sum, item) => sum + Math.max(2, item.text.length), 0);
+  let currentStart = shotStartMs + headMarginMs;
+
+  return items.map((item, index) => {
+    const isLast = index === items.length - 1;
+    const charWeight = Math.max(2, item.text.length) / totalChars;
+    const duration = isLast ? (shotStartMs + shotDurationMs - tailMarginMs - currentStart) : Math.max(400, Math.floor(netDurationMs * charWeight));
+    const startMs = currentStart;
+    const endMs = Math.min(shotStartMs + shotDurationMs, startMs + duration);
+    currentStart = endMs + gapMs;
+    return {
+      ...item,
+      startMs,
+      endMs,
+    };
+  });
+}

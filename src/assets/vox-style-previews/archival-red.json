@@ -1,0 +1,21 @@
+{
+  "styleId": "archival-red",
+  "provider": "VllmProxy",
+  "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+  "requestedModel": "gpt-image-2.5",
+  "returnedModel": null,
+  "requestedSize": "3840x2160",
+  "actualOriginalSize": [
+    3840,
+    2160
+  ],
+  "previewSize": [
+    768,
+    432
+  ],
+  "completedAt": "2026-09-16T11:06:33.8791403Z",
+  "originalSha256": "72ea445951700407562252ec07e47d1d489e6cbfd4ff958ab874915565ad7ea7",
+  "previewSha256": "439ba598c53f0b21ee9aa7c56ead4a1363f27ea131ae829c80b9c10fd3093536",
+  "previewBytes": 113622,
+  "note": "AI-generated style reference; resized locally for hover previews. The provider did not independently verify upstream model identity."
+}

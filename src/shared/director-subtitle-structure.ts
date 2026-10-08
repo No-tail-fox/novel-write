@@ -1,6 +1,7 @@
 import { invalidateSubtitleAlignment } from './audio-alignment';
 import { rebuildEditorialTimeline } from './editorial-collage';
 import type { DirectorSubtitleDocument } from './director-subtitles';
+import type { MotionComicSpeakerRole, MotionComicBubbleStyle, MotionComicBubblePosition } from './motion-comic-dialogue';
 import type { MotionComicDialogueCue } from './motion-comic';
 import type { ProductionSubtitleCue, ProductionTimelineClip } from './production-workflow';
 
@@ -18,7 +19,54 @@ export function addDirectorSubtitleCue<T extends DirectorSubtitleDocument>(docum
     return [...ordered.map((cue) => cue === last ? { ...cue, endMs: startMs } : cue), { id, shotId, startMs, endMs, text: '' }];
   });
 }
+export interface BatchApplyDialogueCueItem {
+  id?: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+  characterId?: string;
+  emotion?: string;
+  speakerRole?: MotionComicSpeakerRole;
+  bubbleStyle?: MotionComicBubbleStyle;
+  bubblePosition?: MotionComicBubblePosition;
+  speakerName?: string;
+}
+export function setDirectorSubtitleCues<T extends DirectorSubtitleDocument>(
+  document: T,
+  shotId: string,
+  newCues: readonly BatchApplyDialogueCueItem[],
+  mode: 'replace' | 'append' = 'replace',
+): T {
+  if (newCues.length > 100) throw new Error('分镜对白数量不得超过 100 句。');
+  return changeStructure(document, shotId, (existingCues, clip) => {
+    const shotStart = clip.startMs;
+    const shotEnd = clip.startMs + clip.durationMs;
+    const baseCues = mode === 'append' ? [...existingCues] : [];
 
+    const preparedCues: ProductionSubtitleCue[] = newCues.map((item, index) => {
+      const cueId = item.id?.trim() || ('cue_' + shotId + '_' + Date.now() + '_' + index);
+      const sMs = Math.max(shotStart, Math.min(item.startMs, shotEnd - 1));
+      const eMs = Math.max(sMs + 1, Math.min(item.endMs, shotEnd));
+      return {
+        id: cueId,
+        shotId,
+        text: item.text,
+        startMs: sMs,
+        endMs: eMs,
+        ...(item.characterId !== undefined ? { characterId: item.characterId } : {}),
+        ...(item.emotion ? { emotion: item.emotion } : {}),
+        ...(item.speakerRole ? { speakerRole: item.speakerRole } : {}),
+        ...(item.bubbleStyle ? { bubbleStyle: item.bubbleStyle } : {}),
+        ...(item.bubblePosition ? { bubblePosition: item.bubblePosition } : {}),
+        ...(item.speakerName ? { speakerName: item.speakerName } : {}),
+      };
+    });
+
+    const combined = [...baseCues, ...preparedCues].sort((a, b) => a.startMs - b.startMs);
+    if (combined.length > 100) throw new Error('当前镜头最多支持 100 句字幕。');
+    return combined;
+  });
+}
 export function removeDirectorSubtitleCue<T extends DirectorSubtitleDocument>(document: T, shotId: string, cueId: string): T {
   return changeStructure(document, shotId, (cues) => {
     if (!cues.some((cue) => cue.id === cueId)) throw new Error('该字幕不属于当前镜头。');

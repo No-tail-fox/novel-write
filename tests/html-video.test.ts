@@ -1407,6 +1407,13 @@ describe('HTML video composition contract', () => {
       canvas_w: 1080,
       canvas_h: 1920,
     });
+    exportInput.scenes[1].transitionIn = { type: 'dissolve', durationMs: 200 };
+    const sceneClock = exportInput.totalDurationS;
+    const framePayload = createHtmlVideoComposePayload(exportInput, captured);
+    expect(framePayload.scenes[1]).toMatchObject({ duration_s: 1.6, transition_in: { type: 'dissolve', durationMs: 200 } });
+    const encodedPayload = createHtmlVideoComposePayload(exportInput, captured.map(scene => ({ ...scene, segmentPath: `D:/segment-${scene.sceneId}.mp4` })));
+    expect(encodedPayload.scenes[1]).toMatchObject({ segment_path: 'D:/segment-2.mp4', duration_s: 1.6, transition_in: { type: 'dissolve', durationMs: 200 } });
+    expect(encodedPayload.total_duration_s).toBe(sceneClock);
   });
 
   it('propagates cancellation through preview capture and compose rendering', async () => {

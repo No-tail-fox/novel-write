@@ -11,6 +11,8 @@ import { EmptyState } from '../../components/EmptyState';
 import type { RendererAppState as AppState } from '../../app/route-types';
 import { promptStepEditorDefinitions, promptTemplateReferenceOptions, promptTemplateStep3SkeletonOptions, promptTemplateTypeLabels, promptTemplateTypeOptions, promptTemplateVariableDefinitions, styleOptions, type PromptTemplateVariableScope } from '../../shared/editorial-options';
 import type { TemplateOption } from '../../shared/prompt-templates';
+import { ImageStylePicker, ImageStyleSelectedPreview } from '../image-style-preview/ImageStylePreview';
+import { Button } from '../../ui';
 
 export interface PromptTemplateEditorProps {
   mode: 'detail' | 'image-detail';
@@ -42,6 +44,8 @@ export interface PromptTemplateEditorProps {
   duplicateImageTemplate: (style: CustomStyle) => Promise<void>;
   applyBaseImageTemplate: () => void;
   fillImageTemplateFromAiPrompt: () => Promise<void>;
+  generateImageTemplatePreview: () => Promise<void>;
+  imageTemplatePreviewGenerating: boolean;
   exportImageTemplateJson: () => void;
   importImageTemplateJson: () => Promise<void>;
 }
@@ -76,6 +80,8 @@ export function PromptTemplateEditor({
   duplicateImageTemplate,
   applyBaseImageTemplate,
   fillImageTemplateFromAiPrompt,
+  generateImageTemplatePreview,
+  imageTemplatePreviewGenerating,
   exportImageTemplateJson,
   importImageTemplateJson,
 }: PromptTemplateEditorProps) {
@@ -111,6 +117,13 @@ export function PromptTemplateEditor({
                 </div>
               </div>
               <div className="prompt-template-detail-stack">
+                <ImageStyleSelectedPreview style={imageDraft} />
+                <div className="button-row">
+                  <Button disabled={promptTemplateAction.busy} onClick={() => void generateImageTemplatePreview()}>
+                    {imageTemplatePreviewGenerating ? '正在生成示例图…' : '生成示例图'}
+                  </Button>
+                  <span className="hint-text">使用当前模板和已配置的图片模型，生成 1 张样图；完成后保存修改即可同步到各处。</span>
+                </div>
                 <section className="image-template-quick-card">
                   <div>
                     <span className="field-title">AI 快速生成</span>
@@ -120,11 +133,7 @@ export function PromptTemplateEditor({
                     <textarea className="small-textarea" value={imageTemplateAiPrompt} onChange={(event) => setImageTemplateAiPrompt(event.target.value)} placeholder="例如：赛博朋克雨夜街道，霓虹光影，未来都市" />
                   </Field>
                   <div className="template-meta-grid">
-                    <Field label="基于系统风格">
-                      <select value={baseImageTemplateId} onChange={(event) => setBaseImageTemplateId(event.target.value)}>
-                        {state.customStyles.map((style) => <option key={style.id} value={style.id}>{style.name}</option>)}
-                      </select>
-                    </Field>
+                    <ImageStylePicker label="基于系统风格" value={baseImageTemplateId} onChange={setBaseImageTemplateId} styles={state.customStyles} />
                     <div className="button-row image-template-quick-actions">
                       <button className="ghost-action" type="button" onClick={applyBaseImageTemplate}>套用系统风格</button>
                       <button className="primary-action slim" type="button" disabled={imageTemplateAiGenerating} onClick={() => void fillImageTemplateFromAiPrompt()}>
@@ -231,21 +240,9 @@ export function PromptTemplateEditor({
                     </select>
                   </Field>
                 </div>
-                <div className="prompt-template-default-style-pills">
-                  <span className="field-title">默认画风</span>
-                  <div className="chip-row">
-                    {promptTemplateStyleOptions(state.customStyles, draft).map((style) => (
-                      <button
-                        className={resolvePromptTemplateDefaultStyleId(draft, state.customStyles.map((customStyle) => customStyle.id)) === style.id ? 'chip active' : 'chip'}
-                        type="button"
-                        key={style.id}
-                        onClick={() => setDraft({ ...draft, defaultStyles: [style.id] })}
-                      >
-                        {style.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <ImageStylePicker label="默认画风" styles={promptTemplateStyleOptions(state.customStyles, draft)}
+                  value={resolvePromptTemplateDefaultStyleId(draft, state.customStyles.map(style => style.id))}
+                  onChange={id => setDraft({ ...draft, defaultStyles: [id] })} />
                 {draft.type === 'task' ? (
                   <div className="prompt-template-default-style-pills">
                     <span className="field-title">默认草稿模板</span>

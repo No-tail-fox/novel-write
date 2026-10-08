@@ -1104,6 +1104,7 @@ export const rendererCommandInventory = {
   selectCookieFile: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'chooseCookieFile', 'onClick={chooseCookieFile}', '选择 Cookie 文件', productShellTest)),
   selectLocalAudio: command(
     owner('settings', 'src/features/settings/MinimaxCloneVoiceManager.tsx', 'selectSourceAudio', 'onClick={selectSourceAudio}', '选择来源音频', 'tests/minimax-clone-voice-management.test.ts', undefined, { disabled: 'disabled={action.busy}', loading: 'action.busy ? <Loader2', error: 'InlineActionFeedback' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('audio')", '添加音频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferenceAudio', loading: 'pickingImage', error: 'submitError' }),
   ),
   selectLocalSubtitleTimestampFile: command(
     owner('editorial-collage', 'src/features/editorial-collage/EditorialCollagePage.tsx', 'importSubtitleTimestamps', 'onClick=', '导入识别时间戳', 'tests/audio-alignment.test.ts', 'src/features/director-desk/DirectorSubtitleInspector.tsx', { disabled: 'disabled={props.busy', loading: 'props.busy', error: 'role="alert"' }, 'src/features/director-desk/DirectorSubtitleInspector.tsx', undefined, [{ source: 'src/features/editorial-collage/EditorialCollagePage.tsx', evidence: 'onImportSubtitleTimestamps=' }]),
@@ -1115,7 +1116,7 @@ export const rendererCommandInventory = {
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest),
     owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('first')", '首帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsFirstFrame}', loading: 'pickingImage', error: 'submitError' }),
     owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('last')", '尾帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsLastFrame}', loading: 'pickingImage', error: 'submitError' }),
-    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('reference')", '添加参考图', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferences || references.length >= 8}', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('reference')", '添加图片', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferences || references.length >= referenceLimits.images}', loading: 'pickingImage', error: 'submitError' }),
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'selectTaskReferenceImage', 'onClick={selectTaskReferenceImage}', '上传主角参考图', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'addEditorReferenceImage', 'onClick={() => void addEditorReferenceImage()}', '添加参考图', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'selectDraftBackgroundImage', 'onClick={selectDraftBackgroundImage}', '浏览', productShellTest),
@@ -1129,6 +1130,9 @@ export const rendererCommandInventory = {
       undefined,
       { disabled: 'disabled={referenceAction.busy', loading: 'referenceTargetId', error: 'InlineActionFeedback' },
     ),
+  ),
+  selectLocalVideo: command(
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('video')", '添加视频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferenceVideo', loading: 'pickingImage', error: 'submitError' }),
   ),
   testAppConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testCurrentConfig', 'onClick={testCurrentConfig}', '保存并测试', productShellTest)),
   testLlmConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testSelectedLlmConfig', 'onClick={testSelectedLlmConfig}', '仅测试当前 LLM', productShellTest)),

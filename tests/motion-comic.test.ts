@@ -9,11 +9,25 @@ import {
   parseMotionComicPipelineData,
   removeMotionComicShot,
   reorderMotionComicShot,
+  splitMotionComicSourceEpisodes,
   updateMotionComicShotDuration,
   validateMotionComicPipeline,
 } from '../src/shared/motion-comic';
 
 describe('motion comic domain', () => {
+  it('keeps every chapter instead of grouping or blocking long imports', () => {
+    const chapters = Array.from({ length: 100 }, (_, i) => `第${i + 1}章\n正文${i + 1}`);
+    const split = splitMotionComicSourceEpisodes(chapters.join('\n\n'));
+    expect(split).toHaveLength(100);
+    expect(split[99].sourceText).toBe(chapters[99]);
+    const expanded = splitMotionComicSourceEpisodes([...chapters, '第101章\n结局'].join('\n\n'));
+    expect(expanded).toHaveLength(101);
+    expect(expanded.at(-1)?.sourceText).toContain('第101章');
+    const lengthSplit = splitMotionComicSourceEpisodes(Array.from({ length: 101 }, () => '文'.repeat(501)).join('\n\n'), 500, 'length');
+    expect(lengthSplit).toHaveLength(101);
+    expect(() => splitMotionComicSourceEpisodes('文'.repeat(30_001))).toThrow(/MOTION_COMIC_SOURCE_EPISODE_TOO_LONG/);
+  });
+
   it('creates a series-owned starter project without provider jobs', () => {
     const draft = createMotionComicDraft({
       id: 'comic-1',

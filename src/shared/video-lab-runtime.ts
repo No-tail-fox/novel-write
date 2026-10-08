@@ -3,10 +3,11 @@ import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { normalizeAppError } from './app-error';
 import type { AppConfig } from './types';
-import { createConfiguredVideoProvider, requiredVideoCapabilities } from './video-provider';
-import { videoLabGenerateInputSchema, videoLabProviderConfig, videoLabRecordIdSchema, type VideoLabGenerateInput, type VideoLabRecord } from './video-lab';
+import { createConfiguredVideoProvider, requiredVideoCapabilities, validateVideoGenerationRequest } from './video-provider';
+import { isRemoteVideoReference, videoLabGenerateInputSchema, videoLabProviderConfig, videoLabRecordIdSchema, type VideoLabGenerateInput, type VideoLabRecord } from './video-lab';
 
-const MAX_REFERENCE_BYTES = 24 * 1024 * 1024;
+const MAX_REFERENCE_BYTES = 50 * 1024 * 1024;
+const MAX_INLINE_REFERENCE_BYTES = 45 * 1024 * 1024;
 const MAX_RECORD_BYTES = 512 * 1024;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
@@ -99,21 +100,37 @@ export function createVideoLabRuntime(options: VideoLabRuntimeOptions) {
           record.providerName = selected?.name ?? '';
           record.model = selected?.model ?? '';
           const config = videoLabProviderConfig(originalConfig, input.providerId);
+          validateVideoGenerationRequest(config.video.providers[0], input);
           const ownedReferences = new Map<string, string>();
-          const snapshotReference = async (source: string) => {
+          let referenceBytes = 0;
+          const snapshotReference = async (source: string, kind: 'image' | 'video' | 'audio') => {
+            if (isRemoteVideoReference(source)) return source;
             const existing = ownedReferences.get(source);
             if (existing) return existing;
-            const copied = await copyReferenceImage(source, dir, ownedReferences.size);
+            const copied = await copyReferenceMedia(source, dir, ownedReferences.size, kind);
+            referenceBytes += (await stat(copied)).size;
+            if (referenceBytes > MAX_INLINE_REFERENCE_BYTES) throw new Error('VIDEO_LAB_REFERENCE_INVALID: 本地参考素材合计不能超过 45 MB。');
             ownedReferences.set(source, copied);
             return copied;
           };
-          const referenceImagePaths: string[] = [];
-          for (const source of input.referenceImagePaths ?? []) referenceImagePaths.push(await snapshotReference(source));
+          const legacyImages = input.referenceImagePaths ?? [];
+          const referenceImages = input.referenceImages ?? legacyImages.map((path) => ({ path, kind: 'style' as const, description: '' }));
+          const ownedImages = [];
+          for (const reference of referenceImages) ownedImages.push({ ...reference, path: await snapshotReference(reference.path, 'image') });
+          const referenceVideoPaths = [];
+          for (const source of input.referenceVideoPaths ?? []) referenceVideoPaths.push(await snapshotReference(source, 'video'));
+          const referenceAudioPaths = [];
+          for (const source of input.referenceAudioPaths ?? []) referenceAudioPaths.push(await snapshotReference(source, 'audio'));
           const request = {
             prompt: input.prompt, durationSec: input.durationSec, ratio: input.ratio,
-            ...(input.firstFramePath ? { firstFramePath: await snapshotReference(input.firstFramePath) } : {}),
-            ...(input.lastFramePath ? { lastFramePath: await snapshotReference(input.lastFramePath) } : {}),
-            ...(input.referenceImagePaths ? { referenceImagePaths } : {}),
+            ...(input.resolution ? { resolution: input.resolution } : {}),
+            ...(input.generateAudio !== undefined ? { generateAudio: input.generateAudio } : {}),
+            ...(input.firstFramePath ? { firstFramePath: await snapshotReference(input.firstFramePath, 'image') } : {}),
+            ...(input.lastFramePath ? { lastFramePath: await snapshotReference(input.lastFramePath, 'image') } : {}),
+            ...(legacyImages.length ? { referenceImagePaths: ownedImages.map((reference) => reference.path) } : {}),
+            ...(ownedImages.length ? { referenceImages: ownedImages } : {}),
+            ...(referenceVideoPaths.length ? { referenceVideoPaths } : {}),
+            ...(referenceAudioPaths.length ? { referenceAudioPaths } : {}),
           };
           Object.assign(record, request);
           const provider = (options.createProvider ?? createConfiguredVideoProvider)(config, dir, {
@@ -164,19 +181,24 @@ function assertInside(root: string, path: string): void {
   }
 }
 
-async function copyReferenceImage(source: string, dir: string, index: number): Promise<string> {
-  if (!isAbsolute(source)) throw new Error('VIDEO_LAB_REFERENCE_INVALID: 请选择本地图片文件。');
+async function copyReferenceMedia(source: string, dir: string, index: number, kind: 'image' | 'video' | 'audio'): Promise<string> {
+  if (!isAbsolute(source)) throw new Error('VIDEO_LAB_REFERENCE_INVALID: 请选择本地参考素材。');
   const path = await realpath(source);
   const extension = extname(path).toLowerCase();
   const info = await stat(path);
-  if (!IMAGE_EXTENSIONS.has(extension) || !info.isFile() || info.size <= 0 || info.size > MAX_REFERENCE_BYTES) {
-    throw new Error('VIDEO_LAB_REFERENCE_INVALID: 参考图须为不超过 24 MB 的 PNG、JPEG 或 WebP 图片。');
-  }
+  const allowed = kind === 'image' ? IMAGE_EXTENSIONS : kind === 'video' ? new Set(['.mp4', '.mov']) : new Set(['.wav', '.mp3']);
+  if (!allowed.has(extension) || !info.isFile() || info.size <= 0 || info.size > MAX_REFERENCE_BYTES) throw new Error('VIDEO_LAB_REFERENCE_INVALID: 参考素材格式或大小不符合要求。');
   const bytes = await readFile(path);
-  const detectedExtension = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? '.png'
-    : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? '.jpg'
-      : bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP' ? '.webp' : '';
-  if (!detectedExtension || bytes.length > MAX_REFERENCE_BYTES) throw new Error('VIDEO_LAB_REFERENCE_INVALID: 无法识别参考图文件。');
+  const detectedExtension = kind === 'image'
+    ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? '.png'
+      : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? '.jpg'
+        : bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP' ? '.webp' : ''
+    : kind === 'video' ? bytes.subarray(4, 8).toString('ascii') === 'ftyp' ? extension : ''
+      : bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WAVE' ? '.wav'
+        : bytes.subarray(0, 3).toString('ascii') === 'ID3' || bytes[0] === 0xff ? '.mp3' : '';
+  if (!detectedExtension || bytes.length > MAX_REFERENCE_BYTES) throw new Error(kind === 'image'
+    ? 'VIDEO_LAB_REFERENCE_INVALID: 无法识别参考图文件。'
+    : 'VIDEO_LAB_REFERENCE_INVALID: 无法识别参考媒体文件。');
   const target = join(dir, `reference-${index}${detectedExtension}`);
   await writeFile(target, bytes, { flag: 'wx' });
   return target;

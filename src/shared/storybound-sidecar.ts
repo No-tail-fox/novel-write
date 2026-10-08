@@ -68,6 +68,7 @@ export interface StoryboundMusicMvInput {
 export interface StoryboundFrameRenderScene {
   frames_dir: string;
   audio_path: string;
+  transition_in?: import('./director-transitions').DirectorTransition;
   audio_clips?: Array<{
     id: string;
     path: string;
@@ -90,6 +91,7 @@ export interface StoryboundEncodedRenderScene {
   segment_path: string;
   duration_s: number;
   fps?: number;
+  transition_in?: import('./director-transitions').DirectorTransition;
   frames_dir?: never;
   audio_path?: never;
   audio_clips?: never;
@@ -290,7 +292,7 @@ async function cleanupStoryboundScratch(workDir: string, scratchToken: string): 
   try {
     const entries = await readdir(workDir, { withFileTypes: true });
     await Promise.all(entries.filter(entry => {
-      if (entry.isDirectory()) return new RegExp(`^(?:compose-groups|compose-xfade-groups)-${scratchToken}-`, 'u').test(entry.name);
+      if (entry.isDirectory()) return new RegExp(`^(?:compose-groups|compose-xfade-groups|compose-visual-transitions)-${scratchToken}-`, 'u').test(entry.name);
       return new RegExp(`^(?:storybound|visual-cuts)-${scratchToken}-.*\\.filter$`, 'u').test(entry.name);
     }).map(entry => rm(join(workDir, entry.name), { recursive: entry.isDirectory(), force: true })));
   } catch {
@@ -1450,6 +1452,45 @@ def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24):
     ])
 
 
+def _compose_with_visual_transitions(segment_paths, output_path, durations, transitions, fps=24):
+    """Dissolve an outgoing held frame over the incoming shot, on its own clock.
+
+    The source clips never overlap in time: the incoming animation starts at t=0,
+    and its audio is stream-copied untouched. Only the first few video frames are
+    blended. Hard-cut concatenation then keeps every authored narration sample.
+    Each boundary is processed separately to bound decoder/filter memory.
+    """
+    with tempfile.TemporaryDirectory(prefix=scratch_prefix("compose-visual-transitions-"), dir=os.path.dirname(os.path.abspath(output_path))) as directory:
+        prepared = list(segment_paths)
+        for index in range(1, len(segment_paths)):
+            transition = transitions[index] if index < len(transitions) else None
+            if not transition or transition.get("type") == "cut":
+                continue
+            if transition.get("type") != "dissolve":
+                raise ValueError("Unsupported visual-only transition")
+            requested = float(transition.get("durationMs", 200)) / 1000.0
+            if not math.isfinite(requested) or requested < 0 or requested > .5:
+                raise ValueError("Invalid visual-only transition duration")
+            duration = min(requested, durations[index] / 2.0, durations[index - 1] / 2.0)
+            if duration < 1.0 / fps:
+                continue
+            previous_seek = max(0, durations[index - 1] - max(.25, 3.0 / fps))
+            # One held outgoing frame is sufficient; no outgoing audio is read.
+            filters = [
+                f"[0:v]reverse,trim=end_frame=1,loop=loop={int(math.ceil(duration * fps)) + 2}:size=1:start=0,setpts=N/({fps}*TB),fps={fps},setsar=1,settb=AVTB[held]",
+                f"[1:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={durations[index]},trim=duration={durations[index]},fps={fps},setsar=1,settb=AVTB[incoming]",
+                f"[held][incoming]xfade=transition=fade:duration={duration}:offset=0,trim=duration={durations[index]}[out]",
+            ]
+            prepared[index] = os.path.join(directory, f"scene-{index}.mp4")
+            run_composition_ffmpeg([
+                "-ss", str(previous_seek), "-i", segment_paths[index - 1], "-i", segment_paths[index],
+                "-filter_complex", ";".join(filters),
+                "-map", "[out]", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "copy", "-t", str(durations[index]), prepared[index],
+            ])
+        _compose_with_hard_cuts(prepared, output_path, durations, fps)
+
+
 def first_frame_pattern(frames_dir):
     frames_dir = norm(frames_dir)
     jpg_pattern = os.path.join(frames_dir, "frame_%04d.jpg")
@@ -1569,6 +1610,7 @@ def generate_compose_render(payload):
     os.makedirs(work_dir, exist_ok=True)
     segments = []
     segment_durations = []
+    visual_transitions = []
     cover_segment_path = os.path.join(work_dir, "seg_cover.mp4")
     canvas_w = int(payload.get("canvas_w") or 1080)
     canvas_h = int(payload.get("canvas_h") or 1920)
@@ -1584,6 +1626,7 @@ def generate_compose_render(payload):
             scene_duration = encode_render_scene(scene, work_dir, segment_path, index)
         segments.append(segment_path)
         segment_durations.append(scene_duration)
+        visual_transitions.append(scene.get("transition_in"))
     if not segments:
         raise ValueError("compose_render requires at least one scene")
     source_path = os.path.join(work_dir, "_source.mp4")
@@ -1621,8 +1664,11 @@ def generate_compose_render(payload):
         ])
         segments = [cover_segment_path, *segments]
         segment_durations = [float(cover_duration), *segment_durations]
+        visual_transitions = [None, *visual_transitions]
     if len(segments) == 1:
         shutil.copy2(segments[0], source_path)
+    elif any(transition for transition in visual_transitions):
+        _compose_with_visual_transitions(segments, source_path, segment_durations, visual_transitions, float(payload_scenes[0].get("fps") or 24))
     else:
         transition_type, transition_duration = transition_options(payload.get("transition"))
         if transition_type in ("cut", "none"):

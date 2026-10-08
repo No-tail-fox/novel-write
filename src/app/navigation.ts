@@ -40,7 +40,7 @@ export interface NavigationGroup {
   items: NavigationItem[];
 }
 
-export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '新建任务', hint: '素材成片', icon: Plus };
+export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '新建项目', hint: '选择制作方式', icon: Plus };
 export const projectHomeNavigationItem: NavigationItem = { view: 'projects', label: '项目', hint: '继续与新建', icon: LayoutTemplate };
 
 export const productionNavItems: NavigationItem[] = [

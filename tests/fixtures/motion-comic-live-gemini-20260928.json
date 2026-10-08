@@ -1,0 +1,474 @@
+{
+  "provenance": {
+    "date": "2026-09-28",
+    "model": "gemini-3.7-flash-high",
+    "description": "Synthetic acceptance story, captured from two real provider responses; offline regression only."
+  },
+  "sourceText": "第1集 雨停之前\n傍晚，林夏在旧邮局柜台前找到一封蓝色信封。周沉站在门边。\n林夏说：“这封信是你留下的吗？”\n周沉摇头说：“不是。我们去钟楼看看邮戳。”\n林夏拿起信封，两人离开邮局。\n夜里，两人来到钟楼门前，雨刚停。\n周沉指着门上的刻痕说：“邮戳上的图案就在这里。”\n林夏说：“先记下图案，明早再来核对。”\n两人记下刻痕，带着信封离开钟楼。街道恢复安静。",
+  "editedText": "这封蓝色信封里的信，是你留下的吗？",
+  "script": {
+    "title": "雨停之前",
+    "logline": "傍晚，林夏在旧邮局柜台发现一封神秘蓝色信封，与同行的周沉前往钟楼核对邮戳线索，在门上发现了对应的神秘刻痕。",
+    "characters": [
+      {
+        "key": "char_lin_xia",
+        "name": "林夏",
+        "aliases": [],
+        "role": "女主角，敏锐求真的探索者",
+        "identityPrompt": "A young Asian woman in her early 20s, with neat shoulder-length dark hair, expressive observant eyes, slender build, calm and thoughtful demeanor.",
+        "personality": "细致谨慎，善于观察，面对未知线索沉着冷静且具有决断力。",
+        "voiceNotes": "清澈冷静的青年女性声音，语速平缓，语气带着探寻与严谨。",
+        "looks": [
+          {
+            "key": "look_lin_xia_casual",
+            "label": "常服造型",
+            "appearancePrompt": "Lin Xia with shoulder-length straight black hair, clean facial features, slight fringe, wearing a muted beige trench coat over a dark sweater, practical canvas shoulder bag.",
+            "wardrobe": "米灰色风衣、深色高领打底针织衫、黑色长裤与短靴。",
+            "continuityNotes": "整集内保持发型与风衣造型一致，随身携带单肩包。"
+          }
+        ]
+      },
+      {
+        "key": "char_zhou_chen",
+        "name": "周沉",
+        "aliases": [],
+        "role": "男主角，沉稳内敛的同行者",
+        "identityPrompt": "A tall Asian young man in his mid-20s, short black textured hair, sharp jawline, quiet and focused gaze, composed and reliable presence.",
+        "personality": "寡言少语，反应敏捷，具有敏锐的方向感与辨识力。",
+        "voiceNotes": "低沉稳重的青年男性声音，言简意赅，语气坚定。",
+        "looks": [
+          {
+            "key": "look_zhou_chen_casual",
+            "label": "常服造型",
+            "appearancePrompt": "Zhou Chen with short neat dark hair, angular facial structure, wearing a dark navy waterproof hooded jacket, dark grey trousers, sturdy boots.",
+            "wardrobe": "深藏青色防风夹克、深灰色工装长裤、耐磨户外靴。",
+            "continuityNotes": "整集内防风夹克和深色着装保持一致。"
+          }
+        ]
+      }
+    ],
+    "sceneAssets": [
+      {
+        "key": "loc_old_post_office",
+        "label": "旧邮局内部",
+        "description": "带有岁月痕迹的废弃旧邮局，木质长柜台，老式木门与生锈的铁锁，傍晚昏暗暖黄色余晖斜射入室内。",
+        "prompt": "Interior of an aged, abandoned post office at dusk. Dust motes floating in warm amber slanted sunset light through wooden window frames. Old wooden counter, vintage postal shelves, rustic atmosphere, cinematic depth of field.",
+        "continuityNotes": "保持傍晚昏黄柔和的斜射主光，木质柜台位置与门边空间关系固定。"
+      },
+      {
+        "key": "loc_clock_tower_entrance",
+        "label": "钟楼门前",
+        "description": "夜色笼罩下的古老钟楼石制建筑门前，地面残留着湿漉漉的雨水倒影，厚重木门上雕刻着细密纹路与神秘刻痕。",
+        "prompt": "Exterior entrance of an ancient stone clock tower at night just after rain. Wet cobblestone ground reflecting streetlights and moonlight, damp air. Heavy vintage wooden door with mysterious carved patterns, moody atmospheric lighting, cinematic shadows.",
+        "continuityNotes": "地面保持雨后潮湿反光状态，钟楼木门上的刻痕细节保持固定。"
+      }
+    ],
+    "props": [
+      {
+        "key": "prop_blue_envelope",
+        "label": "蓝色信封",
+        "description": "质感特别的深蓝色复古信封，封口处盖有特殊的清晰邮戳图案。",
+        "prompt": "A close-up of a vintage navy blue paper envelope, textured matte finish, stamped with a distinctive and mysterious postmark pattern, clean and undamaged."
+      },
+      {
+        "key": "prop_door_markings",
+        "label": "钟楼门上的刻痕",
+        "description": "刻在钟楼木门上的神秘纹路，其图形轮廓与蓝色信封上的邮戳图案完全一致。",
+        "prompt": "Close-up of mysterious carved symbols etched into an ancient weathered wooden door, intricate patterns matching a vintage postmark, detailed texture."
+      }
+    ],
+    "scenes": [
+      {
+        "key": "scene_01",
+        "actIndex": 1,
+        "actTitle": "第一幕：旧邮局的信件",
+        "actBoundaryReason": "故事起始，林夏在旧邮局发现关键线索蓝色信封，与周沉沟通后确立前往钟楼核对邮戳的目标，完成建置与起动转折。",
+        "title": "旧邮局寻信",
+        "summary": "傍晚时分，林夏在废弃的旧邮局柜台发现一封蓝色信封，站在门边的周沉否认信封属于自己，并提议前往钟楼核对邮戳，两人随即动身离开。",
+        "locationKey": "loc_old_post_office",
+        "beats": [
+          {
+            "key": "beat_01",
+            "sourceUnitIds": [
+              "S1",
+              "S2"
+            ],
+            "kind": "action",
+            "text": "傍晚时分，旧邮局内光线昏黄，林夏在厚重的木质柜台前停下脚步，发现并找到了一封深蓝色的信封。"
+          },
+          {
+            "key": "beat_02",
+            "sourceUnitIds": [
+              "S3"
+            ],
+            "kind": "action",
+            "text": "周沉静静站在旧邮局的大门边，注视着林夏的动作。"
+          },
+          {
+            "key": "beat_03",
+            "sourceUnitIds": [
+              "S4",
+              "S5"
+            ],
+            "kind": "dialogue",
+            "characterKey": "char_lin_xia",
+            "emotion": "疑惑",
+            "text": "这封信是你留下的吗？"
+          },
+          {
+            "key": "beat_04",
+            "sourceUnitIds": [
+              "S6",
+              "S7",
+              "S8"
+            ],
+            "kind": "dialogue",
+            "characterKey": "char_zhou_chen",
+            "emotion": "冷静克制",
+            "text": "不是。我们去钟楼看看邮戳。"
+          },
+          {
+            "key": "beat_05",
+            "sourceUnitIds": [
+              "S9"
+            ],
+            "kind": "action",
+            "text": "林夏拿起桌上的蓝色信封妥善收好，两人一同转身离开邮局。"
+          }
+        ]
+      },
+      {
+        "key": "scene_02",
+        "actIndex": 2,
+        "actTitle": "第二幕：钟楼门前的刻痕",
+        "actBoundaryReason": "场景转移至雨后的钟楼门前，行动由寻找线索推进到印证线索，两人成功找到与邮戳吻合的刻痕并完成记录，段落告一段落。",
+        "title": "钟楼前的印记",
+        "summary": "夜里雨刚停歇，林夏与周沉抵达钟楼门前。周沉指出门上刻痕与信封邮戳一致，林夏提议记录图案次日核对，两人记录后离开，夜幕下的街道归于宁静。",
+        "locationKey": "loc_clock_tower_entrance",
+        "beats": [
+          {
+            "key": "beat_06",
+            "sourceUnitIds": [
+              "S10"
+            ],
+            "kind": "action",
+            "text": "夜色渐深，细雨刚刚停歇，湿漉漉的地面映着冷光，林夏和周沉来到古老的钟楼大门前。"
+          },
+          {
+            "key": "beat_07",
+            "sourceUnitIds": [
+              "S11",
+              "S12"
+            ],
+            "kind": "dialogue",
+            "characterKey": "char_zhou_chen",
+            "emotion": "专注笃定",
+            "text": "邮戳上的图案就在这里。"
+          },
+          {
+            "key": "beat_08",
+            "sourceUnitIds": [
+              "S13",
+              "S14"
+            ],
+            "kind": "dialogue",
+            "characterKey": "char_lin_xia",
+            "emotion": "沉着审慎",
+            "text": "先记下图案，明早再来核对。"
+          },
+          {
+            "key": "beat_09",
+            "sourceUnitIds": [
+              "S15"
+            ],
+            "kind": "action",
+            "text": "两人仔细记下钟楼门上的神秘刻痕，林夏带着蓝色信封，与周沉一同离开钟楼。"
+          },
+          {
+            "key": "beat_10",
+            "sourceUnitIds": [
+              "S16"
+            ],
+            "kind": "action",
+            "text": "两人的身影渐渐融入夜色，空旷的街道恢复了雨后的安静。"
+          }
+        ]
+      }
+    ]
+  },
+  "storyboard": {
+    "shots": [
+      {
+        "key": "shot_01_01",
+        "sceneKey": "scene_01",
+        "title": "柜台前的发现",
+        "durationSec": 5,
+        "prompt": "Interior of an aged abandoned post office at dusk, warm amber sunset streaming through rustic windows. Lin Xia, a young Asian woman with shoulder-length straight black hair wearing a muted beige trench coat over a dark sweater, stands before an old wooden counter. On the rustic wooden surface rests a vintage navy blue envelope with a distinct stamped postmark. Soft dust motes illuminated in the golden hour light, cinematic depth of field.",
+        "motionPrompt": "Slow camera push-in towards Lin Xia as she steps closer to the wooden counter, her gaze focusing down on the navy blue envelope, gently reaching out her hand toward it.",
+        "framing": "Medium Close-Up",
+        "characterLookKeys": [
+          "look_lin_xia_casual"
+        ],
+        "propKeys": [
+          "prop_blue_envelope"
+        ],
+        "beatKeys": [
+          "beat_01"
+        ],
+        "continuity": {
+          "startState": "林夏站在旧邮局柜台前，夕阳斜射在木质台面与深蓝色信封上。",
+          "endState": "林夏身体微微前倾，目光聚焦在柜台上的蓝色信封。",
+          "screenDirection": "camera-push-in",
+          "actionBeats": [
+            "林夏在旧柜台前停住脚步",
+            "视线被柜台上的深蓝色信封吸引",
+            "伸手探向信封"
+          ]
+        }
+      },
+      {
+        "key": "shot_01_02",
+        "sceneKey": "scene_01",
+        "title": "门边的周沉",
+        "durationSec": 4,
+        "prompt": "Interior entrance area of the old post office at dusk. Zhou Chen, a tall Asian young man with short textured dark hair, wearing a dark navy waterproof hooded jacket and dark grey trousers, stands calmly by the vintage wooden entrance door. Golden evening light casts long shadows across the floor, moody cinematic atmosphere.",
+        "motionPrompt": "Static frame with subtle handheld drift. Zhou Chen keeps his steady, alert gaze directed towards the counter inside the room, maintaining a quiet and composed posture.",
+        "framing": "Medium Shot",
+        "characterLookKeys": [
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [],
+        "beatKeys": [
+          "beat_02"
+        ],
+        "continuity": {
+          "startState": "周沉靠立在邮局大门边，余晖在其侧脸勾勒轮廓。",
+          "endState": "周沉保持站姿，眼神沉静地注视着柜台方向。",
+          "screenDirection": "center-hold",
+          "actionBeats": [
+            "周沉站在门侧观察室内",
+            "目光沉稳地锁定在林夏的动作上"
+          ]
+        }
+      },
+      {
+        "key": "shot_01_03",
+        "sceneKey": "scene_01",
+        "title": "林夏的疑问",
+        "durationSec": 4,
+        "prompt": "Close-up portrait of Lin Xia in the warm dusk light of the post office. She wears a beige trench coat, holding the vintage navy blue envelope near chest height. Her shoulder-length black hair frames a calm and inquiring facial expression, observant dark eyes looking toward the door.",
+        "motionPrompt": "Gentle slow pan right matching her head turn, Lin Xia lifts the blue envelope slightly, parting her lips to speak with a clear and inquiring expression.",
+        "framing": "Close-Up",
+        "characterLookKeys": [
+          "look_lin_xia_casual"
+        ],
+        "propKeys": [
+          "prop_blue_envelope"
+        ],
+        "beatKeys": [
+          "beat_03"
+        ],
+        "continuity": {
+          "startState": "林夏手持蓝色信封，正面朝向镜头，神色微带疑惑。",
+          "endState": "林夏微侧头部看向门边，开口发问完毕。",
+          "screenDirection": "left-to-right",
+          "actionBeats": [
+            "林夏拿起蓝色信封",
+            "转头望向周沉开口询问对白"
+          ]
+        }
+      },
+      {
+        "key": "shot_01_04",
+        "sceneKey": "scene_01",
+        "title": "周沉的回应",
+        "durationSec": 4,
+        "prompt": "Medium close-up of Zhou Chen standing by the entrance in warm twilight shadow. He wears a dark navy hooded jacket, sharp jawline highlighted by the rim light. A focused, composed expression on his face as he looks across the room.",
+        "motionPrompt": "Slight camera tilt-up as Zhou Chen shakes his head subtly, delivers his lines calmly, then shifts his gaze towards the outside street.",
+        "framing": "Medium Close-Up",
+        "characterLookKeys": [
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [],
+        "beatKeys": [
+          "beat_04"
+        ],
+        "continuity": {
+          "startState": "周沉神情冷静，立于门边逆光中。",
+          "endState": "周沉说完对白，视线转向门外钟楼方向。",
+          "screenDirection": "right-to-left",
+          "actionBeats": [
+            "周沉微微摇头否定",
+            "沉稳开口提议前往钟楼看邮戳"
+          ]
+        }
+      },
+      {
+        "key": "shot_01_05",
+        "sceneKey": "scene_01",
+        "title": "离开旧邮局",
+        "durationSec": 5,
+        "prompt": "Wide shot inside the rustic old post office. Lin Xia in her beige trench coat puts the navy blue envelope carefully into her canvas shoulder bag by the counter. Zhou Chen in his navy jacket holds the wooden door open. Amber sunset beams cut through the dusty air across the wooden floor.",
+        "motionPrompt": "Camera pulls back slowly as Lin Xia packs the envelope, walks from the counter to the doorway, joining Zhou Chen as they both step outside into the twilight.",
+        "framing": "Wide Shot",
+        "characterLookKeys": [
+          "look_lin_xia_casual",
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [
+          "prop_blue_envelope"
+        ],
+        "beatKeys": [
+          "beat_05"
+        ],
+        "continuity": {
+          "startState": "林夏在柜台旁收纳信封，周沉在门侧等候。",
+          "endState": "两人一同迈出邮局大门，身影走向室外。",
+          "screenDirection": "camera-pull-back",
+          "actionBeats": [
+            "林夏将蓝色信封收妥入包",
+            "林夏走向大门与周沉汇合",
+            "两人先后迈出邮局大门"
+          ]
+        }
+      },
+      {
+        "key": "shot_02_01",
+        "sceneKey": "scene_02",
+        "title": "抵达钟楼门前",
+        "durationSec": 5,
+        "prompt": "Exterior of an imposing ancient stone clock tower at night just after rain. Wet cobblestone pavement reflecting cool ambient streetlight and moonlight. Lin Xia in her beige trench coat and Zhou Chen in his dark navy jacket arrive in front of the heavy weathered wooden entrance door. Atmospheric damp mist, cinematic cool tones.",
+        "motionPrompt": "Smooth tracking shot moving forward following Lin Xia and Zhou Chen as their footsteps splash faintly on the wet cobblestones, stopping before the grand wooden door.",
+        "framing": "Wide Establishing Shot",
+        "characterLookKeys": [
+          "look_lin_xia_casual",
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [],
+        "beatKeys": [
+          "beat_06"
+        ],
+        "continuity": {
+          "startState": "两人走入钟楼前湿漉漉的石板路空地。",
+          "endState": "两人停步在古老钟楼厚重的木门前。",
+          "screenDirection": "bottom-to-top",
+          "actionBeats": [
+            "两人踩着湿漉漉的石板路走近",
+            "停在钟楼大门正前方观察木门"
+          ]
+        }
+      },
+      {
+        "key": "shot_02_02",
+        "sceneKey": "scene_02",
+        "title": "周沉指认刻痕",
+        "durationSec": 4,
+        "prompt": "Medium close-up of Zhou Chen beside the ancient wooden door of the clock tower under night light. Zhou Chen, wearing his dark navy waterproof jacket, raises his hand to point at a series of intricate carved symbols etched into the weathered wood grain. Deep blue and cool rim lighting, sharp texture on the wood.",
+        "motionPrompt": "Camera dollies in slightly on Zhou Chen's hand as he points to the detailed wood carvings, speaking with steady certainty.",
+        "framing": "Medium Close-Up",
+        "characterLookKeys": [
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [
+          "prop_door_markings"
+        ],
+        "beatKeys": [
+          "beat_07"
+        ],
+        "continuity": {
+          "startState": "周沉抬手指着钟楼木门上的刻痕。",
+          "endState": "周沉眼神专注地确认刻痕图案，完成对白。",
+          "screenDirection": "camera-push-in",
+          "actionBeats": [
+            "周沉伸手指向门面上的神秘刻痕",
+            "沉稳说出图案位置的对白"
+          ]
+        }
+      },
+      {
+        "key": "shot_02_03",
+        "sceneKey": "scene_02",
+        "title": "林夏核对印记",
+        "durationSec": 4,
+        "prompt": "Close-up of Lin Xia standing in front of the carved wooden door at night. She holds the vintage navy blue envelope beside the door's etched symbols, her observant eyes comparing the postmark with the carving under cool moonlight. Thoughtful, resolute expression.",
+        "motionPrompt": "Subtle lateral camera shift as Lin Xia aligns the envelope with the door carvings, nods gently, and speaks her line with calm resolution.",
+        "framing": "Close-Up",
+        "characterLookKeys": [
+          "look_lin_xia_casual"
+        ],
+        "propKeys": [
+          "prop_blue_envelope",
+          "prop_door_markings"
+        ],
+        "beatKeys": [
+          "beat_08"
+        ],
+        "continuity": {
+          "startState": "林夏将蓝色信封靠近门上刻痕进行视线比对。",
+          "endState": "林夏收回信封，神情笃定，完成对白。",
+          "screenDirection": "left-to-right",
+          "actionBeats": [
+            "林夏举起蓝色信封与刻痕比对",
+            "沉着说出先记下图案的对白"
+          ]
+        }
+      },
+      {
+        "key": "shot_02_04",
+        "sceneKey": "scene_02",
+        "title": "记录并动身离开",
+        "durationSec": 5,
+        "prompt": "Medium two-shot outside the clock tower door. Lin Xia in beige trench coat puts the blue envelope back into her shoulder bag while Zhou Chen in navy jacket stands beside her looking outward. Cool nighttime city lights reflecting on the wet stone ground.",
+        "motionPrompt": "Camera arcs smoothly as Lin Xia finishes securing her bag, exchanges a nod with Zhou Chen, and both turn around to walk away from the door.",
+        "framing": "Medium Two-Shot",
+        "characterLookKeys": [
+          "look_lin_xia_casual",
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [
+          "prop_blue_envelope",
+          "prop_door_markings"
+        ],
+        "beatKeys": [
+          "beat_09"
+        ],
+        "continuity": {
+          "startState": "两人站在钟楼门前完成图案记录。",
+          "endState": "两人转身背对大门，迈步准备离开。",
+          "screenDirection": "center-to-right",
+          "actionBeats": [
+            "林夏将信封妥善放入单肩包中",
+            "周沉与林夏点头致意确认",
+            "两人一同转身迈步离开钟楼门前"
+          ]
+        }
+      },
+      {
+        "key": "shot_02_05",
+        "sceneKey": "scene_02",
+        "title": "融入雨后夜色",
+        "durationSec": 5,
+        "prompt": "High angle extreme long shot of the wet cobblestone street outside the ancient clock tower at night. Reflections of soft streetlamps glow in puddles on the empty pavement. Two small figures of Lin Xia and Zhou Chen walk down the quiet street into the deep nocturnal shadows.",
+        "motionPrompt": "Slow crane up and pedestal shot pulling further into the night air as the two distant figures walk away down the street until blending into the misty night.",
+        "framing": "Extreme Long Shot",
+        "characterLookKeys": [
+          "look_lin_xia_casual",
+          "look_zhou_chen_casual"
+        ],
+        "propKeys": [],
+        "beatKeys": [
+          "beat_10"
+        ],
+        "continuity": {
+          "startState": "俯拍视角下，两人沿湿润街巷向远方行走。",
+          "endState": "两人的身影没入夜色远端，街巷恢复空旷宁静。",
+          "screenDirection": "bottom-to-top",
+          "actionBeats": [
+            "两人的背影在湿漉石板路上渐行渐远",
+            "街道全景展现雨后清冷宁静的夜色"
+          ]
+        }
+      }
+    ]
+  }
+}

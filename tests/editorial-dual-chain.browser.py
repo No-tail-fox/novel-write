@@ -31,12 +31,12 @@ def run() -> None:
     environment = {**os.environ, 'TEMP': str(OUTPUT), 'TMP': str(OUTPUT)}
     build = subprocess.run([
         'I:/nodejs/node.exe', '--input-type=module', '-e',
-        "import {build} from 'vite'; await build({configFile:false,define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{outDir:process.argv[1],emptyOutDir:false,target:'chrome120',lib:{entry:'tests/editorial-dual-chain.harness.tsx',name:'editorialDualChainQA',formats:['iife'],fileName:()=> 'harness.js',cssFileName:'harness'}}});",
+        "import {build} from 'vite'; await build({configFile:false,define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{outDir:process.argv[1],emptyOutDir:false,target:'chrome120',lib:{entry:'tests/editorial-dual-chain.harness.tsx',name:'editorialDualChainQA',formats:['es'],fileName:()=> 'harness.js',cssFileName:'harness'}}});",
         str(OUTPUT),
     ], cwd=ROOT, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
     (OUTPUT / 'build.log').write_text(build.stdout, encoding='utf-8')
     build.check_returncode()
-    (OUTPUT / 'index.html').write_text('<!doctype html><html data-theme="dark" data-theme-ready="true"><meta charset="utf-8"><link rel="stylesheet" href="harness.css"><style>[data-editorial-collage-workbench]{height:100vh;min-height:0;overflow:hidden}</style><body><div id="root"></div><script src="harness.js"></script></body></html>', encoding='utf-8')
+    (OUTPUT / 'index.html').write_text('<!doctype html><html data-theme="dark" data-theme-ready="true"><meta charset="utf-8"><link rel="stylesheet" href="harness.css"><style>[data-editorial-collage-workbench]{height:100vh;min-height:0;overflow:hidden}</style><body><div id="root"></div><script type="module" src="harness.js"></script></body></html>', encoding='utf-8')
     server = None
     for port in range(43210, 43240):
         try:
@@ -119,7 +119,9 @@ def run() -> None:
             expect(page.get_by_role('button', name='更新关键帧', exact=True)).to_be_enabled()
             video_ready = read()
             assert len(video_ready['requests']) == 4
-            assert video_ready['requests'][-1]['smartMode'] == 'video-narration'
+            assert video_ready['requests'][-1]['smartMode'] == 'text-to-image'
+            assert video_ready['requests'][-1]['style'] == 'vox-editorial'
+            assert 'OUTPUT TARGET — COMPLETE COMPOSED KEYFRAME' in video_ready['requests'][-1]['prompt']
             assert 'cutout' not in video_ready['requests'][-1]
             assert image_bindings(video_ready) == local_bindings
             keyframe_id = shot(video_ready)['keyframeAssetVersionId']
@@ -152,7 +154,8 @@ def run() -> None:
             snapshots['reloaded-local'] = restored
             checks.append('Full page reload restores each saved mode and retains background, cutout and separate video keyframe without new generation')
             page.get_by_role('textbox', name='上屏标题', exact=True).fill('草原上的纸片人物')
-            page.get_by_label('叙事动作', exact=True).select_option('focus-reveal')
+            page.get_by_label('叙事动作', exact=True).click()
+            page.get_by_role('option', name='聚焦揭示', exact=True).click()
             page.get_by_label('镜头生成操作', exact=True).get_by_role('button', name='保存版本', exact=True).click()
             page.wait_for_function('window.editorialDualChainQA.snapshot().document.beats[0].shots[0].motionStyle === "focus-reveal"')
             edited = read()
@@ -163,7 +166,7 @@ def run() -> None:
             assert shot(edited)['layers'][1]['motion'] != shot(restored)['layers'][1]['motion']
             page.reload()
             expect(page.get_by_role('textbox', name='上屏标题', exact=True)).to_have_value('草原上的纸片人物')
-            expect(page.get_by_label('叙事动作', exact=True)).to_have_value('focus-reveal')
+            expect(page.get_by_label('叙事动作', exact=True)).to_have_text('聚焦揭示')
             expect(page.locator('.director-preview-title')).to_have_count(0)
             snapshots['edited-title-motion'] = read()
             checks.append('Title and narrative motion edits change actual native text/frames, preserve assets, and survive a full reload')

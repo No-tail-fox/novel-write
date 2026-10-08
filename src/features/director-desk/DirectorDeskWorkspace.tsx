@@ -82,6 +82,7 @@ import { resolveProductionQualityRecheckScope } from '../../shared/production-qu
 import { MAX_PRODUCTION_HISTORY_ITEMS, productionHistoryCapacityError, type ProductionHistoryUsage } from '../../shared/production-history';
 import { directorSceneLayoutClass, directorSceneSubtitleClass } from '../../shared/director-scene-layout';
 import { EDITORIAL_MOTION_STYLES, type EditorialMotionStyle } from '../../shared/editorial-motion';
+import type { DirectorTransition } from '../../shared/director-transitions';
 
 export type DirectorDeskMode = 'vox' | 'motion-comic';
 export type DirectorInspectorTab = 'mode' | 'generate' | 'subtitle' | 'sound' | 'version' | 'quality';
@@ -160,6 +161,7 @@ export interface DirectorShot {
   layoutTemplate?: DirectorLayoutTemplate;
   motionPreset?: DirectorMotionPreset;
   motionStyle?: EditorialMotionStyle;
+  transitionIn?: DirectorTransition;
   seed?: string;
   seedLocked?: boolean;
   linkedAssetIds?: readonly string[];
@@ -290,7 +292,7 @@ export interface DirectorDeskWorkspaceProps {
   };
   historyUsage?: ProductionHistoryUsage;
   onSelectShot: (id: string) => void;
-  onUpdateShot: (id: string, update: Partial<Pick<DirectorShot, 'title' | 'prompt' | 'motionPrompt' | 'framing' | 'durationMs' | 'voice' | 'voiceId' | 'voiceSpeed' | 'subtitle' | 'subtitleStyle' | 'layoutTemplate' | 'motionPreset' | 'motionStyle' | 'seed' | 'seedLocked' | 'renderStrategy' | 'animation'>>) => void;
+  onUpdateShot: (id: string, update: Partial<Pick<DirectorShot, 'title' | 'prompt' | 'motionPrompt' | 'framing' | 'durationMs' | 'voice' | 'voiceId' | 'voiceSpeed' | 'subtitle' | 'subtitleStyle' | 'layoutTemplate' | 'motionPreset' | 'motionStyle' | 'transitionIn' | 'seed' | 'seedLocked' | 'renderStrategy' | 'animation'>>) => void;
   onUpdateShotMotion?: (id: string, edit: EditorialMotionEdit) => void;
   onUpdateSubtitleCue?: (shotId: string, cueId: string, patch: DirectorSubtitlePatch) => void;
   onAddSubtitleCue?: (shotId: string) => void;
@@ -367,7 +369,7 @@ export interface DirectorVideoResult {
 export interface DirectorQueueItem {
   id: string;
   shotId: string;
-  kind?: 'shot-image' | 'shot-video' | 'style-sample';
+  kind?: 'shot-image' | 'shot-video' | 'shot-voice' | 'project-render' | 'style-sample';
   title: string;
   status: 'running' | 'waiting' | 'failed' | 'completed';
   progress: number;
@@ -508,6 +510,12 @@ export function DirectorDeskWorkspace({
   const [seedLocked, setSeedLocked] = useState(true);
   const [safeAreaVisible, setSafeAreaVisible] = useState(true);
   const [activeStage, setActiveStage] = useState<string>(() => outputUrl ? '导出' : stageLabel);
+  const motionComicProductionStage = mode === 'motion-comic' && ['分镜图', '视频生成', '配音字幕', '导出'].includes(stageLabel) ? stageLabel : undefined;
+  useEffect(() => {
+    if (!motionComicProductionStage) return;
+    setActiveStage(motionComicProductionStage);
+    setInspectorTab(motionComicProductionStage === '配音字幕' ? 'subtitle' : motionComicProductionStage === '导出' ? 'quality' : 'generate');
+  }, [motionComicProductionStage]);
   const [leftPaneOpen, setLeftPaneOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -690,7 +698,7 @@ export function DirectorDeskWorkspace({
       id: shot.id,
       title: shot.title,
       imageReady: shot.imageReady ?? false,
-      videoReady: Boolean(shot.videoUrl) || shot.videoJobStatus === 'completed',
+      videoReady: Boolean(shot.videoUrl),
       voiceReady: shot.voiceReady ?? false,
       imageFailed: shot.imageFailed ?? false,
       videoFailed: shot.videoJobStatus === 'failed' || shot.videoJobStatus === 'cancelled',
@@ -1205,7 +1213,7 @@ export function DirectorDeskWorkspace({
         workflowKind: 'director', projectId: activeProjectId ?? projectTitle, episodeId: activeEpisodeId ?? null,
         status: 'running', concurrency: batchConcurrency, plan: {
           scope: batchScope, capabilities: batchCapabilities, outputReady: Boolean(outputUrl), renderFailed: false,
-          shots: shots.map((shot) => ({ id: shot.id, title: shot.title, imageReady: shot.imageReady, videoReady: Boolean(shot.videoUrl) || shot.videoJobStatus === 'completed', voiceReady: shot.voiceReady })),
+          shots: shots.map((shot) => ({ id: shot.id, title: shot.title, imageReady: shot.imageReady, videoReady: Boolean(shot.videoUrl), voiceReady: shot.voiceReady })),
         }, nodes,
       }) : null);
       if (batchControllerRef.current !== controller) return;
@@ -1360,7 +1368,7 @@ export function DirectorDeskWorkspace({
         </div>
       </header>
 
-      <div className="director-phase-bar">
+      {!motionComicProductionStage ? <div className="director-phase-bar">
         <nav className="director-stage-rail" aria-label="制作流程">
           {directorPhases.map((phase, index) => (
             <Button density="compact" variant="subtle" key={phase.id} aria-current={activePhase.id === phase.id ? 'step' : undefined} className={`director-stage-step ${activePhase.id === phase.id ? 'is-active' : ''}`} title={`${phase.label} · ${directorPhaseComplete(phase, completedStages) ? '已完成' : '待完成'}`} onClick={() => activateStage(phase.entry)}>
@@ -1371,7 +1379,7 @@ export function DirectorDeskWorkspace({
           ))}
         </nav>
         <Menu trigger={<Button className="director-stage-menu" density="compact" variant="subtle" aria-label="制作步骤">{activeStage}<ChevronDown size={13} /></Button>} options={activePhase.stages.map((stage) => ({ id: stage, label: stage, icon: completedStages.includes(stage) ? <Check size={13} /> : undefined, onSelect: () => activateStage(stage) }))} />
-      </div>
+      </div> : null}
 
       <div className="director-desk-grid">
           <Pane as="aside" tone="subtle" className="director-left-pane" id="director-objects" tabIndex={-1} aria-label="项目与镜头">
@@ -1626,6 +1634,10 @@ export function DirectorDeskWorkspace({
                 </> : null}
                 {inspectorTab === 'generate' ? (
                   <>
+                    {motionComicProductionStage === '视频生成' ? <>
+                      {renderShotWorkflow?.(selectedShot.id, structureBusy)}
+                      <TextAreaField label="视频运动提示词" value={selectedShot.motionPrompt ?? ''} rows={5} disabled={structureBusy} onChange={(_, data) => onUpdateShot(selectedShot.id, { motionPrompt: data.value })} />
+                    </> : <>
                     {mode === 'vox' ? renderShotWorkflow?.(selectedShot.id, structureBusy) : null}
                     {mode === 'vox' ? <RenderStrategyInspector
                       compact
@@ -1651,6 +1663,7 @@ export function DirectorDeskWorkspace({
                        {!providerConnected && providerUnavailableReason ? <div className="director-inspector-note is-warning"><CircleAlert size={14} /><span>{providerUnavailableReason}</span>{onConfigureProvider ? <Button density="compact" variant="secondary" onClick={onConfigureProvider}>配置图片服务</Button> : null}</div> : null}
                     </div>
                     </>}
+                    </>}
                   </>
                 ) : null}
                 {inspectorTab === 'subtitle' ? <div className="director-subtitle-workspace"><VoiceInspector shot={selectedShot} onUpdate={onUpdateShot} connected={voiceConnected} providerLabel={voiceProviderLabel} model={voiceModel} unavailableReason={voiceUnavailableReason} voiceOptions={voiceOptions} busy={batchActive || voiceBusyShotId === selectedShot.id} onGenerate={() => void generateVoice(selectedShot.id)} onPreview={() => void togglePreview()} />{onUpdateSubtitleCue && onAddSubtitleCue && onRemoveSubtitleCue && onAlignSubtitleCue ? <DirectorSubtitleInspector key={selectedShot.id} cues={selectedShot.subtitleCues ?? []} focusCueId={focusedCueId} characters={selectedShot.dialogueCharacters} voiceConnected={voiceConnected} onGenerateVoice={onGenerateDialogueVoice ? (cueId) => void generateVoice(selectedShot.id, cueId) : undefined} onImportTimestamps={onImportSubtitleTimestamps ? (cueId) => onImportSubtitleTimestamps(selectedShot.id, cueId) : undefined} shotStartMs={selectedShotOffset} durationMs={selectedShot.durationMs} busy={batchActive || voiceBusyShotId === selectedShot.id} style={selectedShot.subtitleStyle ?? '简体中文 · 白色描边'} safeAreaVisible={safeAreaVisible} onUpdate={(cueId, patch) => onUpdateSubtitleCue(selectedShot.id, cueId, patch)} onAdd={() => onAddSubtitleCue(selectedShot.id)} onRemove={(cueId) => onRemoveSubtitleCue(selectedShot.id, cueId)} onAlign={(cueId) => onAlignSubtitleCue(selectedShot.id, cueId)} onSeek={(timeMs) => { setIsPlaying(false); seekPlayback(timeMs); }} onStyleChange={(style) => onUpdateShot(selectedShot.id, { subtitleStyle: style })} onSafeAreaChange={setSafeAreaVisible} /> : <SubtitleInspector shot={selectedShot} onUpdate={onUpdateShot} safeAreaVisible={safeAreaVisible} onSafeAreaChange={setSafeAreaVisible} />}</div> : null}
@@ -1660,8 +1673,8 @@ export function DirectorDeskWorkspace({
               {inspectorTab === 'generate' ? <div className="director-action-footer" aria-label="镜头生成操作">
                 {selectedRenderStrategy !== 'remotion' ? <div className="director-seed-row"><TextField label="Seed 锁定" value={selectedShot.seed ?? '24681357'} readOnly={selectedShot.seedLocked ?? seedLocked} onChange={(_, data) => onUpdateShot(selectedShot.id, { seed: data.value })} /><Button density="compact" variant={(selectedShot.seedLocked ?? seedLocked) ? 'secondary' : 'subtle'} onClick={() => { const next = !(selectedShot.seedLocked ?? seedLocked); setSeedLocked(next); onUpdateShot(selectedShot.id, { seedLocked: next }); }}><LockKeyhole size={13} />{(selectedShot.seedLocked ?? seedLocked) ? '已锁定' : '未锁定'}</Button></div> : null}
                 {selectedRenderStrategy === 'remotion' ? <p className="vox-hint">动画内容自动保留为当前项目草稿，点击保存版本写入项目。</p> : selectedRenderStrategy === 'living-poster' ? <div className="director-primary-stack">
-                  <Button variant="secondary" density="compact" title={!providerConnected ? providerUnavailableReason || '图片生成服务未配置' : undefined} onClick={() => void startGeneration(selectedShot.id)} disabled={busy || batchActive || !providerConnected || selectedQueueItem?.status === 'running'}><ImageIcon size={14} />{(selectedShot.videoFirstFrameReady ?? selectedShot.videoInputReady) ? '更新关键帧' : '生成关键帧'}</Button>
-                  <Button className="director-primary-action" variant="primary" density="comfortable" title={videoGenerationDisabledReason || undefined} onClick={() => void generateVideo(selectedShot.id, selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled')} disabled={busy || batchActive || Boolean(videoGenerationDisabledReason) || selectedVideoStatus === 'running' || selectedVideoStatus === 'queued'}>{videoBusyShotId === selectedShot.id || selectedVideoStatus === 'running' ? <RefreshCw className="director-spin" size={15} /> : selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled' ? <RotateCcw size={15} /> : <Video size={15} />}{selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled' ? '重试视频生成' : selectedShot.videoUrl ? '重新生成视频' : '生成视频'}</Button>
+                  {motionComicProductionStage !== '视频生成' ? <Button variant="secondary" density="compact" title={!providerConnected ? providerUnavailableReason || '图片生成服务未配置' : undefined} onClick={() => void startGeneration(selectedShot.id)} disabled={busy || batchActive || !providerConnected || selectedQueueItem?.status === 'running'}><ImageIcon size={14} />{(selectedShot.videoFirstFrameReady ?? selectedShot.videoInputReady) ? '更新关键帧' : '生成关键帧'}</Button> : null}
+                  {motionComicProductionStage !== '分镜图' ? <Button className="director-primary-action" variant="primary" density="comfortable" title={videoGenerationDisabledReason || undefined} onClick={() => void generateVideo(selectedShot.id, selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled')} disabled={busy || batchActive || Boolean(videoGenerationDisabledReason) || selectedVideoStatus === 'running' || selectedVideoStatus === 'queued'}>{videoBusyShotId === selectedShot.id || selectedVideoStatus === 'running' ? <RefreshCw className="director-spin" size={15} /> : selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled' ? <RotateCcw size={15} /> : <Video size={15} />}{selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled' ? '重试视频生成' : selectedShot.videoUrl ? '重新生成视频' : '生成视频'}</Button> : null}
                 </div> : <Button className="director-primary-action" variant="primary" density="comfortable" onClick={() => void startGeneration(selectedShot.id)} disabled={busy || batchActive || !providerConnected || selectedQueueItem?.status === 'running'}><WandSparkles size={15} />{mode === 'vox' ? selectedShot.thumbnail && !selectedShot.imageReady ? '补齐分层素材' : '生成分层素材' : '生成当前镜头'}</Button>}
                 <div className="director-secondary-actions"><Button density="compact" variant="subtle" onClick={togglePreview}>{isPlaying ? <Pause size={13} /> : <Play size={13} />}{isPlaying ? '暂停' : '预览'}</Button><Button density="compact" variant="subtle" disabled={batchActive} onClick={() => onSave()}><Save size={13} />保存版本</Button><Button density="compact" variant="secondary" disabled={renderBusy || batchActive} onClick={() => void renderProject()}>{renderBusy ? <RefreshCw className="director-spin" size={13} /> : <Film size={13} />}生成成片</Button>{renderBusy && onCancelRender ? <Button density="compact" onClick={()=>void onCancelRender()}>取消渲染</Button> : null}{onOpenOutput ? <IconButton label="打开导出目录" icon={outputBusy ? <RefreshCw className="director-spin" size={14} /> : <Download size={14} />} density="compact" variant="subtle" disabled={!outputUrl || outputBusy} onClick={() => void openOutput()} /> : null}</div>
               </div> : null}

@@ -5,7 +5,8 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AppMutationResult, ViralAnalysisEvent, ViralAnalysisResult, ViralAnalysisStatus, ViralAnalysisSummary, ViralPlatform } from '../../shared/types';
-import { contentTracks, ratioOptions, styleOptions } from '../../shared/editorial-options';
+import { contentTracks, ratioOptions } from '../../shared/editorial-options';
+import { ImageStylePicker } from '../image-style-preview/ImageStylePreview';
 import { createViralTemplateDrafts } from '../../shared/viral-template-extraction';
 import { viralEventRefreshKey } from '../../shared/state-reconciliation';
 import { useAsyncAction } from '../../ui/async-action';
@@ -280,7 +281,7 @@ export function ViralAnalyzerPage({
               />}
             {analysisMode === 'quick' ? <>
             <ViralChoiceGroup title="赛道" options={contentTracks} value={track} onChange={setTrack} />
-            <ViralChoiceGroup title="风格" options={styleOptions} value={style} onChange={setStyle} />
+            <ImageStylePicker label="风格" styles={state.customStyles} value={style} onChange={setStyle} />
             <ViralChoiceGroup title="比例" options={ratioOptions.map((item) => [item, item, ''])} value={ratio} onChange={setRatio} compact />
             <SelectField label="草稿模板" className="viral-draft-template-select" value={templateId} onChange={(event) => setTemplateId(event.target.value)} options={state.draftTemplates.map((template) => ({ value: template.id, label: `${template.name} · ${template.canvas.ratio}` }))} />
             </> : null}

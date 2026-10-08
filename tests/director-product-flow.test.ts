@@ -192,9 +192,10 @@ describe('director product flow', () => {
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
     ]);
     expect(workspace).toContain('director-style-candidates');
-    expect(workspace).toContain('onSelectStyle?.(style.id)');
+    expect(workspace).toContain('onSelect={onSelectStyle}');
+    expect(workspace).toContain('onSelect?.(style.id)');
     expect(workspace).toContain('onGenerateStyleCandidate');
-    expect(workspace).toContain('generateStyleCandidate(style.id)');
+    expect(workspace).toContain('onGenerateStyleCandidate ? (id) => void generateStyleCandidate(id)');
     expect(vox).toContain('styleCandidates={directorStyleCandidates}');
     expect(vox).toContain('styleCandidates: current.styleCandidates.map');
     expect(vox).toContain('applyEditorialStyleCandidateRecord');

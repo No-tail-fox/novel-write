@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import type { ProductionAudioFadeEnvelope } from './production-audio';
+import type { DirectorTransition } from './director-transitions';
 import type { StoryboundComposeRenderInput } from './storybound-sidecar';
 import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
 import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoScenePlan, PipelineArtifact } from './types';
@@ -27,6 +28,7 @@ export interface HtmlVideoSceneSource {
   /** Optional authoritative multi-track mix inputs (times relative to this scene). */
   audioClips?: HtmlVideoAudioClip[];
   durationMs: number;
+  transitionIn?: DirectorTransition;
 }
 
 export interface HtmlVideoAudioClip {
@@ -234,7 +236,7 @@ export function createHtmlVideoComposePayload(
         throw new Error(`Missing captured frames for HTML video scene ${scene.sceneId}.`);
       }
       if (captured.segmentPath) {
-        return { segment_path: captured.segmentPath, fps: captured.fps || input.fps, duration_s: scene.duration };
+        return { segment_path: captured.segmentPath, fps: captured.fps || input.fps, duration_s: scene.duration, ...(scene.transitionIn ? { transition_in: scene.transitionIn } : {}) };
       }
       return {
         frames_dir: captured.framesDir,
@@ -242,6 +244,7 @@ export function createHtmlVideoComposePayload(
         ...(scene.audioClips !== undefined ? { audio_clips: scene.audioClips } : {}),
         fps: captured.fps || input.fps,
         duration_s: scene.duration,
+        ...(scene.transitionIn ? { transition_in: scene.transitionIn } : {}),
       };
     }),
     output_path: input.outputPath,

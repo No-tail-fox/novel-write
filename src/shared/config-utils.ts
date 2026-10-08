@@ -1,6 +1,7 @@
 import { defaultConfig } from './config';
 import { llmEndpoint, resolveLlmProtocol } from './llm-protocol';
 import { normalizeImageGenerationQuality } from './image-quality';
+import { VIDEO_MODEL_PRESETS } from './video-models';
 import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 import {
   isArkModelApiKey,
@@ -489,16 +490,40 @@ const VIDEO_CAPABILITIES: readonly VideoCapability[] = [
   'i2v',
   'first-last-frame',
   'reference-image',
+  'reference-video',
+  'reference-audio',
   'partial-redo',
   'synchronized-audio',
 ];
 
+const LEGACY_VIDEO_CAPABILITIES: readonly VideoCapability[] = ['t2v', 'i2v'];
+const MULTIMODAL_VIDEO_CAPABILITIES: readonly VideoCapability[] = [
+  't2v',
+  'i2v',
+  'first-last-frame',
+  'reference-image',
+  'reference-video',
+  'reference-audio',
+  'synchronized-audio',
+];
+
+function migrateKnownVideoCapabilities(model: string, capabilities: VideoCapability[]): VideoCapability[] {
+  const isLegacyDefault = capabilities.length === LEGACY_VIDEO_CAPABILITIES.length
+    && LEGACY_VIDEO_CAPABILITIES.every((capability) => capabilities.includes(capability));
+  if (!isLegacyDefault) return capabilities;
+  if (/minimax[-_ ]?h3/iu.test(model) || /seedance.*2[._-]?(?:0|5)(?:\D|$)/iu.test(model)) {
+    return [...MULTIMODAL_VIDEO_CAPABILITIES];
+  }
+  return capabilities;
+}
+
 export function normalizeVideoProvider(input: Partial<VideoProviderConfig> | undefined, index: number): VideoProviderConfig {
   const fallback = defaultConfig.video.providers[0];
   const source = { ...fallback, ...(input ?? {}) };
-  const capabilities = Array.isArray(source.capabilities)
+  const declaredCapabilities = Array.isArray(source.capabilities)
     ? Array.from(new Set(source.capabilities.filter((item): item is VideoCapability => VIDEO_CAPABILITIES.includes(item as VideoCapability))))
     : [...fallback.capabilities];
+  const capabilities = migrateKnownVideoCapabilities(String(source.model ?? '').trim(), declaredCapabilities);
   return {
     ...source,
     id: String(source.id || `cloud-video-${index + 1}`).trim() || `cloud-video-${index + 1}`,
@@ -507,6 +532,7 @@ export function normalizeVideoProvider(input: Partial<VideoProviderConfig> | und
     baseUrl: String(source.baseUrl ?? '').trim().replace(/\/+$/u, ''),
     apiKey: String(source.apiKey ?? '').trim(),
     model: String(source.model ?? '').trim(),
+    modelPreset: VIDEO_MODEL_PRESETS.some((preset) => preset.id === source.modelPreset) ? source.modelPreset : undefined,
     submitPath: normalizeEndpointPath(source.submitPath, fallback.submitPath),
     statusPathTemplate: normalizeEndpointPath(source.statusPathTemplate, fallback.statusPathTemplate),
     pollIntervalMs: Math.max(250, Math.round(normalizePositiveNumber(source.pollIntervalMs, fallback.pollIntervalMs))),

@@ -106,6 +106,8 @@ import type { StoryDreamApi } from '../src/shared/storydream-api';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from '../src/shared/director-render';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
+import type { MotionComicEpisodePlanInput, MotionComicEpisodePlanResult } from '../src/shared/motion-comic-episode-planning';
+import type { MotionComicApplyPlanInput, MotionComicPlanInput, MotionComicPlanResponse } from '../src/shared/motion-comic-planning';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, UpdateDirectorBatchInput } from '../src/shared/director-batch-persistence';
 import { MAX_IPC_TEXT, unwrapIpcResult, type IpcChannel } from '../src/shared/ipc-contract';
 import { appErrorFromPayload, serializeAppErrorForBridge } from '../src/shared/app-error';
@@ -270,6 +272,7 @@ export const storyDreamApi: StoryDreamApi = {
   saveCustomStyle: (style: CustomStyle): Promise<AppMutationResult | null> => invokeTrusted('custom-style:save', style),
   saveViralTemplates: (input: ViralTemplateSaveInput): Promise<AppMutationResult | null> => invokeTrusted('viral:save-templates', input),
   generateCustomStyleDraft: (input: CustomStyleGenerateInput): Promise<CustomStyle> => invokeTrusted('custom-style:generate-draft', input),
+  generateCustomStylePreview: (style: CustomStyle): Promise<CustomStyle> => invokeTrusted('custom-style:generate-preview', style),
   saveDraftTemplate: (template: DraftTemplate): Promise<AppMutationResult | null> => invokeTrusted('draft-template:save', template),
   generateImageLab: (input: ImageLabGenerateInput): Promise<AppMutationResult | null> => invokeTrusted('image-lab:generate', input),
   addImageLabRecord: (input: ImageLabImportInput): Promise<AppMutationResult | null> => invokeTrusted('image-lab:add-record', input),
@@ -308,6 +311,12 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('motion-comic:create', input),
   saveMotionComic: (input: MotionComicSaveInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:save', input),
+  planMotionComicEpisodes: (input: MotionComicEpisodePlanInput): Promise<MotionComicEpisodePlanResult> =>
+    invokeTrusted('motion-comic:plan-episodes', input),
+  planMotionComic: (input: MotionComicPlanInput): Promise<MotionComicPlanResponse> =>
+    invokeTrusted('motion-comic:plan', input),
+  applyMotionComicPlan: (input: MotionComicApplyPlanInput): Promise<AppMutationResult | null> =>
+    invokeTrusted('motion-comic:apply-plan', input),
   renderDirectorProject: (input: DirectorRenderRequest): Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }> =>
     invokeTrusted('director:render', input),
   recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest): Promise<DirectorSubtitleRecheckResult> =>
@@ -393,9 +402,11 @@ export const storyDreamApi: StoryDreamApi = {
   getTaskArtifacts: (id: string): Promise<TaskArtifactSnapshot> => invokeTrusted('task:get-artifacts', id),
   getTaskMediaUrl: (id: string, path: string): Promise<string> => invokeTrusted('task:media-url', { id, path }),
   readAssetDataUrl: (path: string): Promise<string> => invokeTrusted('asset:read-data-url', path),
-  selectLocalImage: (): Promise<string | null> => invokeTrusted('local-image:select'),
+  selectLocalImage: (purpose?: 'video-reference'): Promise<string | null> => invokeTrusted('local-image:select', purpose),
+  selectLocalVideo: (): Promise<string | null> => invokeTrusted('local-video:select'),
+  selectMotionComicSourceFile: (): ReturnType<StoryDreamApi['selectMotionComicSourceFile']> => invokeTrusted('motion-comic-source:select'),
   importBgmAudio: () => storyDreamApi.selectLocalAudio('managed-bgm'),
-  selectLocalAudio: ((purpose?: 'managed-bgm') => invokeTrusted('local-audio:select', purpose)) as StoryDreamApi['selectLocalAudio'],
+  selectLocalAudio: ((purpose?: 'managed-bgm' | 'video-reference') => invokeTrusted('local-audio:select', purpose)) as StoryDreamApi['selectLocalAudio'],
   selectLocalSubtitleTimestampFile: (): ReturnType<StoryDreamApi['selectLocalSubtitleTimestampFile']> => invokeTrusted('local-subtitle-timestamps:select'),
   selectLocalFolder: (): Promise<string | null> => invokeTrusted('local-folder:select'),
   selectCookieFile: (): Promise<string | null> => invokeTrusted('cookie-file:select'),

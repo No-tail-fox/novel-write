@@ -10,7 +10,7 @@ import {
   motionComicConsistencySummary,
   setMotionComicFixedReference,
 } from '../src/features/motion-comic/motion-comic-consistency';
-import { createMotionComicDraft, createMotionComicStarterProject, motionComicReferencesImageLabRecord, parseMotionComicPipelineData, type MotionComicPipelineData } from '../src/shared/motion-comic';
+import { createMotionComicDraft, createMotionComicStarterProject, motionComicReferencesImageLabRecord, parseMotionComicPipelineData, validateMotionComicPipeline, type MotionComicPipelineData } from '../src/shared/motion-comic';
 import type { ImageLabRecord } from '../src/shared/types';
 
 function project(): MotionComicPipelineData {
@@ -129,6 +129,52 @@ describe('motion comic consistency references', () => {
     expect(summary.readyTargetCount).toBe(2);
     expect(summary.ready).toBe(false);
     expect(summary.missingTargets.length).toBeGreaterThan(0);
+  });
+
+  it('allows an establishing shot without characters while still requiring its scene reference', () => {
+    let document = project();
+    const shot = document.episodes[0].scenes[0].shots[0];
+    const scene = document.sceneAssets.find((item) => item.id === shot.sceneAssetId)!;
+    shot.characterLookIds = [];
+
+    expect(inspectMotionComicShotConsistency(document, shot).missingTargets).toEqual([scene.label]);
+    document = attachMotionComicReference(document, { kind: 'scene', id: scene.id }, createMotionComicReferenceAsset(record('empty-scene', 'C:/managed/empty-scene.png'), scene.id, 'scene'));
+
+    expect(inspectMotionComicShotConsistency(document, shot)).toEqual({ ready: true, fixedReferenceCount: 1, missingTargets: [], exceedsProviderLimit: false });
+  });
+
+  it('allows a character-free prop close-up only after its scene and prop references are fixed', () => {
+    let document = project();
+    const shot = document.episodes[0].scenes[0].shots[0];
+    const scene = document.sceneAssets.find((item) => item.id === shot.sceneAssetId)!;
+    const prop = document.props[0];
+    shot.characterLookIds = [];
+    shot.propAssetIds = [prop.id];
+    document = attachMotionComicReference(document, { kind: 'scene', id: scene.id }, createMotionComicReferenceAsset(record('prop-scene', 'C:/managed/prop-scene.png'), scene.id, 'scene'));
+
+    expect(inspectMotionComicShotConsistency(document, shot).missingTargets).toEqual([prop.label]);
+    document = attachMotionComicReference(document, { kind: 'prop', id: prop.id }, createMotionComicReferenceAsset(record('prop-close-up', 'C:/managed/prop-close-up.png'), prop.id, 'prop'));
+    expect(inspectMotionComicShotConsistency(document, shot)).toMatchObject({ ready: true, missingTargets: [] });
+  });
+
+  it('does not require character looks for ready validation when no shot references a character', () => {
+    const document = project();
+    document.episodes.forEach((episode) => episode.scenes.forEach((scene) => scene.shots.forEach((shot) => {
+      shot.characterLookIds = [];
+    })));
+
+    const characterIssues = validateMotionComicPipeline(document, { ready: true }).filter((issue) => issue.path.includes('character') || issue.path.includes('.looks'));
+    expect(characterIssues).toEqual([]);
+    expect(motionComicConsistencySummary(document).missingTargets).not.toContain('角色造型未绑定');
+  });
+
+  it('still requires a fixed character reference when a shot names that look', () => {
+    const document = project();
+    const characterIssues = validateMotionComicPipeline(document, { ready: true }).filter((issue) => issue.path.includes('.looks'));
+
+    expect(characterIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/fixed reference asset/u) }),
+    ]));
   });
 
   it('accepts only the authoritative image-lab upsert id', () => {

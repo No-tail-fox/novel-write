@@ -135,6 +135,7 @@ export async function renderDirectorVideo(input: {
       imagePath: representativePath,
       duration: Math.max(0.8, scene.durationMs / 1000),
       durationMs: scene.durationMs,
+      transitionIn: scene.transitionIn,
       audioPath: scene.audioPath,
       ...(scene.audioClips !== undefined ? { audioClips: scene.audioClips } : {}),
       html,
@@ -165,8 +166,8 @@ export async function renderDirectorVideo(input: {
     canvas_w: canvas.width,
     canvas_h: canvas.height,
     totalDurationS,
-    // Crossfades shorten adjacent scenes and shift project-global dialogue.
-    // Until visual-only overlaps are supported, both workflows use exact cuts.
+    // Per-scene incoming dissolves are visual-only. The compositor concatenates
+    // narration on the original scene clock; ordinary A/V crossfades are disabled.
     transition: { type: 'cut', duration: 0 },
     scenes: stagedScenes,
   }, { signal: input.signal });

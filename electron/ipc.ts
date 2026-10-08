@@ -35,7 +35,10 @@ export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) 
     channel: C,
     handler: (event: IpcMainInvokeEvent, input: IpcInput<C>) => Promise<O> | O,
   ): void {
-    const schema = ipcInputSchemas[channel] as unknown as ZodType<IpcInput<C>>;
+    // The channel is narrowed by `IpcChannel`, while the schema registry is
+    // intentionally declared as a structural record. Keep the registry lookup
+    // behind this boundary so individual handlers retain their input type.
+    const schema = (ipcInputSchemas as Record<IpcChannel, ZodType<unknown>>)[channel] as ZodType<IpcInput<C>>;
     dependencies.register(channel, async (event, raw) => {
       try {
         const win = dependencies.getWindow();

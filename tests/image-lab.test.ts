@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateImageLabRecord, selectImageLabProviderConfig } from '@shared/image-lab';
-import { defaultConfig } from '@shared/config';
+import { defaultConfig, defaultCustomStyles } from '@shared/config';
 import type { AppConfig } from '@shared/types';
 
 afterEach(() => {
@@ -152,6 +152,49 @@ describe('image lab generation', () => {
       expect(requests[0].body.prompt).toContain('播客封面');
       expect(requests[0].body.prompt).toContain('两位主播');
       expect(requests[0].body.prompt).toContain('标题留白');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses a saved custom drawing template in the actual provider request', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-custom-style-'));
+    const imageBytes = Buffer.from('custom-style-image');
+    const requests: Array<{ body: Record<string, unknown> }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      requests.push({ body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ data: [{ b64_json: imageBytes.toString('base64') }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: 'gpt_image',
+        gptImage: { ...defaultConfig.gptImage, apiKey: 'image-key', baseUrl: 'https://image.example', model: 'gpt-image-2' },
+      };
+      const customStyle = {
+        ...defaultCustomStyles[0],
+        id: 'my-paper-cut',
+        name: '我的纸雕风格',
+        prefix: 'CUSTOM_PREFIX layered paper sculpture',
+        suffix: 'CUSTOM_SUFFIX tactile deckled edges',
+        negativePrompt: 'CUSTOM_NEGATIVE glossy plastic, random text',
+        allowColor: false,
+      };
+      const record = await generateImageLabRecord(config, dir, {
+        prompt: '一位装订师坐在窗边',
+        ratio: '16:9',
+        style: customStyle.id,
+      }, undefined, customStyle);
+
+      expect(record.status).toBe('generated');
+      expect(requests[0].body.prompt).toContain(customStyle.prefix);
+      expect(requests[0].body.prompt).toContain(customStyle.suffix);
+      expect(requests[0].body.prompt).toContain('严格使用黑白灰单色');
+      expect(requests[0].body.prompt).toContain(`避免出现：${customStyle.negativePrompt}`);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

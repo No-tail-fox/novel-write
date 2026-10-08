@@ -23,6 +23,24 @@ afterEach(async () => {
 });
 
 describe('editorial collage persistence', () => {
+  it('persists the writing preset and custom requirements through create, save and reopen', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'storydream-vox-writing-'));
+    cleanupPaths.push(root);
+    const path = join(root, 'storydream.sqlite');
+    let database = await FileDatabase.open(path);
+    try {
+      const created = await database.createEditorialCollageTask({ title: '旧书店', sourceText: '先确定统计范围，再讨论变化。', writingStyleId: 'data', writingRequirements: '面向中学生，避免编造数字。' });
+      const document = parseEditorialCollagePipelineData(created.pipelineData);
+      expect(document).toMatchObject({ writingStyleId: 'data', writingRequirements: '面向中学生，避免编造数字。' });
+      await database.saveEditorialCollageTask({ id: created.id, expectedUpdatedAt: document.updatedAt, document: { ...document, title: '旧书店的变化' } });
+      await database.close();
+      database = await FileDatabase.open(path);
+      expect(parseEditorialCollagePipelineData((await database.getTaskDetail(created.id))!.pipelineData)).toMatchObject({ writingStyleId: 'data', writingRequirements: '面向中学生，避免编造数字。' });
+      const { writingStyleId: _style, writingRequirements: _requirements, ...legacy } = document;
+      expect(parseEditorialCollagePipelineData(legacy).writingStyleId).toBeUndefined();
+    } finally { await database.close(); }
+  });
+
   it('round-trips a full-length project through SQLite and rejects short-duration creation atomically', async () => {
     const root = await mkdtemp(join(tmpdir(), 'storydream-vox-long-'));
     cleanupPaths.push(root);

@@ -25,21 +25,22 @@ describe('standalone video workbench initial UI', () => {
     expect(html).toContain('data-local-lab-workbench="video-lab"');
     expect(html).toContain('视频描述');
     expect(html).toContain('配置视频服务');
+    for (const model of ['MiniMax H3', 'MiniMax H3 Max', 'Seedance 2.0', 'Seedance 2.5']) expect(html).toContain(model);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?生成视频<\/span><\/button>/u);
     expect(api.generateVideoLab).not.toHaveBeenCalled();
     expect(api.openVideoLabOutputDirectory).not.toHaveBeenCalled();
     expect(html).not.toContain('创建项目');
   });
 
-  it('exposes reference controls only when the selected service supports them', () => {
+  it('keeps all upload modes available while capability validation remains provider-specific', () => {
     const config = structuredClone(initialState.config);
     const provider = config.video.providers[0];
     config.video.activeProviderId = provider.id;
     provider.capabilities = ['t2v'];
-    expect(renderWorkbench(config).html).not.toContain('选择首帧');
-    provider.capabilities = ['i2v', 'first-last-frame', 'reference-image'];
     const { html, api } = renderWorkbench(config);
-    for (const label of ['选择首帧', '选择尾帧', '添加参考图']) expect(html).toContain(label);
+    for (const label of ['文本', '首尾帧', '多模态参考', '分辨率', '生成同步声音']) expect(html).toContain(label);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?<span[^>]*>首尾帧<\/span>/u);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?<span[^>]*>多模态参考<\/span>/u);
     expect(api.selectLocalImage).not.toHaveBeenCalled();
   });
 });

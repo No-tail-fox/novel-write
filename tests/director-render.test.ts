@@ -18,9 +18,27 @@ import {
   splitEditorialShot,
   mergeEditorialShots,
   type EditorialCollagePipelineData,
+  parseEditorialCollagePipelineData,
 } from '../src/shared/editorial-collage';
 
 describe('director render contracts', () => {
+  it('persists visual-only incoming transitions without changing the narration clock', () => {
+    const document = voxRenderDocument('deterministic-layers');
+    const originalClock = structuredClone(document.timeline);
+    const defaultScene = buildDirectorRenderScenes(document)[0];
+    expect(defaultScene.transitionIn).toEqual({ type: 'dissolve', durationMs: 200 });
+    const oldFingerprint = directorDocumentRenderFingerprint(document);
+    document.beats[0].shots[0].transitionIn = { type: 'cut', durationMs: 0 };
+    const persisted = parseEditorialCollagePipelineData(JSON.parse(JSON.stringify(document)));
+    expect(persisted).toBeDefined();
+    const scene = buildDirectorRenderScenes(persisted!)[0];
+    expect(scene.transitionIn).toEqual({ type: 'cut', durationMs: 0 });
+    expect(scene.durationMs).toBe(defaultScene.durationMs);
+    expect(scene.subtitleCues).toEqual(defaultScene.subtitleCues);
+    expect(scene.audioClips).toEqual(defaultScene.audioClips);
+    expect(persisted!.timeline).toEqual(originalClock);
+    expect(directorDocumentRenderFingerprint(persisted!)).not.toBe(oldFingerprint);
+  });
   it('measures muted authored narration from the source asset instead of the resolved mix', () => {
     const document = voxRenderDocument('deterministic-layers');
     document.timeline!.audioClips = [{
@@ -155,6 +173,7 @@ describe('director render contracts', () => {
     expect(buildDirectorRenderScenes(document)).toEqual([{
       id: 'shot-1',
       index: 1,
+      transitionIn: { type: 'dissolve', durationMs: 200 },
       title: '城市证据',
       caption: '第一句 第二句',
       subtitleCues: [

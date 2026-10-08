@@ -45,6 +45,14 @@ export interface DirectorBatchPlanInput {
   renderFailed?: boolean;
 }
 
+/** Check the nodes being dispatched, including auto-added prerequisites and retry subsets. */
+export function directorBatchUnavailableReasons(
+  nodes: readonly Pick<DirectorBatchNode, 'capability'>[],
+  reasons: Partial<Record<DirectorBatchCapability, string>>,
+): string[] {
+  return [...new Set(nodes.map((node) => reasons[node.capability]).filter((reason): reason is string => Boolean(reason)))];
+}
+
 export function directorBatchHistoryDemand(nodes: readonly Pick<DirectorBatchNode, 'capability' | 'shotId'>[], shots: readonly { id: string; imageGenerationCount?: number; voiceGenerationCount?: number }[]): ProductionHistoryUsage {
   const imageCounts = new Map(shots.map((shot) => [shot.id, shot.imageGenerationCount ?? 1]));
   const voiceCounts = new Map(shots.map((shot) => [shot.id, shot.voiceGenerationCount ?? 1]));

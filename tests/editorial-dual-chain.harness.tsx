@@ -67,7 +67,7 @@ const localApi = {
     const now = new Date(Date.parse(seedTime) + snapshot.requests.length * 1000).toISOString();
     const record: ImageLabRecord = {
       id: input.id!, prompt: input.prompt, ratio: input.ratio, style: input.style, provider: input.provider ?? 'gpt_image',
-      imagePath: fail ? '' : input.cutout === 'green' ? subject : input.smartMode === 'video-narration' ? keyframe : background,
+      imagePath: fail ? '' : input.cutout === 'green' ? subject : input.prompt.includes('OUTPUT TARGET — COMPLETE COMPOSED KEYFRAME') ? keyframe : background,
       status: fail ? 'failed' : 'generated', errorMessage: fail ? 'QA 主体素材生成失败' : '',
       resolution: input.resolution ?? '2K', quality: input.quality ?? 'medium', smartMode: input.smartMode ?? 'text-to-image',
       referenceImagePaths: [], referenceImagePath: '', upstreamTaskId: null, createdAt: now, finishedAt: now,

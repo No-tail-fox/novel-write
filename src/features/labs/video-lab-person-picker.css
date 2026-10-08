@@ -1,0 +1,106 @@
+.sd-dialog-surface:has(.video-lab-person-picker) {
+  width: min(680px, calc(100vw - 32px));
+  max-width: 680px;
+}
+
+.video-lab-person-picker {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.video-lab-person-picker-note,
+.video-lab-person-picker-status,
+.video-lab-person-picker-empty,
+.video-lab-person-picker-loading {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: var(--sd-text-caption);
+  line-height: 1.6;
+}
+
+.video-lab-person-picker-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-lab-person-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  align-content: start;
+  gap: 10px;
+  max-height: min(350px, 45vh);
+  min-height: 150px;
+  overflow-y: auto;
+  padding: 3px;
+}
+
+.video-lab-person-picker-image.sd-button {
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+  overflow: hidden;
+}
+
+.video-lab-person-picker-image[aria-pressed='true'] {
+  border-color: var(--shell-focus);
+  background: var(--shell-selected);
+}
+
+.video-lab-person-picker-image .sd-button__content {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 0;
+}
+
+.video-lab-person-picker-image img,
+.video-lab-person-picker-placeholder {
+  display: flex;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  object-fit: contain;
+  gap: 6px;
+  background: var(--shell-surface);
+  color: var(--shell-muted);
+  font-size: var(--sd-text-caption);
+}
+
+.video-lab-person-picker-image-label {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  color: var(--shell-text);
+}
+
+.video-lab-person-picker-image-label > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-lab-person-picker-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 90px;
+  overflow-y: auto;
+  padding: 3px;
+}
+
+.video-lab-person-picker-error {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}

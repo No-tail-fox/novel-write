@@ -4,7 +4,6 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { DirectorDeskWorkspace, directorLayerStyle, directorPreviewTitleVisible, type DirectorPreviewLayer, type DirectorShot } from '../src/features/director-desk/DirectorDeskWorkspace';
 import { buildDirectorSceneHtml, buildDirectorTextLayerSvg } from '../src/shared/director-render';
-import { EDITORIAL_MOTION_STYLES } from '../src/shared/editorial-motion';
 
 const layer: DirectorPreviewLayer = {
   id: 'subject', label: '独立主体', kind: 'subject', src: 'data:image/png;base64,AA==', zIndex: 1, depth: 0.2,
@@ -67,13 +66,13 @@ describe('VOX dimensioned layer preview', () => {
     expect(workspaceMarkup({}, 'motion-comic')).not.toContain('生成分层素材');
   });
 
-  it('shows editable content titles and all narrative actions only for local VOX', () => {
+  it('shows editable content titles and the selected narrative action only for local VOX', () => {
     const local = workspaceMarkup({ title: '一张咖啡桌，改变一座城', motionStyle: 'path-progress' });
     expect(local).toContain('上屏标题');
     expect(local).toContain('叙事动作');
     expect(local).toContain('相机运动');
-    expect(local).toContain('value="path-progress" selected=""');
-    for (const style of EDITORIAL_MOTION_STYLES) expect(local).toContain(style.label);
+    expect(local).toContain('role="combobox"');
+    expect(local).toContain('>路径推进<');
     const video = workspaceMarkup({ renderStrategy: 'living-poster' });
     expect(video).toContain('上屏标题');
     expect(video).not.toContain('叙事动作');

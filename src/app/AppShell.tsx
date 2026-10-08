@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, Bell, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
+import { ArrowLeft, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
@@ -78,6 +78,7 @@ export function AppShell({
         <div className="window-title">
           <div className="app-mark">S</div>
           <strong>StoryDream</strong>
+          <span className="window-version">V1.0.0</span>
         </div>
         <Toolbar className="window-controls" aria-label="窗体控制" size="small">
           <Tooltip content="最小化">
@@ -94,15 +95,6 @@ export function AppShell({
 
       <div className="shell-grid">
         <aside className="sidebar">
-          <div className="brand-block">
-            <div className="brand-logo">S</div>
-            <div>
-              <strong>StoryDream</strong>
-              <span>V1.0.0</span>
-            </div>
-            <Bell size={16} className="brand-bell" />
-          </div>
-
           <Button
             className="new-task-button"
             variant="primary"

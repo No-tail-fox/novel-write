@@ -17,6 +17,8 @@ export interface BaseLlmJsonRequest {
   signal?: AbortSignal;
   jsonRoot?: 'object' | 'array';
   jsonMode?: 'required' | 'none';
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export interface OpenAiCompatibleJsonRequest extends BaseLlmJsonRequest {
@@ -319,11 +321,11 @@ export function createResponsesTextLlm(config: LlmConfig): OpenAiCompatibleTextL
 }
 
 async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleJsonRequest, body = buildRequestBody(config, request)): Promise<Response> {
-  const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
+  const maxAttempts = jsonRequestMaxAttempts(request);
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
-      timeoutMs: config.timeoutMs ?? 120_000,
+      timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
       maxBytes: LLM_RESPONSE_MAX_BYTES,
       signal: request.signal,
@@ -342,11 +344,11 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
 }
 
 async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig, request: AnthropicMessagesJsonRequest): Promise<Response> {
-  const maxAttempts = LLM_RETRY_DELAYS_MS.length + 1;
+  const maxAttempts = jsonRequestMaxAttempts(request);
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
-      timeoutMs: config.timeoutMs ?? 120_000,
+      timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
       maxBytes: LLM_RESPONSE_MAX_BYTES,
       signal: request.signal,
@@ -431,6 +433,11 @@ async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig
 }
 
 function textRequestMaxAttempts(request: Pick<BaseLlmTextRequest, 'maxRetries'>): number {
+  const retries = Number(request.maxRetries ?? LLM_RETRY_DELAYS_MS.length);
+  return Math.max(1, Math.floor(Number.isFinite(retries) ? retries : LLM_RETRY_DELAYS_MS.length) + 1);
+}
+
+function jsonRequestMaxAttempts(request: Pick<BaseLlmJsonRequest, 'maxRetries'>): number {
   const retries = Number(request.maxRetries ?? LLM_RETRY_DELAYS_MS.length);
   return Math.max(1, Math.floor(Number.isFinite(retries) ? retries : LLM_RETRY_DELAYS_MS.length) + 1);
 }

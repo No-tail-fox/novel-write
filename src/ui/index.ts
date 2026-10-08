@@ -14,6 +14,8 @@ export { Menu } from './Menu';
 export { Dialog } from './Dialog';
 export { Toolbar } from './Toolbar';
 export { Pane } from './Pane';
+export { HoverPreview } from './HoverPreview';
+export { PreviewSelectField } from './PreviewSelectField';
 
 export type { ButtonProps, ButtonVariant, ControlDensity } from './Button';
 export type { IconButtonProps } from './IconButton';
@@ -30,3 +32,5 @@ export type { MenuOption, MenuProps } from './Menu';
 export type { DialogProps } from './Dialog';
 export type { ToolbarProps } from './Toolbar';
 export type { PaneProps } from './Pane';
+export type { HoverPreviewProps } from './HoverPreview';
+export type { PreviewSelectFieldProps, PreviewSelectOption } from './PreviewSelectField';

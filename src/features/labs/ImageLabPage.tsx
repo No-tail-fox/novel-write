@@ -9,7 +9,9 @@ import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode } from '../../shared/types';
-import { smartImageModeOptions, styleOptions } from '../../shared/editorial-options';
+import { smartImageModeOptions } from '../../shared/editorial-options';
+import { Button, HoverPreview } from '../../ui';
+import { ImageStyleSample } from '../image-style-preview/ImageStylePreview';
 import { useAsyncAction } from '../../ui/async-action';
 import { formatDate, toLocalImageUrl } from '../tasks/task-formatters';
 import {
@@ -60,7 +62,7 @@ const defaultImageLabPrompt = '根据食谱内容，规划 2-3 张美食教程�
 export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult }) {
   const [workspaceDraft] = useState(() => readImageLabWorkspaceDraft(window.localStorage));
   const restoredRatios = workspaceDraft?.selectedRatios.filter((ratio) => imageLabRatioChoices.some(([value]) => value === ratio)) ?? [];
-  const restoredStyles = workspaceDraft?.selectedStyles.filter((style) => styleOptions.some(([value]) => value === style)) ?? [];
+  const restoredStyles = workspaceDraft?.selectedStyles.filter((id) => state.customStyles.some(style => style.id === id)) ?? [];
   const [tab, setTab] = useState<ImageLabTab>(workspaceDraft?.tab ?? 'smart');
   const [smartMode, setSmartMode] = useState<ImageLabSmartMode>(workspaceDraft?.smartMode ?? 'podcast-cover');
   const [prompt, setPrompt] = useState(workspaceDraft ? workspaceDraft.prompt : defaultImageLabPrompt);
@@ -428,11 +430,14 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                 <small>已选 {selectedStyles.length}</small>
               </div>
               <div className="image-lab-style-grid">
-                {styleOptions.map(([value, label, hint]) => (
-                  <button key={value} className={selectedStyles.includes(value) ? 'selected' : ''} aria-pressed={selectedStyles.includes(value)} onClick={() => toggleStyle(value)} type="button" title={hint}>
-                    <strong>{label}</strong>
-                    <small>{hint}</small>
-                  </button>
+                {state.customStyles.map(style => (
+                  <HoverPreview key={style.id} title={style.name} description={style.description} renderPreview={() => <ImageStyleSample style={style} />}>
+                  <Button variant="subtle" className={selectedStyles.includes(style.id) ? 'selected' : ''} aria-pressed={selectedStyles.includes(style.id)} onClick={() => toggleStyle(style.id)}>
+                    <ImageStyleSample style={style} thumbnail />
+                    <strong>{style.name}</strong>
+                    <small>{style.description}</small>
+                  </Button>
+                  </HoverPreview>
                 ))}
               </div>
             </div>

@@ -205,7 +205,6 @@ export function inspectMotionComicShotConsistency(
   shot: MotionComicShot,
 ): MotionComicShotConsistencyCheck {
   const missingTargets: string[] = [];
-  if (shot.characterLookIds.length === 0) missingTargets.push('角色造型未绑定');
   if (!shot.sceneAssetId) missingTargets.push('场景未绑定');
   shotReferenceTargets(shot).forEach((target) => {
     const fixed = fixedMotionComicReferenceAsset(document, referenceIdsForTarget(document, target));
@@ -227,7 +226,6 @@ export function motionComicConsistencySummary(document: MotionComicPipelineData)
   const missingTargets = targets
     .filter((target) => !fixedMotionComicReferenceAsset(document, referenceIdsForTarget(document, target)))
     .map((target) => referenceTargetLabel(document, target));
-  if (shots.some((shot) => shot.characterLookIds.length === 0)) missingTargets.push('角色造型未绑定');
   if (shots.some((shot) => !shot.sceneAssetId)) missingTargets.push('场景未绑定');
   const shotChecks = shots.map((shot) => inspectMotionComicShotConsistency(document, shot));
   const fixedIds = new Set(targets.flatMap((target) => {

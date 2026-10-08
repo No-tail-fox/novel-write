@@ -7,6 +7,7 @@ import { ToggleField } from '../../components/ToggleField';
 import { EmptyState } from '../../components/EmptyState';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
+import { ImageStylePicker } from '../image-style-preview/ImageStylePreview';
 import type { RendererAppState as AppState, ApplyMutationResult } from '../../app/route-types';
 import {
   countVisibleCharacters,
@@ -1208,11 +1209,7 @@ export function NewTaskPage({
                     {taskPromptTemplateOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${hint}` : label}</option>)}
                   </select>
                 </Field>
-                <Field label="画面风格" hint={styleLabel(style, state.customStyles)}>
-                  <select value={style} onChange={(event) => handleStyleChange(event.target.value)}>
-                    {imageTemplateStyleOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${hint}` : label}</option>)}
-                  </select>
-                </Field>
+                <ImageStylePicker value={style} onChange={handleStyleChange} styles={state.customStyles} options={imageTemplateStyleOptions} />
               </div>
               <div className="new-task-field-grid">
                 <Field label="草稿模板" hint={draftTemplateLabel(templateId, state.draftTemplates)}>

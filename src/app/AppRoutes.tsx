@@ -7,6 +7,7 @@ import type { ApplyMutationResult, RendererAppState as AppState } from './route-
 import type { SettingsSection } from '../features/settings/SettingsPage';
 import { createProjectHomeSession } from '../features/projects/project-home-session';
 import type { MusicMvHandoff } from '../features/music-mv/music-mv-handoff';
+import type { VideoModelPreset } from '../shared/video-models';
 
 const {
   'projects': ProjectHomePage,
@@ -93,6 +94,7 @@ export function AppRoutes({
 }) {
   const [projectHomeSession] = useState(createProjectHomeSession);
   const [musicMvHandoff, setMusicMvHandoff] = useState<MusicMvHandoff>();
+  const [videoSettingsPreset, setVideoSettingsPreset] = useState<VideoModelPreset>();
   return (
     <Suspense fallback={<RouteLoadingState />}>
       {activeView === 'projects' ? (
@@ -126,7 +128,7 @@ export function AppRoutes({
       {activeView === 'task-detail' ? <TaskDetailPage api={api} state={state} task={selectedTask} applyState={applyState} openTemplateManager={() => navigate('draft-templates')} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'image-lab' ? <ImageLabPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'voice-lab' ? <VoiceLabPage api={api} state={state} applyState={applyState} /> : null}
-      {activeView === 'video-lab' ? <VideoLabPage api={api} state={state} openSettings={() => openSettings('video', 'video-lab')} /> : null}
+      {activeView === 'video-lab' ? <VideoLabPage api={api} state={state} openSettings={(preset) => { setVideoSettingsPreset(preset); openSettings('video', 'video-lab'); }} /> : null}
       {activeView === 'music-lab' ? <MusicLabPage api={api} applyState={applyState} musicConfig={state.config.music} openSettings={() => openSettings('music', 'music-lab')} onUseInMv={(song) => { setMusicMvHandoff({ ...song, id: crypto.randomUUID() }); navigate('music-mv'); }} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, taskDetailReturnView)} isBrowserPreview={isBrowserPreview} initialMusic={musicMvHandoff} onInitialMusicHandled={(id) => setMusicMvHandoff((current) => current?.id === id ? undefined : current)} /> : null}
       {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
@@ -135,7 +137,7 @@ export function AppRoutes({
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'prompt-templates' ? <PromptTemplatesPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
-      {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} synchronizeThemeState={synchronizeThemeState} navigate={navigate} initialSection={initialSettingsSection} returnView={settingsReturnView} onReturn={returnFromSettings} /> : null}
+      {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} synchronizeThemeState={synchronizeThemeState} navigate={navigate} initialSection={initialSettingsSection} initialVideoPreset={settingsReturnView === 'video-lab' ? videoSettingsPreset : undefined} returnView={settingsReturnView} onReturn={returnFromSettings} /> : null}
       {activeView === 'account' ? <AccountPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'activation' ? <ActivationPage api={api} state={state} applyState={applyState} /> : null}
     </Suspense>

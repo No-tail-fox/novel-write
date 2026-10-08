@@ -11,7 +11,10 @@ import { hashSubtitleAlignment, invalidateSubtitleAlignment, isSubtitleAlignment
 import { EDITORIAL_MAX_DURATION_MS, planEditorialScript, type EditorialScriptDuration } from './editorial-script';
 import { MAX_PRODUCTION_HISTORY_ITEMS } from './production-history';
 import { createEditorialMotionLayers, editorialMotionDescription, selectEditorialMotionStyle, recomposeEditorialMotionLayers, type EditorialMotionStyle } from './editorial-motion';
+import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLE_IDS, type EditorialWritingStyleId } from './editorial-writing-styles';
 import { editorialContentTitle, editorialShotNarration, editorialShotTitle, normalizeEditorialStoryTitles, updateEditorialTitleLayers } from './editorial-storytelling';
+import { DEFAULT_EDITORIAL_TRANSITION, directorTransitionSchema, type DirectorTransition } from './director-transitions';
+import { buildEditorialScenePrompt } from './editorial-image-prompts';
 
 export const EDITORIAL_COLLAGE_TASK_TYPE = 'editorial-collage' as const;
 export const EDITORIAL_COLLAGE_PIPELINE_VERSION = 1 as const;
@@ -86,6 +89,8 @@ export interface EditorialCollageShot {
   /** Audience-facing copy, independent from the beat's outline role. Empty hides the title. */
   title?: string;
   motionStyle?: EditorialMotionStyle;
+  /** Incoming picture-only transition; omitted legacy settings use a short dissolve. */
+  transitionIn?: DirectorTransition;
   beatId: string;
   durationMs: number;
   renderStrategy: EditorialRenderStrategy;
@@ -137,6 +142,8 @@ export interface EditorialCollagePipelineData extends Omit<ProductionDocumentBas
   workflowKind: 'editorial-collage';
   /** Original authoring text retained so structural edits never lose content. */
   sourceText?: string;
+  writingStyleId?: EditorialWritingStyleId;
+  writingRequirements?: string;
   stage: EditorialCollageStage;
   styleCandidates: EditorialStyleCandidate[];
   selectedStyleId?: string;
@@ -154,6 +161,8 @@ export interface EditorialCollageDraftInput {
   title: string;
   ratio?: EditorialCollagePipelineData['ratio'];
   now?: string;
+  writingStyleId?: EditorialWritingStyleId;
+  writingRequirements?: string;
 }
 
 export interface EditorialCollageCreateInput {
@@ -161,6 +170,8 @@ export interface EditorialCollageCreateInput {
   sourceText: string;
   ratio?: EditorialCollagePipelineData['ratio'];
   durationMs?: EditorialCollageStarterDurationMs;
+  writingStyleId?: EditorialWritingStyleId;
+  writingRequirements?: string;
 }
 
 export interface EditorialCollageSaveInput {
@@ -270,6 +281,7 @@ const shotSchema = z.object({
   id: idSchema,
   title: z.string().max(512).optional(),
   motionStyle: z.enum(['cutout-slide', 'focus-reveal', 'comparison', 'evidence-stack', 'path-progress']).optional(),
+  transitionIn: directorTransitionSchema.optional(),
   beatId: idSchema,
   durationMs: nonNegativeNumber,
   renderStrategy: z.enum(EDITORIAL_RENDER_STRATEGIES),
@@ -405,6 +417,8 @@ export const editorialCollagePipelineSchema = z.object({
   workflowKind: z.literal(EDITORIAL_COLLAGE_TASK_TYPE),
   title: z.string().max(512),
   sourceText: boundedText().optional(),
+  writingStyleId: z.enum(EDITORIAL_WRITING_STYLE_IDS).optional(),
+  writingRequirements: boundedText(8_000).optional(),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
@@ -427,6 +441,8 @@ export const editorialCollageCreateInputSchema = z.object({
   sourceText: z.string().min(1).max(MAX_TEXT).refine((value) => value.trim().length > 0, 'A source text is required.'),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS).optional(),
   durationMs: z.union([z.literal(15_000), z.literal(30_000), z.literal(60_000), z.literal('auto')]).optional(),
+  writingStyleId: z.enum(EDITORIAL_WRITING_STYLE_IDS).optional(),
+  writingRequirements: boundedText(8_000).optional(),
 }).strict();
 
 export const editorialCollageSaveInputSchema = z.object({
@@ -442,6 +458,8 @@ export function createEditorialCollageDraft(input: EditorialCollageDraftInput): 
     id: input.id,
     workflowKind: EDITORIAL_COLLAGE_TASK_TYPE,
     title: input.title.trim(),
+    writingStyleId: input.writingStyleId ?? DEFAULT_EDITORIAL_WRITING_STYLE,
+    writingRequirements: input.writingRequirements,
     ratio: input.ratio ?? '9:16',
     createdAt: now,
     updatedAt: now,
@@ -516,7 +534,8 @@ export function createEditorialCollageStarterPlan(
         beatId,
         durationMs,
         renderStrategy: 'deterministic-layers',
-        scenePrompt: `${draft.ratio} editorial collage, ${narration}`,
+        transitionIn: { ...DEFAULT_EDITORIAL_TRANSITION },
+        scenePrompt: buildEditorialScenePrompt({ narration, ratio: draft.ratio, motionStyle: selectEditorialMotionStyle({ narration, index, evidence: plannedBeat.sectionIndex === 2 }) }),
         motionPrompt: editorialMotionDescription(selectEditorialMotionStyle({ narration, index, evidence: plannedBeat.sectionIndex === 2 })),
         layers,
         camera: [
@@ -547,7 +566,7 @@ export function createEditorialCollageStarterPlan(
       const evidence = plan.beats[beatIndex].sectionIndex === 2;
       const motionStyle = selectEditorialMotionStyle({ narration, index: indexInFilm, evidence });
       return {
-        ...shot, title, motionStyle, subtitleCueIds: cues.map((cue) => cue.id), scenePrompt: `${draft.ratio} editorial collage, ${narration || beat.narration || draft.title}`,
+        ...shot, title, motionStyle, subtitleCueIds: cues.map((cue) => cue.id), scenePrompt: buildEditorialScenePrompt({ narration: narration || beat.narration || draft.title, ratio: draft.ratio, motionStyle }),
         motionPrompt: editorialMotionDescription(motionStyle),
         layers: createEditorialMotionLayers({ shotId: id, narration: narration || beat.narration || draft.title, title, durationMs: shot.durationMs, ratio: draft.ratio, index: indexInFilm, evidence, motionStyle }),
       };

@@ -105,7 +105,8 @@ describe('director desk render strategy UI', () => {
     expect(mapper).toContain("videoJobStatus: videoJob?.status ?? 'idle'");
     expect(mapper).toContain('videoJobError: videoJob?.error');
     expect(mapper).toContain('videoEstimatedCost: videoJob?.actualCost ?? videoJob?.estimatedCost');
-    expect(mapper).toContain('const videoInputReady = Boolean(');
+    expect(mapper).toContain('const videoFrames = editorialVideoFrames(document, shot)');
+    expect(mapper).toContain('const videoInputReady = videoFrames.ready');
     expect(mapper).toMatch(/\bvideoInputReady,\s*\n/u);
   });
 

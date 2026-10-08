@@ -13,6 +13,14 @@
   letter-spacing: 0;
 }
 
+.sd-button--primary {
+  color: #ffffff !important;
+}
+
+.sd-button--primary * {
+  color: #ffffff !important;
+}
+
 .sd-button--danger {
   background: var(--danger);
   color: #ffffff;

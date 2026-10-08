@@ -69,6 +69,42 @@
   gap: 12px;
 }
 
+.video-lab-mode-field {
+  display: grid;
+  gap: 7px;
+  color: var(--shell-text);
+  font-size: var(--sd-text-caption);
+  font-weight: 600;
+}
+
+.video-lab-mode-field .sd-segmented-control {
+  width: 100%;
+}
+
+.video-lab-prompt-parts,
+.video-lab-reference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.video-lab-guidance {
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--shell-border);
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.video-lab-guidance summary {
+  cursor: pointer;
+  color: var(--shell-text);
+  font-size: var(--sd-text-caption);
+  font-weight: 600;
+}
+
+.video-lab-guidance[open] summary { margin-bottom: 8px; }
+.video-lab-guidance > p { margin-bottom: 8px; }
+
 .video-lab-image-section,
 .video-lab-submit,
 .video-lab-history {
@@ -121,20 +157,24 @@
   border-top: 1px solid var(--shell-border);
 }
 
-.video-lab-reference-grid {
+.video-lab-reference-list {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
-.video-lab-reference {
+.video-lab-reference-row {
   display: grid;
-  justify-items: end;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: start;
   min-width: 0;
-  gap: 3px;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+  background: var(--shell-surface);
 }
 
-.video-lab-reference img {
+.video-lab-reference-row img {
   width: 100%;
   aspect-ratio: 1;
   object-fit: contain;
@@ -142,6 +182,70 @@
   border-radius: var(--sd-radius);
   background: var(--shell-surface);
 }
+
+.video-lab-reference-remote {
+  display: flex;
+  width: 100%;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+  background: var(--shell-surface);
+  color: var(--shell-muted);
+  font-size: var(--sd-text-caption);
+}
+
+.video-lab-reference-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.video-lab-insert-reference { justify-self: start; }
+
+.video-lab-remote-reference {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.5fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.video-lab-media-references {
+  display: grid;
+  gap: 4px;
+}
+
+.video-lab-media-references > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--shell-border);
+  border-radius: var(--sd-radius);
+}
+
+.video-lab-media-references span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.video-lab-media-references strong,
+.video-lab-media-references small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--sd-text-caption);
+}
+
+.video-lab-media-references small { color: var(--shell-muted); }
 
 .video-lab-preview {
   display: grid;
@@ -277,4 +381,12 @@
   .video-lab-page { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   .video-lab-editor, .video-lab-results { overflow: visible; scrollbar-gutter: auto; }
   .video-lab-editor { padding-right: 0; padding-bottom: 16px; border-right: 0; border-bottom: 1px solid var(--shell-border); }
+}
+
+@media (max-width: 520px) {
+  .video-lab-parameters,
+  .video-lab-frame-grid,
+  .video-lab-reference-fields,
+  .video-lab-remote-reference { grid-template-columns: minmax(0, 1fr); }
+  .video-lab-insert-reference { grid-column: auto; }
 }

@@ -7,9 +7,13 @@ import { mergeDirectorSavedDocument } from '../../shared/director-document-sync'
 import { planEditorialScript } from '../../shared/editorial-script';
 import { editorialImageGenerationCount, editorialKeyframeAssetId, editorialShotImagesReady, editorialVideoFrames } from '../../shared/editorial-media';
 import { editorialRecipe } from '../../shared/editorial-recipe-catalog';
+import { EDITORIAL_IMAGE_REQUEST_OPTIONS } from '../../shared/editorial-image-prompts';
 import { applyEditorialRecipe, setEditorialLastFrame, setEditorialRecipeKeyframe } from '../../shared/editorial-recipes';
 import { EditorialRecipeInspector } from './EditorialRecipeInspector';
 import { editorialShotTitle } from '../../shared/editorial-storytelling';
+import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLES, editorialWritingStyle, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
+import { editorialStylePreview } from './editorial-style-previews';
+import { DirectorOptionPreview, DIRECTOR_CAMERA_OPTIONS, DIRECTOR_LAYOUT_OPTIONS, DIRECTOR_SUBTITLE_OPTIONS } from '../director-desk/DirectorOptionPreview';
 import { createProductionHistoryReservations, productionHistoryUsage, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../../shared/production-history';
 import type { ShellView } from '../../shared/types';
 import type { SettingsSection } from '../settings/SettingsPage';
@@ -42,7 +46,7 @@ import { AppError } from '../../shared/app-error';
 import { alignDirectorSubtitleCueFromTimestampFile, updateDirectorSubtitleCue, estimateDirectorSubtitleCue } from '../../shared/director-subtitles';
 import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech } from '../../shared/director-subtitle-structure';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { Button, CheckboxField, Dialog, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
+import { Button, CheckboxField, Dialog, PreviewSelectField, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorLayoutTemplate, type DirectorMotionPreset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
 import type { DirectorPreviewAudioClip } from '../director-desk/DirectorAudioPreview';
@@ -114,6 +118,7 @@ export function EditorialCollagePage({
   const [createTitle, setCreateTitle] = useState('');
   const [createSource, setCreateSource] = useState('');
   const [createRequirements, setCreateRequirements] = useState('');
+  const [createWritingStyleId, setCreateWritingStyleId] = useState<EditorialWritingStyleId>(DEFAULT_EDITORIAL_WRITING_STYLE);
   const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
   const [createRatio, setCreateRatio] = useState<EditorialCollagePipelineData['ratio']>('16:9');
   const [createDurationMs, setCreateDurationMs] = useState<EditorialCollageStarterDurationMs>('auto');
@@ -147,12 +152,13 @@ export function EditorialCollagePage({
   });
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
   const creationDraft = useWorkspaceDraft({
-    id: 'editorial-create', label: 'VOX 新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim()),
+    id: 'editorial-create', label: 'VOX 新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim() || createWritingStyleId !== DEFAULT_EDITORIAL_WRITING_STYLE),
     busy: projectAction.busy || copyAction.busy,
-    value: { createTitle, createSource, createRequirements, createRatio, createDurationMs: createDurationMs === 'auto' ? 30_000 : createDurationMs, createFullText: createDurationMs === 'auto', createStyleId, createLayoutTemplate, createMotionPreset, createVoiceId, createSubtitleStyle, createSeedLocked },
+    value: { createTitle, createSource, createRequirements, createWritingStyleId, createRatio, createDurationMs: createDurationMs === 'auto' ? 30_000 : createDurationMs, createFullText: createDurationMs === 'auto', createStyleId, createLayoutTemplate, createMotionPreset, createVoiceId, createSubtitleStyle, createSeedLocked },
     restore: (draft) => {
       setCreateTitle(draft.createTitle); setCreateSource(draft.createSource); setCreateRatio(draft.createRatio); setCreateDurationMs(draft.createFullText ? 'auto' : draft.createDurationMs); setCreateStyleId(draft.createStyleId);
       setCreateRequirements(draft.createRequirements);
+      setCreateWritingStyleId(editorialWritingStyle(draft.createWritingStyleId).id);
       setCreateLayoutTemplate(draft.createLayoutTemplate); setCreateMotionPreset(draft.createMotionPreset); setCreateVoiceId(draft.createVoiceId);
       setCreateSubtitleStyle(draft.createSubtitleStyle); setCreateSeedLocked(draft.createSeedLocked);
     },
@@ -232,13 +238,15 @@ export function EditorialCollagePage({
       return { id: asset?.id ?? job.id, label: `${layer?.label ?? '关键帧'} · 版本 ${index + 1}`, createdAt: job.updatedAt, provider: `${job.providerId} / ${job.model}`, thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined, selected: shots.find((shot) => shot.id === selectedShotId)?.linkedAssetIds?.includes(asset?.id ?? '') };
     }).reverse();
   }, [document, selectedShotId, shots]);
-  const jobs = useMemo<DirectorQueueItem[]>(() => (document?.providerJobs ?? []).filter((job) => job.capability === 'text-to-image' || job.capability === 'image-to-video' || job.capability === 'style-sample').slice().reverse().map((job) => {
+  const jobs = useMemo<DirectorQueueItem[]>(() => (document?.providerJobs ?? []).filter((job) => ['text-to-image', 'image-to-video', 'text-to-speech', 'style-sample', 'deterministic-render'].includes(job.capability)).slice().reverse().map((job) => {
     const shot = shots.find((candidate) => candidate.id === job.nodeId);
     const styleId = job.nodeId.startsWith('style-candidate:') ? job.nodeId.slice('style-candidate:'.length) : '';
     const style = styleId ? document?.styleCandidates.find((candidate) => candidate.id === styleId) : undefined;
     const isStyle = job.capability === 'style-sample';
     const asset = isStyle ? document?.assets.find((candidate) => candidate.providerJobId === job.id && candidate.kind === 'image') : undefined;
-    return { id: job.id, shotId: job.nodeId, kind: isStyle ? 'style-sample' as const : undefined, title: isStyle ? `${style?.label ?? '风格'} · 试片` : job.capability === 'image-to-video' ? `${shot?.title ?? '镜头'} · 动态海报` : shot?.title ?? '镜头生成', status: job.status === 'queued' ? 'waiting' : job.status === 'cancelled' ? 'failed' : job.status, progress: job.status === 'completed' ? 100 : 0, cost: job.actualCost ?? job.estimatedCost, provider: `${job.providerId} / ${job.model}`, thumbnail: isStyle && asset?.localPath ? toLocalImageUrl(asset.localPath) : shot?.thumbnail, error: job.error };
+    const kind: DirectorQueueItem['kind'] = isStyle ? 'style-sample' : job.capability === 'image-to-video' ? 'shot-video' : job.capability === 'text-to-speech' ? 'shot-voice' : job.capability === 'deterministic-render' ? 'project-render' : 'shot-image';
+    const title = kind === 'project-render' ? '整片合成' : isStyle ? `${style?.label ?? '风格'} · 试片` : `${shot?.title ?? '镜头'} · ${kind === 'shot-video' ? '图生视频' : kind === 'shot-voice' ? '旁白' : '图片'}`;
+    return { id: job.id, shotId: job.nodeId, kind, title, status: job.status === 'queued' ? 'waiting' : job.status === 'cancelled' ? 'failed' : job.status, progress: job.status === 'completed' ? 100 : 0, cost: job.actualCost ?? job.estimatedCost, provider: `${job.providerId} / ${job.model}`, thumbnail: isStyle && asset?.localPath ? toLocalImageUrl(asset.localPath) : shot?.thumbnail, error: job.error || (job.status === 'cancelled' ? '任务已取消，可以重新生成。' : undefined) };
   }), [document, shots]);
   // Do not persist a provider's fallback celebrity voice as if it had been
   // configured. The author can create a local project first and choose a
@@ -418,6 +426,7 @@ export function EditorialCollagePage({
           voiceSpeed: update.voiceSpeed ?? shot.voiceSpeed,
           layoutTemplate: update.layoutTemplate ?? shot.layoutTemplate,
           motionPreset: update.motionPreset ?? shot.motionPreset,
+          transitionIn: update.transitionIn ?? shot.transitionIn,
           camera: update.motionPreset ? editorialCameraPreset(update.durationMs ?? shot.durationMs, update.motionPreset) : shot.camera,
           subtitleStyle: update.subtitleStyle ?? shot.subtitleStyle,
           seed: update.seed ?? shot.seed,
@@ -578,10 +587,10 @@ export function EditorialCollagePage({
       const request = projectOpenRequestRef.current;
       setCopyAssistIntent(intent);
       try {
-        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'vox', intent, title: submitted.createTitle, copy: submitted.createSource, requirements: submitted.createRequirements, durationMs: submitted.createFullText ? 'auto' : submitted.createDurationMs }))
+        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'vox', intent, title: submitted.createTitle, copy: submitted.createSource, requirements: submitted.createRequirements, writingStyleId: submitted.createWritingStyleId, durationMs: submitted.createFullText ? 'auto' : submitted.createDurationMs }))
           .catch((error) => { throw normalizeDirectorCopyAssistError(error); });
         const latest = creationDraft.snapshot();
-        if (request !== projectOpenRequestRef.current || latest.createTitle !== submitted.createTitle || latest.createSource !== submitted.createSource || latest.createRequirements !== submitted.createRequirements || latest.createDurationMs !== submitted.createDurationMs || latest.createFullText !== submitted.createFullText) {
+        if (request !== projectOpenRequestRef.current || latest.createTitle !== submitted.createTitle || latest.createSource !== submitted.createSource || latest.createRequirements !== submitted.createRequirements || latest.createWritingStyleId !== submitted.createWritingStyleId || latest.createDurationMs !== submitted.createDurationMs || latest.createFullText !== submitted.createFullText) {
           throw new AppError('DIRECTOR_COPY_INPUT_CHANGED', '文案输入已修改，已保留当前内容。请基于当前内容重新生成。');
         }
         setCreateSource(result.copy);
@@ -612,7 +621,7 @@ export function EditorialCollagePage({
   async function createProject() {
     const submittedDraft = creationDraft.snapshot();
     const result = await projectAction.run(async () => {
-      const mutation = await api.createEditorialCollage({ title: createTitle, sourceText: createSource, ratio: createRatio, durationMs: createDurationMs });
+      const mutation = await api.createEditorialCollage({ title: createTitle, sourceText: createSource, ratio: createRatio, durationMs: createDurationMs, writingStyleId: createWritingStyleId, writingRequirements: createRequirements });
       applyState(mutation);
       if (!mutation || mutation.kind !== 'task-upsert') throw new Error('VOX 项目已保存，但未返回可打开的任务记录。');
       const task = await api.getTaskDetail(mutation.task.id);
@@ -627,7 +636,6 @@ export function EditorialCollagePage({
           ...beat,
           shots: beat.shots.map((shot) => ({
             ...shot,
-            scenePrompt: style ? `${style.prompt}. ${shot.scenePrompt}` : shot.scenePrompt,
             layoutTemplate: createLayoutTemplate,
             motionPreset: createMotionPreset,
             voiceId: createVoiceIdForProject,
@@ -774,11 +782,10 @@ export function EditorialCollagePage({
         id: recordId,
         prompt: input.prompt,
         ratio: input.ratio,
-        style: 'magazine',
+        ...EDITORIAL_IMAGE_REQUEST_OPTIONS,
         provider: providerStatus.provider,
         resolution: providerStatus.resolution,
         quality: providerStatus.quality,
-        smartMode: layerId ? 'text-to-image' : 'video-narration',
         ...(input.references.length ? { referenceImagePaths: input.references.map(reference => reference.path) } : {}),
         ...('layerKind' in input && input.layerKind && ['subject', 'archival'].includes(input.layerKind) ? { cutout: 'green' as const } : {}),
       });
@@ -819,11 +826,10 @@ export function EditorialCollagePage({
         id: recordId,
         prompt: input.prompt,
         ratio: input.ratio,
-        style: 'magazine',
+        ...EDITORIAL_IMAGE_REQUEST_OPTIONS,
         provider: providerStatus.provider,
         resolution: providerStatus.resolution,
         quality: providerStatus.quality,
-        smartMode: 'text-to-image',
       });
       applyState(mutation);
     } catch (error) {
@@ -938,12 +944,18 @@ export function EditorialCollagePage({
     let current = documentRef.current;
     if (!current) throw new Error('当前 VOX 项目不存在。');
     if (dirty) current = await enqueueProjectMutation(current.id, (latest) => latest);
-    const response = await api.renderDirectorProject({ id: current.id });
-    applyState(response.mutation);
-    const task = await api.getTaskDetail(current.id);
-    if (!task) throw new Error('VOX 成片已生成，但项目无法重新读取。');
-    const saved = parseEditorialCollagePipelineData(task.pipelineData);
-    acceptSavedDocument(saved, current);
+    try {
+      const response = await api.renderDirectorProject({ id: current.id });
+      applyState(response.mutation);
+      const task = await api.getTaskDetail(current.id);
+      if (!task) throw new Error('VOX 成片已生成，但项目无法重新读取。');
+      const saved = parseEditorialCollagePipelineData(task.pipelineData);
+      acceptSavedDocument(saved, current);
+    } catch (error) {
+      const task = await api.getTaskDetail(current.id).catch(() => null);
+      if (task) acceptSavedDocument(parseEditorialCollagePipelineData(task.pipelineData), current);
+      throw error;
+    }
   }
 
   async function exportAnimationShot(shotId:string) {
@@ -970,6 +982,7 @@ export function EditorialCollagePage({
       summary={[
         { label: '项目', value: createTitle },
         { label: '结构', value: createStructure },
+        { label: '文案风格', value: editorialWritingStyle(createWritingStyleId).label },
         { label: '画幅', value: createRatio },
         { label: '风格', value: EDITORIAL_STYLE_PRESETS.find((style) => style.id === createStyleId)?.label ?? '' },
         { label: '输出', value: '本地 MP4' },
@@ -983,6 +996,10 @@ export function EditorialCollagePage({
     >
       {createStep === 0 ? <>
         <TextField label="项目标题" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：拉萨旧城的回声" />
+        <PreviewSelectField label="文案创作风格" value={createWritingStyleId}
+          options={EDITORIAL_WRITING_STYLES.map((style) => ({ value: style.id, label: style.label, description: style.description, preview: () => <div className="editorial-writing-preview"><small>示例文案 · 旧书店</small><p>{style.example}</p></div> }))}
+          onChange={(value) => { setCreateWritingStyleId(editorialWritingStyle(value).id); copyAction.clearFeedback(); }}
+          hint="悬停查看同一主题的不同写法；风格会用于 AI 创作和 AI 修改，可在下方补充要求。" />
         <TextAreaField
           label="AI 创作要求"
           value={createRequirements}
@@ -1009,15 +1026,15 @@ export function EditorialCollagePage({
         <div className="director-structure-preview" aria-live="polite"><strong>{createStructure}</strong>{createPlan.plan ? <span>预计朗读至少 {formatScriptDuration(createPlan.plan.minimumDurationMs)} · {createReadingSpeed}</span> : null}</div>
       </> : null}
       {createStep === 1 ? <>
-        <SelectField label="视觉风格" value={createStyleId} options={EDITORIAL_STYLE_PRESETS.map((style) => ({ value: style.id, label: style.label }))} onChange={(event) => setCreateStyleId(event.target.value)} />
-        <SelectField label="版式模板" value={createLayoutTemplate} options={['对比拼贴 · 纸张撕裂', '纪录片 · 纯画面', '漫画分格 · 角色优先'].map((value) => ({ value, label: value }))} onChange={(event) => setCreateLayoutTemplate(event.target.value as DirectorLayoutTemplate)} />
-        <SelectField label="运动控制" value={createMotionPreset} options={['平移 + 缓慢推进', '轻微视差', '固定机位'].map((value) => ({ value, label: value }))} onChange={(event) => setCreateMotionPreset(event.target.value as DirectorMotionPreset)} />
+        <PreviewSelectField label="视觉风格" value={createStyleId} options={EDITORIAL_STYLE_PRESETS.map((style) => ({ value: style.id, label: style.label, description: editorialStylePreview(style.id)?.description, preview: () => <img src={editorialStylePreview(style.id)?.src} alt={`${style.label}风格示例`} /> }))} onChange={setCreateStyleId} />
+        <PreviewSelectField label="版式模板" value={createLayoutTemplate} options={DIRECTOR_LAYOUT_OPTIONS.map((value) => ({ value, label: value, preview: () => <DirectorOptionPreview kind="layout" value={value} ratio={createRatio} /> }))} onChange={(value) => setCreateLayoutTemplate(value as DirectorLayoutTemplate)} />
+        <PreviewSelectField label="运动控制" value={createMotionPreset} options={DIRECTOR_CAMERA_OPTIONS.map((value) => ({ value, label: value, preview: () => <DirectorOptionPreview kind="camera" value={value} ratio={createRatio} /> }))} onChange={(value) => setCreateMotionPreset(value as DirectorMotionPreset)} />
         <SelectField label="图片生成服务" value={selectedProviderProfileId} options={imageProviderOptions} disabled={providerAction.busy} onChange={(event) => void selectImageProvider(event.target.value)} />
         <CheckboxField label="锁定跨镜头 Seed 与风格参考" checked={createSeedLocked} onChange={(_, data) => setCreateSeedLocked(Boolean(data.checked))} />
       </> : null}
       {createStep === 2 ? <>
         <SelectField label="音色" value={createVoiceId} options={voiceStatus.voices.length ? [...voiceStatus.voices] : [{ value: '', label: '尚未配置旁白服务，请先配置音色' , disabled: true }]} disabled={!voiceStatus.connected} onChange={(event) => setCreateVoiceId(event.target.value)} />
-        <SelectField label="字幕样式" value={createSubtitleStyle} options={['简体中文 · 白色描边', '简体中文 · 下方黑底'].map((value) => ({ value, label: value }))} onChange={(event) => setCreateSubtitleStyle(event.target.value)} />
+        <PreviewSelectField label="字幕样式" value={createSubtitleStyle} options={DIRECTOR_SUBTITLE_OPTIONS.map((value) => ({ value, label: value, preview: () => <DirectorOptionPreview kind="subtitle" value={value} ratio={createRatio} /> }))} onChange={setCreateSubtitleStyle} />
         <div className="director-output-preview"><strong>本地成片输出</strong><span>创建后先进入镜头生成；图片和旁白完成后，可在导演台生成 MP4 并打开输出目录。</span></div>
       </> : null}
     </DirectorCreateWizard></div>;
@@ -1140,6 +1157,8 @@ export function EditorialCollagePage({
       onBackToTasks={() => navigate?.(returnView)}
     />
     <Dialog open={sourceOpen} onOpenChange={setSourceOpen} title="剧本原稿" actions={<Button onClick={() => setSourceOpen(false)}>关闭</Button>}>
+      <p className="editorial-recipe__hint">创作风格：{editorialWritingStyle(document.writingStyleId).label}{document.writingStyleId ? '' : '（旧项目未记录）'}</p>
+      {document.writingRequirements ? <TextAreaField label="已保存的创作要求" value={document.writingRequirements} readOnly rows={3} resize="none" /> : null}
       <TextAreaField label="原始文案" value={document.sourceText ?? ''} readOnly rows={14} resize="none" hint={document.sourceText === undefined ? '此旧项目未保存原稿' : `${document.sourceText.length.toLocaleString('zh-CN')} 字符`} />
     </Dialog>
   </div>;
@@ -1182,6 +1201,7 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     beatIndex: beat.index,
     title: editorialShotTitle(document, beat, shot),
     motionStyle: shot.motionStyle,
+    transitionIn: shot.transitionIn,
     scene: `VOX · ${beat.title.trim() || `节拍 ${beat.index}`}`,
     durationMs: shot.durationMs,
     framing: shot.layers.length > 1 ? '中景 / 叙事' : shot.subtitleCueIds.length > 0 ? '近景 / 细节' : '全景 / 建立',

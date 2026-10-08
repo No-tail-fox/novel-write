@@ -38,6 +38,8 @@ import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_RATIOS } 
 import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
 import { editorialCollageCreateInputSchema, editorialCollageSaveInputSchema } from './editorial-collage';
 import { motionComicCreateInputSchema, motionComicSaveInputSchema } from './motion-comic';
+import { motionComicEpisodePlanInputSchema } from './motion-comic-episode-planning';
+import { motionComicApplyPlanInputSchema, motionComicPlanInputSchema } from './motion-comic-planning';
 import { directorGenerateShotVideoRequestSchema } from './director-render';
 import { MAX_DIRECTOR_BATCH_SHOTS, MAX_DIRECTOR_BATCH_NODES, MAX_DIRECTOR_BATCH_DEPENDENCIES } from './director-batch-persistence';
 
@@ -634,6 +636,11 @@ const customStyleSchema = z
     description: z.string().max(MAX_TASK_TEXT),
     createdAt: z.string().max(128),
     updatedAt: z.string().max(128),
+    preview: z.object({
+      imagePath: nonEmptyText(MAX_IPC_PATH).refine((value) => !value.includes('\0'), 'Path contains a null byte.'),
+      styleSignature: z.string().max(MAX_TASK_TEXT * 6 + 64),
+      generatedAt: timestampSchema,
+    }).strict().optional(),
   })
   .strict();
 
@@ -891,6 +898,7 @@ export const ipcInputSchemas = {
   'custom-style:save': customStyleSchema,
   'viral:save-templates': z.object({ storyTemplate: promptTemplateSchema, imageTemplate: customStyleSchema }).strict(),
   'custom-style:generate-draft': z.object({ prompt: nonEmptyText(MAX_TASK_TEXT), baseStyle: customStyleSchema }).strict(),
+  'custom-style:generate-preview': customStyleSchema,
   'draft-template:save': draftTemplateSchema,
   'draft-template:list': cursorPageSchema,
   'draft-template:get-detail': idOnlySchema,
@@ -1008,6 +1016,9 @@ export const ipcInputSchemas = {
   'director:batch-delete': idOnlySchema,
   'motion-comic:create': motionComicCreateInputSchema,
   'motion-comic:save': motionComicSaveInputSchema,
+  'motion-comic:plan-episodes': motionComicEpisodePlanInputSchema,
+  'motion-comic:plan': motionComicPlanInputSchema,
+  'motion-comic:apply-plan': motionComicApplyPlanInputSchema,
   'director:render': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
   'director:cancel-render': idSchema,
   'vox:export-shot': z.object({id:idSchema,shotId:idSchema,expectedUpdatedAt:timestampSchema}).strict(),
@@ -1111,8 +1122,10 @@ export const ipcInputSchemas = {
   'task:get-artifacts': idOnlySchema,
   'task:media-url': z.object({ id: idSchema, path: pathSchema }).strict(),
   'asset:read-data-url': pathSchema,
-  'local-image:select': z.void(),
-  'local-audio:select': z.literal('managed-bgm').optional(),
+  'local-image:select': z.literal('video-reference').optional(),
+  'local-video:select': z.void(),
+  'motion-comic-source:select': z.void(),
+  'local-audio:select': z.enum(['managed-bgm', 'video-reference']).optional(),
   'local-subtitle-timestamps:select': z.void(),
   'local-folder:select': z.void(),
   'cookie-file:select': z.void(),

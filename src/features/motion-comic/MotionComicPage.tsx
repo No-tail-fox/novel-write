@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { ArrowLeft, BookOpenCheck, CheckCircle2, CircleAlert, ImageOff, ImagePlus, Images, Loader2, LockKeyhole, Pin, PinOff, Save, Settings2, ShieldCheck, Upload } from 'lucide-react';
+import { ArrowLeft, BookOpenCheck, CheckCircle2, ChevronRight, CircleAlert, Download, FileText, ImageOff, ImagePlus, Images, Layers3, Loader2, LockKeyhole, Pin, PinOff, Plus, Save, Scissors, Settings2, ShieldCheck, Upload, Users, Video, Volume2 } from 'lucide-react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { navigationReturnLabel } from '../../app/navigation';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
@@ -13,21 +13,30 @@ import {
   appendMotionComicEpisode,
   appendMotionComicScene,
   appendMotionComicShot,
-  MOTION_COMIC_RATIOS,
+  invalidateMotionComicShotVideo,
   parseMotionComicPipelineData,
+  renameMotionComicAct,
   removeMotionComicShot,
   reorderMotionComicShot,
+  resolveMotionComicSceneAct,
+  setMotionComicActBoundary,
+  splitMotionComicSourceEpisodes,
+  updateMotionComicRatio,
   updateMotionComicShotDuration,
+  type MotionComicAdaptationMode,
   type MotionComicEpisode,
   type MotionComicPipelineData,
   type MotionComicShot,
+  type MotionComicSourceKind,
+  type MotionComicSplitStrategy,
+  type MotionComicWorkflowStage,
 } from '../../shared/motion-comic';
 import { activeImageProfileId, enableImageProfile } from '../../shared/provider-profile-utils';
 import { AppError } from '../../shared/app-error';
 import { alignDirectorSubtitleCueFromTimestampFile, updateDirectorSubtitleCue, estimateDirectorSubtitleCue } from '../../shared/director-subtitles';
 import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech } from '../../shared/director-subtitle-structure';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { Button, CheckboxField, Pane, SegmentedControl, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, Pane, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { useAsyncAction, type AsyncActionFeedback } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
@@ -37,10 +46,33 @@ import { latestProductionProviderJob } from '../../shared/production-workflow';
 import { addDirectorSoundClip, removeDirectorSoundClip, updateDirectorAudioClip, type DIRECTOR_SOUND_TRACKS } from '../../shared/director-audio-edit';
 import { directorSoundClips, readDirectorSoundDuration } from '../director-desk/director-sound';
 import { motionComicDialogueCuesToGenerate, motionComicDialogueInput, motionComicDialogueInputMatches, updateMotionComicCharacterVoice } from '../../shared/motion-comic-dialogue';
-import { DirectorCopyAssist, DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
+import { DirectorCopyAssist, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
 import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
-import { applyMotionComicImageRecord, applyMotionComicVoiceRecord, directorImageInput, directorImageInputMatches, restoreMotionComicImageVersion, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../director-desk/director-generation';
+import { applyMotionComicImageRecord, applyMotionComicVoiceRecord, directorImageInput, directorImageInputMatches, restoreMotionComicImageVersion, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVideoProviderOptions, resolveDirectorVideoProviderStatus, resolveDirectorVoiceProviderStatus, type DirectorVideoProviderStatus } from '../director-desk/director-generation';
 import { attachMotionComicReference, createMotionComicReferenceAsset, fixedMotionComicReferenceAsset, imageLabRecordIdFromMutation, inspectMotionComicShotConsistency, motionComicConsistencyReady, motionComicConsistencySummary, motionComicReferenceAssets, motionComicReferenceVersionIds, referenceTargetLabel, setMotionComicFixedReference, type MotionComicReferenceKind, type MotionComicReferenceTarget } from './motion-comic-consistency';
+import { MotionComicPlanDialog } from './MotionComicPlanDialog';
+import {
+  createMotionComicRuleSplitEvidence,
+  motionComicSourceSplitEvidenceSchema,
+  type MotionComicSourceSplitEvidence,
+} from '../../shared/motion-comic-episode-planning';
+import {
+  isUntouchedMotionComicStarter,
+  nextUnplannedMotionComicSourceEpisodeId,
+  plannedMotionComicSourceEpisodeIds,
+  type MotionComicPlanResult,
+  type MotionComicPlanRecovery,
+  type MotionComicScriptFailure,
+  type MotionComicScriptDraft,
+  motionComicPlanRecoverySchema,
+  motionComicScriptFailureSchema,
+} from '../../shared/motion-comic-planning';
+import { MotionComicVideoReadiness } from './MotionComicVideoReadiness';
+import { MotionComicCreateFlow, type MotionComicEpisodeDraft } from './MotionComicCreateFlow';
+import { MotionComicProductionWorkspace, type MotionComicStageState } from './MotionComicProductionWorkspace';
+import { MotionComicEmptyStructuredPanel, MotionComicEpisodesPanel, MotionComicScenesPanel, MotionComicSourcePanel } from './MotionComicWorkflowPanels';
+import { resolveMotionComicActiveEpisodeReadiness, resolveMotionComicStageState } from './motion-comic-stage-state';
+import { invalidateMotionComicVideosForChangedInputs } from '../../shared/motion-comic-video';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
 import { confirmDirectorQualityReview, directorQualityReview, directorRenderOutputs } from '../../shared/director-render';
 import type { DirectorSubtitleRecheckRequest, DirectorMediaRecheckRequest } from '../../shared/director-render';
@@ -66,12 +98,17 @@ export function MotionComicPage({
 }) {
   const projectAction = useAsyncAction();
   const providerAction = useAsyncAction();
-  const copyAction = useAsyncAction();
+  const sourceFileAction = useAsyncAction();
+  const episodePlanningAction = useAsyncAction();
   const referenceAction = useAsyncAction();
+  const planningAction = useAsyncAction();
+  const planApplyAction = useAsyncAction();
   const [document, setDocument] = useState<MotionComicPipelineData | null>(null);
   const documentRef = useRef<MotionComicPipelineData | null>(null);
   const savedDocumentRef = useRef<MotionComicPipelineData | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const planRequestRef = useRef(0);
+  const episodePlanningRequestRef = useRef(0);
   const [activeProjectId, setActiveProjectId] = useState('');
   const [selectedShotId, setSelectedShotId] = useState('');
   const [loadingProjectId, setLoadingProjectId] = useState(() => requestedTaskId);
@@ -81,21 +118,31 @@ export function MotionComicPage({
   const [createOpen, setCreateOpen] = useState(() => !requestedTaskId);
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
-  const [createPremise, setCreatePremise] = useState('');
-  const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
-  const [createEpisodeTitle, setCreateEpisodeTitle] = useState('第一集');
   const [createRatio, setCreateRatio] = useState<MotionComicPipelineData['ratio']>('16:9');
-  const [createGenre, setCreateGenre] = useState('都市奇幻');
-  const [createTone, setCreateTone] = useState('悬念、克制、电影感');
-  const [createAudience, setCreateAudience] = useState('短视频剧情观众');
-  const [createProtagonist, setCreateProtagonist] = useState('主角');
-  const [createCounterpart, setCreateCounterpart] = useState('关键人物');
-  const [createLocation, setCreateLocation] = useState('故事起点');
-  const [createWorldRules, setCreateWorldRules] = useState('异常规则必须可追踪，不能为反转临时改写。');
-  const [createVisualRules, setCreateVisualRules] = useState('角色脸型、发型、服装和关键配饰跨镜头保持一致。\n同一场景保持主光方向、天气和色温连续。');
-  const [createVoiceId, setCreateVoiceId] = useState('');
-  const [createSubtitleStyle, setCreateSubtitleStyle] = useState('简体中文 · 白色描边');
-  const [createSeedLocked, setCreateSeedLocked] = useState(true);
+  const [createSourceKind, setCreateSourceKind] = useState<MotionComicSourceKind>('script');
+  const [createAdaptationMode, setCreateAdaptationMode] = useState<MotionComicAdaptationMode>('faithful-script');
+  const [createSourceFileName, setCreateSourceFileName] = useState('');
+  const [createSourceText, setCreateSourceText] = useState('');
+  const [createTargetCharacters, setCreateTargetCharacters] = useState('2400');
+  const [createTargetDurationSec, setCreateTargetDurationSec] = useState('');
+  const [createSplitInstructions, setCreateSplitInstructions] = useState('');
+  const [createSplitStrategy, setCreateSplitStrategy] = useState<MotionComicSplitStrategy>('chapter');
+  const [createEpisodeDrafts, setCreateEpisodeDrafts] = useState<MotionComicEpisodeDraft[]>([]);
+  const [createSplitEvidence, setCreateSplitEvidence] = useState<MotionComicSourceSplitEvidence | null>(null);
+  const [createSplitWarnings, setCreateSplitWarnings] = useState<string[]>([]);
+  const [workflowStage, setWorkflowStage] = useState<MotionComicWorkflowStage>('source');
+  const [selectedSourceEpisodeId, setSelectedSourceEpisodeId] = useState('');
+  const [sceneSourcePreviewId, setSceneSourcePreviewId] = useState('');
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planSourceText, setPlanSourceText] = useState('');
+  const [planInstructions, setPlanInstructions] = useState('');
+  const [planTargetDurationSec, setPlanTargetDurationSec] = useState('');
+  const [planResult, setPlanResult] = useState<MotionComicPlanResult | null>(null);
+  const [planRecovery, setPlanRecovery] = useState<MotionComicPlanRecovery | null>(null);
+  const [planScriptFailure, setPlanScriptFailure] = useState<MotionComicScriptFailure | null>(null);
+  const [planDraftSaveError, setPlanDraftSaveError] = useState('');
+  const [planApplyMode, setPlanApplyMode] = useState<'append' | 'replace'>('append');
+  const [planningSourceEpisodeId, setPlanningSourceEpisodeId] = useState('');
   const [dirty, setDirty] = useState(false);
   const projectLeave = useUnsavedChanges({
     id: 'motion-comic-project', label: 'AI 漫剧项目', dirty, busy: projectAction.busy,
@@ -106,20 +153,102 @@ export function MotionComicPage({
       setDirty(false);
     },
   });
-  const [seriesSettingsOpen, setSeriesSettingsOpen] = useState(false);
   const [referenceTargetId, setReferenceTargetId] = useState('');
   const creationDraft = useWorkspaceDraft({
-    id: 'motion-comic-create', label: 'AI 漫剧新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createPremise.trim()),
-    busy: projectAction.busy || copyAction.busy,
-    value: { createTitle, createPremise, createEpisodeTitle, createRatio, createGenre, createTone, createAudience, createProtagonist, createCounterpart, createLocation, createWorldRules, createVisualRules, createVoiceId, createSubtitleStyle, createSeedLocked },
+    id: 'motion-comic-create', label: 'AI 漫剧新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSourceText.trim()),
+    busy: projectAction.busy || sourceFileAction.busy || episodePlanningAction.busy,
+    value: {
+      createTitle,
+      createRatio,
+      createSourceKind,
+      createAdaptationMode,
+      createSourceFileName,
+      createSourceText,
+      createTargetCharacters,
+      createTargetDurationSec,
+      createSplitInstructions,
+      createSplitStrategy,
+      createEpisodeDraftsJson: JSON.stringify(createEpisodeDrafts),
+      createSplitEvidenceJson: JSON.stringify(createSplitEvidence),
+      createSplitWarningsJson: JSON.stringify(createSplitWarnings),
+    },
     restore: (draft) => {
-      setCreateTitle(draft.createTitle); setCreatePremise(draft.createPremise); setCreateEpisodeTitle(draft.createEpisodeTitle); setCreateRatio(draft.createRatio);
-      setCreateGenre(draft.createGenre); setCreateTone(draft.createTone); setCreateAudience(draft.createAudience); setCreateProtagonist(draft.createProtagonist);
-      setCreateCounterpart(draft.createCounterpart); setCreateLocation(draft.createLocation); setCreateWorldRules(draft.createWorldRules); setCreateVisualRules(draft.createVisualRules);
-      setCreateVoiceId(draft.createVoiceId); setCreateSubtitleStyle(draft.createSubtitleStyle); setCreateSeedLocked(draft.createSeedLocked);
+      setCreateTitle(draft.createTitle); setCreateRatio(draft.createRatio); setCreateSourceKind(draft.createSourceKind);
+      setCreateAdaptationMode(draft.createAdaptationMode); setCreateSourceFileName(draft.createSourceFileName); setCreateSourceText(draft.createSourceText);
+      setCreateTargetCharacters(draft.createTargetCharacters);
+      setCreateTargetDurationSec(draft.createTargetDurationSec);
+      setCreateSplitInstructions(draft.createSplitInstructions);
+      setCreateSplitStrategy(draft.createSplitStrategy === 'length' || draft.createSplitStrategy === 'ai-story' ? draft.createSplitStrategy : 'chapter');
+      try {
+        const parsed: unknown = JSON.parse(draft.createEpisodeDraftsJson);
+        setCreateEpisodeDrafts(Array.isArray(parsed) ? parsed.filter((item): item is MotionComicEpisodeDraft => Boolean(item && typeof item === 'object' && typeof (item as { title?: unknown }).title === 'string' && typeof (item as { sourceText?: unknown }).sourceText === 'string')) : []);
+      } catch {
+        setCreateEpisodeDrafts([]);
+      }
+      try {
+        const parsed = motionComicSourceSplitEvidenceSchema.safeParse(JSON.parse(draft.createSplitEvidenceJson));
+        setCreateSplitEvidence(parsed.success ? parsed.data : null);
+      } catch {
+        setCreateSplitEvidence(null);
+      }
+      try {
+        const parsed: unknown = JSON.parse(draft.createSplitWarningsJson);
+        setCreateSplitWarnings(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string').slice(0, 20) : []);
+      } catch {
+        setCreateSplitWarnings([]);
+      }
+    },
+  });
+  const planningDraft = useWorkspaceDraft({
+    id: `motion-comic-plan-${activeProjectId || 'new'}`,
+    label: 'AI 漫剧新集规划',
+    enabled: planOpen && Boolean(planSourceText.trim()),
+    busy: planningAction.busy || planApplyAction.busy,
+    value: { planSourceText, planInstructions, planTargetDurationSec, planningSourceEpisodeId, planRecoveryJson: JSON.stringify(planRecovery), planScriptFailureJson: JSON.stringify(planScriptFailure) },
+    restore: (draft) => {
+      setPlanSourceText(draft.planSourceText);
+      setPlanInstructions(draft.planInstructions);
+      setPlanTargetDurationSec(draft.planTargetDurationSec);
+      setPlanningSourceEpisodeId(draft.planningSourceEpisodeId);
+      try {
+        const parsed = motionComicPlanRecoverySchema.safeParse(JSON.parse(draft.planRecoveryJson));
+        setPlanRecovery(parsed.success && parsed.data.projectId === activeProjectId ? parsed.data : null);
+      } catch { setPlanRecovery(null); }
+      try {
+        const parsed = motionComicScriptFailureSchema.safeParse(JSON.parse(draft.planScriptFailureJson));
+        setPlanScriptFailure(parsed.success && parsed.data.projectId === activeProjectId ? parsed.data : null);
+      } catch { setPlanScriptFailure(null); }
+      setPlanResult(null);
     },
   });
   const [brokenReferenceIds, setBrokenReferenceIds] = useState<Set<string>>(() => new Set());
+  const [copyAssistIntent, setCopyAssistIntent] = useState<DirectorCopyAssistIntent | null>(null);
+  const copyAction = useAsyncAction();
+
+  async function runCopyAssist(intent: DirectorCopyAssistIntent) {
+    if (!document) return;
+    setCopyAssistIntent(intent);
+    const submitted = { createTitle: document.title, createPremise: document.series.premise };
+    const result = await copyAction.run(async () => {
+      try {
+        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({
+          mode: 'motion-comic',
+          intent,
+          title: submitted.createTitle,
+          copy: submitted.createPremise,
+        })).catch((error) => { throw normalizeDirectorCopyAssistError(error); });
+        if (result?.copy?.trim()) {
+          mutateDocument((current) => ({
+            ...current,
+            series: { ...current.series, premise: result.copy.trim() },
+          }));
+        }
+      } finally {
+        setCopyAssistIntent(null);
+      }
+    });
+    if (!result.ok) setCopyAssistIntent(null);
+  }
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
 
   const projects = useMemo(() => state.tasks.filter((task) => task.taskType === 'motion-comic' && !task.archivedAt).slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)), [state.tasks]);
@@ -131,8 +260,29 @@ export function MotionComicPage({
     disabled: !profile.connected || !profile.supportsReferenceImages,
   })), [providerProfiles]);
   const voiceStatus = useMemo(() => resolveDirectorVoiceProviderStatus(state.config, state.secretStatus), [state.config, state.secretStatus]);
-  const activeEpisode = document?.episodes.find((episode) => episode.id === document.activeEpisodeId) ?? document?.episodes[0] ?? null;
-  const shots = useMemo(() => activeEpisode ? activeEpisode.scenes.flatMap((scene) => scene.shots.map((shot) => directorShotFromComic(activeEpisode, scene.title, shot, document))).map((shot, index) => ({ ...shot, index: index + 1 })) : [], [activeEpisode, document]);
+  const videoProviderOptions = useMemo(() => resolveDirectorVideoProviderOptions(state.config, state.secretStatus), [state.config, state.secretStatus]);
+  const committedVideoCost = useMemo(() => (document?.providerJobs ?? [])
+    .filter((job) => job.capability === 'image-to-video')
+    .reduce((total, job) => job.actualCost !== undefined
+      ? total + job.actualCost
+      : ['failed', 'cancelled'].includes(job.status) ? total : total + job.estimatedCost, 0), [document?.providerJobs]);
+  const selectedUnplannedSource = workflowStage === 'scenes'
+    ? document?.sourceDocument?.episodes.find((source) => source.id === sceneSourcePreviewId
+      && !document.episodes.some((episode) => episode.planningEvidence?.sourceEpisodeId === source.id
+        || episode.planningEvidence?.sourceText.trim() === source.sourceText.trim()))
+    : undefined;
+  const activeEpisode: MotionComicEpisode | null = selectedUnplannedSource && document ? {
+    id: selectedUnplannedSource.id, seriesId: document.series.id, number: selectedUnplannedSource.number,
+    title: selectedUnplannedSource.title, logline: '', script: selectedUnplannedSource.sourceText,
+    status: 'draft', scenes: [], dialogueCues: [], timeline: { durationMs: 0, clips: [], audioAssetVersionIds: [] },
+  } : document?.episodes.find((episode) => episode.id === document.activeEpisodeId) ?? document?.episodes[0] ?? null;
+  const videoProviderStatuses = useMemo(() => new Map((activeEpisode?.scenes ?? []).flatMap((scene) => scene.shots.map((shot) => [
+    shot.id,
+    resolveDirectorVideoProviderStatus(state.config, state.secretStatus, { durationMs: shot.durationMs, committedCost: committedVideoCost, requiresLastFrame: Boolean(shot.lastFrameAssetVersionId) }),
+  ] as const))), [activeEpisode?.scenes, committedVideoCost, state.config, state.secretStatus]);
+  const selectedVideoProviderStatus = videoProviderStatuses.get(selectedShotId || activeEpisode?.scenes[0]?.shots[0]?.id || '')
+    ?? resolveDirectorVideoProviderStatus(state.config, state.secretStatus, { durationMs: activeEpisode?.scenes[0]?.shots[0]?.durationMs ?? 1_000, committedCost: committedVideoCost });
+  const shots = useMemo(() => activeEpisode ? activeEpisode.scenes.flatMap((scene) => scene.shots.map((shot) => directorShotFromComic(activeEpisode, scene.title, shot, document, videoProviderStatuses.get(shot.id)))).map((shot, index) => ({ ...shot, index: index + 1 })) : [], [activeEpisode, document, videoProviderStatuses]);
   const renderOutputs = useMemo(() => document ? directorRenderOutputs(document, activeEpisode?.id) : { history: [], current: undefined }, [activeEpisode?.id, document]);
   const qualityReview = useMemo(() => document ? directorQualityReview(document, activeEpisode?.id) : undefined, [activeEpisode?.id, document]);
   const outputAsset = renderOutputs.current;
@@ -145,6 +295,7 @@ export function MotionComicPage({
     return document.assets.filter((asset) => referenceIds.has(asset.id) && asset.selected && asset.pinned && brokenReferenceIds.has(asset.id)).length;
   }, [brokenReferenceIds, document]);
   const displayedConsistencyReady = Boolean(consistencySummary?.ready && brokenFixedReferenceCount === 0);
+  const canReplaceStarter = useMemo(() => document ? isUntouchedMotionComicStarter(document) : false, [document]);
   const displayedMissingTargets = [...(consistencySummary?.missingTargets ?? []), ...(brokenFixedReferenceCount > 0 ? [`${brokenFixedReferenceCount} 个固定参考文件不可用`] : [])];
   const providerReady = providerStatus.connected && providerStatus.supportsReferenceImages;
   const providerUnavailableReason = !providerStatus.connected
@@ -183,39 +334,59 @@ export function MotionComicPage({
       return { id: asset?.id ?? job.id, label: `关键帧版本 ${index + 1}`, createdAt: job.updatedAt, provider: `${job.providerId} / ${job.model}`, thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined, selected: shots.find((shot) => shot.id === selectedShotId)?.linkedAssetIds?.includes(asset?.id ?? '') };
     }).reverse();
   }, [document, selectedShotId, shots]);
-  const jobs = useMemo<DirectorQueueItem[]>(() => (document?.providerJobs ?? []).filter((job) => job.capability === 'text-to-image').slice().reverse().map((job) => {
+  const jobs = useMemo<DirectorQueueItem[]>(() => (document?.providerJobs ?? []).filter((job) => ['text-to-image', 'image-to-video', 'text-to-speech', 'deterministic-render'].includes(job.capability)).slice().reverse().map((job) => {
     const shot = shots.find((candidate) => candidate.id === job.nodeId);
-    return { id: job.id, shotId: job.nodeId, title: shot?.title ?? '关键帧生成', status: job.status === 'queued' ? 'waiting' : job.status === 'cancelled' ? 'failed' : job.status, progress: job.status === 'completed' ? 100 : 0, cost: job.actualCost ?? job.estimatedCost, provider: `${job.providerId} / ${job.model}`, thumbnail: shot?.thumbnail, error: job.error };
+    const kind: DirectorQueueItem['kind'] = job.capability === 'image-to-video' ? 'shot-video' : job.capability === 'text-to-speech' ? 'shot-voice' : job.capability === 'deterministic-render' ? 'project-render' : 'shot-image';
+    const fallbackTitle = kind === 'shot-video' ? '远程视频' : kind === 'shot-voice' ? '对白配音' : kind === 'project-render' ? '整片合成' : '关键帧生成';
+    return { id: job.id, shotId: job.nodeId, kind, title: shot ? `${shot.title} · ${fallbackTitle}` : fallbackTitle, status: job.status === 'queued' ? 'waiting' : job.status === 'cancelled' ? 'failed' : job.status, progress: job.status === 'completed' ? 100 : 0, cost: job.actualCost ?? job.estimatedCost, provider: `${job.providerId} / ${job.model}`, thumbnail: shot?.thumbnail, error: job.error };
   }), [document?.providerJobs, shots]);
-  // A default speaker id is useful for provider requests, but must not look
-  // like a configured/selected voice while the TTS service is disconnected.
-  const createVoiceIdForProject = voiceStatus.connected ? (createVoiceId || voiceStatus.voiceId) : undefined;
-  const createVoiceLabel = voiceStatus.connected
-    ? voiceStatus.voices.find((voice) => voice.value === createVoiceIdForProject)?.label ?? createVoiceIdForProject
-    : undefined;
+  const activeEpisodeReadiness = useMemo(() => document ? resolveMotionComicActiveEpisodeReadiness(document) : null, [document]);
   const completedStages = useMemo(() => {
     if (!document) return [];
     const completed: string[] = [];
     if (document.series.premise.trim()) completed.push('剧本');
     if (activeEpisode?.scenes.length) completed.push('画面拆解');
-    if (motionComicConsistencyReady(document)) completed.push('素材一致性');
-    const sourceShots = activeEpisode?.scenes.flatMap((scene) => scene.shots) ?? [];
-    if (sourceShots.length > 0 && sourceShots.every((shot) => shot.firstFrameAssetVersionId && document.assets.some((asset) => asset.id === shot.firstFrameAssetVersionId && asset.kind === 'image'))) completed.push('镜头生成');
-    if (sourceShots.length > 0 && sourceShots.every((shot) => {
-      const cueIds = shot.dialogueCueIds;
-      return cueIds.length > 0 && cueIds.every((cueId) => {
-        const cue = activeEpisode?.dialogueCues.find((candidate) => candidate.id === cueId);
-        const assetId = cue?.voiceAssetVersionId ?? shot.voiceAssetVersionId;
-        return Boolean(assetId && document.assets.some((asset) => asset.id === assetId && asset.kind === 'audio'));
-      });
-    })) completed.push('配音字幕');
+    if (activeEpisodeReadiness?.consistencyComplete) completed.push('素材一致性');
+    if (activeEpisodeReadiness?.generationComplete) completed.push('镜头生成');
+    if (activeEpisodeReadiness?.audioComplete) completed.push('配音字幕');
     if (outputAsset) completed.push('导出');
     if (qualityReview?.freshness === 'current' && qualityReview.report?.status === 'passed'
       && qualityReview.report.checks.every((check) => check.status === 'passed' || check.status === 'waived')) completed.push('审片');
     return completed;
-  }, [activeEpisode?.scenes.length, document, outputAsset, qualityReview, shots]);
-  const actionError = providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : referenceAction.feedback?.tone === 'error' ? referenceAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined;
-  const actionFeedback = providerAction.feedback?.tone === 'success' ? providerAction.feedback.message : projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined;
+  }, [activeEpisode?.scenes.length, activeEpisodeReadiness, document, outputAsset, qualityReview]);
+  const plannedSourceEpisodeIds = useMemo(() => document ? plannedMotionComicSourceEpisodeIds(document) : new Set<string>(), [document]);
+  const nextSourceEpisodeId = useMemo(() => document ? nextUnplannedMotionComicSourceEpisodeId(document) : undefined, [document]);
+  const selectedSourceEpisode = document?.sourceDocument?.episodes.find((episode) => episode.id === selectedSourceEpisodeId)
+    ?? document?.sourceDocument?.episodes[0]
+    ?? null;
+  const currentPlanRecovery = planRecovery !== null && planRecovery.projectId === document?.id
+    && planRecovery.sourceText === planSourceText.trim()
+    && planRecovery.instructions === planInstructions.trim()
+    && planRecovery.targetDurationSec === (planTargetDurationSec.trim() ? Number(planTargetDurationSec) : undefined)
+    ? planRecovery : null;
+  const currentPlanScriptFailure = planScriptFailure !== null && planScriptFailure.projectId === document?.id
+    && planScriptFailure.sourceText === planSourceText.trim()
+    && planScriptFailure.instructions === planInstructions.trim()
+    && planScriptFailure.targetDurationSec === (planTargetDurationSec.trim() ? Number(planTargetDurationSec) : undefined)
+    ? planScriptFailure : null;
+  const stageState = useMemo<Record<MotionComicWorkflowStage, MotionComicStageState>>(() => {
+    if (!document) {
+      return Object.fromEntries([
+        'source', 'episodes', 'scenes', 'assets', 'storyboard', 'video', 'audio', 'export',
+      ].map((stage) => [stage, { ready: stage === 'source', complete: false, detail: '等待打开项目' }])) as Record<MotionComicWorkflowStage, MotionComicStageState>;
+    }
+    const stages = resolveMotionComicStageState(document, plannedSourceEpisodeIds, Boolean(outputAsset));
+    if (selectedUnplannedSource) {
+      for (const stage of ['assets', 'storyboard', 'video', 'audio', 'export'] as const) {
+        stages[stage] = { ready: false, complete: false, detail: '当前分集尚未完成结构化' };
+      }
+      stages.scenes = { ready: true, complete: false, detail: `第 ${selectedUnplannedSource.number} 集待结构化` };
+    }
+    return stages;
+  }, [document, outputAsset, plannedSourceEpisodeIds, selectedUnplannedSource]);
+  const actionError = sourceFileAction.feedback?.tone === 'error' ? sourceFileAction.feedback.message : episodePlanningAction.feedback?.tone === 'error' ? episodePlanningAction.feedback.message : providerAction.feedback?.tone === 'error' ? providerAction.feedback.message : referenceAction.feedback?.tone === 'error' ? referenceAction.feedback.message : projectAction.feedback?.tone === 'error' ? projectAction.feedback.message : undefined;
+  const actionFeedback = sourceFileAction.feedback?.tone === 'success' ? sourceFileAction.feedback.message : episodePlanningAction.feedback?.tone === 'success' ? episodePlanningAction.feedback.message : providerAction.feedback?.tone === 'success' ? providerAction.feedback.message : projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined;
+  const planError = planApplyAction.feedback?.tone === 'error' ? planApplyAction.feedback.message : planningAction.feedback?.tone === 'error' ? planningAction.feedback.message : undefined;
   const systemStatusSummary = resolveMotionComicSystemStatus({
     actionError: Boolean(actionError),
     imageConnected: providerStatus.connected,
@@ -223,29 +394,34 @@ export function MotionComicPage({
     consistencyReady: displayedConsistencyReady,
     voiceConnected: voiceStatus.connected,
   });
-  const systemStatusTone = systemStatusSummary.tone;
-  const systemStatus = systemStatusSummary.label;
+  const videoRequired = Boolean(activeEpisode?.scenes.some((scene) => scene.shots.some((shot) => shot.renderStrategy === 'remote-video')));
+  const videoUnavailable = videoRequired && [...videoProviderStatuses.values()].some((status) => !status.connected);
+  const systemStatusTone = actionError ? 'error' : videoUnavailable ? 'warning' : systemStatusSummary.tone;
+  const systemStatus = actionError ? systemStatusSummary.label : videoUnavailable ? '远程视频服务待配置' : systemStatusSummary.label;
 
   useEffect(() => {
     if (!providerAction.busy) setSelectedProviderProfileId(activeImageProfileId(state.config));
   }, [providerAction.busy, state.config]);
 
   useEffect(() => {
-    if (!createVoiceId && voiceStatus.voices[0]?.value) setCreateVoiceId(voiceStatus.voices[0].value);
-  }, [createVoiceId, voiceStatus.voices]);
-
-  useEffect(() => {
     setBrokenReferenceIds(new Set());
+    setSceneSourcePreviewId('');
+    setPlanDraftSaveError('');
   }, [activeProjectId]);
 
   useEffect(() => () => {
     projectOpenRequestRef.current += 1;
+    planRequestRef.current += 1;
+    episodePlanningRequestRef.current += 1;
     generationRequestsRef.current.clear();
   }, []);
 
   const openProject = useCallback(async (taskId: string) => {
     const request = ++projectOpenRequestRef.current;
+    planRequestRef.current += 1;
     generationRequestsRef.current.clear();
+    setPlanOpen(false);
+    setPlanResult(null);
     setLoadingProjectId(taskId);
     const result = await projectAction.run(async () => {
       const task = await api.getTaskDetail(taskId);
@@ -261,6 +437,8 @@ export function MotionComicPage({
     setActiveProjectId(taskId);
     const openedEpisode = result.value.episodes.find((episode) => episode.id === result.value.activeEpisodeId) ?? result.value.episodes[0];
     setSelectedShotId(openedEpisode?.scenes[0]?.shots[0]?.id ?? '');
+    setSelectedSourceEpisodeId(nextUnplannedMotionComicSourceEpisodeId(result.value) ?? result.value.sourceDocument?.episodes[0]?.id ?? '');
+    setWorkflowStage(suggestMotionComicWorkflowStage(result.value));
     setCreateOpen(false);
     setDirty(false);
   }, [api, projectAction.run]);
@@ -273,7 +451,7 @@ export function MotionComicPage({
   function mutateDocument(update: (current: MotionComicPipelineData) => MotionComicPipelineData) {
     const current = documentRef.current;
     if (!current) return;
-    const next = update(current);
+    const next = invalidateMotionComicVideosForChangedInputs(current, update(current));
     documentRef.current = next;
     setDocument(next);
     setDirty(true);
@@ -316,7 +494,17 @@ export function MotionComicPage({
   }
 
   function updateShot(id: string, update: Partial<DirectorShot>) {
+    if (documentRef.current?.sourceDocument && update.renderStrategy !== undefined && update.renderStrategy !== 'living-poster') {
+      throw new Error('导入剧本创建的 AI 漫剧只允许使用远程视频 API。');
+    }
     const before = shots.find((shot) => shot.id === id);
+    const invalidatesVideo = Boolean(before && (
+      (update.prompt !== undefined && update.prompt !== before.prompt)
+      || (update.motionPrompt !== undefined && update.motionPrompt !== before.motionPrompt)
+      || (update.framing !== undefined && update.framing !== before.framing)
+      || (update.durationMs !== undefined && update.durationMs !== before.durationMs)
+      || (update.renderStrategy !== undefined && update.renderStrategy !== before.renderStrategy)
+    ));
     if (before && ((update.voiceId !== undefined && update.voiceId !== before.voiceId) || (update.voiceSpeed !== undefined && update.voiceSpeed !== before.voiceSpeed))) {
       mutateDocument((current) => invalidateDirectorShotSpeech(current, id));
     }
@@ -325,7 +513,7 @@ export function MotionComicPage({
       const base = owningEpisode && update.durationMs !== undefined && update.durationMs !== before?.durationMs
         ? updateMotionComicShotDuration(current, owningEpisode.id, id, update.durationMs)
         : current;
-      return {
+      const next: MotionComicPipelineData = {
         ...base,
         episodes: base.episodes.map((episode) => ({
           ...episode,
@@ -346,10 +534,12 @@ export function MotionComicPage({
               subtitleStyle: update.subtitleStyle ?? shot.subtitleStyle,
               seed: update.seed ?? shot.seed,
               seedLocked: update.seedLocked ?? shot.seedLocked,
-            })),
+              ...(update.renderStrategy !== undefined ? { renderStrategy: update.renderStrategy === 'living-poster' ? 'remote-video' as const : 'image-motion' as const } : {}),
+             })),
           })),
         })),
       };
+      return invalidatesVideo ? invalidateMotionComicShotVideo(next, id) : next;
     });
   }
 
@@ -360,7 +550,7 @@ export function MotionComicPage({
   }
 
   function updateRatio(ratio: MotionComicPipelineData['ratio']) {
-    mutateDocument((current) => ({ ...current, ratio }));
+    mutateDocument((current) => updateMotionComicRatio(current, ratio));
   }
 
   async function selectImageProvider(profileId: string) {
@@ -377,10 +567,35 @@ export function MotionComicPage({
     if (!result.ok) setSelectedProviderProfileId(previousProfileId);
   }
 
+  async function selectVideoProvider(providerId: string) {
+    await providerAction.run(async () => {
+      const option = videoProviderOptions.find((candidate) => candidate.providerId === providerId);
+      if (!option?.connected) throw new Error(option?.unavailableReason ?? '当前远程视频服务不可用，请先完成配置。');
+      const mutation = await api.saveConfig({
+        config: { ...state.config, video: { ...state.config.video, activeProviderId: providerId } },
+        secretChanges: {},
+      });
+      applyState(mutation);
+      return providerId;
+    }, { successMessage: '远程视频服务已切换。' });
+  }
+
   function selectEpisode(episodeId: string) {
     const current = documentRef.current;
-    const episode = current?.episodes.find((candidate) => candidate.id === episodeId);
-    if (!current || !episode) return;
+    if (!current) return;
+    const episode = current.episodes.find((candidate) => candidate.id === episodeId);
+    if (!episode && current.sourceDocument?.episodes) {
+      const sourceEp = current.sourceDocument.episodes.find((s) => s.id === episodeId);
+      if (sourceEp) {
+        setSelectedSourceEpisodeId(sourceEp.id);
+        setSceneSourcePreviewId(sourceEp.id);
+        setSelectedShotId('');
+        return;
+      }
+    }
+    if (!episode) return;
+    setSceneSourcePreviewId('');
+    setSelectedSourceEpisodeId(episode.planningEvidence?.sourceEpisodeId ?? '');
     replaceDocument({ ...current, activeEpisodeId: episodeId });
     setSelectedShotId(episode.scenes[0]?.shots[0]?.id ?? '');
   }
@@ -394,12 +609,290 @@ export function MotionComicPage({
     setSelectedShotId(episode?.scenes[0]?.shots[0]?.id ?? '');
   }
 
+  function openPlanDialog(sourceEpisodeId?: string) {
+    planRequestRef.current += 1;
+    planningAction.clearFeedback();
+    planApplyAction.clearFeedback();
+    setPlanApplyMode('append');
+    setPlanResult(null);
+    const sourceEpisode = documentRef.current?.sourceDocument?.episodes.find((episode) => episode.id === sourceEpisodeId);
+    if (sourceEpisode) {
+      const nextId = documentRef.current ? nextUnplannedMotionComicSourceEpisodeId(documentRef.current) : undefined;
+      if (nextId && sourceEpisode.id !== nextId) return;
+      setPlanningSourceEpisodeId(sourceEpisode.id);
+      setSelectedSourceEpisodeId(sourceEpisode.id);
+      if (sourceEpisode.id !== planningSourceEpisodeId || !planSourceText.trim()) {
+        setPlanRecovery(null);
+        setPlanScriptFailure(null);
+        setPlanDraftSaveError('');
+        setPlanSourceText(sourceEpisode.sourceText);
+        setPlanInstructions(documentRef.current?.sourceDocument?.adaptationMode === 'novel-adaptation'
+          ? '将小说内容改写为可拍摄的漫剧剧本，保留核心事件和人物动机；输出分幕、分场、角色、场景、道具和逐镜视频提示词。'
+          : '忠实保留现有剧本的事件顺序和对白意图；输出分幕、分场、角色、场景、道具和逐镜视频提示词。');
+      }
+    } else {
+      setPlanningSourceEpisodeId('');
+    }
+    setPlanOpen(true);
+  }
+
+  function changePlanScriptDraft(draft: MotionComicScriptDraft) {
+    if (!currentPlanScriptFailure) return;
+    const failure = { ...currentPlanScriptFailure, draft };
+    setPlanScriptFailure(failure);
+    try {
+      planningDraft.persist({ ...planningDraft.snapshot(), planScriptFailureJson: JSON.stringify(failure) });
+      setPlanDraftSaveError('');
+    } catch {
+      setPlanDraftSaveError('修正仍在当前窗口，但本地草稿保存失败。请勿关闭窗口，释放本地存储空间后重试。');
+    }
+  }
+
+  function changeReviewedScript(draft: MotionComicScriptDraft) {
+    if (!currentPlanRecovery) return;
+    planRequestRef.current += 1;
+    setPlanResult(null);
+    const recovery = { ...currentPlanRecovery, script: draft, needsValidation: true };
+    setPlanRecovery(recovery);
+    try {
+      planningDraft.persist({ ...planningDraft.snapshot(), planRecoveryJson: JSON.stringify(recovery) });
+      setPlanDraftSaveError('');
+    } catch {
+      setPlanDraftSaveError('剧本修改尚未保存到本地，请勿关闭窗口，释放存储空间后重试。');
+    }
+  }
+
+  function changePlanInput(setValue: (value: string) => void, value: string) {
+    planRequestRef.current += 1;
+    setPlanResult(null);
+    setPlanRecovery(null);
+    setPlanScriptFailure(null);
+    planningAction.clearFeedback();
+    setValue(value);
+  }
+
+  function changePlanOpen(open: boolean) {
+    if (!open && planSourceText.trim()) {
+      try { planningDraft.persist(planningDraft.snapshot()); setPlanDraftSaveError(''); }
+      catch { setPlanDraftSaveError('无法保存当前规划草稿，窗口尚未关闭，请重试。'); return; }
+    }
+    setPlanOpen(open);
+    if (!open) {
+      planRequestRef.current += 1;
+      setPlanResult(null);
+      planningAction.clearFeedback();
+      planApplyAction.clearFeedback();
+    }
+  }
+
+  function editPlanSource() {
+    planningAction.clearFeedback();
+    planApplyAction.clearFeedback();
+    setPlanApplyMode('append');
+    planRequestRef.current += 1;
+    setPlanResult(null);
+    setPlanRecovery(null);
+    setPlanScriptFailure(null);
+  }
+
+  function completePlanDraft(submitted: ReturnType<typeof planningDraft.snapshot>) {
+    planningDraft.complete(submitted);
+    setPlanSourceText('');
+    setPlanInstructions('');
+    setPlanTargetDurationSec('');
+    setPlanResult(null);
+    setPlanRecovery(null);
+    setPlanScriptFailure(null);
+    setPlanningSourceEpisodeId('');
+  }
+
+  function createBlankEpisodeFromPlan() {
+    const submitted = planningDraft.snapshot();
+    addEpisode();
+    completePlanDraft(submitted);
+    setPlanOpen(false);
+  }
+
+  async function generatePlan(resume = false, restart = false, scriptDraft?: MotionComicScriptDraft) {
+    setPlanDraftSaveError('');
+    const submitted = planningDraft.snapshot();
+    const request = ++planRequestRef.current;
+    const result = await planningAction.run(async () => {
+      const sourceText = submitted.planSourceText.trim();
+      if (!sourceText) throw new Error('请先填写本集故事原文。');
+      if (sourceText.length > 30_000) throw new Error('故事原文超过 30,000 字，请按集拆分后再生成。');
+      const durationText = submitted.planTargetDurationSec.trim();
+      const targetDurationSec = durationText ? Number(durationText) : undefined;
+      if (targetDurationSec !== undefined && (!Number.isFinite(targetDurationSec) || targetDurationSec < 5 || targetDurationSec > 1_800)) {
+        throw new Error('目标时长需填写 5 到 1800 秒。');
+      }
+      await persistQueueRef.current;
+      let current = documentRef.current;
+      if (!current) throw new Error('请先打开 AI 漫剧项目。');
+      if (dirty) current = await enqueueProjectMutation(current.id, (latest) => latest);
+      planningDraft.persist(submitted);
+      const planned = await api.planMotionComic({
+        id: current.id,
+        expectedUpdatedAt: current.updatedAt,
+        stage: resume ? 'storyboard' : 'script',
+        sourceText,
+        ...(submitted.planInstructions.trim() ? { instructions: submitted.planInstructions.trim() } : {}),
+        ...(targetDurationSec !== undefined ? { targetDurationSec } : {}),
+        ...(scriptDraft ? { scriptDraft, scriptRevisionToken: currentPlanRecovery?.token ?? currentPlanScriptFailure?.token } : {}),
+        ...(resume && currentPlanRecovery ? { resumeToken: currentPlanRecovery.token } : {}),
+        ...(restart ? { restart: true } : {}),
+      });
+      if (request !== planRequestRef.current || documentRef.current?.id !== current.id) return null;
+      if (JSON.stringify(documentRef.current) !== JSON.stringify(current)) throw new Error('生成期间项目已修改，本次结果未应用，请基于当前项目重新规划。');
+      if (planned.status === 'script-invalid') {
+        setPlanResult(null);
+        setPlanRecovery(null);
+        setPlanScriptFailure(planned.failure);
+        try {
+          planningDraft.persist({ ...submitted, planRecoveryJson: 'null', planScriptFailureJson: JSON.stringify(planned.failure) });
+        } catch {
+          throw new Error(`剧本问题已返回，但无法保存草稿入口；请不要关闭当前窗口。${planned.error.message}`);
+        }
+        throw new Error(`${planned.error.message}（诊断号：${planned.error.diagnosticId}）`);
+      }
+      if (planned.status === 'script-ready' || planned.status === 'storyboard-failed') {
+        setPlanResult(null);
+        setPlanScriptFailure(null);
+        setPlanRecovery(planned.recovery);
+        try {
+          planningDraft.persist({ ...submitted, planRecoveryJson: JSON.stringify(planned.recovery), planScriptFailureJson: 'null' });
+        } catch {
+          throw new Error('剧本已保留，但无法保存恢复入口；请勿关闭当前窗口。');
+        }
+        if (planned.status === 'script-ready') return null;
+        const recovered = planned.error.code === 'MOTION_COMIC_PLAN_RECOVERY_AVAILABLE';
+        throw new Error(`${recovered ? '发现之前保留的剧本' : '分镜阶段失败，已保留剧本'}。${planned.error.message}（诊断号：${planned.error.diagnosticId}）`);
+      }
+      return { projectId: current.id, planned: planned.result };
+    }, { successMessage: resume ? '分镜已生成，请审阅后再应用。' : '剧本已通过校验，请审核后再生成分镜。' });
+    if (!result.ok || !result.value || request !== planRequestRef.current || documentRef.current?.id !== result.value.projectId) return;
+    setPlanResult(result.value.planned);
+    setPlanRecovery(resume ? currentPlanRecovery : null);
+    setPlanScriptFailure(null);
+    planningDraft.persist({ ...submitted, planRecoveryJson: JSON.stringify(resume ? currentPlanRecovery : null), planScriptFailureJson: 'null' });
+  }
+
+  async function applyPlan(replaceStarter = false, reviewedAdjustments = false) {
+    const preview = planResult;
+    if (!preview) return;
+    setPlanApplyMode(replaceStarter ? 'replace' : 'append');
+    const submitted = planningDraft.snapshot();
+    const request = ++planRequestRef.current;
+    const result = await planApplyAction.run(async () => {
+      await persistQueueRef.current;
+      const current = documentRef.current;
+      if (!current) throw new Error('请先打开 AI 漫剧项目。');
+      const mutation = await api.applyMotionComicPlan({
+        id: current.id,
+        expectedUpdatedAt: current.updatedAt,
+        plan: preview.plan,
+        replaceStarter,
+        reviewedAdjustments,
+        ...(planningSourceEpisodeId ? { sourceEpisodeId: planningSourceEpisodeId } : {}),
+      });
+      applyState(mutation);
+      const task = await api.getTaskDetail(current.id);
+      if (!task) throw new Error('新集已应用，但项目无法重新读取。');
+      return { submittedDocument: current, saved: parseMotionComicPipelineData(task.pipelineData) };
+    }, { successMessage: replaceStarter ? '默认空模板已替换为规划内容。' : `第 ${documentRef.current?.episodes.length ? documentRef.current.episodes.length + 1 : 1} 集已追加。` });
+    if (!result.ok || request !== planRequestRef.current || documentRef.current?.id !== result.value.saved.id) return;
+    acceptSavedDocument(result.value.saved, result.value.submittedDocument);
+    const addedEpisode = result.value.saved.episodes.find((episode) => episode.id === result.value.saved.activeEpisodeId) ?? result.value.saved.episodes.at(-1);
+    setSelectedShotId(addedEpisode?.scenes[0]?.shots[0]?.id ?? '');
+    setWorkflowStage('scenes');
+    setSelectedSourceEpisodeId(nextUnplannedMotionComicSourceEpisodeId(result.value.saved) ?? planningSourceEpisodeId ?? result.value.saved.sourceDocument?.episodes[0]?.id ?? '');
+    completePlanDraft(submitted);
+    setPlanOpen(false);
+  }
+
   function addScene() {
     const current = documentRef.current;
     if (!current) return;
     const next = appendMotionComicScene(current, current.activeEpisodeId, { id: `${current.activeEpisodeId}-scene-${crypto.randomUUID()}` });
     replaceDocument(next);
     setSelectedShotId(next.episodes.find((episode) => episode.id === next.activeEpisodeId)?.scenes.at(-1)?.shots[0]?.id ?? '');
+  }
+
+  function addCharacterAsset() {
+    mutateDocument((current) => {
+      const characterId = `character-${crypto.randomUUID()}`;
+      const lookId = `look-${crypto.randomUUID()}`;
+      const number = current.characters.length + 1;
+      return {
+        ...current,
+        series: { ...current.series, characterIds: [...current.series.characterIds, characterId] },
+        characters: [...current.characters, {
+          id: characterId,
+          name: `人物 ${number}`,
+          role: '待定义',
+          identityPrompt: '',
+          personality: '',
+          voiceNotes: '',
+          looks: [{
+            id: lookId,
+            characterId,
+            label: '基础造型',
+            appearancePrompt: '',
+            wardrobe: '',
+            continuityNotes: '',
+            referenceAssetVersionIds: [],
+            pinned: false,
+          }],
+        }],
+      };
+    });
+  }
+
+  function addSceneAsset() {
+    mutateDocument((current) => {
+      const id = `scene-asset-${crypto.randomUUID()}`;
+      const number = current.sceneAssets.length + 1;
+      return {
+        ...current,
+        series: { ...current.series, sceneAssetIds: [...current.series.sceneAssetIds, id] },
+        sceneAssets: [...current.sceneAssets, {
+          id,
+          label: `场景 ${number}`,
+          description: '',
+          prompt: '',
+          continuityNotes: '',
+          referenceAssetVersionIds: [],
+        }],
+      };
+    });
+  }
+
+  function addPropAsset() {
+    mutateDocument((current) => {
+      const id = `prop-${crypto.randomUUID()}`;
+      const number = current.props.length + 1;
+      return {
+        ...current,
+        series: { ...current.series, propAssetIds: [...current.series.propAssetIds, id] },
+        props: [...current.props, {
+          id,
+          label: `道具 ${number}`,
+          description: '',
+          prompt: '',
+          referenceAssetVersionIds: [],
+        }],
+      };
+    });
+  }
+
+  function updateScene(sceneId: string, update: Partial<Pick<MotionComicPipelineData['episodes'][number]['scenes'][number], 'title' | 'summary' | 'actIndex' | 'actTitle' | 'actBoundaryReason' | 'actSource'>>) {
+    mutateDocument((current) => ({
+      ...current,
+      episodes: current.episodes.map((episode) => ({
+        ...episode,
+        scenes: episode.scenes.map((scene) => scene.id === sceneId ? { ...scene, ...update } : scene),
+      })),
+    }));
   }
 
   function addShot() {
@@ -450,18 +943,30 @@ export function MotionComicPage({
       restoreVersion(asset.sourceVersionId);
       return;
     }
-    mutateDocument((current) => ({
-      ...current,
-      episodes: current.episodes.map((episode) => ({ ...episode, scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => {
-        if (shot.id !== selectedShotId) return shot;
-        if (current.characters.some((character) => character.looks.some((look) => look.id === asset.id))) {
-          return { ...shot, characterLookIds: shot.characterLookIds.includes(asset.id) ? shot.characterLookIds.filter((id) => id !== asset.id) : [...shot.characterLookIds, asset.id] };
-        }
-        if (current.sceneAssets.some((sceneAsset) => sceneAsset.id === asset.id)) return { ...shot, sceneAssetId: asset.id };
-        if (current.props.some((prop) => prop.id === asset.id)) return { ...shot, propAssetIds: shot.propAssetIds.includes(asset.id) ? shot.propAssetIds.filter((id) => id !== asset.id) : [...shot.propAssetIds, asset.id] };
-        return shot;
-      }) })) })),
-    }));
+    mutateDocument((current) => {
+      let changed = false;
+      const next: MotionComicPipelineData = {
+        ...current,
+        episodes: current.episodes.map((episode) => ({ ...episode, scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => {
+          if (shot.id !== selectedShotId) return shot;
+          if (current.characters.some((character) => character.looks.some((look) => look.id === asset.id))) {
+            changed = true;
+            return { ...shot, characterLookIds: shot.characterLookIds.includes(asset.id) ? shot.characterLookIds.filter((id) => id !== asset.id) : [...shot.characterLookIds, asset.id] };
+          }
+          if (current.sceneAssets.some((sceneAsset) => sceneAsset.id === asset.id)) {
+            if (shot.sceneAssetId === asset.id) return shot;
+            changed = true;
+            return { ...shot, sceneAssetId: asset.id };
+          }
+          if (current.props.some((prop) => prop.id === asset.id)) {
+            changed = true;
+            return { ...shot, propAssetIds: shot.propAssetIds.includes(asset.id) ? shot.propAssetIds.filter((id) => id !== asset.id) : [...shot.propAssetIds, asset.id] };
+          }
+          return shot;
+        }) })) })),
+      };
+      return changed ? invalidateMotionComicShotVideo(next, selectedShotId) : current;
+    });
   }
 
   async function importReference(kind: MotionComicReferenceKind, targetId: string) {
@@ -493,7 +998,7 @@ export function MotionComicPage({
       const asset = createMotionComicReferenceAsset(record, targetId, kind);
       const latest = documentRef.current;
       if (!latest || latest.id !== current.id) throw new Error('AI 漫剧项目已切换，本次参考图未写入其他项目。');
-      const next = attachMotionComicReference(latest, target, asset);
+      const next = invalidateMotionComicVideosForChangedInputs(latest, attachMotionComicReference(latest, target, asset));
       setDocument(next);
       documentRef.current = next;
       setDirty(true);
@@ -522,24 +1027,128 @@ export function MotionComicPage({
     });
   }
 
-  async function runCopyAssist(intent: DirectorCopyAssistIntent) {
-    await copyAction.run(async () => {
-      const submitted = creationDraft.snapshot();
-      const request = projectOpenRequestRef.current;
-      setCopyAssistIntent(intent);
-      try {
-        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({ mode: 'motion-comic', intent, title: submitted.createTitle, copy: submitted.createPremise }))
-          .catch((error) => { throw normalizeDirectorCopyAssistError(error); });
-        const latest = creationDraft.snapshot();
-        if (request !== projectOpenRequestRef.current || latest.createTitle !== submitted.createTitle || latest.createPremise !== submitted.createPremise) {
-          throw new AppError('DIRECTOR_COPY_INPUT_CHANGED', '核心设定输入已修改，已保留当前内容。请基于当前内容重新生成。');
+  async function importSourceFile() {
+    const result = await sourceFileAction.run(async () => api.selectMotionComicSourceFile(), { successMessage: '源文件已读取，请确认正文后继续。' });
+    if (!result.ok || !result.value) {
+      if (result.ok) sourceFileAction.clearFeedback();
+      return;
+    }
+    setCreateSourceFileName(result.value.name);
+    setCreateSourceText(result.value.contents);
+    episodePlanningRequestRef.current += 1;
+    setCreateEpisodeDrafts([]);
+    setCreateSplitEvidence(null);
+    setCreateSplitWarnings([]);
+    episodePlanningAction.clearFeedback();
+    if (!createTitle.trim()) setCreateTitle(result.value.name.replace(/\.(?:txt|md)$/iu, ''));
+  }
+
+  function setActBoundary(sceneId: string, startsNewAct: boolean) {
+    mutateDocument((current) => setMotionComicActBoundary(current, current.activeEpisodeId, sceneId, startsNewAct));
+  }
+
+  function renameAct(actIndex: number, title: string) {
+    mutateDocument((current) => renameMotionComicAct(current, current.activeEpisodeId, actIndex, title));
+  }
+
+  function boundedCreateEpisodeTarget(): number {
+    const value = Number(createTargetCharacters);
+    return Math.max(500, Math.min(20_000, Number.isFinite(value) ? Math.round(value) : 2_400));
+  }
+
+  async function prepareCreateEpisodes(strategy = createSplitStrategy) {
+    if (strategy === 'ai-story') {
+      const request = ++episodePlanningRequestRef.current;
+      const sourceText = createSourceText.trim();
+      const durationValue = createTargetDurationSec.trim() ? Number(createTargetDurationSec) : undefined;
+      const result = await episodePlanningAction.run(async () => {
+        if (!sourceText) throw new Error('请先导入完整原文。');
+        if (durationValue !== undefined && (!Number.isInteger(durationValue) || durationValue < 15 || durationValue > 1_800)) {
+          throw new Error('每集目标时长需填写 15 至 1800 秒的整数。');
         }
-        setCreatePremise(result.copy);
-        return result;
-      } finally {
-        setCopyAssistIntent(null);
+        return api.planMotionComicEpisodes({
+          sourceText,
+          sourceKind: createSourceKind,
+          adaptationMode: createAdaptationMode,
+          targetCharacters: boundedCreateEpisodeTarget(),
+          ...(durationValue === undefined ? {} : { targetDurationSec: durationValue }),
+          ...(createSplitInstructions.trim() ? { instructions: createSplitInstructions.trim() } : {}),
+        });
+      }, { successMessage: 'AI 分集已通过连续覆盖校验，可逐集确认后创建项目。' });
+      if (!result.ok || request !== episodePlanningRequestRef.current) {
+        if (request !== episodePlanningRequestRef.current) episodePlanningAction.clearFeedback();
+        return;
       }
-    }, { successMessage: intent === 'create' ? 'AI 核心设定已创作并填入。' : 'AI 核心设定已修改并填入。' });
+      setCreateEpisodeDrafts(result.value.episodes);
+      setCreateSplitEvidence(result.value.evidence);
+      setCreateSplitWarnings(result.value.warnings);
+      setCreateStep(1);
+      return;
+    }
+
+    const request = ++episodePlanningRequestRef.current;
+    episodePlanningAction.clearFeedback();
+    const result = await projectAction.run(async () => {
+      const target = boundedCreateEpisodeTarget();
+      const ruleStrategy = strategy === 'length' ? 'length' : 'chapter';
+      return {
+        episodes: splitMotionComicSourceEpisodes(createSourceText, target, ruleStrategy),
+        evidence: createMotionComicRuleSplitEvidence({
+          sourceText: createSourceText,
+          strategy: ruleStrategy,
+          targetCharacters: target,
+        }),
+      };
+    });
+    if (!result.ok || request !== episodePlanningRequestRef.current) return;
+    setCreateEpisodeDrafts(result.value.episodes);
+    setCreateSplitEvidence(result.value.evidence);
+    const chapterCount = (createSourceText.match(/^\s*(第[^\n]{1,16}[章节集幕回卷]|(?:EP|Episode|Chapter)\s*\d+)\s*[:：.、\-]?/gimu) ?? []).length;
+    setCreateSplitWarnings(chapterCount > 100 && strategy === 'chapter'
+      ? [`检测到 ${chapterCount} 个章节，已完整拆分为 ${result.value.episodes.length} 集；原文顺序与内容均保留。长篇分集列表可滚动查看，不设固定集数上限。`]
+      : []);
+    if (result.value.episodes.length > 0) setCreateStep(1);
+  }
+
+  function resetCreateSplitPreview(): void {
+    episodePlanningRequestRef.current += 1;
+    setCreateEpisodeDrafts([]);
+    setCreateSplitEvidence(null);
+    setCreateSplitWarnings([]);
+    episodePlanningAction.clearFeedback();
+    projectAction.clearFeedback();
+  }
+
+  function changeCreateSplitStrategy(strategy: MotionComicSplitStrategy): void {
+    const supportedStrategy = strategy === 'ai-logic' ? 'chapter' : strategy;
+    setCreateSplitStrategy(supportedStrategy);
+    resetCreateSplitPreview();
+    if (supportedStrategy !== 'ai-story' && createSourceText.trim()) void prepareCreateEpisodes(supportedStrategy);
+  }
+
+  function changeCreateSourceText(value: string): void {
+    setCreateSourceText(value);
+    resetCreateSplitPreview();
+    sourceFileAction.clearFeedback();
+  }
+
+  function changeCreateTargetCharacters(value: string): void {
+    setCreateTargetCharacters(value);
+    resetCreateSplitPreview();
+  }
+
+  function changeCreateTargetDuration(value: string): void {
+    setCreateTargetDurationSec(value);
+    if (createSplitStrategy === 'ai-story') resetCreateSplitPreview();
+  }
+
+  function changeCreateSplitInstructions(value: string): void {
+    setCreateSplitInstructions(value);
+    if (createSplitStrategy === 'ai-story') resetCreateSplitPreview();
+  }
+
+  function updateCreateEpisode(index: number, update: Partial<MotionComicEpisodeDraft>) {
+    setCreateEpisodeDrafts((current) => current.map((episode, candidateIndex) => candidateIndex === index ? { ...episode, ...update } : episode));
   }
 
   function startCreate() {
@@ -548,66 +1157,67 @@ export function MotionComicPage({
 
   function startCreateNow() {
     projectOpenRequestRef.current += 1;
+    planRequestRef.current += 1;
     generationRequestsRef.current.clear();
     setLoadingProjectId('');
     setDocument(null);
     documentRef.current = null;
     setActiveProjectId('');
     setSelectedShotId('');
-    setSeriesSettingsOpen(false);
+    setPlanOpen(false);
+    setPlanResult(null);
+    setPlanningSourceEpisodeId('');
+    setWorkflowStage('source');
+    setSelectedSourceEpisodeId('');
     setCreateStep(0);
-    copyAction.clearFeedback();
+    setCreateTitle('');
+    setCreateSourceFileName('');
+    setCreateSourceText('');
+    setCreateTargetCharacters('2400');
+    setCreateTargetDurationSec('');
+    setCreateSplitInstructions('');
+    setCreateSplitStrategy('chapter');
+    setCreateEpisodeDrafts([]);
+    setCreateSplitEvidence(null);
+    setCreateSplitWarnings([]);
+    episodePlanningRequestRef.current += 1;
+    episodePlanningAction.clearFeedback();
+    sourceFileAction.clearFeedback();
     setCreateOpen(true);
   }
 
   async function createProject() {
     const submittedDraft = creationDraft.snapshot();
     const result = await projectAction.run(async () => {
-      const mutation = await api.createMotionComic({ title: createTitle, premise: createPremise, episodeTitle: createEpisodeTitle || undefined, ratio: createRatio });
+      const sourceText = createSourceText.trim();
+      const episodes = createEpisodeDrafts.filter((episode) => episode.title.trim() && episode.sourceText.trim());
+      if (!createTitle.trim() || !sourceText || episodes.length === 0) throw new Error('请先完成源文导入和分集确认。');
+      if (createSplitStrategy === 'ai-story' && createSplitEvidence?.strategy !== 'ai-story') throw new Error('请先生成并确认通过校验的 AI 分集方案。');
+      const splitEvidence = createSplitEvidence ?? createMotionComicRuleSplitEvidence({
+        sourceText,
+        strategy: createSplitStrategy === 'length' ? 'length' : 'chapter',
+        targetCharacters: boundedCreateEpisodeTarget(),
+      });
+      const premise = sourceText.replace(/\s+/gu, ' ').slice(0, 800);
+      const mutation = await api.createMotionComic({
+        title: createTitle,
+        premise,
+        ratio: createRatio,
+        source: {
+          kind: createSourceKind,
+          adaptationMode: createAdaptationMode,
+          ...(createSourceFileName ? { fileName: createSourceFileName } : {}),
+          originalText: sourceText,
+          episodes,
+          splitEvidence,
+        },
+      });
       applyState(mutation);
       if (!mutation || mutation.kind !== 'task-upsert') throw new Error('AI 漫剧项目已保存，但未返回可打开的任务记录。');
       const task = await api.getTaskDetail(mutation.task.id);
       if (!task) throw new Error('AI 漫剧项目已创建，但无法重新读取。');
-      const created = parseMotionComicPipelineData(task.pipelineData);
-      const configured: MotionComicPipelineData = {
-        ...created,
-        series: {
-          ...created.series,
-          genre: createGenre,
-          tone: createTone,
-          audience: createAudience,
-          worldRules: createWorldRules.split('\n').map((value) => value.trim()).filter(Boolean),
-          visualRules: createVisualRules.split('\n').map((value) => value.trim()).filter(Boolean),
-        },
-        characters: created.characters.map((character, index) => ({
-          ...character,
-          name: index === 0 ? createProtagonist : index === 1 ? createCounterpart : character.name,
-          looks: character.looks.map((look) => ({ ...look, pinned: true })),
-        })),
-        sceneAssets: created.sceneAssets.map((asset, index) => index === 0 ? { ...asset, label: createLocation, description: `${createPremise}的核心起点场景` } : asset),
-        episodes: created.episodes.map((episode) => ({
-          ...episode,
-          scenes: episode.scenes.map((scene) => ({
-            ...scene,
-            shots: scene.shots.map((shot) => ({
-              ...shot,
-              layoutTemplate: '漫画分格 · 角色优先',
-              motionPreset: '轻微视差',
-              voiceId: createVoiceIdForProject,
-              voiceLabel: createVoiceLabel,
-              subtitleStyle: createSubtitleStyle,
-              seed: shot.seed ?? '24681357',
-              seedLocked: createSeedLocked,
-            })),
-          })),
-        })),
-      };
-      const savedMutation = await api.saveMotionComic({ id: task.id, expectedUpdatedAt: configured.updatedAt, document: configured });
-      applyState(savedMutation);
-      const savedTask = await api.getTaskDetail(task.id);
-      if (!savedTask) throw new Error('AI 漫剧创建预检保存后无法重新读取。');
-      return { id: task.id, document: parseMotionComicPipelineData(savedTask.pipelineData) };
-    }, { successMessage: 'AI 漫剧系列项目已创建。' });
+      return { id: task.id, document: parseMotionComicPipelineData(task.pipelineData) };
+    }, { successMessage: '源文和分集方案已保存，可开始逐集结构化。' });
     if (!result.ok) return;
     if (!creationDraft.complete(submittedDraft)) return;
     setActiveProjectId(result.value.id);
@@ -615,10 +1225,20 @@ export function MotionComicPage({
     documentRef.current = result.value.document;
     savedDocumentRef.current = result.value.document;
     setSelectedShotId(result.value.document.episodes[0]?.scenes[0]?.shots[0]?.id ?? '');
+    setSelectedSourceEpisodeId(result.value.document.sourceDocument?.episodes[0]?.id ?? '');
+    setWorkflowStage('episodes');
     setCreateTitle('');
-    setCreatePremise('');
-    copyAction.clearFeedback();
-    setCreateEpisodeTitle('第一集');
+    setCreateSourceFileName('');
+    setCreateSourceText('');
+    setCreateTargetCharacters('2400');
+    setCreateTargetDurationSec('');
+    setCreateSplitInstructions('');
+    setCreateSplitStrategy('chapter');
+    setCreateEpisodeDrafts([]);
+    setCreateSplitEvidence(null);
+    setCreateSplitWarnings([]);
+    episodePlanningAction.clearFeedback();
+    sourceFileAction.clearFeedback();
     setCreateStep(0);
     setCreateOpen(false);
     setDirty(false);
@@ -824,6 +1444,42 @@ export function MotionComicPage({
     });
   }
 
+  async function generateVideo(shotId: string) {
+    const projectId = documentRef.current?.id;
+    if (!projectId) throw new Error('当前 AI 漫剧项目不存在。');
+    const pending = persistQueueRef.current.then(async () => {
+      const latest = documentRef.current;
+      if (!latest || latest.id !== projectId) throw new Error('AI 漫剧项目已切换，本次视频生成已取消。');
+      const sourceShot = latest.episodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots)).find((shot) => shot.id === shotId);
+      if (!sourceShot) throw new Error('当前 AI 漫剧镜头不存在。');
+      if (sourceShot.renderStrategy !== 'remote-video') throw new Error('当前镜头使用图片运镜，无需调用远程视频服务。');
+      const current = await persistProject(latest);
+      try {
+        const response = await api.generateDirectorShotVideo({ id: current.id, shotId, expectedUpdatedAt: current.updatedAt });
+        applyState(response.mutation);
+        const task = await api.getTaskDetail(projectId);
+        if (!task) throw new Error('远程镜头视频已生成，但项目无法重新读取。');
+        const saved = parseMotionComicPipelineData(task.pipelineData);
+        acceptSavedDocument(saved, current);
+        const asset = saved.assets.find((candidate) => candidate.id === response.result.videoAssetVersionId && candidate.kind === 'video');
+        if (!asset?.localPath) throw new Error('远程视频任务完成，但没有返回可播放的视频资产。');
+        return {
+          videoUrl: toLocalAssetUrl(asset.localPath),
+          provider: response.result.providerName,
+          model: response.result.model,
+          estimatedCost: response.result.estimatedCost,
+          jobId: response.result.videoJobId,
+        };
+      } catch (error) {
+        const task = await api.getTaskDetail(projectId).catch(() => null);
+        if (task) acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), current);
+        throw error;
+      }
+    });
+    persistQueueRef.current = pending.then(() => undefined, () => undefined);
+    return pending;
+  }
+
   async function renderProject() {
     await persistQueueRef.current;
     let current = documentRef.current;
@@ -840,70 +1496,66 @@ export function MotionComicPage({
   if (loadingProjectId) return <div data-motion-comic-workbench="true"><DirectorProjectLoading mode="motion-comic" /></div>;
 
   if (createOpen) {
-    return <div data-motion-comic-workbench="true"><DirectorCreateWizard
-      mode="motion-comic"
+    return <div data-motion-comic-workbench="true"><MotionComicCreateFlow
       step={createStep}
-      busy={projectAction.busy || providerAction.busy || copyAction.busy}
-      canContinue={createStep > 0 || Boolean(createTitle.trim() && createPremise.trim())}
-      canCreate={Boolean(createTitle.trim() && createPremise.trim() && createProtagonist.trim() && createLocation.trim())}
-      providerConnected={providerReady}
-      providerLabel={`${providerStatus.label} · ${providerStatus.model}`}
-      voiceConnected={voiceStatus.connected}
-      voiceLabel={`${voiceStatus.label} · ${voiceStatus.model}`}
-      summary={[
-        { label: '系列', value: createTitle },
-        { label: '首集', value: createEpisodeTitle },
-        { label: '结构', value: '3 场 · 6 镜头 · 约 40 秒' },
-        { label: '主角', value: createProtagonist },
-        { label: '画幅', value: createRatio },
-      ]}
-      feedback={actionFeedback}
+      title={createTitle}
+      ratio={createRatio}
+      sourceKind={createSourceKind}
+      adaptationMode={createAdaptationMode}
+      sourceFileName={createSourceFileName}
+      sourceText={createSourceText}
+      targetCharacters={createTargetCharacters}
+      targetDurationSec={createTargetDurationSec}
+      splitInstructions={createSplitInstructions}
+      splitStrategy={createSplitStrategy}
+      splitEvidence={createSplitEvidence}
+      splitWarnings={createSplitWarnings}
+      onSplitStrategyChange={changeCreateSplitStrategy}
+      episodes={createEpisodeDrafts}
+      busy={projectAction.busy || sourceFileAction.busy || episodePlanningAction.busy}
+      feedback={sourceFileAction.feedback?.tone === 'success' ? sourceFileAction.feedback.message : episodePlanningAction.feedback?.tone === 'success' ? episodePlanningAction.feedback.message : projectAction.feedback?.tone === 'success' ? projectAction.feedback.message : undefined}
       errorMessage={actionError}
       onStepChange={setCreateStep}
-      onConfigureImage={() => openSettings?.('image', 'motion-comic')}
-      onConfigureVoice={() => openSettings?.('tts', 'motion-comic')}
+      onTitleChange={(value) => { setCreateTitle(value); projectAction.clearFeedback(); }}
+      onRatioChange={setCreateRatio}
+      onSourceKindChange={(value) => {
+        setCreateSourceKind(value);
+        setCreateAdaptationMode(value === 'novel' ? 'novel-adaptation' : 'faithful-script');
+        if (createSplitStrategy === 'ai-story') resetCreateSplitPreview();
+      }}
+      onAdaptationModeChange={(value) => {
+        setCreateAdaptationMode(value);
+        if (createSplitStrategy === 'ai-story') resetCreateSplitPreview();
+      }}
+      onSourceTextChange={changeCreateSourceText}
+      onTargetCharactersChange={changeCreateTargetCharacters}
+      onTargetDurationSecChange={changeCreateTargetDuration}
+      onSplitInstructionsChange={changeCreateSplitInstructions}
+      onEpisodeChange={updateCreateEpisode}
+      onImportFile={() => void importSourceFile()}
+      onPrepareEpisodes={() => void prepareCreateEpisodes()}
       onCreate={() => void createProject()}
-    >
-      {createStep === 0 ? <>
-        <TextField label="系列名称" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：雨夜来信" />
-        <div className="director-copy-field">
-          <TextAreaField label="核心设定" value={createPremise} onChange={(_, data) => { setCreatePremise(data.value); copyAction.clearFeedback(); }} placeholder="一句话写清主角、异常事件与核心冲突" resize="vertical" hint={`${createPremise.trim().length} 字 · 将生成三场六镜首集骨架`} />
-          <DirectorCopyAssist
-            activeIntent={copyAssistIntent}
-            canCreate={Boolean(createTitle.trim())}
-            canRevise={Boolean(createPremise.trim())}
-            feedback={copyAction.feedback}
-            onCreate={() => void runCopyAssist('create')}
-            onRevise={() => void runCopyAssist('revise')}
-          />
-        </div>
-        <div className="director-create-two-col"><TextField label="首集标题" value={createEpisodeTitle} onChange={(_, data) => setCreateEpisodeTitle(data.value)} /><SegmentedControl label="画幅" value={createRatio} options={MOTION_COMIC_RATIOS.map((ratio) => ({ value: ratio, label: ratio }))} onChange={setCreateRatio} /></div>
-        <div className="director-structure-preview"><strong>首集结构</strong><span>01 异常出现</span><span>02 线索升级</span><span>03 选择与钩子</span><span>每场 2 镜头</span></div>
-      </> : null}
-      {createStep === 1 ? <>
-        <div className="director-create-two-col"><TextField label="类型" value={createGenre} onChange={(_, data) => setCreateGenre(data.value)} /><TextField label="基调" value={createTone} onChange={(_, data) => setCreateTone(data.value)} /></div>
-        <TextField label="目标观众" value={createAudience} onChange={(_, data) => setCreateAudience(data.value)} />
-        <div className="director-create-two-col"><TextField label="主角" value={createProtagonist} onChange={(_, data) => setCreateProtagonist(data.value)} /><TextField label="关键人物" value={createCounterpart} onChange={(_, data) => setCreateCounterpart(data.value)} /></div>
-        <TextField label="核心场景" value={createLocation} onChange={(_, data) => setCreateLocation(data.value)} />
-        <TextAreaField label="世界规则" value={createWorldRules} onChange={(_, data) => setCreateWorldRules(data.value)} resize="vertical" />
-        <TextAreaField label="视觉规则" value={createVisualRules} onChange={(_, data) => setCreateVisualRules(data.value)} resize="vertical" hint="每行一条；创建后可在系列圣经继续编辑角色、场景和道具" />
-      </> : null}
-      {createStep === 2 ? <>
-        <SelectField label="图片生成服务" value={selectedProviderProfileId} options={providerOptions} disabled={providerAction.busy} validationMessage={providerUnavailableReason} onChange={(event) => void selectImageProvider(event.target.value)} />
-        <SelectField label="音色" value={createVoiceId} options={voiceStatus.voices.length ? [...voiceStatus.voices] : [{ value: '', label: '尚未配置旁白服务，请先配置音色', disabled: true }]} disabled={!voiceStatus.connected} onChange={(event) => setCreateVoiceId(event.target.value)} />
-        <SelectField label="字幕样式" value={createSubtitleStyle} options={['简体中文 · 白色描边', '简体中文 · 下方黑底'].map((value) => ({ value, label: value }))} onChange={(event) => setCreateSubtitleStyle(event.target.value)} />
-        <CheckboxField label="在提示词中保留跨镜头 Seed 标记" checked={createSeedLocked} onChange={(_, data) => setCreateSeedLocked(Boolean(data.checked))} />
-        <div className="director-output-preview"><strong>系列骨架与本地成片</strong><span>创建后先进入系列圣经或镜头板；关键帧与旁白完成后，可在导演台生成 MP4。</span></div>
-      </> : null}
-    </DirectorCreateWizard></div>;
+    /></div>;
   }
 
   if (!document || !activeEpisode) return <div data-motion-comic-workbench="true"><DirectorProjectRecovery mode="motion-comic" errorMessage={actionError} onNewProject={startCreate} /></div>;
 
-  if (seriesSettingsOpen) return <div data-motion-comic-workbench="true" data-motion-comic-series-bible="true" className="director-series-page">
+  if (workflowStage === 'assets') return <div data-motion-comic-workbench="true"><MotionComicProductionWorkspace
+    document={document}
+    stage="assets"
+    stageState={stageState}
+    dirty={dirty}
+    busy={projectAction.busy || providerAction.busy || referenceAction.busy}
+    feedback={actionFeedback}
+    errorMessage={actionError}
+    onStageChange={setWorkflowStage}
+    onSave={() => void saveProject()}
+    onNewProject={startCreate}
+    onBack={() => navigate?.(returnView)}
+  ><div data-motion-comic-series-bible="true" className="director-series-page">
     <header className="director-series-header">
-      <div><Button variant="subtle" icon={<ArrowLeft size={14} />} onClick={() => setSeriesSettingsOpen(false)}>返回导演台</Button><span><BookOpenCheck size={18} /><strong>系列圣经</strong><small>角色、场景、道具与视觉规则的唯一事实来源</small></span></div>
-      <Toolbar aria-label="系列圣经操作"><Button variant="subtle" icon={<Settings2 size={14} />} onClick={() => openSettings?.('image', 'motion-comic', document.id)}>模型设置</Button><Button variant="primary" icon={<Save size={14} />} disabled={!dirty || projectAction.busy} onClick={() => void saveProject().then((saved) => { if (saved) setSeriesSettingsOpen(false); })}>保存系列圣经</Button></Toolbar>
+      <div><Button variant="subtle" icon={<ArrowLeft size={14} />} onClick={() => setWorkflowStage('scenes')}>返回分幕分场</Button><span><BookOpenCheck size={18} /><strong>角色资产</strong><small>确认人物、场景、道具定义，再固定视觉参考图</small></span></div>
+      <Toolbar aria-label="角色资产操作"><Button variant="subtle" icon={<Settings2 size={14} />} onClick={() => openSettings?.('image', 'motion-comic', document.id)}>图片模型</Button><Button variant="primary" icon={<Images size={14} />} disabled={!stageState.assets.complete} onClick={() => setWorkflowStage('storyboard')}>进入分镜图</Button></Toolbar>
     </header>
     <div className="director-series-layout">
       <Pane as="aside" tone="subtle" className="director-series-summary">
@@ -919,9 +1571,20 @@ export function MotionComicPage({
         <span>所有修改先保留在本地草稿，点击保存后写入项目版本。</span>
       </Pane>
       <main className="director-series-editor">
-        <section><div className="director-series-section-heading"><span>01</span><div><h2>系列定位</h2><p>确定故事承诺、观众和不可随意改写的世界规则。</p></div></div><TextField label="系列名称" value={document.title} onChange={(_, data) => mutateDocument((current) => ({ ...current, title: data.value, series: { ...current.series, title: data.value } }))} /><TextAreaField label="核心设定" value={document.series.premise} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, premise: data.value } }))} resize="vertical" /><div className="director-create-two-col"><TextField label="类型" value={document.series.genre} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, genre: data.value } }))} /><TextField label="基调" value={document.series.tone} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, tone: data.value } }))} /></div><TextField label="目标观众" value={document.series.audience} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, audience: data.value } }))} /><TextAreaField label="世界规则" value={document.series.worldRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, worldRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="视觉规则" value={document.series.visualRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, visualRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="负面提示词" value={document.series.negativePrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, negativePrompt: data.value } }))} resize="vertical" /></section>
+        <section><div className="director-series-section-heading"><span>01</span><div><h2>系列定位</h2><p>确定故事承诺、观众和不可随意改写的世界规则。</p></div></div><TextField label="系列名称" value={document.title} onChange={(_, data) => mutateDocument((current) => ({ ...current, title: data.value, series: { ...current.series, title: data.value } }))} /><div className="director-copy-field">
+  <TextAreaField label="核心设定" value={document.series.premise} onChange={(_, data) => { mutateDocument((current) => ({ ...current, series: { ...current.series, premise: data.value } })); copyAction.clearFeedback(); }} resize="vertical" />
+  <DirectorCopyAssist
+    activeIntent={copyAssistIntent}
+    canCreate={Boolean(document.title.trim())}
+    canRevise={Boolean(document.series.premise.trim())}
+    feedback={copyAction.feedback}
+    onCreate={() => void runCopyAssist('create')}
+    onRevise={() => void runCopyAssist('revise')}
+  />
+</div><div className="director-create-two-col"><TextField label="类型" value={document.series.genre} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, genre: data.value } }))} /><TextField label="基调" value={document.series.tone} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, tone: data.value } }))} /></div><TextField label="目标观众" value={document.series.audience} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, audience: data.value } }))} /><TextAreaField label="世界规则" value={document.series.worldRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, worldRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="视觉规则" value={document.series.visualRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, visualRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="负面提示词" value={document.series.negativePrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, negativePrompt: data.value } }))} resize="vertical" /></section>
         <section>
-          <div className="director-series-section-heading"><span>02</span><div><h2>角色一致性</h2><p>身份提示词和造型必须跨集复用，不能由单镜头临时覆盖。</p></div></div>
+          <div className="director-series-section-heading"><span>02</span><div><h2>角色一致性</h2><p>身份提示词和造型必须跨集复用，不能由单镜头临时覆盖。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addCharacterAsset}>新增人物</Button></div>
+          {document.characters.length === 0 ? <div className="motion-comic-asset-empty"><Users size={20} /><span><strong>当前没有人物</strong><small>空镜或道具特写可以继续制作；需要角色时在这里补录。</small></span></div> : null}
           {document.characters.map((character, index) => <div key={character.id} className="director-series-entity">
             <div className="director-create-two-col"><TextField label={`角色 ${index + 1}`} value={character.name} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, name: data.value } : item) }))} /><TextField label="戏剧作用" value={character.role} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, role: data.value } : item) }))} /></div>
             <TextAreaField label="身份提示词" value={character.identityPrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, identityPrompt: data.value } : item) }))} resize="vertical" />
@@ -944,7 +1607,8 @@ export function MotionComicPage({
           </div>)}
         </section>
         <section>
-          <div className="director-series-section-heading"><span>03</span><div><h2>场景一致性</h2><p>固定建筑、光线、天气与时间，供所有镜头直接引用。</p></div></div>
+          <div className="director-series-section-heading"><span>03</span><div><h2>场景一致性</h2><p>固定建筑、光线、天气与时间，供所有镜头直接引用。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addSceneAsset}>新增场景</Button></div>
+          {document.sceneAssets.length === 0 ? <div className="motion-comic-asset-empty"><ImagePlus size={20} /><span><strong>当前没有场景资产</strong><small>补录场景后可生成或导入固定参考图。</small></span></div> : null}
           {document.sceneAssets.map((asset) => {
             const target = { kind: 'scene' as const, id: asset.id };
             const targetKey = `scene:${asset.id}`;
@@ -960,7 +1624,8 @@ export function MotionComicPage({
           })}
         </section>
         <section>
-          <div className="director-series-section-heading"><span>04</span><div><h2>道具一致性</h2><p>关键物件必须保持轮廓、材质和标记可识别。</p></div></div>
+          <div className="director-series-section-heading"><span>04</span><div><h2>道具一致性</h2><p>关键物件必须保持轮廓、材质和标记可识别。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addPropAsset}>新增道具</Button></div>
+          {document.props.length === 0 ? <div className="motion-comic-asset-empty"><Plus size={20} /><span><strong>当前没有关键道具</strong><small>没有道具时无需补齐；需要连续性物件时可手动新增。</small></span></div> : null}
           {document.props.map((asset) => {
             const target = { kind: 'prop' as const, id: asset.id };
             const targetKey = `prop:${asset.id}`;
@@ -976,16 +1641,84 @@ export function MotionComicPage({
         </section>
       </main>
     </div>
-  </div>;
+  </div></MotionComicProductionWorkspace></div>;
 
   return <>
+    <MotionComicPlanDialog
+      open={planOpen}
+      sourceText={planSourceText}
+      instructions={planInstructions}
+      targetDurationSec={planTargetDurationSec}
+      episodeNumber={document.sourceDocument?.episodes.find((episode) => episode.id === planningSourceEpisodeId)?.number ?? document.episodes.filter((episode) => episode.scenes.length > 0).length + 1}
+      result={planResult}
+      recovery={currentPlanRecovery}
+      scriptFailure={currentPlanScriptFailure}
+      busy={planningAction.busy}
+      applying={planApplyAction.busy}
+      applyingMode={planApplyMode}
+      canReplaceStarter={canReplaceStarter}
+      replaceStarterByDefault={Boolean(canReplaceStarter && document.sourceDocument?.episodes.find((episode) => episode.id === planningSourceEpisodeId)?.number === 1)}
+      canCreateBlankEpisode={!document.sourceDocument}
+      errorMessage={planDraftSaveError || planError}
+      onOpenChange={changePlanOpen}
+      onScriptDraftChange={changePlanScriptDraft}
+      onReviewScriptChange={changeReviewedScript}
+      onSourceTextChange={(value) => changePlanInput(setPlanSourceText, value)}
+      onInstructionsChange={(value) => changePlanInput(setPlanInstructions, value)}
+      onTargetDurationSecChange={(value) => changePlanInput(setPlanTargetDurationSec, value)}
+      onGenerate={() => void generatePlan(false, Boolean(currentPlanRecovery || currentPlanScriptFailure))}
+      onResume={() => currentPlanRecovery?.needsValidation
+        ? void generatePlan(false, false, currentPlanRecovery.script) : void generatePlan(true)}
+      onRepairScript={(draft) => void generatePlan(false, false, draft)}
+      onApply={(reviewed) => void applyPlan(false, reviewed)}
+      onReplaceStarter={(reviewed) => void applyPlan(true, reviewed)}
+      onEdit={editPlanSource}
+      onEditScript={() => { planRequestRef.current += 1; setPlanResult(null); planningAction.clearFeedback(); }}
+      onCreateBlankEpisode={createBlankEpisodeFromPlan}
+    />
     <div data-motion-comic-workbench="true">
-      <DirectorDeskWorkspace
+      <MotionComicProductionWorkspace
+        document={document}
+        stage={workflowStage}
+        stageState={stageState}
+        dirty={dirty}
+        busy={projectAction.busy || providerAction.busy || planningAction.busy || planApplyAction.busy}
+        showProjectHeader={!['storyboard', 'video', 'audio', 'export'].includes(workflowStage)}
+        feedback={actionFeedback}
+        errorMessage={actionError}
+        onStageChange={setWorkflowStage}
+        onSave={() => void saveProject()}
+        onNewProject={startCreate}
+        onBack={() => navigate?.(returnView)}
+      >
+        {workflowStage === 'source' ? <MotionComicSourcePanel document={document} onContinue={setWorkflowStage} /> : null}
+        {workflowStage === 'episodes' ? <MotionComicEpisodesPanel
+          document={document}
+          selectedSourceEpisodeId={selectedSourceEpisode?.id ?? ''}
+          plannedSourceEpisodeIds={plannedSourceEpisodeIds}
+          nextSourceEpisodeId={nextSourceEpisodeId}
+          onSelectSourceEpisode={setSelectedSourceEpisodeId}
+          onPlanEpisode={(sourceEpisodeId) => openPlanDialog(sourceEpisodeId)}
+          onSelectGeneratedEpisode={selectEpisode}
+          onContinue={setWorkflowStage}
+        /> : null}
+        {workflowStage === 'scenes' ? <MotionComicScenesPanel
+          document={document}
+          activeEpisode={activeEpisode}
+          onSelectEpisode={selectEpisode}
+          onAddScene={addScene}
+          onUpdateScene={updateScene}
+          onSetActBoundary={setActBoundary}
+          onRenameAct={renameAct}
+          onPlanEpisode={(sourceEpisodeId) => openPlanDialog(sourceEpisodeId)}
+          onContinue={setWorkflowStage}
+        /> : null}
+        {['storyboard', 'video', 'audio', 'export'].includes(workflowStage) ? <DirectorDeskWorkspace
         mode="motion-comic"
         projectTitle={document.title}
         projectMeta={`${projects.length} 个系列项目`}
         episodeTitle={`EP${String(activeEpisode.number).padStart(2, '0')} · ${activeEpisode.title}`}
-        stageLabel="镜头生成"
+        stageLabel={workflowStage === 'storyboard' ? '分镜图' : workflowStage === 'video' ? '视频生成' : workflowStage === 'audio' ? '配音字幕' : '导出'}
         completedStages={completedStages}
         systemStatus={systemStatus}
         systemStatusTone={systemStatusTone}
@@ -1018,6 +1751,12 @@ export function MotionComicPage({
         voiceModel={voiceStatus.model}
         voiceUnavailableReason={voiceStatus.unavailableReason}
         voiceOptions={voiceStatus.voices}
+        videoProviderConnected={selectedVideoProviderStatus.connected}
+        videoProviderLabel={selectedVideoProviderStatus.label}
+        videoProviderModel={selectedVideoProviderStatus.model}
+        videoProviderUnavailableReason={selectedVideoProviderStatus.unavailableReason}
+        videoProviderId={state.config.video.activeProviderId}
+        videoProviderOptions={videoProviderOptions.map((provider) => ({ value: provider.providerId, label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`, disabled: !provider.connected }))}
         outputUrl={outputAsset?.localPath ? toLocalAssetUrl(outputAsset.localPath) : undefined}
         outputHistory={renderOutputs.history.map((asset) => ({ id: asset.id, url: asset.localPath ? toLocalAssetUrl(asset.localPath) : undefined, createdAt: asset.createdAt, current: asset.id === outputAsset?.id }))}
         qualityReview={qualityReview}
@@ -1052,14 +1791,46 @@ export function MotionComicPage({
         onProviderProfileChange={selectImageProvider}
         onGenerateVoice={generateVoice}
         onGenerateDialogueVoice={generateVoice}
+        onGenerateVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
+        onRetryVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
+        onVideoProviderChange={selectVideoProvider}
+        renderShotWorkflow={(shotId, busy) => {
+          const shot = shots.find((candidate) => candidate.id === shotId);
+          if (!shot) return null;
+          const status = videoProviderStatuses.get(shotId) ?? selectedVideoProviderStatus;
+          return <MotionComicVideoReadiness
+            shot={shot}
+            connected={status.connected}
+            providerLabel={status.label}
+            providerModel={status.model}
+            providerId={state.config.video.activeProviderId}
+            providerOptions={videoProviderOptions.map((provider) => ({
+              value: provider.providerId,
+              label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`,
+              disabled: !provider.connected,
+            }))}
+            unavailableReason={status.unavailableReason}
+            busy={busy}
+            remoteOnly={Boolean(document.sourceDocument)}
+            onStrategyChange={(strategy) => updateShot(shotId, { renderStrategy: strategy })}
+            onProviderChange={selectVideoProvider}
+            onConfigureProvider={() => openSettings?.('video', 'motion-comic', document.id)}
+          />;
+        }}
         onRender={() => withHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, renderProject)}
         onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
-        onOpenSettings={() => setSeriesSettingsOpen(true)}
+        onOpenSettings={() => setWorkflowStage('assets')}
         onConfigureProvider={() => openSettings?.('image', 'motion-comic', document.id)}
+        onConfigureVideoProvider={() => openSettings?.('video', 'motion-comic', document.id)}
         backToTasksLabel={navigationReturnLabel(returnView)}
         onBackToTasks={() => navigate?.(returnView)}
-        onStageChange={(stage) => { if (stage === '剧本') setSeriesSettingsOpen(true); }}
+        onStageChange={(stage) => {
+          if (stage === '配音字幕') setWorkflowStage('audio');
+          if (stage === '导出' || stage === '审片') setWorkflowStage('export');
+        }}
       />
+        : null}
+      </MotionComicProductionWorkspace>
     </div>
   </>;
 }
@@ -1134,12 +1905,33 @@ function formatReferenceDate(value: string): string {
   return date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, shot: MotionComicShot, document: MotionComicPipelineData | null): DirectorShot {
+function suggestMotionComicWorkflowStage(document: MotionComicPipelineData): MotionComicWorkflowStage {
+  const generatedEpisodes = document.episodes.filter((episode) => episode.scenes.length > 0);
+  const plannedSourceCount = document.sourceDocument ? plannedMotionComicSourceEpisodeIds(document).size : generatedEpisodes.length;
+  if (document.sourceDocument && plannedSourceCount < document.sourceDocument.episodes.length) return 'episodes';
+  if (generatedEpisodes.length === 0) return document.sourceDocument ? 'episodes' : 'source';
+  if (generatedEpisodes.some((episode) => {
+    const acts = episode.scenes.map((scene, index) => resolveMotionComicSceneAct(scene, index, episode.scenes.length));
+    return acts.some((act, index) => index === 0
+      ? act.actIndex !== 1
+      : act.actIndex !== acts[index - 1].actIndex && act.actIndex !== acts[index - 1].actIndex + 1);
+  })) return 'scenes';
+  if (!motionComicConsistencyReady(document)) return 'assets';
+  const shots = generatedEpisodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots));
+  if (shots.some((shot) => !shot.firstFrameAssetVersionId)) return 'storyboard';
+  if (shots.some((shot) => shot.renderStrategy === 'remote-video' && !shot.videoAssetVersionId)) return 'video';
+  const cues = generatedEpisodes.flatMap((episode) => episode.dialogueCues);
+  if (cues.some((cue) => !cue.voiceAssetVersionId && !cue.audioAssetVersionId)) return 'audio';
+  return 'export';
+}
+
+function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, shot: MotionComicShot, document: MotionComicPipelineData | null, videoProviderStatus?: DirectorVideoProviderStatus): DirectorShot {
   const subtitle = shot.dialogueCueIds.map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text).filter(Boolean).join(' ');
   const characterLabel = shot.characterLookIds.map((lookId) => document?.characters.flatMap((character) => character.looks).find((look) => look.id === lookId)?.label).filter(Boolean).join('、') || '角色待绑定';
   const asset = shot.firstFrameAssetVersionId ? document?.assets.find((candidate) => candidate.id === shot.firstFrameAssetVersionId) : undefined;
   const cueVoiceIds = shot.dialogueCueIds.map((id) => episode.dialogueCues.find((cue) => cue.id === id)?.voiceAssetVersionId).filter((id): id is string => Boolean(id));
   const voiceAsset = document?.assets.find((candidate) => candidate.id === (cueVoiceIds[0] ?? shot.voiceAssetVersionId));
+  const videoAsset = shot.videoAssetVersionId ? document?.assets.find((candidate) => candidate.id === shot.videoAssetVersionId && candidate.kind === 'video') : undefined;
   const audioClips: DirectorPreviewAudioClip[] = (productionAudioClipsForShot(episode.timeline, shot) ?? [])
     .flatMap((clip) => {
       const asset = document?.assets.find((candidate) => candidate.id === clip.assetVersionId && candidate.kind === 'audio');
@@ -1147,6 +1939,15 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     });
   const job = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'text-to-image') : undefined;
   const voiceJob = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'text-to-speech') : undefined;
+  const selectedVideoJob = shot.videoJobId
+    ? document?.providerJobs.find((candidate) => candidate.id === shot.videoJobId && candidate.nodeId === shot.id && candidate.capability === 'image-to-video')
+    : undefined;
+  const latestVideoJob = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video', episode.id) : undefined;
+  const videoJob = selectedVideoJob ?? (latestVideoJob?.status === 'running' ? latestVideoJob : undefined);
+  const firstFrameReady = Boolean(asset?.localPath && asset.kind === 'image');
+  const videoReady = Boolean(videoAsset?.localPath && videoJob?.status === 'completed' && videoAsset.providerJobId === videoJob.id);
+  const remoteVideo = shot.renderStrategy === 'remote-video';
+  const activeJob = remoteVideo ? videoJob : job;
   return {
     id: shot.id,
     index: shot.index,
@@ -1161,9 +1962,9 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     subtitleCues: shot.dialogueCueIds.flatMap((id) => episode.dialogueCues.find((cue) => cue.id === id) ?? []),
     dialogueCharacters: document?.characters.map((character) => ({ value: character.id, label: character.name })),
     thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined,
-    status: job?.status === 'completed' ? 'ready' : job?.status === 'running' ? 'generating' : job?.status === 'failed' ? 'failed' : 'queued',
-    provider: job ? `${job.providerId} / ${job.model}` : undefined,
-    cost: job?.actualCost ?? job?.estimatedCost,
+    status: remoteVideo ? videoReady ? 'ready' : activeJob?.status === 'running' ? 'generating' : activeJob?.status === 'failed' || activeJob?.status === 'cancelled' ? 'failed' : 'queued' : job?.status === 'completed' ? 'ready' : job?.status === 'running' ? 'generating' : job?.status === 'failed' ? 'failed' : 'queued',
+    provider: activeJob ? `${activeJob.providerId} / ${activeJob.model}` : undefined,
+    cost: activeJob?.actualCost ?? activeJob?.estimatedCost,
     voice: shot.voiceLabel,
     voiceId: shot.voiceId,
     voiceSpeed: shot.voiceSpeed,
@@ -1171,8 +1972,8 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     audioClips,
     soundClips: document ? directorSoundClips(document, shot.id) : [],
     voiceGenerationCount: document ? motionComicDialogueCuesToGenerate(document, shot.id).length : 0,
-    imageReady: Boolean(asset?.localPath && asset.kind === 'image'),
-    voiceReady: shot.dialogueCueIds.length > 0 && shot.dialogueCueIds.every((id) => {
+    imageReady: firstFrameReady,
+    voiceReady: shot.dialogueCueIds.length === 0 || shot.dialogueCueIds.every((id) => {
       const cue = episode.dialogueCues.find((item) => item.id === id);
       return document?.assets.some((asset) => asset.id === (cue?.voiceAssetVersionId ?? shot.voiceAssetVersionId) && asset.kind === 'audio' && asset.localPath);
     }),
@@ -1183,10 +1984,23 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     motionPreset: shot.motionPreset ?? '轻微视差',
     seed: shot.seed,
     seedLocked: shot.seedLocked,
+    renderStrategy: remoteVideo ? 'living-poster' : 'deterministic-layers',
+    videoInputReady: firstFrameReady,
+    videoFirstFrameReady: firstFrameReady,
+    videoLastFrameReady: Boolean(shot.lastFrameAssetVersionId && document?.assets.some((candidate) => candidate.id === shot.lastFrameAssetVersionId && candidate.kind === 'image' && candidate.localPath)),
+    videoRequiresLastFrame: false,
+    videoInputUnavailableReason: firstFrameReady ? undefined : '请先生成或选择一张可读取的关键帧图片。',
+    videoUrl: videoAsset?.localPath ? toLocalAssetUrl(videoAsset.localPath) : undefined,
+    videoJobId: shot.videoJobId,
+    videoJobStatus: videoJob?.status ?? 'idle',
+    videoJobError: videoJob?.error,
+    videoEstimatedCost: videoJob?.actualCost ?? videoJob?.estimatedCost ?? videoProviderStatus?.estimatedCost,
     linkedAssetIds: [...shot.characterLookIds, shot.sceneAssetId, ...shot.propAssetIds, ...(shot.firstFrameAssetVersionId ? [shot.firstFrameAssetVersionId] : [])],
     assetVersionIds: [...new Set([
       ...(episode.timeline.clips.find((clip) => clip.shotId === shot.id)?.assetVersionIds ?? []),
       ...(shot.firstFrameAssetVersionId ? [shot.firstFrameAssetVersionId] : []),
+      ...(shot.lastFrameAssetVersionId ? [shot.lastFrameAssetVersionId] : []),
+      ...(shot.videoAssetVersionId ? [shot.videoAssetVersionId] : []),
       ...(shot.voiceAssetVersionId ? [shot.voiceAssetVersionId] : []), ...cueVoiceIds,
       ...(document ? directorSoundClips(document, shot.id).map((clip) => clip.assetVersionId) : []),
     ])],

@@ -19,11 +19,11 @@ def run() -> None:
     OUTPUT.mkdir(parents=True, exist_ok=True)
     environment = {**os.environ, 'TEMP': str(OUTPUT), 'TMP': str(OUTPUT)}
     subprocess.run([
-        'I:/nodejs/node.exe', str(ROOT / 'node_modules/esbuild/bin/esbuild'),
-        str(ROOT / 'tests/template-unsaved.harness.tsx'), '--bundle', '--format=iife', '--platform=browser',
-        '--target=chrome120', '--loader:.css=empty', f'--outfile={OUTPUT / "harness.js"}',
+        'I:/nodejs/node.exe', '--input-type=module', '-e',
+        "import {build} from 'vite';await build({configFile:false,define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{outDir:process.argv[1],emptyOutDir:false,target:'chrome120',lib:{entry:'tests/template-unsaved.harness.tsx',formats:['es'],fileName:()=> 'harness.js',cssFileName:'harness'}}});",
+        str(OUTPUT),
     ], cwd=ROOT, env=environment, check=True)
-    (OUTPUT / 'index.html').write_text('<!doctype html><html><meta charset="utf-8"><body><div id="root"></div><script src="harness.js"></script></body></html>', encoding='utf-8')
+    (OUTPUT / 'index.html').write_text('<!doctype html><html><meta charset="utf-8"><link rel="stylesheet" href="harness.css"><body><div id="root"></div><script type="module" src="harness.js"></script></body></html>', encoding='utf-8')
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(OUTPUT)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     checks: list[str] = []

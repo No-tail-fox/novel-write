@@ -2,6 +2,7 @@ import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
+import { validCustomStylePreview, withoutStaleCustomStylePreview } from './custom-style-preview';
 import { parseHTMLContent } from '@hyperframes/core/compiler/html-document';
 import type {
   AccountProfile,
@@ -75,6 +76,7 @@ import {
 import {
   MOTION_COMIC_TASK_TYPE,
   createMotionComicDraft,
+  createMotionComicImportedProject,
   createMotionComicStarterProject,
   motionComicCreateInputSchema,
   motionComicSaveInputSchema,
@@ -1364,6 +1366,7 @@ export class FileDatabase {
         negative_prompt TEXT NOT NULL,
         allow_color INTEGER NOT NULL,
         description TEXT DEFAULT '',
+        preview_json TEXT DEFAULT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -1477,6 +1480,7 @@ export class FileDatabase {
     addColumnIfMissing(this.db, 'task_events', 'run_generation', 'INTEGER DEFAULT 0');
     addColumnIfMissing(this.db, 'prompt_templates', 'data_json', "TEXT DEFAULT '{}'");
     addColumnIfMissing(this.db, 'prompt_templates', 'summary_json', "TEXT DEFAULT '{}'");
+    addColumnIfMissing(this.db, 'custom_styles', 'preview_json', 'TEXT DEFAULT NULL');
     this.backfillPromptTemplateSummaries();
     for (const [column, definition] of [
       ['name', "TEXT DEFAULT ''"],
@@ -1758,8 +1762,8 @@ export class FileDatabase {
   private insertCustomStyle(style: CustomStyle): void {
     this.db.run(
       `INSERT OR REPLACE INTO custom_styles
-       (id, name, tag, short_name, prefix, suffix, negative_prompt, allow_color, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, tag, short_name, prefix, suffix, negative_prompt, allow_color, description, created_at, updated_at, preview_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         style.id,
         style.name,
@@ -1772,6 +1776,7 @@ export class FileDatabase {
         style.description,
         style.createdAt,
         style.updatedAt,
+        validCustomStylePreview(style) ? json(style.preview) : null,
       ],
     );
   }
@@ -1966,11 +1971,11 @@ export class FileDatabase {
   async upsertCustomStyle(input: CustomStyle): Promise<CustomStyle> {
     return this.enqueueCommit(() => {
       const now = new Date().toISOString();
-      const style: CustomStyle = {
+      const style: CustomStyle = withoutStaleCustomStylePreview({
         ...input,
         createdAt: input.createdAt || now,
         updatedAt: input.updatedAt || now,
-      };
+      });
       this.insertCustomStyle(style);
       return style;
     });
@@ -1985,11 +1990,11 @@ export class FileDatabase {
         isBuiltin: false,
         updatedAt: input.storyTemplate.updatedAt || now,
       };
-      const imageTemplate: CustomStyle = {
+      const imageTemplate: CustomStyle = withoutStaleCustomStylePreview({
         ...input.imageTemplate,
         createdAt: input.imageTemplate.createdAt || now,
         updatedAt: input.imageTemplate.updatedAt || now,
-      };
+      });
       this.insertCustomStyle(imageTemplate);
       this.insertPromptTemplate(storyTemplate);
       return { storyTemplate, imageTemplate };
@@ -2496,6 +2501,8 @@ export class FileDatabase {
         title: validated.title,
         ratio: validated.ratio,
         now: task.createdAt,
+        writingStyleId: validated.writingStyleId,
+        writingRequirements: validated.writingRequirements,
       });
       const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt, validated.durationMs);
       this.db.run(
@@ -2563,7 +2570,7 @@ export class FileDatabase {
     return this.enqueueCommit(() => {
       const task = this.insertTask({
         title: validated.title,
-        inputText: validated.premise,
+        inputText: validated.source?.originalText ?? validated.premise,
         taskKind: 'story',
         taskType: MOTION_COMIC_TASK_TYPE,
         ratio: validated.ratio ?? '9:16',
@@ -2579,7 +2586,9 @@ export class FileDatabase {
         ratio: validated.ratio,
         now: task.createdAt,
       });
-      const document = createMotionComicStarterProject(draft, validated.episodeTitle, task.createdAt);
+      const document = validated.source
+        ? createMotionComicImportedProject(draft, validated.source, task.createdAt)
+        : createMotionComicStarterProject(draft, validated.episodeTitle, task.createdAt);
       this.db.run(
         `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
         [document.stage, JSON.stringify(document), task.id],
@@ -2587,7 +2596,7 @@ export class FileDatabase {
       this.db.run(
         `INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [task.id, 0, 'motion_comic_created', 0, 'AI 漫剧导演', 'starter-project', '已创建系列 Bible、第一集分镜和一致性检查骨架。', JSON.stringify({ stage: document.stage, episodes: document.episodes.length, shots: document.episodes[0]?.timeline.clips.length ?? 0 }), Date.now()],
+        [task.id, 0, 'motion_comic_created', 0, 'AI 漫剧创作', validated.source ? 'source-import' : 'starter-project', validated.source ? '已导入源文并保存分集草案，等待逐集确认。' : '已创建系列 Bible、第一集分镜和一致性检查骨架。', JSON.stringify({ stage: document.stage, sourceEpisodes: document.sourceDocument?.episodes.length ?? 0, episodes: document.episodes.length, shots: document.episodes[0]?.timeline.clips.length ?? 0 }), Date.now()],
       );
       const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
       if (!row) throw new Error(`MOTION_COMIC_NOT_FOUND: ${task.id}`);
@@ -4739,7 +4748,7 @@ function rowToHistoryTombstone(row: Record<string, unknown>): HistoryTombstone {
 }
 
 function rowToCustomStyle(row: Record<string, unknown>): CustomStyle {
-  return {
+  return withoutStaleCustomStylePreview({
     id: String(row.id),
     name: String(row.name),
     tag: String(row.tag),
@@ -4751,7 +4760,8 @@ function rowToCustomStyle(row: Record<string, unknown>): CustomStyle {
     description: String(row.description ?? ''),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
-  };
+    preview: parseJson<CustomStyle['preview']>(String(row.preview_json ?? 'null'), undefined),
+  });
 }
 
 function rowToCustomCoverTemplate(row: Record<string, unknown>): CustomCoverTemplate {

@@ -1,0 +1,21 @@
+{
+  "styleId": "museum-paper",
+  "provider": "VllmProxy",
+  "endpoint": "https://api.vllmproxy.com/v1/images/generations",
+  "requestedModel": "gpt-image-2.5",
+  "returnedModel": null,
+  "requestedSize": "3840x2160",
+  "actualOriginalSize": [
+    3840,
+    2160
+  ],
+  "previewSize": [
+    768,
+    432
+  ],
+  "completedAt": "2026-09-16T11:05:28.4005396Z",
+  "originalSha256": "46d228be49df55cddff7cfc5a1b188e3306d3cfeab5f9fa7a0ed8861f49e28c1",
+  "previewSha256": "3e36addc94e4406ba6bb9733e767c678322923a72faae3a1ff83b7c36a6fd154",
+  "previewBytes": 70620,
+  "note": "AI-generated style reference; resized locally for hover previews. The provider did not independently verify upstream model identity."
+}

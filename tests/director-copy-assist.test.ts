@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError } from '../src/features/director-desk/director-copy-assist';
 import { composeCopyFromSources } from '../src/shared/research';
+import { EDITORIAL_WRITING_STYLES } from '../src/shared/editorial-writing-styles';
 
 describe('Director create copy assistance', () => {
+  it.each(EDITORIAL_WRITING_STYLES)('applies $label to creation and revision while retaining custom requirements', (style) => {
+    for (const intent of ['create', 'revise'] as const) {
+      const request = buildDirectorCopyAssistRequest({ mode: 'vox', intent, title: '旧书店', copy: '旧书店里有很多书。', writingStyleId: style.id, requirements: '面向中学生，避免煽情。' });
+      expect(request.extraRequirements).toContain(`文案创作风格：${style.label}`);
+      expect(request.extraRequirements).toContain(style.guidance);
+      expect(request.extraRequirements).toContain('面向中学生，避免煽情。');
+      expect(request.extraRequirements).toContain('以用户的具体要求为准');
+      expect(request.extraRequirements).not.toContain(style.example);
+      expect(request.selectedSources).toHaveLength(intent === 'revise' ? 1 : 0);
+    }
+  });
+
+  it('uses documentary guidance by default and leaves comic requests unaffected', () => {
+    const base = { intent: 'create', title: '旧书店', copy: '' } as const;
+    expect(buildDirectorCopyAssistRequest({ ...base, mode: 'vox' }).extraRequirements).toContain('文案创作风格：纪实解释');
+    expect(buildDirectorCopyAssistRequest({ ...base, mode: 'motion-comic', writingStyleId: 'data' }).extraRequirements).not.toContain('文案创作风格');
+  });
   it.each(['create', 'revise'] as const)('passes the creator direction into the %s request', (intent) => {
     const request = buildDirectorCopyAssistRequest({
       mode: 'vox', intent, title: '城市旧书店为何消失', copy: '旧书店正在消失。',
@@ -27,9 +45,10 @@ describe('Director create copy assistance', () => {
       const message = request.messages.find((message) => message.role === 'user');
       expect(message?.content).toContain(requirements);
       expect(message?.content).toContain('城市旧书店为何消失');
+      expect(message?.content).toContain('文案创作风格：数据解读');
       expect(message?.content).toContain('只输出可直接配音的正文');
       return { text: '街角的书店关了，变化先从租金开始。', raw: 'text', requestId: 'vox-direction-test' };
-    } }, buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '城市旧书店为何消失', copy: '', requirements }));
+    } }, buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '城市旧书店为何消失', copy: '', requirements, writingStyleId: 'data' }));
     expect(result.copy).toBe('街角的书店关了，变化先从租金开始。');
   });
   it('builds a VOX creation request from the project title', () => {

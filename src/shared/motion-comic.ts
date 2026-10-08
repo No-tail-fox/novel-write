@@ -1,3 +1,4 @@
+import type { MotionComicSpeakerRole, MotionComicBubbleStyle, MotionComicBubblePosition } from "./motion-comic-dialogue";
 import { z } from 'zod';
 import { productionNarrationAlignmentEvidenceSchema } from './production-audio-alignment';
 import { productionSubtitleLayoutEvidenceSchema } from './production-subtitle-layout';
@@ -7,6 +8,21 @@ import { productionSubtitleCueSchema, validatePersistedSubtitleCue } from './pro
 import { productionAudioFadeEnvelopeSchema, validateProductionAudioTimeline } from './production-audio';
 import { hashSubtitleAlignment, invalidateSubtitleAlignment, isSubtitleAlignmentValid } from './audio-alignment';
 import { MAX_PRODUCTION_HISTORY_ITEMS } from './production-history';
+import {
+  motionComicPlanningEvidenceSchema,
+  motionComicShotContinuitySchema,
+  type MotionComicPlanningEvidence,
+  type MotionComicShotContinuity,
+} from './motion-comic-planning';
+import {
+  buildMotionComicEpisodeSourceUnits,
+  fingerprintMotionComicEpisodeSource,
+  motionComicSourceSplitEvidenceSchema,
+  validateMotionComicEpisodeSplitDrafts,
+  type MotionComicEpisodePlanningIssue,
+  type MotionComicEpisodeSplitDraft,
+  type MotionComicSourceSplitEvidence,
+} from './motion-comic-episode-planning';
 
 export const MOTION_COMIC_TASK_TYPE = 'motion-comic' as const;
 export const MOTION_COMIC_PIPELINE_VERSION = 1 as const;
@@ -26,6 +42,44 @@ export const MOTION_COMIC_STAGES = [
 ] as const;
 
 export type MotionComicStage = (typeof MOTION_COMIC_STAGES)[number];
+
+export const MOTION_COMIC_WORKFLOW_STAGES = [
+  'source',
+  'episodes',
+  'scenes',
+  'assets',
+  'storyboard',
+  'video',
+  'audio',
+  'export',
+] as const;
+
+export type MotionComicWorkflowStage = (typeof MOTION_COMIC_WORKFLOW_STAGES)[number];
+export type MotionComicSourceKind = 'script' | 'novel';
+export type MotionComicAdaptationMode = 'faithful-script' | 'novel-adaptation';
+export const MOTION_COMIC_ACT_SOURCES = ['ai-planned', 'rule-inferred', 'manual'] as const;
+export type MotionComicActSource = (typeof MOTION_COMIC_ACT_SOURCES)[number];
+
+export interface MotionComicSourceEpisode {
+  id: string;
+  number: number;
+  title: string;
+  sourceText: string;
+  startUnitId?: string;
+  endUnitId?: string;
+  splitReason?: string;
+  continuityHook?: string;
+}
+
+export interface MotionComicSourceDocument {
+  kind: MotionComicSourceKind;
+  adaptationMode: MotionComicAdaptationMode;
+  fileName?: string;
+  originalText: string;
+  importedAt: string;
+  episodes: MotionComicSourceEpisode[];
+  splitEvidence?: MotionComicSourceSplitEvidence;
+}
 
 export interface MotionComicSeriesBible {
   id: string;
@@ -56,6 +110,7 @@ export interface MotionComicCharacterLook {
 export interface MotionComicCharacter {
   id: string;
   name: string;
+  aliases?: string[];
   role: string;
   identityPrompt: string;
   personality: string;
@@ -89,6 +144,10 @@ export interface MotionComicDialogueCue extends ProductionSubtitleCue {
   emotion: string;
   /** Legacy dialogue audio reference; new word alignment uses audioAssetVersionId. */
   voiceAssetVersionId?: string;
+  speakerRole?: MotionComicSpeakerRole;
+  bubbleStyle?: MotionComicBubbleStyle;
+  bubblePosition?: MotionComicBubblePosition;
+  speakerName?: string;
 }
 
 export interface MotionComicShot {
@@ -106,7 +165,12 @@ export interface MotionComicShot {
   propAssetIds: string[];
   firstFrameAssetVersionId?: string;
   lastFrameAssetVersionId?: string;
+  /** Static keyframe motion remains available as an explicit production mode. */
+  renderStrategy?: 'image-motion' | 'remote-video';
+  videoAssetVersionId?: string;
   videoJobId?: string;
+  continuity?: MotionComicShotContinuity;
+  sourceBeatIds?: string[];
   dialogueCueIds: string[];
   voiceId?: string;
   voiceLabel?: string;
@@ -123,6 +187,10 @@ export interface MotionComicDramaticScene {
   id: string;
   episodeId: string;
   index: number;
+  actIndex?: number;
+  actTitle?: string;
+  actBoundaryReason?: string;
+  actSource?: MotionComicActSource;
   title: string;
   summary: string;
   locationAssetId: string;
@@ -139,6 +207,7 @@ export interface MotionComicEpisode {
   status: 'draft' | 'boarded' | 'keyframes' | 'audio' | 'assembled' | 'completed';
   scenes: MotionComicDramaticScene[];
   dialogueCues: MotionComicDialogueCue[];
+  planningEvidence?: MotionComicPlanningEvidence;
   timeline: ProductionTimeline;
 }
 
@@ -146,6 +215,7 @@ export interface MotionComicPipelineData extends Omit<ProductionDocumentBase, 'w
   version: 1;
   workflowKind: 'motion-comic';
   stage: MotionComicStage;
+  sourceDocument?: MotionComicSourceDocument;
   series: MotionComicSeriesBible;
   characters: MotionComicCharacter[];
   sceneAssets: MotionComicSceneAsset[];
@@ -171,6 +241,41 @@ export interface MotionComicCreateInput {
   premise: string;
   episodeTitle?: string;
   ratio?: MotionComicPipelineData['ratio'];
+  source?: Omit<MotionComicSourceDocument, 'importedAt' | 'episodes'> & {
+    episodes: Array<Omit<MotionComicSourceEpisode, 'id' | 'number'>>;
+  };
+}
+
+export interface MotionComicResolvedAct {
+  actIndex: number;
+  actTitle: string;
+  actBoundaryReason: string;
+  actSource: MotionComicActSource;
+}
+
+const RULE_INFERRED_ACT_TITLES = ['开端', '对抗', '收束'] as const;
+
+export function resolveMotionComicSceneAct(
+  scene: MotionComicDramaticScene,
+  position: number,
+  sceneCount: number,
+): MotionComicResolvedAct {
+  const safeSceneCount = Math.max(1, sceneCount);
+  const inferredIndex = Math.min(3, Math.floor((Math.max(0, position) * 3) / safeSceneCount) + 1);
+  const actIndex = scene.actIndex ?? inferredIndex;
+  const actTitle = scene.actTitle?.trim()
+    || RULE_INFERRED_ACT_TITLES[actIndex - 1]
+    || `第 ${actIndex} 幕`;
+  const actSource = scene.actSource ?? 'rule-inferred';
+  return {
+    actIndex,
+    actTitle,
+    actSource,
+    actBoundaryReason: scene.actBoundaryReason?.trim()
+      || (actSource === 'rule-inferred'
+        ? `规则推断：按场次顺序归入第 ${actIndex} 幕，尚未记录 AI 转折依据。`
+        : '尚未记录幕边界依据。'),
+  };
 }
 
 export interface MotionComicSaveInput {
@@ -186,7 +291,7 @@ export interface MotionComicValidationIssue {
 
 const MAX_TEXT = 1_000_000;
 const MAX_ITEMS = 500;
-const MAX_EPISODES = 100;
+const MAX_SOURCE_EPISODE_CHARACTERS = 30_000;
 const MAX_SCENES_PER_EPISODE = 100;
 const MAX_SHOTS_PER_SCENE = 100;
 const MAX_RULES = 100;
@@ -337,6 +442,94 @@ const seriesSchema = z.object({
   propAssetIds: z.array(idSchema).max(MAX_REFERENCES),
 }).strict();
 
+const sourceEpisodeSchema = z.object({
+  id: idSchema,
+  number: z.number().int().min(1),
+  title: z.string().trim().min(1).max(512),
+  sourceText: z.string().trim().min(1).max(MAX_SOURCE_EPISODE_CHARACTERS),
+  startUnitId: idSchema.optional(),
+  endUnitId: idSchema.optional(),
+  splitReason: boundedText(2_000).optional(),
+  continuityHook: boundedText(2_000).optional(),
+}).strict();
+
+type MotionComicSourceSplitCandidate = {
+  originalText: string;
+  episodes: Array<Pick<MotionComicSourceEpisode, 'title' | 'sourceText' | 'startUnitId' | 'endUnitId' | 'splitReason' | 'continuityHook'>>;
+  splitEvidence?: MotionComicSourceSplitEvidence;
+};
+
+function motionComicSourceSplitIssues(value: MotionComicSourceSplitCandidate): MotionComicEpisodePlanningIssue[] {
+  const evidence = value.splitEvidence;
+  if (!evidence) return [];
+  const issues: MotionComicEpisodePlanningIssue[] = [];
+  let units: ReturnType<typeof buildMotionComicEpisodeSourceUnits>;
+  try {
+    const fingerprint = fingerprintMotionComicEpisodeSource(value.originalText);
+    if (fingerprint !== evidence.sourceFingerprint) {
+      issues.push({ path: 'splitEvidence.sourceFingerprint', message: '分集证据与当前原文不一致，请重新拆分。' });
+    }
+    units = buildMotionComicEpisodeSourceUnits(value.originalText);
+  } catch (error) {
+    issues.push({ path: 'originalText', message: error instanceof Error ? error.message : '原文无法建立分集边界。' });
+    return issues;
+  }
+  if (evidence.sourceUnitCount !== undefined && evidence.sourceUnitCount !== units.length) {
+    issues.push({ path: 'splitEvidence.sourceUnitCount', message: '保存的原文单元数量与当前原文不一致。' });
+  }
+  if (evidence.strategy !== 'ai-story') return issues;
+  if (!evidence.model) issues.push({ path: 'splitEvidence.model', message: 'AI 分集必须记录所用模型。' });
+  const drafts: MotionComicEpisodeSplitDraft[] = [];
+  value.episodes.forEach((episode, index) => {
+    if (!episode.startUnitId || !episode.endUnitId || !episode.splitReason?.trim() || !episode.continuityHook?.trim()) {
+      issues.push({ path: `episodes[${index}]`, message: 'AI 分集必须保存起止单元、拆分依据和上下集承接。' });
+      return;
+    }
+    drafts.push({
+      title: episode.title,
+      sourceText: episode.sourceText,
+      startUnitId: episode.startUnitId,
+      endUnitId: episode.endUnitId,
+      splitReason: episode.splitReason,
+      continuityHook: episode.continuityHook,
+    });
+  });
+  if (drafts.length === value.episodes.length) issues.push(...validateMotionComicEpisodeSplitDrafts(drafts, units));
+  return issues;
+}
+
+function zodPathFromMotionComicIssue(path: string): Array<string | number> {
+  return path.replace(/\[(\d+)\]/gu, '.$1').split('.').filter(Boolean).map((part) => /^\d+$/u.test(part) ? Number(part) : part);
+}
+
+function addMotionComicSourceSplitIssues(value: MotionComicSourceSplitCandidate, context: z.RefinementCtx): void {
+  motionComicSourceSplitIssues(value).forEach((issue) => context.addIssue({
+    code: 'custom',
+    path: zodPathFromMotionComicIssue(issue.path),
+    message: issue.message,
+  }));
+}
+
+const sourceDocumentSchema = z.object({
+  kind: z.enum(['script', 'novel']),
+  adaptationMode: z.enum(['faithful-script', 'novel-adaptation']),
+  fileName: z.string().max(512).optional(),
+  originalText: boundedText(),
+  importedAt: timestampSchema,
+  episodes: z.array(sourceEpisodeSchema).min(1),
+  splitEvidence: motionComicSourceSplitEvidenceSchema.optional(),
+}).strict().superRefine(addMotionComicSourceSplitIssues);
+
+const sourceCreateEpisodeSchema = sourceEpisodeSchema.omit({ id: true, number: true });
+const sourceCreateSchema = z.object({
+  kind: z.enum(['script', 'novel']),
+  adaptationMode: z.enum(['faithful-script', 'novel-adaptation']),
+  fileName: z.string().max(512).optional(),
+  originalText: boundedText(),
+  episodes: z.array(sourceCreateEpisodeSchema).min(1),
+  splitEvidence: motionComicSourceSplitEvidenceSchema.optional(),
+}).strict().superRefine(addMotionComicSourceSplitIssues);
+
 const lookSchema = z.object({
   id: idSchema,
   characterId: idSchema,
@@ -351,6 +544,7 @@ const lookSchema = z.object({
 const characterSchema = z.object({
   id: idSchema,
   name: z.string().max(512),
+  aliases: z.array(z.string().max(512)).max(20).optional(),
   role: z.string().max(512),
   identityPrompt: boundedText(65_536),
   personality: boundedText(65_536),
@@ -383,6 +577,14 @@ const dialogueCueSchema = productionSubtitleCueSchema.safeExtend({
   characterId: idSchema.optional(),
   emotion: z.string().max(256),
   voiceAssetVersionId: idSchema.optional(),
+  speakerRole: z.enum(["dialogue", "monologue", "narrative"]).optional(),
+  bubbleStyle: z.enum(["speech", "thought", "shout", "caption"]).optional(),
+  bubblePosition: z.object({
+    x: z.number().min(0).max(100),
+    y: z.number().min(0).max(100),
+    tailDirection: z.enum(["bottom-left", "bottom-right", "top-left", "top-right", "none"]).optional(),
+  }).strict().optional(),
+  speakerName: z.string().max(256).optional(),
 }).strict();
 
 const shotSchema = z.object({
@@ -400,7 +602,11 @@ const shotSchema = z.object({
   propAssetIds: z.array(idSchema).max(MAX_REFERENCES),
   firstFrameAssetVersionId: idSchema.optional(),
   lastFrameAssetVersionId: idSchema.optional(),
+  renderStrategy: z.enum(['image-motion', 'remote-video']).optional(),
+  videoAssetVersionId: idSchema.optional(),
   videoJobId: idSchema.optional(),
+  continuity: motionComicShotContinuitySchema.optional(),
+  sourceBeatIds: z.array(idSchema).max(MAX_REFERENCES).optional(),
   dialogueCueIds: z.array(idSchema).max(MAX_REFERENCES),
   voiceId: z.string().max(512).optional(),
   voiceLabel: z.string().max(512).optional(),
@@ -417,6 +623,10 @@ const dramaticSceneSchema = z.object({
   id: idSchema,
   episodeId: idSchema,
   index: z.number().int().min(1).max(MAX_SCENES_PER_EPISODE),
+  actIndex: z.number().int().min(1).max(12).optional(),
+  actTitle: z.string().max(512).optional(),
+  actBoundaryReason: z.string().max(2_000).optional(),
+  actSource: z.enum(MOTION_COMIC_ACT_SOURCES).optional(),
   title: z.string().max(512),
   summary: boundedText(65_536),
   locationAssetId: idSchema,
@@ -426,13 +636,14 @@ const dramaticSceneSchema = z.object({
 const episodeSchema = z.object({
   id: idSchema,
   seriesId: idSchema,
-  number: z.number().int().min(1).max(MAX_EPISODES),
+  number: z.number().int().min(1),
   title: z.string().max(512),
   logline: boundedText(65_536),
   script: boundedText(),
   status: z.enum(['draft', 'boarded', 'keyframes', 'audio', 'assembled', 'completed']),
   scenes: z.array(dramaticSceneSchema).max(MAX_SCENES_PER_EPISODE),
   dialogueCues: z.array(dialogueCueSchema).max(MAX_ITEMS),
+  planningEvidence: motionComicPlanningEvidenceSchema.optional(),
   timeline: timelineSchema,
 }).strict();
 
@@ -445,11 +656,12 @@ export const motionComicPipelineSchema = z.object({
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
   stage: z.enum(MOTION_COMIC_STAGES),
+  sourceDocument: sourceDocumentSchema.optional(),
   series: seriesSchema,
   characters: z.array(characterSchema).max(MAX_ITEMS),
   sceneAssets: z.array(sceneAssetSchema).max(MAX_ITEMS),
   props: z.array(propSchema).max(MAX_ITEMS),
-  episodes: z.array(episodeSchema).max(MAX_EPISODES),
+  episodes: z.array(episodeSchema),
   activeEpisodeId: idSchema,
   assets: z.array(assetVersionSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
   providerJobs: z.array(providerJobSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
@@ -465,6 +677,7 @@ export const motionComicCreateInputSchema = z.object({
   premise: z.string().trim().min(1).max(MAX_TEXT),
   episodeTitle: z.string().trim().min(1).max(512).optional(),
   ratio: z.enum(MOTION_COMIC_RATIOS).optional(),
+  source: sourceCreateSchema.optional(),
 }).strict();
 
 export const motionComicSaveInputSchema = z.object({
@@ -510,6 +723,171 @@ export function createMotionComicDraft(input: MotionComicDraftInput): MotionComi
     estimatedCost: 0,
   };
 }
+
+// ai-logic remains a legacy chapter alias; ai-story must use the LLM boundary planner.
+export type MotionComicSplitStrategy = 'chapter' | 'length' | 'ai-story' | 'ai-logic';
+
+export function splitMotionComicSourceEpisodes(
+  sourceText: string,
+  targetCharacters = 2_400,
+  strategy: MotionComicSplitStrategy = 'chapter',
+): Array<Pick<MotionComicSourceEpisode, 'title' | 'sourceText'>> {
+  const normalized = sourceText.replace(/\r\n?/gu, '\n').trim();
+  if (!normalized) return [];
+  if (normalized.length > MAX_TEXT) {
+    throw new Error(`MOTION_COMIC_SOURCE_TOO_LONG: Source text cannot exceed ${MAX_TEXT.toLocaleString('en-US')} characters.`);
+  }
+  if (strategy === 'ai-story') {
+    throw new Error('MOTION_COMIC_AI_EPISODE_PLAN_REQUIRED: AI 剧情分集必须通过分集规划接口生成并校验边界。');
+  }
+  const requestedTarget = Number.isFinite(targetCharacters) ? Math.round(targetCharacters) : 2_400;
+  const boundedTarget = Math.max(500, Math.min(20_000, requestedTarget));
+
+  // 1. 尝试按章节拆分（适用于小说按章节或显式标题拆分）
+  if (strategy === 'chapter' || strategy === 'ai-logic') {
+    const lines = normalized.split('\n');
+    const headingPattern = /^\s*(第[^\s]{1,16}[章节集幕回卷]|(?:EP|Episode|Chapter)\s*\d+)\s*[:：.、\-]?\s*(.*)$/iu;
+    const headed: Array<{ title: string; lines: string[] }> = [];
+    let active: { title: string; lines: string[] } | null = null;
+    const preamble: string[] = [];
+
+    for (const line of lines) {
+      const match = line.match(headingPattern);
+      if (match) {
+        if (active?.lines.join('\n').trim()) headed.push(active);
+        const prefix = match[1]?.trim() ?? '';
+        const rest = match[2]?.trim() ?? '';
+        const title = prefix && rest ? `${prefix} · ${rest}` : line.trim();
+        active = { title: title.slice(0, 120), lines: [line] };
+      } else if (active) {
+        active.lines.push(line);
+      } else {
+        preamble.push(line);
+      }
+    }
+    if (active?.lines.join('\n').trim()) headed.push(active);
+
+    // Chapter-based splitting is lossless and intentionally unbounded by a
+    // product-level episode count. The source text size and per-episode size
+    // guards remain the practical safety boundaries.
+    if (headed.length >= 2) {
+      if (preamble.join('\n').trim() && headed[0]) {
+        headed[0].lines.unshift(...preamble);
+      }
+      const result: Array<{ title: string; sourceText: string }> = [];
+      for (let i = 0; i < headed.length; i++) {
+        const ep = headed[i];
+        const epText = ep.lines.join('\n').trim();
+        if (epText.length > MAX_SOURCE_EPISODE_CHARACTERS) {
+          const subParagraphs = epText.split(/\n{2,}/u).map((p) => p.trim()).filter(Boolean);
+          let cur = '';
+          let subIdx = 1;
+          for (const p of subParagraphs) {
+            if (cur && cur.length + p.length + 2 > MAX_SOURCE_EPISODE_CHARACTERS) {
+              result.push({ title: `${ep.title} (${subIdx})`, sourceText: cur });
+              subIdx++;
+              cur = '';
+            }
+            cur = cur ? `${cur}\n\n${p}` : p;
+          }
+          if (cur) result.push({ title: subIdx > 1 ? `${ep.title} (${subIdx})` : ep.title, sourceText: cur });
+        } else {
+          result.push({ title: ep.title, sourceText: epText });
+        }
+      }
+      if (result.length >= 2) {
+        if (result.some((episode) => episode.sourceText.length > MAX_SOURCE_EPISODE_CHARACTERS)) {
+          throw new Error(`MOTION_COMIC_SOURCE_EPISODE_TOO_LONG: 单个段落超过每集 ${MAX_SOURCE_EPISODE_CHARACTERS} 字上限，请补充分段后重新拆分。`);
+        }
+        return result;
+      }
+    }
+  }
+
+  // 2. 按自然段落规则拆分（用于无章名或章节超限的自然长文本拆分）
+  const paragraphs = normalized.split(/\n{2,}/u).map((p) => p.trim()).filter(Boolean);
+  const chunks: Array<Pick<MotionComicSourceEpisode, 'title' | 'sourceText'>> = [];
+  let currentParagraphs: string[] = [];
+  let currentLength = 0;
+
+  for (const paragraph of paragraphs) {
+    const nextLength = currentLength + (currentLength > 0 ? 2 : 0) + paragraph.length;
+    if (currentParagraphs.length > 0 && nextLength > boundedTarget) {
+      const episodeNumber = chunks.length + 1;
+      chunks.push({
+        title: `第 ${episodeNumber} 集`,
+        sourceText: currentParagraphs.join('\n\n'),
+      });
+      currentParagraphs = [paragraph];
+      currentLength = paragraph.length;
+    } else {
+      currentParagraphs.push(paragraph);
+      currentLength = nextLength;
+    }
+  }
+
+  if (currentParagraphs.length > 0) {
+    const episodeNumber = chunks.length + 1;
+    chunks.push({
+      title: `第 ${episodeNumber} 集`,
+      sourceText: currentParagraphs.join('\n\n'),
+    });
+  }
+
+  if (chunks.some((episode) => episode.sourceText.length > MAX_SOURCE_EPISODE_CHARACTERS)) {
+    throw new Error(`MOTION_COMIC_SOURCE_EPISODE_TOO_LONG: 单个段落超过每集 ${MAX_SOURCE_EPISODE_CHARACTERS} 字上限，请补充分段后重新拆分。`);
+  }
+  return chunks;
+}
+
+export function createMotionComicImportedProject(
+  draft: MotionComicPipelineData,
+  source: NonNullable<z.infer<typeof motionComicCreateInputSchema>['source']>,
+  now = draft.updatedAt,
+): MotionComicPipelineData {
+  const sourceEpisodes: MotionComicSourceEpisode[] = source.episodes.map((ep, index) => ({
+    id: `source-episode-${draft.id}-${index + 1}`,
+    number: index + 1,
+    title: ep.title,
+    sourceText: ep.sourceText,
+    ...(ep.startUnitId ? { startUnitId: ep.startUnitId } : {}),
+    ...(ep.endUnitId ? { endUnitId: ep.endUnitId } : {}),
+    ...(ep.splitReason ? { splitReason: ep.splitReason } : {}),
+    ...(ep.continuityHook ? { continuityHook: ep.continuityHook } : {}),
+  }));
+
+  const sourceDocument: MotionComicSourceDocument = {
+    kind: source.kind,
+    adaptationMode: source.adaptationMode,
+    fileName: source.fileName,
+    originalText: source.originalText,
+    importedAt: now,
+    episodes: sourceEpisodes,
+    ...(source.splitEvidence ? { splitEvidence: source.splitEvidence } : {}),
+  };
+
+  const episodeId = `episode-${draft.id}-source-placeholder`;
+  return {
+    ...draft,
+    sourceDocument,
+    stage: 'episode-script',
+    updatedAt: now,
+    activeEpisodeId: episodeId,
+    episodes: [{
+      id: episodeId,
+      seriesId: draft.series.id,
+      number: 1,
+      title: sourceEpisodes[0]?.title ?? '第一集',
+      logline: '',
+      script: sourceEpisodes[0]?.sourceText ?? '',
+      status: 'draft',
+      scenes: [],
+      dialogueCues: [],
+      timeline: { durationMs: 0, clips: [], audioAssetVersionIds: [] },
+    }],
+  };
+}
+
 
 export function createMotionComicStarterProject(
   draft: MotionComicPipelineData,
@@ -581,6 +959,11 @@ export function createMotionComicStarterProject(
     '关键人物出现，给出一条能被画面验证的新线索。',
     '主角作出选择，本集形成小闭环并留下下一集问题。',
   ];
+  const actBoundaryReasons = [
+    '规则推断：首场负责建立人物、环境与异常事件。',
+    '规则推断：第二场升级冲突并引入改变判断的新线索。',
+    '规则推断：第三场完成阶段选择并留下下一集钩子。',
+  ];
   let timelineOffset = 0;
   const dialogueCues: MotionComicDialogueCue[] = [];
   const timelineClips: ProductionTimeline['clips'] = [];
@@ -636,12 +1019,16 @@ export function createMotionComicStarterProject(
       id: sceneId,
       episodeId,
       index: sceneIndex + 1,
+      actIndex: sceneIndex + 1,
+      actTitle: RULE_INFERRED_ACT_TITLES[sceneIndex],
+      actBoundaryReason: actBoundaryReasons[sceneIndex],
+      actSource: 'rule-inferred',
       title,
       summary: sceneSummaries[sceneIndex],
       locationAssetId: sceneAssets[sceneIndex].id,
       shots,
     };
-  });
+});
   const episode: MotionComicEpisode = {
     id: episodeId,
     seriesId: draft.series.id,
@@ -710,9 +1097,9 @@ export function appendMotionComicEpisode(
             return nextCueId;
           }),
         };
-      }),
+}),
     };
-  });
+});
   let offsetMs = 0;
   const dialogueCues = source.dialogueCues.map((cue) => {
     const nextCueId = cueIdMap.get(cue.id) ?? `${episodeId}-cue-${cue.id}`;
@@ -852,7 +1239,7 @@ export function updateMotionComicShotDuration(
     const next: MotionComicEpisode = {
       ...episode, status: 'boarded',
       scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((candidate) => candidate.id === shotId
-        ? { ...candidate, durationMs, videoJobId: undefined, voiceAssetVersionId: undefined }
+        ? { ...candidate, durationMs, videoAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined }
         : candidate) })),
       dialogueCues: episode.dialogueCues.map((cue) => {
         if (cue.shotId !== shotId) return cue;
@@ -868,13 +1255,14 @@ export function updateMotionComicShotDuration(
     };
     return rebuildMotionComicEpisode(next);
   });
-  return {
+  const nextDoc: MotionComicPipelineData = {
     ...document,
     stage: 'shot-board',
     activeEpisodeId: episodeId,
     assets: invalidateMotionComicEpisodeOutput(document, episodeId),
     episodes,
   };
+  return invalidateMotionComicShotVideo(nextDoc, shotId);
 }
 
 export function removeMotionComicShot(
@@ -934,11 +1322,19 @@ export function appendMotionComicScene(
   const sceneAssetId = document.sceneAssets[0]?.id;
   const lookIds = document.characters.flatMap((character) => character.looks.filter((look) => look.pinned).map((look) => look.id)).slice(0, 2);
   if (!sceneAssetId || lookIds.length === 0) throw new Error('MOTION_COMIC_CONSISTENCY_MISSING: Add a scene asset and pinned character look first.');
+  const previousScene = episode.scenes.at(-1);
+  const previousAct = previousScene
+    ? resolveMotionComicSceneAct(previousScene, Math.max(0, episode.scenes.length - 1), episode.scenes.length)
+    : { actIndex: 1, actTitle: '第 1 幕', actBoundaryReason: '人工新增本集首场。', actSource: 'manual' as const };
   const durationMs = 6_000;
   const scene: MotionComicDramaticScene = {
     id: sceneId,
     episodeId,
     index: sceneIndex,
+    actIndex: previousAct.actIndex,
+    actTitle: previousAct.actTitle,
+    actBoundaryReason: previousScene ? '人工新增场次，延续上一幕的剧情目标。' : previousAct.actBoundaryReason,
+    actSource: 'manual',
     title: input.title?.trim() || `场景 ${sceneIndex}`,
     summary: '新增场景，等待补充剧情与一致性引用。',
     locationAssetId: sceneAssetId,
@@ -970,6 +1366,64 @@ export function appendMotionComicScene(
   };
 }
 
+export function setMotionComicActBoundary(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  sceneId: string,
+  startsNewAct: boolean,
+): MotionComicPipelineData {
+  const episode = document.episodes.find((candidate) => candidate.id === episodeId);
+  if (!episode) throw new Error(`MOTION_COMIC_EPISODE_MISSING: ${episodeId}`);
+  const position = episode.scenes.findIndex((scene) => scene.id === sceneId);
+  if (position < 0) throw new Error(`MOTION_COMIC_SCENE_MISSING: ${sceneId}`);
+  if (position === 0 && !startsNewAct) throw new Error('MOTION_COMIC_ACT_BOUNDARY_REQUIRED: 第一场必须开始第 1 幕。');
+
+  const resolved = episode.scenes.map((scene, index) => resolveMotionComicSceneAct(scene, index, episode.scenes.length));
+  const boundaries = resolved.map((act, index) => index === 0 || act.actIndex !== resolved[index - 1].actIndex);
+  boundaries[position] = startsNewAct;
+  if (boundaries.filter(Boolean).length > 12) throw new Error('MOTION_COMIC_ACT_LIMIT: 单集不能超过 12 幕。');
+
+  let actIndex = 0;
+  let actTitle = '';
+  const scenes = episode.scenes.map((scene, index) => {
+    if (boundaries[index]) {
+      actIndex += 1;
+      const existingBoundary = index === 0 || resolved[index].actIndex !== resolved[index - 1].actIndex;
+      actTitle = existingBoundary ? resolved[index].actTitle : `第 ${actIndex} 幕`;
+    }
+    const actBoundaryReason = index === position
+      ? (startsNewAct ? '人工调整：从本场开始新的剧情阶段。' : '人工调整：本场并入上一幕，延续上一场的剧情目标。')
+      : resolved[index].actBoundaryReason;
+    return { ...scene, actIndex, actTitle, actBoundaryReason, actSource: 'manual' as const };
+  });
+  return {
+    ...document,
+    episodes: document.episodes.map((candidate) => candidate.id === episodeId ? { ...candidate, scenes } : candidate),
+  };
+}
+
+export function renameMotionComicAct(
+  document: MotionComicPipelineData,
+  episodeId: string,
+  actIndex: number,
+  title: string,
+): MotionComicPipelineData {
+  const normalizedTitle = title.trim();
+  if (!normalizedTitle) throw new Error('MOTION_COMIC_ACT_TITLE_REQUIRED: 幕标题不能为空。');
+  if (normalizedTitle.length > 512) throw new Error('MOTION_COMIC_ACT_TITLE_LIMIT: 幕标题不能超过 512 字。');
+  const episode = document.episodes.find((candidate) => candidate.id === episodeId);
+  if (!episode) throw new Error(`MOTION_COMIC_EPISODE_MISSING: ${episodeId}`);
+  const resolved = episode.scenes.map((scene, index) => resolveMotionComicSceneAct(scene, index, episode.scenes.length));
+  if (!resolved.some((act) => act.actIndex === actIndex)) throw new Error(`MOTION_COMIC_ACT_MISSING: ${actIndex}`);
+  const scenes = episode.scenes.map((scene, index) => resolved[index].actIndex === actIndex
+    ? { ...scene, actIndex, actTitle: normalizedTitle, actBoundaryReason: resolved[index].actBoundaryReason, actSource: 'manual' as const }
+    : scene);
+  return {
+    ...document,
+    episodes: document.episodes.map((candidate) => candidate.id === episodeId ? { ...candidate, scenes } : candidate),
+  };
+}
+
 export function appendMotionComicShot(
   document: MotionComicPipelineData,
   episodeId: string,
@@ -985,7 +1439,7 @@ export function appendMotionComicShot(
   const durationMs = 6_000;
   const template = scene.shots[0];
   if (!template) throw new Error('MOTION_COMIC_SCENE_EMPTY: Add a scene before adding a shot.');
-  const shot: MotionComicShot = { ...template, id: shotId, index: shotIndex, title: input.title?.trim() || `镜头 ${shotIndex}`, durationMs, dialogueCueIds: [cueId], firstFrameAssetVersionId: undefined, lastFrameAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined };
+  const shot: MotionComicShot = { ...template, id: shotId, index: shotIndex, title: input.title?.trim() || `镜头 ${shotIndex}`, durationMs, dialogueCueIds: [cueId], firstFrameAssetVersionId: undefined, lastFrameAssetVersionId: undefined, videoAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined };
   const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: 0, endMs: durationMs, text: '镜头里的细节改变了判断。', emotion: '试探' };
   return {
     ...document,
@@ -1152,6 +1606,9 @@ export function validateMotionComicPipeline(
     issues.push({ path: 'series', message: 'A ready series needs a premise plus world and visual rules.' });
   }
 
+  const referencedCharacterLookIds = new Set<string>(
+    data.episodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots.flatMap((shot) => shot.characterLookIds || [])))
+  );
   const looks = new Map<string, MotionComicCharacterLook>();
   data.characters.forEach((character, characterIndex) => {
     const lookIds = new Set<string>();
@@ -1170,10 +1627,10 @@ export function validateMotionComicPipeline(
         `${path}.referenceAssetVersionIds`,
         issues,
       );
+      if (ready && referencedCharacterLookIds.has(look.id) && (!look.pinned || look.referenceAssetVersionIds.length === 0)) {
+        issues.push({ path, message: 'Each look referenced by a shot needs a fixed reference asset.' });
+      }
     });
-    if (ready && !character.looks.some((look) => look.pinned && look.referenceAssetVersionIds.length > 0)) {
-      issues.push({ path: `characters[${characterIndex}].looks`, message: 'Each ready character needs a pinned look with reference assets.' });
-    }
   });
   data.sceneAssets.forEach((scene, index) => validateMotionComicReferenceList(
     scene.referenceAssetVersionIds,
@@ -1228,8 +1685,7 @@ export function validateMotionComicPipeline(
         if (shot.videoJobId && !jobs.has(shot.videoJobId)) issues.push({ path: `${shotPath}.videoJobId`, message: 'Video job does not exist.' });
         if (shot.voiceAssetVersionId && !assets.has(shot.voiceAssetVersionId)) issues.push({ path: `${shotPath}.voiceAssetVersionId`, message: 'Shot voice asset does not exist.' });
         if (ready) {
-          if (shot.characterLookIds.length === 0) issues.push({ path: `${shotPath}.characterLookIds`, message: 'A ready shot needs at least one character look.' });
-          if (shot.characterLookIds.some((lookId) => !looks.get(lookId)?.pinned)) issues.push({ path: `${shotPath}.characterLookIds`, message: 'Ready shots may only use pinned looks.' });
+                    if (shot.characterLookIds.some((lookId) => !looks.get(lookId)?.pinned)) issues.push({ path: `${shotPath}.characterLookIds`, message: 'Ready shots may only use pinned looks.' });
           if (!shot.firstFrameAssetVersionId) issues.push({ path: `${shotPath}.firstFrameAssetVersionId`, message: 'A ready shot needs an approved first frame.' });
         }
       });
@@ -1354,4 +1810,143 @@ function validateMotionComicFrameAsset(
   if (asset.assetId.startsWith(MOTION_COMIC_REFERENCE_ASSET_PREFIX)) {
     issues.push({ path, message: `${label} frame cannot use a series consistency reference asset.` });
   }
+}
+
+export function updateMotionComicRatio(
+  document: MotionComicPipelineData,
+  ratio: MotionComicPipelineData['ratio'],
+): MotionComicPipelineData {
+  if (ratio === document.ratio) return document;
+
+  const videoAssetIds = new Set(
+    document.assets.filter((asset) => asset.kind === 'video').map((asset) => asset.id)
+  );
+
+  const nextEpisodes = document.episodes.map((episode) => ({
+    ...episode,
+    scenes: episode.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => ({
+        ...shot,
+        videoAssetVersionId: undefined,
+        videoJobId: undefined,
+        videoJobStatus: 'idle' as const,
+      })),
+    })),
+    timeline: {
+      ...episode.timeline,
+      clips: episode.timeline.clips.map((clip) => ({
+        ...clip,
+        assetVersionIds: clip.assetVersionIds.filter((id) => !videoAssetIds.has(id)),
+      })),
+    },
+  }));
+
+  const nextAssets = document.assets.map((asset) => (
+    asset.kind === 'video'
+      ? { ...asset, selected: false, pinned: false }
+      : asset
+  ));
+
+  return {
+    ...document,
+    ratio,
+    episodes: nextEpisodes,
+    assets: nextAssets,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function invalidateMotionComicShotVideo(
+  document: MotionComicPipelineData,
+  shotId: string,
+): MotionComicPipelineData {
+  let targetShot: MotionComicShot | undefined;
+  for (const episode of document.episodes) {
+    for (const scene of episode.scenes) {
+      for (const shot of scene.shots) {
+        if (shot.id === shotId) {
+          targetShot = shot;
+          break;
+        }
+      }
+      if (targetShot) break;
+    }
+    if (targetShot) break;
+  }
+
+  if (!targetShot) return document;
+
+  const allVideoAssets = document.assets.filter((asset) => asset.kind === 'video');
+  const allVideoAssetIds = new Set(allVideoAssets.map((asset) => asset.id));
+
+  const targetClip = document.episodes
+    .flatMap((episode) => episode.timeline.clips)
+    .find((clip) => clip.shotId === shotId);
+
+  const targetVideoAssetIds = new Set(
+    allVideoAssets
+      .filter((asset) => asset.assetId === `shot-video-${shotId}` || asset.id === targetShot?.videoAssetVersionId)
+      .map((asset) => asset.id)
+  );
+  if (targetClip) {
+    for (const assetId of targetClip.assetVersionIds) {
+      if (allVideoAssetIds.has(assetId)) {
+        targetVideoAssetIds.add(assetId);
+      }
+    }
+  }
+
+  const hasVideoInClip = targetClip?.assetVersionIds.some((id) => targetVideoAssetIds.has(id));
+  const hasSelectedVideoAsset = document.assets.some((asset) => targetVideoAssetIds.has(asset.id) && asset.selected);
+
+  if (!targetShot.videoAssetVersionId && !targetShot.videoJobId && !hasVideoInClip && !hasSelectedVideoAsset) {
+    return document;
+  }
+
+  const nextEpisodes = document.episodes.map((episode) => {
+    const hasTargetShot = episode.scenes.some((scene) => scene.shots.some((shot) => shot.id === shotId));
+    if (!hasTargetShot) return episode;
+
+    return {
+      ...episode,
+      scenes: episode.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => (
+          shot.id === shotId
+            ? {
+                ...shot,
+                videoAssetVersionId: undefined,
+                videoJobId: undefined,
+                videoJobStatus: 'idle' as const,
+              }
+            : shot
+        )),
+      })),
+      timeline: {
+        ...episode.timeline,
+        clips: episode.timeline.clips.map((clip) => (
+          clip.shotId === shotId
+            ? {
+                ...clip,
+                assetVersionIds: clip.assetVersionIds.filter((id) => !targetVideoAssetIds.has(id)),
+              }
+            : clip
+        )),
+      },
+    };
+  });
+
+  const nextAssets = document.assets.map((asset) => (
+    targetVideoAssetIds.has(asset.id)
+      ? { ...asset, selected: false }
+      : asset
+  ));
+
+  return {
+    ...document,
+    episodes: nextEpisodes,
+    assets: nextAssets,
+    updatedAt: new Date().toISOString(),
+  };
 }

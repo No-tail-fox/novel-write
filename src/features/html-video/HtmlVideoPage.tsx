@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useWorkspaceNavigation } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { Button } from '../../ui';
+import { ImageStylePicker } from '../image-style-preview/ImageStylePreview';
 import { Clapperboard, Eye, FileText, FolderOpen, Image as ImageIcon, Loader2, Mic2, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, Wand2, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { FormField as Field } from '../../components/FormField';
@@ -756,7 +757,7 @@ export function HtmlVideoPage({
               <header><ImageIcon size={17} /><div><h2>画面</h2><p>风格 · 分镜 · 画布</p></div></header>
               <div className="hv-create-section-content hv-create-stack">
                 <div data-html-video-create-field="style">
-                  <OptionCloud title="画面风格" options={createStyleOptions} value={style} onChange={setStyle} />
+                  <ImageStylePicker options={createStyleOptions} styles={state.customStyles} value={style} onChange={setStyle} />
                 </div>
                 <div className="advanced-grid">
                   <div data-html-video-create-field="ratio">
@@ -1204,11 +1205,7 @@ function HtmlVideoConfigEditor({
       </div>
       <fieldset className="advanced-grid hv-config-editor-grid" disabled={disabled}>
         <div data-html-video-edit-field="style">
-          <Field label="画面风格">
-            <select value={values.style} onChange={(event) => setValue('style', event.target.value)} disabled={disabled}>
-              {htmlVideoStyleChoices.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-          </Field>
+          <ImageStylePicker options={htmlVideoStyleChoices} styles={customStyles} value={values.style} onChange={value => setValue('style', value)} disabled={disabled} />
         </div>
         <div data-html-video-edit-field="ttsProvider">
           <Field label="配音模型">
