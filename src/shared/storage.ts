@@ -408,8 +408,12 @@ const taskSummaryColumns = `
   material_source, draft_dir,
   lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
   script_format, podcast_image_mode, podcast_speaker_a, ordinary_cover_asset_json,
-  CASE WHEN task_type = 'html-video' AND json_valid(pipeline_data)
-    THEN json_extract(pipeline_data, '$.coverAsset.path') END AS project_cover_path,
+  CASE WHEN json_valid(pipeline_data) THEN COALESCE(
+    CASE WHEN task_type = 'html-video' THEN json_extract(pipeline_data, '$.coverAsset.path') END,
+    json_extract(pipeline_data, '$.assets.cover[0].path'),
+    json_extract(pipeline_data, '$.coverImagePath'),
+    json_extract(pipeline_data, '$.coverPath')
+  ) END AS project_cover_path,
   podcast_speaker_b, cover_image_mode, cover_template_id, cover_page_enabled, cover_page_text, auto_borrow_image, html_video_foreground,
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
@@ -4278,9 +4282,10 @@ function rowToTaskSummary(row: Record<string, unknown>): TaskSummary {
     podcastSpeakers: _podcastSpeakers,
     ...summary
   } = task;
+  const projectCoverPath = typeof row.project_cover_path === 'string' ? row.project_cover_path.trim() : '';
   return {
     ...summary,
-    ...(typeof row.project_cover_path === 'string' ? { projectCover: { path: row.project_cover_path, revision: '' } } : {}),
+    ...(projectCoverPath ? { projectCover: { path: projectCoverPath, revision: '' } } : {}),
     inputPreview: String(row.input_preview ?? inputText).replace(/\s+/gu, ' ').trim().slice(0, TASK_INPUT_PREVIEW_LIMIT),
   };
 }

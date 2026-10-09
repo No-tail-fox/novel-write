@@ -10,7 +10,7 @@ export async function readProjectCover(
   workDir: string | null,
 ): Promise<TaskSummary['projectCover']> {
   const base = workDir || (task.artifactStatePath ? resolve(dirname(task.artifactStatePath), '..') : null);
-  const candidates: unknown[] = [task.projectCover?.path, task.ordinaryCoverAsset?.path];
+  const candidates: unknown[] = [task.projectCover?.path, task.ordinaryCoverAsset?.path, task.referenceImagePath];
   if (task.artifactStatePath && task.taskType !== 'html-video') {
     try {
       const file = await open(task.artifactStatePath, 'r');

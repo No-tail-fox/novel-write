@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectCoverPath } from '../src/features/tasks/task-formatters';
+import { projectCoverPath, projectCoverPaths } from '../src/features/tasks/task-formatters';
 
 describe('project cover resolution', () => {
   it('prefers the generated project cover', () => {
@@ -18,10 +18,18 @@ describe('project cover resolution', () => {
     expect(projectCoverPath({ ordinaryCoverAsset: null, referenceImagePath: '  ' })).toBe('');
   });
 
-  it('uses the resolved automatic cover and skips an unavailable manual cover', () => {
+  it('uses the resolved automatic cover and falls back to the ordinary cover when needed', () => {
     expect(projectCoverPath({ projectCover: { path: 'C:/task/cover.png', revision: '1' }, referenceImagePath: 'reference.png' }))
       .toBe('C:/task/cover.png');
-    expect(projectCoverPath({ projectCover: null, ordinaryCoverAsset: { path: 'covers/missing.png' } as never, referenceImagePath: 'reference.png' }))
-      .toBe('reference.png');
+    expect(projectCoverPath({ projectCover: null, ordinaryCoverAsset: { path: 'covers/manual.png' } as never, referenceImagePath: 'reference.png' }))
+      .toBe('covers/manual.png');
+  });
+
+  it('keeps a stale generated cover recoverable through the ordinary cover and reference image', () => {
+    expect(projectCoverPaths({
+      projectCover: { path: 'covers/stale.png', revision: '1' },
+      ordinaryCoverAsset: { path: 'covers/manual.png' } as never,
+      referenceImagePath: 'references/first-frame.png',
+    })).toEqual(['covers/stale.png', 'covers/manual.png', 'references/first-frame.png']);
   });
 });

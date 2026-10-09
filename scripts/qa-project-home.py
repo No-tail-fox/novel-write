@@ -96,6 +96,14 @@ def main():
             ready()
             expect(page.locator('[data-project-home]')).to_have_attribute('data-project-count', '50')
             expect(page.locator('.project-home-summary')).to_contain_text('500 个项目')
+            scroller = page.locator('.project-home')
+            scroll_metrics = scroller.evaluate('(element) => ({client: element.clientHeight, height: element.scrollHeight})')
+            assert scroll_metrics['height'] > scroll_metrics['client'], scroll_metrics
+            scroller.evaluate('(element) => element.scrollTo(0, element.scrollHeight)')
+            assert scroller.evaluate('(element) => element.scrollTop > 0')
+            assert page.locator('.project-card').nth(49).evaluate('(element) => element.getBoundingClientRect().bottom <= element.closest(".project-home").getBoundingClientRect().bottom + 1')
+            scroller.evaluate('(element) => element.scrollTo(0, 0)')
+            passed('project list scrolls vertically to the last card inside its own content area')
             assert 'task:get-detail' not in ledger()['calls'], ledger()['calls']
             assert all(not item['heavy'] and item['count'] <= 50 for item in ledger()['lists'])
             passed('500 projects: first page has 50 summaries, no detail reads or heavy fields')

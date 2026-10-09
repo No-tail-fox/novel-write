@@ -241,10 +241,16 @@ export function toLocalImageUrl(path: string): string {
   return encodeURI(normalized);
 }
 
+export function projectCoverPaths(task: Pick<TaskSummary, 'projectCover' | 'ordinaryCoverAsset' | 'referenceImagePath'>): string[] {
+  return Array.from(new Set([
+    task.projectCover?.path?.trim(),
+    task.ordinaryCoverAsset?.path?.trim(),
+    task.referenceImagePath?.trim(),
+  ].filter((path): path is string => Boolean(path))));
+}
+
 export function projectCoverPath(task: Pick<TaskSummary, 'projectCover' | 'ordinaryCoverAsset' | 'referenceImagePath'>): string {
-  return task.projectCover?.path?.trim()
-    || (task.projectCover === undefined ? task.ordinaryCoverAsset?.path?.trim() : '')
-    || task.referenceImagePath?.trim() || '';
+  return projectCoverPaths(task)[0] ?? '';
 }
 
 export function toLocalAssetUrl(path: string): string {

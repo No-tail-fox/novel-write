@@ -27,7 +27,7 @@ import type {
 import { useAsyncAction } from '../../ui/async-action';
 import { Button, IconButton, SegmentedControl, SelectField, TextField, Toolbar, Tooltip } from '../../ui';
 import { createHistoryPageRequestController, useHistoryPage } from '../history/use-history-page';
-import { formatTaskOperationTime, projectCoverPath, taskHistoryTypeLabel, toLocalImageUrl } from '../tasks/task-formatters';
+import { formatTaskOperationTime, projectCoverPaths, taskHistoryTypeLabel, toLocalImageUrl } from '../tasks/task-formatters';
 import { taskStatusDetail } from './project-task-status';
 import type { ProjectHomeSession, ProjectLayout, ProjectTaskType } from './project-home-session';
 import '../../styles/features/projects.css';
@@ -304,12 +304,21 @@ function ProjectCard({
   onRestore: () => void;
   onDelete: () => void;
 }) {
-  const coverPath = projectCoverPath(task);
-  const coverUrl = coverPath ? toLocalImageUrl(coverPath) : null;
-  const cover = coverUrl && task.projectCover?.revision
-    ? `${coverUrl}?v=${encodeURIComponent(task.projectCover.revision)}` : coverUrl;
-  const hasProjectCover = Boolean(task.projectCover || (task.projectCover === undefined && task.ordinaryCoverAsset?.path));
-  const [failedCover, setFailedCover] = useState<string | null>(null);
+  const generatedCoverPath = task.projectCover?.path?.trim();
+  const ordinaryCoverPath = task.ordinaryCoverAsset?.path?.trim();
+  const coverCandidates = projectCoverPaths(task).map((path) => {
+    const url = toLocalImageUrl(path);
+    const isProjectCover = path === generatedCoverPath;
+    return {
+      source: path === generatedCoverPath || path === ordinaryCoverPath ? 'cover' : 'reference',
+      url: isProjectCover && task.projectCover?.revision
+        ? `${url}?v=${encodeURIComponent(task.projectCover.revision)}`
+        : url,
+    } as const;
+  });
+  const hasProjectCover = coverCandidates.some((candidate) => candidate.source === 'cover');
+  const [failedCovers, setFailedCovers] = useState<Set<string>>(() => new Set());
+  const cover = coverCandidates.find((candidate) => !failedCovers.has(candidate.url));
   return (
     <article className={`project-card ${layout === 'list' ? 'project-card-list' : ''}`} data-project-id={task.id}>
       <Button
@@ -321,9 +330,14 @@ function ProjectCard({
         disabled={busy}
         onClick={onOpen}
       >
-        <span className="project-card-cover" data-cover-source={hasProjectCover ? 'cover' : cover ? 'reference' : 'empty'}>
-          {cover && cover !== failedCover
-            ? <img src={cover} alt={`${task.title || '项目'}封面`} loading="lazy" onError={() => setFailedCover(cover)} />
+        <span className="project-card-cover" data-cover-source={cover?.source ?? (hasProjectCover ? 'cover' : 'empty')}>
+          {cover
+            ? <img
+                src={cover.url}
+                alt={`${task.title || '项目'}封面`}
+                loading="lazy"
+                onError={() => setFailedCovers((current) => new Set(current).add(cover.url))}
+              />
             : <span className="project-card-cover-empty" aria-label="暂无项目封面"><Play size={22} /></span>}
         </span>
         <span className="project-card-body">

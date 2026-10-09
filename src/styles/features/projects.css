@@ -5,6 +5,9 @@
   flex-direction: column;
   gap: 14px;
   height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px var(--sd-page-inset) 24px;
   color: var(--shell-text);
 }

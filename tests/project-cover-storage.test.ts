@@ -43,6 +43,38 @@ describe('project cover summaries', () => {
     } finally { await db.close(); }
   });
 
+  it('recovers legacy story covers stored in pipeline data', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-pipeline-'));
+    directories.push(dir);
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const task = await db.createTask({ title: '旧项目封面', inputText: '历史项目' });
+      const workDir = join(dir, 'tasks', task.managedStorageKey!);
+      await mkdir(join(workDir, 'covers'), { recursive: true });
+      const cover = join(workDir, 'covers', 'legacy.png');
+      await writeFile(cover, 'legacy cover');
+      await db.updateTask(task.id, {
+        pipelineData: JSON.stringify({ assets: { cover: [{ path: 'covers/legacy.png' }] } }),
+      });
+      expect((await db.getTaskSummary(task.id))?.projectCover?.path).toBe(cover);
+      expect((await db.listTaskSummaries()).items.find((item) => item.id === task.id)?.projectCover?.path).toBe(cover);
+    } finally { await db.close(); }
+  });
+
+  it('resolves a legacy task-relative reference image as a project cover fallback', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-reference-'));
+    directories.push(dir);
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const task = await db.createTask({ title: '参考图封面', inputText: '历史项目', referenceImagePath: 'references/first-frame.png' });
+      const workDir = join(dir, 'tasks', task.managedStorageKey!);
+      await mkdir(join(workDir, 'references'), { recursive: true });
+      const reference = join(workDir, 'references', 'first-frame.png');
+      await writeFile(reference, 'reference cover');
+      expect((await db.getTaskSummary(task.id))?.projectCover?.path).toBe(reference);
+      expect((await db.listTaskSummaries()).items.find((item) => item.id === task.id)?.projectCover?.path).toBe(reference);
+    } finally { await db.close(); }
+  });
   it('includes manual and HTML cover metadata and resolves task-relative image paths', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'project-cover-manual-'));
     directories.push(dir);
