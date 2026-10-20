@@ -1,0 +1,271 @@
+[
+  {
+    "type": "editorial-collage",
+    "idPrefix": "4559eb3c",
+    "status": "draft",
+    "createdAt": "2026-09-16T10:37:28.782Z",
+    "stage": "assets",
+    "episodes": 0,
+    "shots": 21,
+    "assets": {
+      "audio": 21,
+      "image": 46
+    },
+    "strategies": {
+      "deterministic-layers": 19,
+      "remotion": 2
+    },
+    "jobCounts": {
+      "completed": 67,
+      "failed": 29
+    },
+    "reports": 0
+  },
+  {
+    "type": "editorial-collage",
+    "idPrefix": "b22ec7e4",
+    "status": "draft",
+    "createdAt": "2026-09-16T08:17:43.205Z",
+    "stage": "assets",
+    "episodes": 0,
+    "shots": 11,
+    "assets": {
+      "audio": 2,
+      "image": 4
+    },
+    "strategies": {
+      "remotion": 1,
+      "deterministic-layers": 10
+    },
+    "jobCounts": {
+      "failed": 1,
+      "completed": 6
+    },
+    "reports": 1
+  },
+  {
+    "type": "editorial-collage",
+    "idPrefix": "1b36e516",
+    "status": "draft",
+    "createdAt": "2026-09-14T00:37:13.851Z",
+    "stage": "assets",
+    "episodes": 0,
+    "shots": 16,
+    "assets": {
+      "audio": 16,
+      "image": 30
+    },
+    "strategies": {
+      "deterministic-layers": 16
+    },
+    "jobCounts": {
+      "completed": 46,
+      "failed": 2
+    },
+    "reports": 0
+  },
+  {
+    "type": "editorial-collage",
+    "idPrefix": "ed32643f",
+    "status": "completed",
+    "createdAt": "2026-09-13T16:06:00.982Z",
+    "stage": "completed",
+    "episodes": 0,
+    "shots": 4,
+    "assets": {
+      "image": 4,
+      "audio": 4,
+      "video": 1
+    },
+    "strategies": {
+      "deterministic-layers": 4
+    },
+    "jobCounts": {
+      "completed": 9
+    },
+    "reports": 1
+  },
+  {
+    "type": "editorial-collage",
+    "idPrefix": "3de6323f",
+    "status": "draft",
+    "createdAt": "2026-08-17T18:08:24.655Z",
+    "stage": "assets",
+    "episodes": 0,
+    "shots": 4,
+    "assets": {
+      "image": 1
+    },
+    "strategies": {
+      "deterministic-layers": 4
+    },
+    "jobCounts": {
+      "completed": 1
+    },
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "903de9e5",
+    "status": "draft",
+    "createdAt": "2026-09-28T01:45:51.282Z",
+    "stage": "shot-board",
+    "episodes": 1,
+    "shots": 22,
+    "assets": {},
+    "strategies": {
+      "remote-video": 22
+    },
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "ff55830b",
+    "status": "draft",
+    "createdAt": "2026-09-28T01:16:39.783Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "e3f5453e",
+    "status": "draft",
+    "createdAt": "2026-09-20T11:28:15.530Z",
+    "stage": "shot-board",
+    "episodes": 1,
+    "shots": 6,
+    "assets": {},
+    "strategies": {
+      "null": 6
+    },
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "b36f0b50",
+    "status": "draft",
+    "createdAt": "2026-09-20T10:17:10.266Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "b096c796",
+    "status": "draft",
+    "createdAt": "2026-09-20T07:00:30.102Z",
+    "stage": "shot-board",
+    "episodes": 1,
+    "shots": 28,
+    "assets": {},
+    "strategies": {
+      "remote-video": 28
+    },
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "c86ee880",
+    "status": "draft",
+    "createdAt": "2026-09-20T04:59:48.420Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "68bfa831",
+    "status": "draft",
+    "createdAt": "2026-09-20T04:31:15.883Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "59fcc1a9",
+    "status": "draft",
+    "createdAt": "2026-09-20T01:59:04.452Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "11c39c41",
+    "status": "draft",
+    "createdAt": "2026-09-20T01:39:04.539Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "2bc05b97",
+    "status": "draft",
+    "createdAt": "2026-09-19T17:54:21.990Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "48b626dd",
+    "status": "draft",
+    "createdAt": "2026-09-19T17:31:55.277Z",
+    "stage": "episode-script",
+    "episodes": 1,
+    "shots": 0,
+    "assets": {},
+    "strategies": {},
+    "jobCounts": {},
+    "reports": 0
+  },
+  {
+    "type": "motion-comic",
+    "idPrefix": "2811cbe1",
+    "status": "draft",
+    "createdAt": "2026-08-18T04:49:21.091Z",
+    "stage": "shot-board",
+    "episodes": 1,
+    "shots": 6,
+    "assets": {},
+    "strategies": {
+      "null": 6
+    },
+    "jobCounts": {},
+    "reports": 0
+  }
+]

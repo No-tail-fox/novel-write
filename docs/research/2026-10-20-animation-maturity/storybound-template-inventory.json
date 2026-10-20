@@ -1,0 +1,270 @@
+[
+  {
+    "id": "center-focus",
+    "label": "居中聚焦",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popRotate"
+    ],
+    "decorations": [
+      "glow",
+      "vignette"
+    ]
+  },
+  {
+    "id": "left-text-right-object",
+    "label": "左字右物",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popRotate"
+    ],
+    "decorations": [
+      "gradientWash",
+      "grain"
+    ]
+  },
+  {
+    "id": "three-float",
+    "label": "三元素漂浮",
+    "slots": 3,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "float",
+      "float",
+      "float"
+    ],
+    "decorations": [
+      "glow",
+      "grain",
+      "vignette"
+    ]
+  },
+  {
+    "id": "full-quote",
+    "label": "满屏金句",
+    "slots": 0,
+    "hasLandscape": true,
+    "captionRole": "hero",
+    "backgroundAnim": "static",
+    "elementAnims": [],
+    "decorations": [
+      "vignette",
+      "scanline",
+      "lightSweep"
+    ]
+  },
+  {
+    "id": "full-image",
+    "label": "全屏大图",
+    "slots": 0,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "kenburns",
+    "elementAnims": [],
+    "decorations": [
+      "vignette",
+      "grain"
+    ]
+  },
+  {
+    "id": "right-text-left-object",
+    "label": "右字左物",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popRotate"
+    ],
+    "decorations": [
+      "gradientWash",
+      "grain"
+    ]
+  },
+  {
+    "id": "person-focus",
+    "label": "人物聚焦",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "fadeUp"
+    ],
+    "decorations": [
+      "glow",
+      "vignette"
+    ]
+  },
+  {
+    "id": "split-compare",
+    "label": "左右对比",
+    "slots": 2,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "slideInLeft",
+      "slideInRight"
+    ],
+    "decorations": [
+      "grain",
+      "vignette"
+    ]
+  },
+  {
+    "id": "center-burst",
+    "label": "中心爆发",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "kenburns",
+    "elementAnims": [
+      "zoomIn"
+    ],
+    "decorations": [
+      "glow",
+      "vignette",
+      "grain"
+    ]
+  },
+  {
+    "id": "grid-four",
+    "label": "四格盘点",
+    "slots": 4,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popIn",
+      "popIn",
+      "popIn",
+      "popIn"
+    ],
+    "decorations": [
+      "grain",
+      "vignette"
+    ]
+  },
+  {
+    "id": "quote-card",
+    "label": "引言卡片",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popIn"
+    ],
+    "decorations": [
+      "gradientWash",
+      "grain"
+    ]
+  },
+  {
+    "id": "big-number",
+    "label": "数据强调",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "zoomIn"
+    ],
+    "decorations": [
+      "glow",
+      "vignette",
+      "grain"
+    ]
+  },
+  {
+    "id": "top-object-bottom-text",
+    "label": "上物下字",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popIn"
+    ],
+    "decorations": [
+      "glow",
+      "vignette"
+    ]
+  },
+  {
+    "id": "diagonal-flow",
+    "label": "对角动线",
+    "slots": 2,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "kenburns",
+    "elementAnims": [
+      "dropSettle",
+      "popIn"
+    ],
+    "decorations": [
+      "spotlight",
+      "grain"
+    ]
+  },
+  {
+    "id": "rule-of-thirds",
+    "label": "三分偏置",
+    "slots": 1,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "dropSettle"
+    ],
+    "decorations": [
+      "spotlight",
+      "grain"
+    ]
+  },
+  {
+    "id": "orbit-focus",
+    "label": "环绕聚焦",
+    "slots": 4,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "slamImpact",
+      "float",
+      "float",
+      "float"
+    ],
+    "decorations": [
+      "spotlight",
+      "glow"
+    ]
+  },
+  {
+    "id": "parallax-focus",
+    "label": "聚焦推拉",
+    "slots": 4,
+    "hasLandscape": true,
+    "captionRole": null,
+    "backgroundAnim": "static",
+    "elementAnims": [
+      "popIn",
+      "fadeUp",
+      "fadeUp",
+      "fadeUp"
+    ],
+    "decorations": [
+      "spotlight",
+      "vignette"
+    ]
+  }
+]
