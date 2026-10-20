@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
-import { ArrowLeft, BookOpenCheck, CheckCircle2, ChevronRight, CircleAlert, Download, FileText, ImageOff, ImagePlus, Images, Layers3, Loader2, LockKeyhole, Pin, PinOff, Plus, Save, Scissors, Settings2, ShieldCheck, Upload, Users, Video, Volume2 } from 'lucide-react';
+import { ArrowLeft, BookOpenCheck, CheckCircle2, ChevronRight, CircleAlert, Download, FileText, ImageOff, ImagePlus, Images, Layers3, Loader2, LockKeyhole, Pin, PinOff, Plus, Save, Scissors, Settings2, Sparkles, Upload, Users, Video, Volume2 } from 'lucide-react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { navigationReturnLabel } from '../../app/navigation';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
@@ -50,6 +50,7 @@ import { DirectorCopyAssist, DirectorProjectLoading, DirectorProjectRecovery } f
 import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
 import { applyMotionComicImageRecord, applyMotionComicVoiceRecord, directorImageInput, directorImageInputMatches, restoreMotionComicImageVersion, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVideoProviderOptions, resolveDirectorVideoProviderStatus, resolveDirectorVoiceProviderStatus, type DirectorVideoProviderStatus } from '../director-desk/director-generation';
 import { attachMotionComicReference, createMotionComicReferenceAsset, fixedMotionComicReferenceAsset, imageLabRecordIdFromMutation, inspectMotionComicShotConsistency, motionComicConsistencyReady, motionComicConsistencySummary, motionComicReferenceAssets, motionComicReferenceVersionIds, referenceTargetLabel, setMotionComicFixedReference, type MotionComicReferenceKind, type MotionComicReferenceTarget } from './motion-comic-consistency';
+import { applyGeneratedMotionComicReference, motionComicReferenceGenerationFingerprint, motionComicReferenceGenerationInput, motionComicReferenceGenerationLabel } from './motion-comic-reference-generation';
 import { MotionComicPlanDialog } from './MotionComicPlanDialog';
 import {
   createMotionComicRuleSplitEvidence,
@@ -154,6 +155,7 @@ export function MotionComicPage({
     },
   });
   const [referenceTargetId, setReferenceTargetId] = useState('');
+  const [assetSection, setAssetSection] = useState<'series' | 'characters' | 'scenes' | 'props'>('characters');
   const creationDraft = useWorkspaceDraft({
     id: 'motion-comic-create', label: 'AI 漫剧新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSourceText.trim()),
     busy: projectAction.busy || sourceFileAction.busy || episodePlanningAction.busy,
@@ -848,6 +850,15 @@ export function MotionComicPage({
     });
   }
 
+  function addCharacterLook(characterId: string) {
+    mutateDocument((current) => ({ ...current, characters: current.characters.map((character) => character.id !== characterId || character.looks.length >= 50 ? character : {
+      ...character, looks: [...character.looks, {
+        id: `look-${crypto.randomUUID()}`, characterId, label: `造型 ${character.looks.length + 1}`,
+        appearancePrompt: '', wardrobe: '', continuityNotes: '', referenceAssetVersionIds: [], pinned: false,
+      }],
+    }) }));
+  }
+
   function addSceneAsset() {
     mutateDocument((current) => {
       const id = `scene-asset-${crypto.randomUUID()}`;
@@ -1007,9 +1018,49 @@ export function MotionComicPage({
     if (result.ok && !result.value) referenceAction.clearFeedback();
   }
 
+  async function generateReference(kind: MotionComicReferenceKind, targetId: string) {
+    const current = documentRef.current;
+    if (!current || referenceAction.busy || providerAction.busy) return;
+    const target = { kind, id: targetId } as const;
+    const provider = providerStatus;
+    setReferenceTargetId(`${kind}:${targetId}`);
+    await referenceAction.run(() => withHistoryCapacity({ assets: 1, providerJobs: 1 }, async () => {
+      if (!provider.connected) throw new AppError('MOTION_COMIC_IMAGE_PROVIDER_REQUIRED', provider.unavailableReason ?? '请先配置图片模型。');
+      const input = motionComicReferenceGenerationInput(current, target, provider);
+      const fingerprint = motionComicReferenceGenerationFingerprint(current, target, provider);
+      const recordId = crypto.randomUUID();
+      for (const path of input.referenceImagePaths ?? []) await api.readAssetDataUrl(path);
+      const mutation = await api.generateImageLab({ ...input, id: recordId });
+      applyState(mutation);
+      const record = await api.getImageLabRecordDetail(recordId);
+      if (!record || record.status !== 'generated' || !record.imagePath) throw new AppError('MOTION_COMIC_REFERENCE_GENERATION_FAILED', record?.errorMessage || '图片服务没有返回可用的参考图。', true);
+      await enqueueProjectMutation(current.id, (latest) => {
+        if (motionComicReferenceGenerationFingerprint(latest, target, provider) !== fingerprint) {
+          throw new AppError('MOTION_COMIC_REFERENCE_INPUT_CHANGED', '资产设定已修改：生成图已保留在图片历史中，请确认后重新生成或导入。');
+        }
+        return invalidateMotionComicVideosForChangedInputs(latest, applyGeneratedMotionComicReference(latest, target, record, provider));
+      });
+    }), { successMessage: '参考图已生成、固定并保存到项目。' });
+  }
+
+  function referenceGenerationIssue(target: MotionComicReferenceTarget): string | undefined {
+    if (!providerStatus.connected) return providerStatus.unavailableReason;
+    try { if (document) motionComicReferenceGenerationInput(document, target, providerStatus); }
+    catch (error) { return error instanceof Error ? error.message : '请先完善资产设定。'; }
+    return undefined;
+  }
+
   function referenceImportControl(kind: MotionComicReferenceKind, targetId: string, hasVersions: boolean) {
     const active = referenceTargetId === `${kind}:${targetId}`;
-    return <Button density="compact" variant={hasVersions ? 'secondary' : 'primary'} icon={active && referenceAction.busy ? <Loader2 className="director-spin" size={13} /> : <Upload size={13} />} disabled={referenceAction.busy} onClick={() => void importReference(kind, targetId)}>{hasVersions ? '导入新版本' : '导入参考图'}</Button>;
+    const target = { kind, id: targetId } as const;
+    const definitionError = referenceGenerationIssue(target);
+    return <>
+      <Button density="compact" variant="primary" icon={active && referenceAction.busy ? <Loader2 className="director-spin" size={13} /> : <Sparkles size={13} />}
+        aria-label={document ? motionComicReferenceGenerationLabel(document, target) : '生成参考图'}
+        title={definitionError ?? providerStatus.unavailableReason ?? `使用 ${providerStatus.label} / ${providerStatus.model}，将调用图片服务`}
+        disabled={referenceAction.busy || providerAction.busy || !providerStatus.connected || Boolean(definitionError)} onClick={() => void generateReference(kind, targetId)}>生成参考图</Button>
+      <Button density="compact" variant="secondary" icon={<Upload size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => void importReference(kind, targetId)}>{hasVersions ? '导入新版本' : '导入参考图'}</Button>
+    </>;
   }
 
   function setFixedReference(target: MotionComicReferenceTarget, versionId: string | null) {
@@ -1554,24 +1605,31 @@ export function MotionComicPage({
     onBack={() => navigate?.(returnView)}
   ><div data-motion-comic-series-bible="true" className="director-series-page">
     <header className="director-series-header">
-      <div><Button variant="subtle" icon={<ArrowLeft size={14} />} onClick={() => setWorkflowStage('scenes')}>返回分幕分场</Button><span><BookOpenCheck size={18} /><strong>角色资产</strong><small>确认人物、场景、道具定义，再固定视觉参考图</small></span></div>
-      <Toolbar aria-label="角色资产操作"><Button variant="subtle" icon={<Settings2 size={14} />} onClick={() => openSettings?.('image', 'motion-comic', document.id)}>图片模型</Button><Button variant="primary" icon={<Images size={14} />} disabled={!stageState.assets.complete} onClick={() => setWorkflowStage('storyboard')}>进入分镜图</Button></Toolbar>
+      <div><Button variant="subtle" icon={<ArrowLeft size={14} />} disabled={referenceAction.busy} onClick={() => setWorkflowStage('scenes')}>返回分幕分场</Button><span><BookOpenCheck size={18} /><strong>角色资产</strong><small>确认人物、场景、道具定义，再固定视觉参考图</small></span></div>
+      <Toolbar aria-label="角色资产操作"><Button variant="subtle" icon={<Settings2 size={14} />} disabled={referenceAction.busy} onClick={() => openSettings?.('image', 'motion-comic', document.id)}>图片模型</Button><Button variant="primary" icon={<Images size={14} />} disabled={!displayedConsistencyReady || referenceAction.busy} onClick={() => setWorkflowStage('storyboard')}>进入分镜图</Button></Toolbar>
     </header>
     <div className="director-series-layout">
       <Pane as="aside" tone="subtle" className="director-series-summary">
-        <ShieldCheck size={20} />
-        <h2>{document.title}</h2>
-        <p>{document.series.premise}</p>
-        <dl><div><dt>类型</dt><dd>{document.series.genre}</dd></div><div><dt>角色</dt><dd>{document.characters.length}</dd></div><div><dt>场景</dt><dd>{document.sceneAssets.length}</dd></div><div><dt>道具</dt><dd>{document.props.length}</dd></div></dl>
+        <nav className="comic-asset-navigation" aria-label="资产分区">
+          {([{ id: 'characters', label: '角色', count: document.characters.length }, { id: 'scenes', label: '场景', count: document.sceneAssets.length }, { id: 'props', label: '道具', count: document.props.length }, { id: 'series', label: '系列设定', count: undefined }] as const).map((item) => <Button key={item.id} variant={assetSection === item.id ? 'secondary' : 'subtle'} aria-label={`查看${item.label}资产`} aria-pressed={assetSection === item.id} onClick={() => setAssetSection(item.id)}>{item.label}<span>{item.count}</span></Button>)}
+        </nav>
+        <section className="comic-asset-model" aria-label="参考图生成服务">
+          <SelectField label="资产生图模型" value={providerStatus.profileId} disabled={referenceAction.busy || providerAction.busy} onChange={(event) => void selectImageProvider(event.target.value)} options={providerProfiles.map((profile) => ({ value: profile.profileId, label: `${profile.label} · ${profile.model}` }))} />
+          <span className={providerStatus.connected ? 'is-ready' : 'is-warning'}>{providerStatus.connected ? '已配置 · 点击生成时调用' : '需要完成模型配置'}</span>
+          <small>{providerStatus.model} · {providerStatus.resolution} · {providerStatus.quality === 'high' ? '高质量' : providerStatus.quality === 'medium' ? '标准质量' : '快速质量'}</small>
+          {!providerStatus.connected ? <p role="status">{providerStatus.unavailableReason}</p> : <p>先生成定妆、空镜和道具参考，再固定到分镜。生成图会保存版本并自动固定。</p>}
+          <Button variant="subtle" density="compact" icon={<Settings2 size={13} />} disabled={referenceAction.busy} onClick={() => openSettings?.('image', 'motion-comic', document.id)}>管理图片模型</Button>
+        </section>
+        <h2>制作进度</h2>
         <div className={`motion-comic-readiness ${displayedConsistencyReady ? 'is-ready' : 'is-warning'}`} role="status">
           {displayedConsistencyReady ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
           <span><strong>{displayedConsistencyReady ? '一致性素材已就绪' : '一致性素材待补充'}</strong><small>{consistencySummary ? `${consistencySummary.readyTargetCount}/${consistencySummary.requiredTargetCount} 个引用目标已固定 · 单镜头最多 ${consistencySummary.maxReferencesPerShot} 张` : '正在检查素材'}</small></span>
         </div>
         {displayedMissingTargets.length > 0 ? <div className="motion-comic-missing-list"><strong>当前缺少</strong>{displayedMissingTargets.slice(0, 5).map((label) => <span key={label}>{label}</span>)}{displayedMissingTargets.length > 5 ? <small>另有 {displayedMissingTargets.length - 5} 项</small> : null}</div> : null}
-        <span>所有修改先保留在本地草稿，点击保存后写入项目版本。</span>
+        <span>编辑设定后点击保存；生成参考图会自动保存当前项目。</span>
       </Pane>
       <main className="director-series-editor">
-        <section><div className="director-series-section-heading"><span>01</span><div><h2>系列定位</h2><p>确定故事承诺、观众和不可随意改写的世界规则。</p></div></div><TextField label="系列名称" value={document.title} onChange={(_, data) => mutateDocument((current) => ({ ...current, title: data.value, series: { ...current.series, title: data.value } }))} /><div className="director-copy-field">
+        <section hidden={assetSection !== 'series'}><div className="director-series-section-heading"><span>01</span><div><h2>系列定位</h2><p>确定故事承诺、观众和不可随意改写的世界规则。</p></div></div><TextField label="系列名称" value={document.title} onChange={(_, data) => mutateDocument((current) => ({ ...current, title: data.value, series: { ...current.series, title: data.value } }))} /><div className="director-copy-field">
   <TextAreaField label="核心设定" value={document.series.premise} onChange={(_, data) => { mutateDocument((current) => ({ ...current, series: { ...current.series, premise: data.value } })); copyAction.clearFeedback(); }} resize="vertical" />
   <DirectorCopyAssist
     activeIntent={copyAssistIntent}
@@ -1582,32 +1640,37 @@ export function MotionComicPage({
     onRevise={() => void runCopyAssist('revise')}
   />
 </div><div className="director-create-two-col"><TextField label="类型" value={document.series.genre} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, genre: data.value } }))} /><TextField label="基调" value={document.series.tone} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, tone: data.value } }))} /></div><TextField label="目标观众" value={document.series.audience} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, audience: data.value } }))} /><TextAreaField label="世界规则" value={document.series.worldRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, worldRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="视觉规则" value={document.series.visualRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, visualRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="负面提示词" value={document.series.negativePrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, negativePrompt: data.value } }))} resize="vertical" /></section>
-        <section>
-          <div className="director-series-section-heading"><span>02</span><div><h2>角色一致性</h2><p>身份提示词和造型必须跨集复用，不能由单镜头临时覆盖。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addCharacterAsset}>新增人物</Button></div>
+        <section hidden={assetSection !== 'characters'}>
+          <div className="director-series-section-heading"><span>02</span><div><h2>角色定妆图</h2><p>先完善身份和造型，再生成参考图。其他造型会复用同一角色已固定的参考，保持身份一致。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addCharacterAsset}>新增人物</Button></div>
           {document.characters.length === 0 ? <div className="motion-comic-asset-empty"><Users size={20} /><span><strong>当前没有人物</strong><small>空镜或道具特写可以继续制作；需要角色时在这里补录。</small></span></div> : null}
           {document.characters.map((character, index) => <div key={character.id} className="director-series-entity">
             <div className="director-create-two-col"><TextField label={`角色 ${index + 1}`} value={character.name} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, name: data.value } : item) }))} /><TextField label="戏剧作用" value={character.role} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, role: data.value } : item) }))} /></div>
-            <TextAreaField label="身份提示词" value={character.identityPrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, identityPrompt: data.value } : item) }))} resize="vertical" />
-            <div className="director-create-two-col"><TextAreaField label="性格与行为" value={character.personality} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, personality: data.value } : item) }))} resize="vertical" /><TextAreaField label="声音说明" value={character.voiceNotes} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, voiceNotes: data.value } : item) }))} resize="vertical" /></div>
-            <div className="director-create-two-col">
-              <SelectField label={`${character.name}音色`} value={character.voiceId ?? ''} options={[{ value: '', label: '跟随镜头默认音色' }, ...voiceStatus.voices, ...(character.voiceId && !voiceStatus.voices.some((voice) => voice.value === character.voiceId) ? [{ value: character.voiceId, label: `${character.voiceId} · 已保存音色` }] : [])]} validationMessage={character.voiceProvider && character.voiceProvider !== voiceStatus.provider ? '该角色音色属于另一服务，请重新选择。' : undefined} onChange={(event) => mutateDocument((current) => updateMotionComicCharacterVoice(current, character.id, { voiceProvider: voiceStatus.provider, voiceId: event.target.value || undefined }))} />
-              <SelectField label={`${character.name}语速`} value={String(character.voiceSpeed ?? '')} options={[{ value: '', label: '跟随镜头语速' }, { value: '0.8', label: '0.80x' }, { value: '1', label: '1.00x' }, { value: '1.2', label: '1.20x' }]} onChange={(event) => mutateDocument((current) => updateMotionComicCharacterVoice(current, character.id, { voiceProvider: character.voiceProvider ?? voiceStatus.provider, voiceSpeed: event.target.value ? Number(event.target.value) : undefined }))} />
-            </div>
+            <TextAreaField label="身份提示词" rows={2} value={character.identityPrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, identityPrompt: data.value } : item) }))} resize="vertical" />
+            <div className="comic-look-heading"><strong>{character.looks.length} 个角色造型</strong><Button variant="secondary" density="compact" icon={<Plus size={13} />} disabled={referenceAction.busy || character.looks.length >= 50} title={character.looks.length >= 50 ? '每个角色最多保留 50 个造型' : undefined} onClick={() => addCharacterLook(character.id)}>新增造型</Button></div>
             {character.looks.map((look) => {
               const target = { kind: 'look' as const, id: look.id };
               const targetKey = `look:${look.id}`;
               const versions = motionComicReferenceAssets(document, look.referenceAssetVersionIds);
               const fixed = fixedMotionComicReferenceAsset(document, look.referenceAssetVersionIds);
               return <div key={look.id} className="director-series-look">
+                <MotionComicReferenceEditor label={`${character.name} · ${look.label}`} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} importControl={referenceImportControl('look', look.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
                 <TextField label="造型名称" value={look.label} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, label: data.value } : candidate) } : item) }))} />
-                <TextAreaField label="外观与服装" value={`${look.appearancePrompt}\n${look.wardrobe}`} onChange={(_, data) => { const [appearancePrompt = '', ...wardrobe] = data.value.split('\n'); mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, appearancePrompt, wardrobe: wardrobe.join('\n') } : candidate) } : item) })); }} resize="vertical" />
-                <MotionComicReferenceEditor label={`${character.name} · ${look.label}`} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} importControl={referenceImportControl('look', look.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
+                <TextAreaField label="外观与服装" rows={2} value={`${look.appearancePrompt}\n${look.wardrobe}`} onChange={(_, data) => { const [appearancePrompt = '', ...wardrobe] = data.value.split('\n'); mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, appearancePrompt, wardrobe: wardrobe.join('\n') } : candidate) } : item) })); }} resize="vertical" />
+
+                <TextAreaField label="造型连续性要求" rows={2} value={look.continuityNotes} hint="记录跨镜头必须保持的发型、服装、配饰和辨识特征。" onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, continuityNotes: data.value } : candidate) } : item) }))} />
               </div>;
             })}
+            <details className="comic-character-details"><summary>性格与角色配音</summary>
+            <div className="director-create-two-col"><TextAreaField label="性格与行为" value={character.personality} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, personality: data.value } : item) }))} resize="vertical" /><TextAreaField label="声音说明" value={character.voiceNotes} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, voiceNotes: data.value } : item) }))} resize="vertical" /></div>
+            <div className="director-create-two-col">
+              <SelectField label={`${character.name}音色`} value={character.voiceId ?? ''} options={[{ value: '', label: '跟随镜头默认音色' }, ...voiceStatus.voices, ...(character.voiceId && !voiceStatus.voices.some((voice) => voice.value === character.voiceId) ? [{ value: character.voiceId, label: `${character.voiceId} · 已保存音色` }] : [])]} validationMessage={character.voiceProvider && character.voiceProvider !== voiceStatus.provider ? '该角色音色属于另一服务，请重新选择。' : undefined} onChange={(event) => mutateDocument((current) => updateMotionComicCharacterVoice(current, character.id, { voiceProvider: voiceStatus.provider, voiceId: event.target.value || undefined }))} />
+              <SelectField label={`${character.name}语速`} value={String(character.voiceSpeed ?? '')} options={[{ value: '', label: '跟随镜头语速' }, { value: '0.8', label: '0.80x' }, { value: '1', label: '1.00x' }, { value: '1.2', label: '1.20x' }]} onChange={(event) => mutateDocument((current) => updateMotionComicCharacterVoice(current, character.id, { voiceProvider: character.voiceProvider ?? voiceStatus.provider, voiceSpeed: event.target.value ? Number(event.target.value) : undefined }))} />
+            </div>
+            </details>
           </div>)}
         </section>
-        <section>
-          <div className="director-series-section-heading"><span>03</span><div><h2>场景一致性</h2><p>固定建筑、光线、天气与时间，供所有镜头直接引用。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addSceneAsset}>新增场景</Button></div>
+        <section hidden={assetSection !== 'scenes'}>
+          <div className="director-series-section-heading"><span>03</span><div><h2>场景空镜</h2><p>固定建筑、空间、光线、天气与时间；生成无主角的环境参考，供镜头引用。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addSceneAsset}>新增场景</Button></div>
           {document.sceneAssets.length === 0 ? <div className="motion-comic-asset-empty"><ImagePlus size={20} /><span><strong>当前没有场景资产</strong><small>补录场景后可生成或导入固定参考图。</small></span></div> : null}
           {document.sceneAssets.map((asset) => {
             const target = { kind: 'scene' as const, id: asset.id };
@@ -1619,12 +1682,12 @@ export function MotionComicPage({
               <TextAreaField label="场景说明" value={asset.description} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, description: data.value } : item) }))} resize="vertical" />
               <TextAreaField label="生成提示词" value={asset.prompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, prompt: data.value } : item) }))} resize="vertical" />
               <TextAreaField label="连续性说明" value={asset.continuityNotes} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, continuityNotes: data.value } : item) }))} resize="vertical" />
-              <MotionComicReferenceEditor label={asset.label} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} importControl={referenceImportControl('scene', asset.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
+              <MotionComicReferenceEditor label={asset.label} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} importControl={referenceImportControl('scene', asset.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
             </div>;
           })}
         </section>
-        <section>
-          <div className="director-series-section-heading"><span>04</span><div><h2>道具一致性</h2><p>关键物件必须保持轮廓、材质和标记可识别。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addPropAsset}>新增道具</Button></div>
+        <section hidden={assetSection !== 'props'}>
+          <div className="director-series-section-heading"><span>04</span><div><h2>道具参考图</h2><p>明确轮廓、材质和关键标记，生成可跨镜头复用的物件参考。</p></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addPropAsset}>新增道具</Button></div>
           {document.props.length === 0 ? <div className="motion-comic-asset-empty"><Plus size={20} /><span><strong>当前没有关键道具</strong><small>没有道具时无需补齐；需要连续性物件时可手动新增。</small></span></div> : null}
           {document.props.map((asset) => {
             const target = { kind: 'prop' as const, id: asset.id };
@@ -1635,7 +1698,7 @@ export function MotionComicPage({
               <TextField label="道具名称" value={asset.label} onChange={(_, data) => mutateDocument((current) => ({ ...current, props: current.props.map((item) => item.id === asset.id ? { ...item, label: data.value } : item) }))} />
               <TextAreaField label="道具说明" value={asset.description} onChange={(_, data) => mutateDocument((current) => ({ ...current, props: current.props.map((item) => item.id === asset.id ? { ...item, description: data.value } : item) }))} resize="vertical" />
               <TextAreaField label="生成提示词" value={asset.prompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, props: current.props.map((item) => item.id === asset.id ? { ...item, prompt: data.value } : item) }))} resize="vertical" />
-              <MotionComicReferenceEditor label={asset.label} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} importControl={referenceImportControl('prop', asset.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
+              <MotionComicReferenceEditor label={asset.label} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} importControl={referenceImportControl('prop', asset.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
             </div>;
           })}
         </section>
@@ -1843,6 +1906,7 @@ function MotionComicReferenceEditor({
   active,
   feedback,
   importControl,
+  generationHint,
   onSetFixed,
   onImageStatus,
 }: {
@@ -1853,6 +1917,7 @@ function MotionComicReferenceEditor({
   active: boolean;
   feedback: AsyncActionFeedback | null;
   importControl: ReactElement;
+  generationHint?: string;
   onSetFixed: (versionId: string | null) => void;
   onImageStatus: (versionId: string, status: 'ready' | 'error') => void;
 }) {
@@ -1869,9 +1934,10 @@ function MotionComicReferenceEditor({
         {importControl}
       </Toolbar>
     </div>
+    {generationHint ? <small className="comic-reference-hint" role="status">{generationHint}</small> : null}
     {versions.length === 0 ? <div className="motion-comic-reference-empty">
       {active && busy ? <Loader2 className="director-spin" size={18} /> : <ImagePlus size={18} />}
-      <span><strong>{active && busy ? '正在托管参考图' : '缺少参考图'}</strong><small>{active && busy ? '完成后会自动固定为当前版本' : `${label}尚未建立视觉基准`}</small></span>
+      <span><strong>{active && busy ? '正在处理参考图' : '缺少参考图'}</strong><small>{active && busy ? '完成后会自动固定为当前版本' : `${label}尚未建立视觉基准`}</small></span>
     </div> : <div className="motion-comic-reference-versions" aria-label={`${label}参考图版本`}>
       {newestFirst.map((version, reverseIndex) => {
         const versionNumber = versions.length - reverseIndex;

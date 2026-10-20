@@ -79,8 +79,8 @@ describe('director product flow', () => {
     expect(comic).toContain('data-motion-comic-series-bible="true"');
     expect(comic).toContain('director-series-page');
     expect(comic).toContain('保存系列圣经');
-    expect(comic).toContain('场景一致性');
-    expect(comic).toContain('道具一致性');
+    expect(comic).toContain('场景空镜');
+    expect(comic).toContain('道具参考图');
     expect(comic).not.toContain('<Dialog');
   });
 

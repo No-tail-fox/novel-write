@@ -98,7 +98,7 @@ export function MotionComicProductionWorkspace({
             icon={status.complete ? <Check size={14} /> : item.icon}
             onClick={() => onStageChange(item.id)}
           >
-            <span>{index + 1}</span>{item.shortLabel}
+            <span className="comic-stage-number">{index + 1}</span><span className="comic-stage-copy"><strong>{item.shortLabel}</strong><small>{status.detail}</small></span>
           </Button>;
         })}
       </nav>

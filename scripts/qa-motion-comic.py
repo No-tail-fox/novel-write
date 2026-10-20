@@ -1309,6 +1309,8 @@ def capture_asset_entry_matrix(page: Page, report: dict[str, object]) -> None:
             root = page.locator(root_selector)
             expect(root).to_be_visible(timeout=15_000)
             for entry_kind, label in ASSET_ENTRY_SPECS:
+                section = {"character": "角色", "scene": "场景", "prop": "道具"}[entry_kind]
+                page.get_by_role("button", name=f"查看{section}资产", exact=True).click()
                 button = page.get_by_role("button", name=label, exact=True)
                 expect(button).to_have_count(1)
                 button.scroll_into_view_if_needed(timeout=15_000)
@@ -1400,6 +1402,8 @@ def add_and_persist_manual_assets(
         ("新增道具", "道具名称", "道具 2", 2),
     )
     for button_label, field_label, field_value, field_count in expected_controls:
+        section = {"新增人物": "角色", "新增场景": "场景", "新增道具": "道具"}[button_label]
+        page.get_by_role("button", name=f"查看{section}资产", exact=True).click()
         button = page.get_by_role("button", name=button_label, exact=True)
         button.scroll_into_view_if_needed(timeout=15_000)
         expect(button).to_be_visible(timeout=15_000)
@@ -2092,7 +2096,7 @@ def main() -> None:
                 (0, "source", "stage-source", "[data-motion-comic-stage-panel='source']", ("01 · 剧本导入", "原始文本", "进入分集拆解"), 100),
                 (1, "episodes", "stage-episodes", "[data-motion-comic-stage-panel='episodes']", ("02 · 分集拆解", "1/2 集已完成结构化", "可开始"), 120),
                 (2, "scenes", "stage-scenes", "[data-motion-comic-stage-panel='scenes']", ("03 · 分幕分场", "第 1 幕", "第 2 幕", "第 3 幕", "AI 规划", "幕边界依据"), 120),
-                (3, "assets", "stage-assets", "[data-motion-comic-series-bible='true']", ("角色资产", "一致性素材已就绪", "场景一致性", "道具一致性", "新增人物", "新增场景", "新增道具"), 120),
+                (3, "assets", "stage-assets", "[data-motion-comic-series-bible='true']", ("角色资产", "一致性素材已就绪", "角色定妆图", "资产生图模型", "新增人物"), 120),
                 (4, "storyboard", "stage-storyboard", ".director-desk", ("雨夜来信", "镜头 01", "更新关键帧"), 120),
                 (5, "video", "stage-video", ".director-desk", ("远程视频 API", "视频生成服务", "任务状态", "视频运动提示词"), 140),
                 (6, "audio", "stage-audio", ".director-desk", ("字幕", "旁白服务未连接"), 120),

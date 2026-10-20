@@ -205,7 +205,7 @@ export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisod
                         onChange={(_, data) => onSetActBoundary(scene.id, data.checked === true)}
                       />
                       <TextField label="场次标题" value={scene.title} onChange={(_, data) => onUpdateScene(scene.id, { title: data.value })} />
-                      <TextAreaField label="场次概要" value={scene.summary} rows={3} onChange={(_, data) => onUpdateScene(scene.id, { summary: data.value })} />
+                      <TextAreaField label="场次概要" value={scene.summary} rows={2} onChange={(_, data) => onUpdateScene(scene.id, { summary: data.value })} />
                       <TextAreaField
                         key={`${scene.id}-${act.actBoundaryReason}`}
                         label="幕边界依据"
@@ -218,6 +218,27 @@ export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisod
                         }}
                       />
                     </div>
+                    <section className="comic-scene-shot-list" aria-label={`${scene.title}镜头内容`}>
+                      <header><strong>逐镜制作内容</strong><small>{scene.shots.reduce((total, shot) => total + shot.durationMs, 0) / 1000} 秒</small></header>
+                      {scene.shots.length === 0 ? <p>本场还没有镜头，请补充分镜后再制作。</p> : scene.shots.map((shot) => {
+                        const characters = shot.characterLookIds.flatMap((id) => document.characters.flatMap((character) => character.looks.filter((look) => look.id === id).map((look) => `${character.name} · ${look.label}`)));
+                        const location = document.sceneAssets.find((asset) => asset.id === shot.sceneAssetId);
+                        const props = shot.propAssetIds.flatMap((id) => document.props.filter((asset) => asset.id === id).map((asset) => asset.label));
+                        const cues = activeEpisode.dialogueCues.filter((cue) => shot.dialogueCueIds.includes(cue.id));
+                        return <article key={shot.id} className="comic-scene-shot" data-shot-content={shot.id}>
+                          <header><strong>镜头 {shot.index}</strong><span>{shot.framing || '景别待补充'} · {shot.durationMs / 1000} 秒</span></header>
+                          <h3>{shot.title || '镜头标题待补充'}</h3>
+                          <dl>
+                            <div><dt>画面</dt><dd>{shot.prompt || '待补充画面描述'}</dd></div>
+                            <div><dt>动作 / 运镜</dt><dd>{shot.motionPrompt || '待补充动作与运镜'}</dd></div>
+                            <div><dt>角色造型</dt><dd>{characters.join('、') || '无角色引用'}</dd></div>
+                            <div><dt>场景 / 道具</dt><dd>{location?.label || '场景待关联'}{props.length ? ` · ${props.join('、')}` : ' · 无道具引用'}</dd></div>
+                            {shot.continuity ? <div><dt>动作承接</dt><dd>{shot.continuity.startState} → {shot.continuity.endState}</dd></div> : null}
+                          </dl>
+                          <div className="comic-scene-dialogue"><strong>对白与旁白</strong>{cues.length ? cues.map((cue) => <p key={cue.id}><span>{cue.speakerName || document.characters.find((character) => character.id === cue.characterId)?.name || (cue.speakerRole === 'narrative' ? '旁白' : '未标注说话人')}{cue.emotion ? ` · ${cue.emotion}` : ''}</span>{cue.text}</p>) : <small>本镜未配置对白或旁白；无声动作镜头可留空。</small>}</div>
+                        </article>;
+                      })}
+                    </section>
                   </div>
                 );
               })}

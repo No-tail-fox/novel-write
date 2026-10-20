@@ -65,7 +65,7 @@ describe('motion comic workbench', () => {
     expect(page).toContain("projectAction.feedback?.tone === 'error'");
     expect(page).toContain("providerAction.feedback?.tone === 'error'");
     expect(page).toContain('系列圣经');
-    expect(page).toContain('角色一致性');
+    expect(page).toContain('角色定妆图');
     expect(page).not.toContain('onGenerateShot={() => undefined}');
     expect(page).toContain('onSave={() => void saveProject()}');
     expect(workspace).toContain('label="保存版本"');
