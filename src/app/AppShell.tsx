@@ -19,6 +19,7 @@ import {
 } from './navigation';
 import type { ShellView } from '../shared/types';
 import { preloadRoute } from './route-registry';
+import { version } from '../../package.json';
 
 export type SaveTone = 'saved' | 'saving' | 'dirty';
 
@@ -56,7 +57,7 @@ export function AppShell({
   const recentTasks = state.tasks.slice(0, 3);
   const trialDaysLabel = state.activation.expiresAt
     ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
-    : '本地试用';
+    : state.activation.status === 'active' ? '有效' : '未激活';
   const activeNav = navigationItemForView(activeView);
   const backView = shellBackView(activeView, returnView);
   const NewTaskIcon = newTaskPrimaryAction.icon;
@@ -78,7 +79,7 @@ export function AppShell({
         <div className="window-title">
           <div className="app-mark">S</div>
           <strong>StoryDream</strong>
-          <span className="window-version">V1.0.0</span>
+          <span className="window-version">V{version}</span>
         </div>
         <Toolbar className="window-controls" aria-label="窗体控制" size="small">
           <Tooltip content="最小化">
@@ -176,7 +177,7 @@ export function AppShell({
               type="button"
               icon={<KeyRound size={15} />}
               data-nav-view="activation"
-              aria-label={`试用剩余 ${trialDaysLabel}`}
+              aria-label={`软件授权 ${trialDaysLabel}`}
               title={`激活管理 · ${trialDaysLabel}`}
               disabled={busy}
               aria-current={activeView === 'activation' ? 'page' : undefined}
@@ -184,7 +185,7 @@ export function AppShell({
               onMouseEnter={() => preloadRouteIntent('activation')}
               onFocus={() => preloadRouteIntent('activation')}
             >
-              <span>试用剩余</span>
+              <span>软件授权</span>
               <strong>{trialDaysLabel}</strong>
             </Button>
             <div className="account-entry-grid">

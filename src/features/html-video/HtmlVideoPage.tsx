@@ -1,15 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceNavigation } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
-import { Button } from '../../ui';
+import { Button, CheckboxField, SelectField, SegmentedControl, Tabs, TextAreaField, TextField } from '../../ui';
 import { ImageStylePicker } from '../image-style-preview/ImageStylePreview';
 import { Clapperboard, Eye, FileText, FolderOpen, Image as ImageIcon, Loader2, Mic2, Pause, Play, Plus, RotateCcw, Save, Search, Settings2, Wand2, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
-import { FormField as Field } from '../../components/FormField';
-import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { RangeField } from '../../components/RangeField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
-import { ToggleField } from '../../components/ToggleField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
@@ -19,7 +16,7 @@ import { htmlVideoStyleOptions } from '../../shared/editorial-options';
 import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_RATIOS, HTML_VIDEO_SCENE_MOTION_LABELS, HTML_VIDEO_SCENE_MOTIONS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS, HTML_VIDEO_TTS_PROVIDER_LABELS, HTML_VIDEO_TTS_PROVIDERS, HTML_VIDEO_TTS_SPEED_MAX, HTML_VIDEO_TTS_SPEED_MIN } from '../../shared/html-video-config';
 import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS } from '../../shared/html-video-cover';
 import { createHtmlVideoMediaCache, htmlVideoMediaElementScopeMatches, loadHtmlVideoMedia, recordHtmlVideoMediaElementFailure, syncHtmlVideoMediaCache, type HtmlVideoMediaElementFailureState, type HtmlVideoMediaElementScope } from '../../shared/html-video-media';
-import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, htmlVideoSteps, htmlVideoTabs, htmlVideoUserFacingError, isHtmlVideoTask, nextHtmlVideoTabKey, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from '../../shared/html-video-workflow';
+import { classifyHtmlVideoTaskMessage, createHtmlVideoTaskInput, htmlVideoSteps, htmlVideoTabs, htmlVideoUserFacingError, isHtmlVideoTask, safeParseHtmlVideoPipelineData, tabForHtmlVideoStep, taskProgressLabel } from '../../shared/html-video-workflow';
 import { defaultTaskSpeakerForProvider, normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
 import { taskDetailRefreshKey } from '../../shared/state-reconciliation';
 import { formatWebSearchBackendStatus, formatWebSearchProviderStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
@@ -144,7 +141,6 @@ export function HtmlVideoPage({
     pathKey: mediaPathKey,
     generation: mediaRetryRevision,
   });
-  const htmlVideoTabRefs = useRef<Partial<Record<HtmlVideoTabKey, HTMLButtonElement | null>>>({});
   const htmlVideoPanelRef = useRef<HTMLDivElement | null>(null);
   const [mediaState, setMediaState] = useState<{ taskId: string; urls: Record<string, string> }>({ taskId: '', urls: {} });
   const [mediaErrorState, setMediaErrorState] = useState<{ taskId: string; pathKey: string; message: string; failedPaths: string[] }>({
@@ -598,14 +594,6 @@ export function HtmlVideoPage({
     );
   }
 
-  function handleHtmlVideoTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, tabKey: HtmlVideoTabKey) {
-    const nextTab = nextHtmlVideoTabKey(tabKey, event.key);
-    if (!nextTab) return;
-    event.preventDefault();
-    setActiveTab(nextTab);
-    htmlVideoTabRefs.current[nextTab]?.focus();
-  }
-
   if (pageMode === 'create' || !activeTask) {
     return (
       <div className="hv-create-page" data-html-video-create-page="true">
@@ -615,71 +603,52 @@ export function HtmlVideoPage({
               <h1>HTML 动画视频</h1>
               <p>输入文案，AI 自动规划分镜 → 出素材 → 配音 → 生成动画分镜</p>
             </div>
-            <label className="hv-create-history">
-                <span>已有 HTML 任务{taskListState === 'ready' ? ` · ${htmlTaskOptions.length}` : ''}</span>
-                <select
+            <SelectField fieldClassName="hv-create-history" label={`已有 HTML 任务${taskListState === 'ready' ? ` · ${htmlTaskOptions.length}` : ''}`}
                   value={taskSelectValue}
                   aria-label="打开已有 HTML 动画视频任务"
                   disabled={taskListState === 'loading' && htmlTaskOptions.length === 0}
                   title={taskListMessage || undefined}
                   onChange={(event) => void openHtmlVideoTask(event.target.value)}
-                >
-                  <option value="">{taskListState === 'loading' ? '正在同步任务...' : taskListState === 'error' ? '同步失败，显示最近任务' : htmlTaskOptions.length ? '打开已有任务...' : '暂无 HTML 动画任务'}</option>
-                  {htmlTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.title || task.id}</option>)}
-                </select>
-              </label>
+                  options={[{ value: '', label: taskListState === 'loading' ? '正在同步任务...' : taskListState === 'error' ? '同步失败，显示最近任务' : htmlTaskOptions.length ? '打开已有任务...' : '暂无 HTML 动画任务' }, ...htmlTaskOptions.map((task) => ({ value: task.id, label: task.title || task.id }))]}
+              />
           </header>
 
           <div className="hv-create-sheet">
             <section className="hv-create-section">
               <header>{copyMode === 'ai' ? <Wand2 size={17} /> : <FileText size={17} />}<div><h2>文案</h2><p>AI 创作 · 粘贴文案</p></div></header>
               <div className="hv-create-section-content hv-create-copy-content">
-                <div className="hv-copy-mode" role="group" aria-label="文案来源">
-                  <button type="button" className={copyMode === 'ai' ? 'active' : ''} aria-pressed={copyMode === 'ai'} onClick={() => setCopyMode('ai')}><Wand2 size={15} />AI 创作</button>
-                  <button type="button" className={copyMode === 'paste' ? 'active' : ''} aria-pressed={copyMode === 'paste'} onClick={() => setCopyMode('paste')}><FileText size={15} />粘贴文案</button>
-                </div>
+                <SegmentedControl label="文案来源" value={copyMode} onChange={setCopyMode} options={[{ value: 'ai', label: 'AI 创作', icon: <Wand2 size={15} /> }, { value: 'paste', label: '粘贴文案', icon: <FileText size={15} /> }]} />
                 {copyMode === 'paste' ? (
-                  <Field label="文案" hint="可直接粘贴口播稿，生成后会自动改写并切分场景">
-                    <textarea
+                  <TextAreaField label="文案" hint="可直接粘贴口播稿，生成后会自动改写并切分场景"
                       className="source-textarea"
                       value={copy}
                       placeholder="在这里粘贴或输入完整口播文案..."
                       onChange={(event) => setCopy(event.target.value)}
                     />
-                  </Field>
                 ) : (
                   <div className="hv-ai-copy-fields">
-                    <Field label="创作主题">
-                      <input value={aiKeyword} placeholder="例如：钱学森回国背后的关键转折" onChange={(event) => handleAiKeywordChange(event.target.value)} />
-                    </Field>
-                    <Field label="创作要求" hint="可选">
-                      <textarea className="hv-ai-requirements" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
-                    </Field>
+                    <TextField label="创作主题" value={aiKeyword} placeholder="例如：钱学森回国背后的关键转折" onChange={(event) => handleAiKeywordChange(event.target.value)} />
+                    <TextAreaField label="创作要求" hint="可选" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
                     <div className="hv-research-provider-panel">
                       <span className="field-title">搜索渠道</span>
                       <div className="hv-research-provider-grid">
                         {HTML_VIDEO_SEARCH_PROVIDER_OPTIONS.map((provider) => (
-                          <label className="hv-research-provider" key={provider.id}>
-                            <input
-                              type="checkbox"
+                          <CheckboxField key={provider.id}
                               checked={webSearchProviders.includes(provider.id)}
                               disabled={taskBusy}
                               onChange={() => handleSearchProviderChange(provider.id)}
+                              label={<span className="hv-research-provider-label"><strong>{provider.label}</strong><small>{provider.domain}</small></span>}
                             />
-                            <span><strong>{provider.label}</strong><small>{provider.domain}</small></span>
-                          </label>
                         ))}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="ghost-action hv-research-search"
+                    <Button className="hv-research-search"
+                      icon={researchPhase === 'searching' ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
                       disabled={researchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0}
                       onClick={searchHtmlVideoSources}
                     >
-                      {researchPhase === 'searching' ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
                       {researchPhase === 'searching' ? '正在搜索网页资料' : '搜索网页资料'}
-                    </button>
+                    </Button>
                     {researchMessage ? (
                       <div className={`hv-research-message ${researchMessageTone}`} role={researchMessageTone === 'error' ? 'alert' : 'status'} aria-live={researchMessageTone === 'error' ? 'assertive' : 'polite'}>
                         {researchMessage}
@@ -720,14 +689,13 @@ export function HtmlVideoPage({
                             {searchSections.map((source, index) => {
                               const id = sourceKey(source, index);
                               return (
-                                <label className="hv-research-source" key={id}>
-                                  <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} disabled={researchAction.busy} onChange={() => handleSearchSourceChange(id)} />
-                                  <span>
+                                <CheckboxField key={id} className="hv-research-source-choice" checked={selectedSearchSourceIds.includes(id)} disabled={researchAction.busy} onChange={() => handleSearchSourceChange(id)}
+                                  label={<span className="hv-research-source-label">
                                     <span className="hv-research-source-heading"><small>{formatWebSearchSourceLabel(source)}</small><strong>{source.title}</strong></span>
                                     {source.url ? <span className="hv-research-source-url">{source.url}</span> : null}
                                     <span className="hv-research-source-excerpt">{(source.content || source.snippet || '').slice(0, 240)}</span>
-                                  </span>
-                                </label>
+                                  </span>}
+                                />
                               );
                             })}
                           </div>
@@ -735,16 +703,13 @@ export function HtmlVideoPage({
                         {searchSections.length ? (
                           <div className="hv-research-compose-row">
                             <span>已选 {selectedSources.length} 条网页来源</span>
-                            <button type="button" className="primary-action slim" disabled={researchAction.busy || selectedSources.length === 0} onClick={composeHtmlVideoCopy}>
-                              {researchPhase === 'composing' ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}
+                            <Button variant="primary" disabled={researchAction.busy || selectedSources.length === 0} onClick={composeHtmlVideoCopy} icon={researchPhase === 'composing' ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}>
                               {researchPhase === 'composing' ? '正在创作文案' : '结合所选资料创作文案'}
-                            </button>
+                            </Button>
                           </div>
                         ) : null}
                         {researchCopyReady ? (
-                          <Field label="生成文案（可编辑）">
-                            <textarea className="hv-research-copy" value={copy} onChange={(event) => setCopy(event.target.value)} />
-                          </Field>
+                          <TextAreaField label="生成文案（可编辑）" rows={8} value={copy} onChange={(event) => setCopy(event.target.value)} />
                         ) : null}
                       </div>
                     ) : null}
@@ -764,24 +729,16 @@ export function HtmlVideoPage({
                     <Segmented label="画布比例" value={ratio} options={[...HTML_VIDEO_RATIOS]} onChange={setRatio} />
                   </div>
                   <div data-html-video-create-field="maxScenes">
-                    <Field label="场景上限"><input type="number" min={1} max={30} step={1} value={maxScenes} onChange={(event) => setMaxScenes(Number(event.target.value))} /></Field>
+                    <TextField label="场景上限" type="number" min={1} max={30} step={1} value={String(maxScenes)} onChange={(event) => setMaxScenes(Number(event.target.value))} />
                   </div>
                   <div data-html-video-create-field="foreground">
-                    <Segmented label="前景图" value={foreground ? 'on' : 'off'} options={['on', 'off']} labels={['生成', '跳过']} onChange={(value) => setForeground(value === 'on')} />
+                    <CheckboxField label="生成前景图" checked={foreground} onChange={(_, data) => setForeground(data.checked === true)} />
                   </div>
                   <div data-html-video-create-field="transitionType">
-                    <Field label="转场">
-                      <select value={transitionType} onChange={(event) => setTransitionType(event.target.value as HtmlVideoTransition)}>
-                        {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
-                      </select>
-                    </Field>
+                    <SelectField label="转场" value={transitionType} onChange={(event) => setTransitionType(event.target.value as HtmlVideoTransition)} options={HTML_VIDEO_TRANSITIONS.map((value) => ({ value, label: HTML_VIDEO_TRANSITION_LABELS[value] }))} />
                   </div>
                   <div data-html-video-create-field="sceneMotion">
-                    <Field label="镜头动效">
-                      <select value={sceneMotion} onChange={(event) => setSceneMotion(event.target.value as HtmlVideoMotion)}>
-                        {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
-                      </select>
-                    </Field>
+                    <SelectField label="镜头动效" value={sceneMotion} onChange={(event) => setSceneMotion(event.target.value as HtmlVideoMotion)} options={HTML_VIDEO_SCENE_MOTIONS.map((value) => ({ value, label: HTML_VIDEO_SCENE_MOTION_LABELS[value] }))} />
                   </div>
                 </div>
               </div>
@@ -794,14 +751,10 @@ export function HtmlVideoPage({
                   <Segmented label="封面" value={coverImageMode} options={[...HTML_VIDEO_COVER_MODES]} labels={['关闭', '自动', '手动']} onChange={(value) => setCoverImageMode(value as HtmlVideoCoverMode)} />
                 </div>
                 <div data-html-video-create-field="coverTemplate">
-                  <Field label="封面模板">
-                    <select value={coverTemplate} onChange={(event) => setCoverTemplate(event.target.value)}>
-                      {coverTemplate && !state.customCoverTemplates.some((item) => item.id === coverTemplate)
-                        ? <option value={coverTemplate}>{coverTemplate}（目录中已缺失）</option>
-                        : null}
-                      {state.customCoverTemplates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                    </select>
-                  </Field>
+                  <SelectField label="封面模板" value={coverTemplate} onChange={(event) => setCoverTemplate(event.target.value)} options={[
+                    ...(coverTemplate && !state.customCoverTemplates.some((item) => item.id === coverTemplate) ? [{ value: coverTemplate, label: `${coverTemplate}（目录中已缺失）` }] : []),
+                    ...state.customCoverTemplates.map((item) => ({ value: item.id, label: item.name })),
+                  ]} />
                 </div>
                 <div data-html-video-create-field="coverRatio">
                   <Segmented label="封面比例" value={coverRatio} options={[...HTML_VIDEO_COVER_RATIOS]} onChange={(value) => setCoverRatio(value as HtmlVideoCoverRatio)} />
@@ -814,21 +767,13 @@ export function HtmlVideoPage({
               <div className="hv-create-section-content hv-create-stack">
                 <div className="advanced-grid">
                   <div data-html-video-create-field="ttsProvider">
-                    <Field label="配音模型">
-                      <select value={ttsProvider} onChange={(event) => changeCreateTtsProvider(event.target.value)}>
-                        {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{HTML_VIDEO_TTS_PROVIDER_LABELS[provider]}</option>)}
-                      </select>
-                    </Field>
+                    <SelectField label="配音模型" value={ttsProvider} onChange={(event) => changeCreateTtsProvider(event.target.value)} options={HTML_VIDEO_TTS_PROVIDERS.map((value) => ({ value, label: HTML_VIDEO_TTS_PROVIDER_LABELS[value] }))} />
                   </div>
                   <div data-html-video-create-field="voiceId">
-                    <Field label="音色">
-                      <select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}>
-                        {voiceId && !createVoiceOptions.some((option) => option.id === voiceId)
-                          ? <option value={voiceId}>{taskSpeakerLabel(ttsProvider, voiceId, state.minimaxCloneVoices)}</option>
-                          : null}
-                        {createVoiceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                      </select>
-                    </Field>
+                    <SelectField label="音色" value={voiceId} onChange={(event) => setVoiceId(event.target.value)} options={[
+                      ...(voiceId && !createVoiceOptions.some((option) => option.id === voiceId) ? [{ value: voiceId, label: taskSpeakerLabel(ttsProvider, voiceId, state.minimaxCloneVoices) }] : []),
+                      ...createVoiceOptions.map((option) => ({ value: option.id, label: option.label })),
+                    ]} />
                   </div>
                   <div data-html-video-create-field="ttsSpeed">
                     <RangeField label="语速" min={HTML_VIDEO_TTS_SPEED_MIN} max={HTML_VIDEO_TTS_SPEED_MAX} step={0.1} value={ttsSpeed} onChange={setTtsSpeed} />
@@ -838,13 +783,7 @@ export function HtmlVideoPage({
                   </div>
                 </div>
                 <div data-html-video-create-field="bgmId">
-                  <span className="field-title">背景音乐</span>
-                  <div className="chip-row">
-                    <button type="button" className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无配乐</button>
-                    {bgmOptions.map((bgm) => (
-                      <button type="button" key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
-                    ))}
-                  </div>
+                  <SelectField label="背景音乐" value={bgmId} onChange={(event) => setBgmId(event.target.value)} options={[{ value: '', label: '无配乐' }, ...bgmOptions.map((bgm) => ({ value: bgm.id, label: bgm.title }))]} />
                 </div>
               </div>
             </section>
@@ -853,15 +792,11 @@ export function HtmlVideoPage({
               <header><Settings2 size={17} /><div><h2>画面预设</h2><p>版式 · 动效</p></div></header>
               <div className="hv-create-section-content">
                 <div data-html-video-create-field="draftTemplate">
-                  <Field label="画面样式">
-                    <select value={draftTemplate} onChange={(event) => setDraftTemplate(event.target.value)}>
-                      <option value="">不套用画面预设</option>
-                      {draftTemplate && !state.draftTemplates.some((item) => item.id === draftTemplate)
-                        ? <option value={draftTemplate}>{draftTemplate}（目录中已缺失）</option>
-                        : null}
-                      {state.draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                    </select>
-                  </Field>
+                  <SelectField label="画面样式" value={draftTemplate} onChange={(event) => setDraftTemplate(event.target.value)} options={[
+                    { value: '', label: '不套用画面预设' },
+                    ...(draftTemplate && !state.draftTemplates.some((item) => item.id === draftTemplate) ? [{ value: draftTemplate, label: `${draftTemplate}（目录中已缺失）` }] : []),
+                    ...state.draftTemplates.map((template) => ({ value: template.id, label: template.name })),
+                  ]} />
                 </div>
               </div>
             </section>
@@ -872,10 +807,9 @@ export function HtmlVideoPage({
                 {message ? <span className="local-note" role="status">{message}</span> : null}
                 <InlineActionFeedback feedback={htmlVideoAction.feedback} />
               </div>
-              <button className="primary-action hv-create-submit" type="button" onClick={createHtmlVideoTask} disabled={taskBusy || !createInputReady}>
-                {running ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+              <Button variant="primary" className="hv-create-submit" onClick={createHtmlVideoTask} disabled={taskBusy || !createInputReady} icon={running ? <Loader2 className="spin" size={16} /> : <Play size={16} />}>
                 {createPhase === 'create' ? '正在创建任务' : '开始生成'}
-              </button>
+              </Button>
             </footer>
           </div>
         </div>
@@ -891,9 +825,7 @@ export function HtmlVideoPage({
             <h2>{activeTask.title}</h2>
             <span>{activeTask.id}</span>
           </div>
-          <button className="mini-button hv-new-task-button" type="button" onClick={openHtmlVideoCreation}>
-            <Plus size={14} />新建
-          </button>
+          <Button className="hv-new-task-button" onClick={openHtmlVideoCreation} icon={<Plus size={14} />}>新建</Button>
         </div>
 
         <div className="hv-reference-summary-stats">
@@ -903,11 +835,7 @@ export function HtmlVideoPage({
         </div>
 
         {htmlTaskOptions.length ? (
-          <Field label="HTML 任务">
-            <select value={activeTask.id} onChange={(event) => void openHtmlVideoTask(event.target.value)} aria-label="切换 HTML 动画视频任务">
-              {htmlTaskOptions.map((task) => <option key={task.id} value={task.id}>{task.title || task.id}</option>)}
-            </select>
-          </Field>
+          <SelectField label="HTML 任务" value={activeTask.id} onChange={(event) => void openHtmlVideoTask(event.target.value)} aria-label="切换 HTML 动画视频任务" options={htmlTaskOptions.map((task) => ({ value: task.id, label: task.title || task.id }))} />
         ) : null}
 
         {isBrowserPreview ? <span className="local-note">浏览器模式只保存预览快照，不生成本地媒体或视频。</span> : null}
@@ -937,18 +865,10 @@ export function HtmlVideoPage({
             <span>{activeTask ? `当前阶段：${htmlVideoPipelineStepLabel(activeStep)}` : '创建后在此查看文案、素材、配音、预览、封面和出片。'}</span>
           </div>
           <div className="hv-studio-canvas-actions">
-            <div className="hv-workspace-mode" role="group" aria-label="HTML 动画工作区模式">
-              <Button className={workspaceMode === 'automatic' ? 'active' : ''} aria-pressed={workspaceMode === 'automatic'} onClick={() => { if (workspaceMode !== 'automatic') void requestLeave(() => setWorkspaceMode('automatic')); }}>自动制作</Button>
-              <Button
-                type="button"
-                className={workspaceMode === 'authoring' ? 'active' : ''}
-                aria-pressed={workspaceMode === 'authoring'}
-                disabled={!activeTask || pipelineData.compositions.length === 0 || Boolean(pipelineParse.error)}
-                onClick={() => { if (workspaceMode !== 'authoring') void requestLeave(() => setWorkspaceMode('authoring')); }}
-              >
-                可视编排
-              </Button>
-            </div>
+            <SegmentedControl label="HTML 动画工作区模式" value={workspaceMode} onChange={(value) => { if (workspaceMode !== value) void requestLeave(() => setWorkspaceMode(value)); }} options={[
+              { value: 'automatic', label: '自动制作' },
+              { value: 'authoring', label: '可视编排', disabled: !activeTask || pipelineData.compositions.length === 0 || Boolean(pipelineParse.error) },
+            ]} />
             <span className="hv-studio-canvas-ratio">{pipelineData.config.ratio ?? ratio}</span>
           </div>
         </div>
@@ -975,33 +895,11 @@ export function HtmlVideoPage({
             isBrowserPreview={isBrowserPreview}
           />
         ) : <div className="hv-studio-media-canvas" data-media-canvas="html-video">
-          <div className="hv-tabs" role="tablist" aria-label="HTML 动画视频内容">
-            {htmlVideoTabs.map((tab) => (
-              <button
-                key={tab.key}
-                id={`html-video-tab-${tab.key}`}
-                ref={(element) => {
-                  htmlVideoTabRefs.current[tab.key] = element;
-                }}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.key}
-                aria-controls="html-video-panel"
-                tabIndex={activeTab === tab.key ? 0 : -1}
-                className={activeTab === tab.key ? 'hv-tab active' : 'hv-tab'}
-                onClick={() => setActiveTab(tab.key)}
-                onKeyDown={(event) => handleHtmlVideoTabKeyDown(event, tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <Tabs className="hv-tabs" label="HTML 动画视频内容" value={activeTab} onChange={(value) => setActiveTab(value as HtmlVideoTabKey)} items={htmlVideoTabs.map((tab) => ({ value: tab.key, label: tab.label, id: `html-video-tab-${tab.key}`, controls: 'html-video-panel' }))} />
           {mediaError ? (
             <div className="hv-media-error" role="alert">
               <span>{mediaError}</span>
-              <button className="mini-button" type="button" onClick={() => setMediaRetryRevision((revision) => revision + 1)}>
-                <RotateCcw size={14} />重新加载媒体
-              </button>
+              <Button onClick={() => setMediaRetryRevision((revision) => revision + 1)} icon={<RotateCcw size={14} />}>重新加载媒体</Button>
             </div>
           ) : null}
           <div ref={htmlVideoPanelRef} id="html-video-panel" className="hv-studio-media-panel" role="tabpanel" aria-labelledby={`html-video-tab-${activeTab}`} aria-busy={mediaLoading}>
@@ -1078,12 +976,12 @@ export function HtmlVideoPage({
         </div>
         {activeTask ? (
           <div className="hv-run-controls" aria-label="HTML 动画视频任务控制">
-            {activeTask.status === 'running' || activeTask.status === 'pending' ? <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('paused')}><Pause size={14} />暂停</button> : null}
-            {['running', 'pending', 'paused'].includes(activeTask.status) ? <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('cancelled')}><XCircle size={14} />取消</button> : null}
-            {activeTask.status === 'paused' ? <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('running')}><Play size={14} />继续</button> : null}
-            {pipelineParse.error || activeTask.status === 'failed' || activeTask.status === 'cancelled' ? <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={retryTask}><RotateCcw size={14} />重试</button> : null}
-            {firstPreviewComposition ? <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={() => openPreview(firstPreviewComposition.index)}><Eye size={14} />预览</button> : null}
-            {activeTask.outputDir ? <button className="mini-button" disabled={taskBusy || isBrowserPreview} onClick={openOutputDirectory}><FolderOpen size={14} />打开目录</button> : null}
+            {activeTask.status === 'running' || activeTask.status === 'pending' ? <Button density="compact" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('paused')} icon={<Pause size={14} />}>暂停</Button> : null}
+            {['running', 'pending', 'paused'].includes(activeTask.status) ? <Button density="compact" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('cancelled')} icon={<XCircle size={14} />}>取消</Button> : null}
+            {activeTask.status === 'paused' ? <Button density="compact" disabled={taskBusy || isBrowserPreview} onClick={() => setTaskStatus('running')} icon={<Play size={14} />}>继续</Button> : null}
+            {pipelineParse.error || activeTask.status === 'failed' || activeTask.status === 'cancelled' ? <Button density="compact" disabled={taskBusy || isBrowserPreview} onClick={retryTask} icon={<RotateCcw size={14} />}>重试</Button> : null}
+            {firstPreviewComposition ? <Button density="compact" disabled={taskBusy || isBrowserPreview} onClick={() => openPreview(firstPreviewComposition.index)} icon={<Eye size={14} />}>预览</Button> : null}
+            {activeTask.outputDir ? <Button density="compact" disabled={taskBusy || isBrowserPreview} onClick={openOutputDirectory} icon={<FolderOpen size={14} />}>打开目录</Button> : null}
           </div>
         ) : null}
       </aside>
@@ -1107,6 +1005,8 @@ interface HtmlVideoEditableValues {
   maxScenes: number;
   ratio: '9:16' | '16:9' | '1:1' | '4:3';
   draftTemplate: string;
+  previewLongEdge: 720 | 1080;
+  renderLongEdge: 1080 | 1920;
 }
 
 function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableValues {
@@ -1121,6 +1021,8 @@ function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableV
     sceneMotion: config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion,
     foreground: config.foreground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
     maxScenes: config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
+    previewLongEdge: config.previewLongEdge ?? 1080,
+    renderLongEdge: config.renderLongEdge ?? 1080,
     ratio: (config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio) as HtmlVideoEditableValues['ratio'],
     draftTemplate: config.draftTemplate ?? '',
   };
@@ -1177,7 +1079,7 @@ function HtmlVideoConfigEditor({
     const changes: HtmlVideoConfigChange[] = [];
     for (const field of [
       'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume',
-      'transitionType', 'sceneMotion', 'foreground', 'maxScenes', 'ratio', 'draftTemplate',
+      'transitionType', 'sceneMotion', 'foreground', 'maxScenes', 'ratio', 'draftTemplate', 'previewLongEdge', 'renderLongEdge',
     ] as const) {
       if (values[field] !== initial[field]) {
         changes.push({ field, value: values[field] } as HtmlVideoConfigChange);
@@ -1199,83 +1101,61 @@ function HtmlVideoConfigEditor({
     <section className="hv-config-editor" aria-label="当前 HTML 视频任务参数">
       <div className="panel-title-row">
         <div><h4>任务参数</h4><span>保存后从最早受影响阶段继续</span></div>
-        <button className="mini-button" type="button" onClick={saveConfig} disabled={disabled}>
-          {htmlVideoConfigAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存参数
-        </button>
+        <Button onClick={saveConfig} disabled={disabled} icon={htmlVideoConfigAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}>保存参数</Button>
       </div>
       <fieldset className="advanced-grid hv-config-editor-grid" disabled={disabled}>
         <div data-html-video-edit-field="style">
           <ImageStylePicker options={htmlVideoStyleChoices} styles={customStyles} value={values.style} onChange={value => setValue('style', value)} disabled={disabled} />
         </div>
         <div data-html-video-edit-field="ttsProvider">
-          <Field label="配音模型">
-            <select value={values.ttsProvider} onChange={(event) => changeProvider(event.target.value)} disabled={disabled}>
-              {HTML_VIDEO_TTS_PROVIDERS.map((provider) => <option key={provider} value={provider}>{HTML_VIDEO_TTS_PROVIDER_LABELS[provider]}</option>)}
-            </select>
-          </Field>
+          <SelectField label="配音模型" value={values.ttsProvider} onChange={(event) => changeProvider(event.target.value)} disabled={disabled} options={HTML_VIDEO_TTS_PROVIDERS.map((provider) => ({ value: provider, label: HTML_VIDEO_TTS_PROVIDER_LABELS[provider] }))} />
         </div>
         <div data-html-video-edit-field="voiceId">
-          <Field label="音色">
-            <select value={values.voiceId} onChange={(event) => setValue('voiceId', event.target.value)} disabled={disabled}>
-              {values.voiceId && !voiceOptions.some((option) => option.id === values.voiceId)
-                ? <option value={values.voiceId}>{taskSpeakerLabel(values.ttsProvider, values.voiceId, cloneVoices)}</option>
-                : null}
-              {voiceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
-          </Field>
+          <SelectField label="音色" value={values.voiceId} onChange={(event) => setValue('voiceId', event.target.value)} disabled={disabled} options={[
+            ...(values.voiceId && !voiceOptions.some((option) => option.id === values.voiceId) ? [{ value: values.voiceId, label: taskSpeakerLabel(values.ttsProvider, values.voiceId, cloneVoices) }] : []),
+            ...voiceOptions.map((option) => ({ value: option.id, label: option.label })),
+          ]} />
         </div>
         <div data-html-video-edit-field="ttsSpeed">
-          <RangeField label="语速" min={HTML_VIDEO_TTS_SPEED_MIN} max={HTML_VIDEO_TTS_SPEED_MAX} step={0.1} value={values.ttsSpeed} onChange={(value) => setValue('ttsSpeed', value)} />
+          <RangeField label="语速" min={HTML_VIDEO_TTS_SPEED_MIN} max={HTML_VIDEO_TTS_SPEED_MAX} step={0.1} value={values.ttsSpeed} disabled={disabled} onChange={(value) => setValue('ttsSpeed', value)} />
         </div>
         <div data-html-video-edit-field="bgmId">
-          <Field label="背景音乐">
-            <select value={values.bgmId} onChange={(event) => setValue('bgmId', event.target.value)} disabled={disabled}>
-              <option value="">无配乐</option>
-              {values.bgmId && !bgmOptions.some((bgm) => bgm.id === values.bgmId)
-                ? <option value={values.bgmId}>{values.bgmId}（素材库中已缺失）</option>
-                : null}
-              {bgmOptions.map((bgm) => <option key={bgm.id} value={bgm.id}>{bgm.title}</option>)}
-            </select>
-          </Field>
+          <SelectField label="背景音乐" value={values.bgmId} onChange={(event) => setValue('bgmId', event.target.value)} disabled={disabled} options={[
+            { value: '', label: '无配乐' },
+            ...(values.bgmId && !bgmOptions.some((bgm) => bgm.id === values.bgmId) ? [{ value: values.bgmId, label: `${values.bgmId}（素材库中已缺失）` }] : []),
+            ...bgmOptions.map((bgm) => ({ value: bgm.id, label: bgm.title })),
+          ]} />
         </div>
         <div data-html-video-edit-field="bgmVolume">
-          <Segmented label="配乐音量" value={values.bgmVolume} options={[...HTML_VIDEO_BGM_VOLUMES]} labels={['轻', '中', '响']} onChange={(value) => setValue('bgmVolume', value as typeof values.bgmVolume)} />
+          <Segmented label="配乐音量" value={values.bgmVolume} options={[...HTML_VIDEO_BGM_VOLUMES]} labels={['轻', '中', '响']} disabled={disabled} onChange={(value) => setValue('bgmVolume', value as typeof values.bgmVolume)} />
         </div>
         <div data-html-video-edit-field="transitionType">
-          <Field label="转场">
-            <select value={values.transitionType} onChange={(event) => setValue('transitionType', event.target.value as HtmlVideoTransition)} disabled={disabled}>
-              {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
-            </select>
-          </Field>
+          <SelectField label="转场" value={values.transitionType} onChange={(event) => setValue('transitionType', event.target.value as HtmlVideoTransition)} disabled={disabled} options={HTML_VIDEO_TRANSITIONS.map((transition) => ({ value: transition, label: HTML_VIDEO_TRANSITION_LABELS[transition] }))} />
         </div>
         <div data-html-video-edit-field="sceneMotion">
-          <Field label="镜头动效">
-            <select value={values.sceneMotion} onChange={(event) => setValue('sceneMotion', event.target.value as HtmlVideoMotion)} disabled={disabled}>
-              {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
-            </select>
-          </Field>
+          <SelectField label="镜头动效" value={values.sceneMotion} onChange={(event) => setValue('sceneMotion', event.target.value as HtmlVideoMotion)} disabled={disabled} options={HTML_VIDEO_SCENE_MOTIONS.map((motion) => ({ value: motion, label: HTML_VIDEO_SCENE_MOTION_LABELS[motion] }))} />
         </div>
         <div data-html-video-edit-field="foreground">
-          <ToggleField label="生成前景图" checked={values.foreground} onChange={(value) => setValue('foreground', value)} />
+          <CheckboxField label="生成前景图" checked={values.foreground} disabled={disabled} onChange={(_, data) => setValue('foreground', data.checked === true)} />
         </div>
         <div data-html-video-edit-field="maxScenes">
-          <Field label="场景上限">
-            <input type="number" min={1} max={30} step={1} value={values.maxScenes} onChange={(event) => setValue('maxScenes', Number(event.target.value))} disabled={disabled} />
-          </Field>
+          <TextField label="场景上限" type="number" min={1} max={30} step={1} value={String(values.maxScenes)} onChange={(event) => setValue('maxScenes', Number(event.target.value))} disabled={disabled} />
         </div>
         <div data-html-video-edit-field="ratio">
-          <Segmented label="画布比例" value={values.ratio} options={[...HTML_VIDEO_RATIOS]} onChange={(value) => setValue('ratio', value as typeof values.ratio)} />
+          <Segmented label="画布比例" value={values.ratio} options={[...HTML_VIDEO_RATIOS]} disabled={disabled} onChange={(value) => setValue('ratio', value as typeof values.ratio)} />
+        </div>
+        <div data-html-video-edit-field="previewLongEdge">
+          <SelectField label="预览分辨率（长边）" value={String(values.previewLongEdge)} disabled={disabled} options={[{value:'720',label:'720 px · 快速预览'},{value:'1080',label:'1080 px · 清晰预览'}]} onChange={event=>setValue('previewLongEdge',Number(event.target.value) as 720|1080)} />
+        </div>
+        <div data-html-video-edit-field="renderLongEdge">
+          <SelectField label="成片分辨率（长边）" value={String(values.renderLongEdge)} disabled={disabled} options={[{value:'1080',label:'1080 px'},{value:'1920',label:'1920 px · 高清成片'}]} onChange={event=>setValue('renderLongEdge',Number(event.target.value) as 1080|1920)} />
         </div>
         <div data-html-video-edit-field="draftTemplate">
-          <Field label="画面预设">
-            <select value={values.draftTemplate} onChange={(event) => setValue('draftTemplate', event.target.value)} disabled={disabled}>
-              <option value="">不套用画面预设</option>
-              {values.draftTemplate && !draftTemplates.some((template) => template.id === values.draftTemplate)
-                ? <option value={values.draftTemplate}>{values.draftTemplate}（目录中已缺失）</option>
-                : null}
-              {draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-            </select>
-          </Field>
+          <SelectField label="画面预设" value={values.draftTemplate} onChange={(event) => setValue('draftTemplate', event.target.value)} disabled={disabled} options={[
+            { value: '', label: '不套用画面预设' },
+            ...(values.draftTemplate && !draftTemplates.some((template) => template.id === values.draftTemplate) ? [{ value: values.draftTemplate, label: `${values.draftTemplate}（目录中已缺失）` }] : []),
+            ...draftTemplates.map((template) => ({ value: template.id, label: template.name })),
+          ]} />
         </div>
       </fieldset>
       {message ? <span className="local-note" role="status">{message}</span> : null}

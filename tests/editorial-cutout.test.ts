@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { removeEditorialGreenBackground } from '@shared/editorial-cutout';
+import { assessBackgroundRemovalAlpha, isUsableBackgroundRemoval } from '@shared/background-removal';
 import { ipcInputSchemas } from '@shared/ipc-contract';
 
 function fixture(width = 12, height = 12): Uint8Array {
@@ -106,5 +107,25 @@ describe('editorial transparent foreground preparation', () => {
     expect(schema.parse(input)).toEqual(input);
     expect(schema.parse({ ...input, cutout: 'green' })).toEqual({ ...input, cutout: 'green' });
     expect(() => schema.parse({ ...input, cutout: 'automatic' })).toThrow();
+  });
+
+  it('requires a visible subject, usable transparency and reviewable edges before a cutout passes', () => {
+    const clean = assessBackgroundRemovalAlpha({ transparentFraction: 0.58, foregroundFraction: 0.4, edgeFraction: 0.02 });
+    const opaque = assessBackgroundRemovalAlpha({ transparentFraction: 0.001, foregroundFraction: 0.999, edgeFraction: 0 });
+    const empty = assessBackgroundRemovalAlpha({ transparentFraction: 1, foregroundFraction: 0, edgeFraction: 0 });
+    const rough = assessBackgroundRemovalAlpha({ transparentFraction: 0.35, foregroundFraction: 0.35, edgeFraction: 0.3 });
+
+    expect(clean.quality).toBe('passed');
+    expect(isUsableBackgroundRemoval({ method: 'onnx', ...clean })).toBe(true);
+    expect(opaque.quality).toBe('warning');
+    expect(isUsableBackgroundRemoval({ method: 'onnx', ...opaque })).toBe(false);
+    expect(empty.quality).toBe('failed');
+    expect(rough.quality).toBe('warning');
+  });
+
+  it('rejects non-finite alpha metrics instead of recording a passing cutout', () => {
+    const result = assessBackgroundRemovalAlpha({ transparentFraction: Number.NaN, foregroundFraction: 0.8, edgeFraction: 0.1 });
+    expect(result.quality).toBe('failed');
+    expect(result.errorCode).toBe('BACKGROUND_REMOVAL_OUTPUT_INVALID');
   });
 });

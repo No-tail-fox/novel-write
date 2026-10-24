@@ -71,8 +71,8 @@
   display: none;
 }
 
-.app-shell[data-editorial-shell] .new-task-button,
-.app-shell[data-editorial-shell] .primary-action {
+.app-shell[data-editorial-shell] .new-task-button:not(.fui-Button),
+.app-shell[data-editorial-shell] .primary-action:not(.fui-Button) {
   min-height: 38px;
   border-radius: 6px;
   background: var(--shell-accent);
@@ -81,8 +81,8 @@
   font-weight: 600;
 }
 
-.app-shell[data-editorial-shell] .new-task-button:hover,
-.app-shell[data-editorial-shell] .primary-action:hover {
+.app-shell[data-editorial-shell] .new-task-button:not(.fui-Button):hover,
+.app-shell[data-editorial-shell] .primary-action:not(.fui-Button):hover {
   background: var(--shell-accent-strong);
   filter: none;
   transform: none;
@@ -371,7 +371,7 @@
   gap: 3px;
 }
 
-.settings-section-select {
+.settings-menu .settings-section-select {
   display: none;
 }
 
@@ -479,7 +479,7 @@
     display: none;
   }
 
-  .settings-section-select {
+  .settings-menu .settings-section-select {
     display: grid;
   }
 

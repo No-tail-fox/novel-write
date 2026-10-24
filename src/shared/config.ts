@@ -532,11 +532,11 @@ export const defaultAccount: AccountProfile = {
 };
 
 export const defaultActivation: ActivationState = {
-  plan: 'trial',
-  status: 'trial',
+  plan: 'inactive',
+  status: 'inactive',
   code: '',
   expiresAt: null,
-  message: '本地试用模式：旧任务可继续执行，新任务不做真实付费限制。',
+  message: '本机尚未激活。',
 };
 
 export const defaultUiPreferences: UiPreferences = {

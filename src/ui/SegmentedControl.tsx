@@ -20,9 +20,16 @@ export interface SegmentedControlProps<T extends string> extends Omit<ComponentP
   value: T;
   onChange: (value: T) => void;
   iconOnly?: boolean;
+  onPreview?: (value: T | null) => void;
 }
 
-export function SegmentedControl<T extends string>({ label, options, value, onChange, className, iconOnly = false, ...props }: SegmentedControlProps<T>) {
+export function SegmentedControl<T extends string>({ label, options, value, onChange, className, iconOnly = false, onPreview, ...props }: SegmentedControlProps<T>) {
+  const previewEvents = (option: SegmentedControlOption<T>) => onPreview ? {
+    onMouseEnter: () => onPreview(option.value),
+    onMouseLeave: () => onPreview(null),
+    onFocus: () => onPreview(option.value),
+    onBlur: () => onPreview(null),
+  } : {};
   return (
     <TabList
       {...props}
@@ -35,14 +42,14 @@ export function SegmentedControl<T extends string>({ label, options, value, onCh
     >
       {options.map((option) => option.preview ? (
         <HoverPreview key={option.value} title={option.previewTitle ?? (typeof option.label === 'string' ? option.label : option.value)} description={option.previewDescription} renderPreview={option.preview} disabled={option.disabled}>
-          <Tab value={option.value} icon={option.icon} disabled={option.disabled}>{option.label}</Tab>
+          <Tab {...previewEvents(option)} value={option.value} icon={option.icon} disabled={option.disabled}>{option.label}</Tab>
         </HoverPreview>
       ) : iconOnly && option.icon && typeof option.label === 'string' ? (
         <Tooltip key={option.value} content={option.label}>
-          <Tab className="sd-segmented-icon" value={option.value} icon={option.icon} aria-label={option.label} title={option.label} disabled={option.disabled} />
+          <Tab {...previewEvents(option)} className="sd-segmented-icon" value={option.value} icon={option.icon} aria-label={option.label} title={option.label} disabled={option.disabled} />
         </Tooltip>
       ) : (
-        <Tab key={option.value} value={option.value} icon={option.icon} disabled={option.disabled}>{option.label}</Tab>
+        <Tab {...previewEvents(option)} key={option.value} value={option.value} icon={option.icon} disabled={option.disabled}>{option.label}</Tab>
       ))}
     </TabList>
   );

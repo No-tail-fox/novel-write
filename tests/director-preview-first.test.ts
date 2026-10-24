@@ -22,7 +22,7 @@ describe('preview-first director workspace', () => {
 
   it('keeps canonical selection, real media and compact pane escape routes', async () => {
     const source = await readFile(new URL('../src/features/director-desk/DirectorDeskWorkspace.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('data-workspace-layout="preview-first"');
+    expect(source).toContain("data-workspace-layout={processOutline ? 'process-outline' : 'preview-first'}");
     expect(source).toContain('directorPhaseForStage(activeStage)');
     expect(source).toContain('aria-current={activePhase.id === phase.id');
     expect(source).toContain('aria-expanded={leftPaneOpen}');

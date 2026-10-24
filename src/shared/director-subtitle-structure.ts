@@ -83,6 +83,26 @@ export function invalidateDirectorShotSpeech<T extends DirectorSubtitleDocument>
   }));
 }
 
+/** The simple Vox editor uses one line per cue; detailed timing remains editable. */
+export function setDirectorShotNarration<T extends DirectorSubtitleDocument>(document: T, shotId: string, text: string): T {
+  if (text.length > 10_000) throw new Error('当前镜头旁白不得超过 10000 字。');
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  if (lines.length > 100) throw new Error('当前镜头最多支持 100 句旁白。');
+  return changeStructure(document, shotId, (cues, clip) => {
+    const ordered = [...cues].sort((a, b) => a.startMs - b.startMs);
+    if (ordered.length === lines.length && ordered.every((cue, index) => cue.text === lines[index])) return cues;
+    if (clip.durationMs < lines.length) throw new Error('镜头时长不足以容纳这些字幕。');
+    return lines.map((line, index) => ({
+      ...ordered[index],
+      id: ordered[index]?.id ?? crypto.randomUUID(),
+      shotId,
+      text: line,
+      startMs: ordered.length === lines.length ? ordered[index].startMs : clip.startMs + Math.floor(index * clip.durationMs / lines.length),
+      endMs: ordered.length === lines.length ? ordered[index].endMs : clip.startMs + Math.floor((index + 1) * clip.durationMs / lines.length),
+    }));
+  });
+}
+
 function changeStructure<T extends DirectorSubtitleDocument>(document: T, shotId: string, edit: (cues: ProductionSubtitleCue[], clip: ProductionTimelineClip) => ProductionSubtitleCue[]): T {
   const vox = document.workflowKind === 'editorial-collage';
   const shots = vox ? document.beats.flatMap((beat) => beat.shots) : document.episodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots));
@@ -98,7 +118,9 @@ function changeStructure<T extends DirectorSubtitleDocument>(document: T, shotId
   const pool = beat?.subtitleCues ?? episode?.dialogueCues ?? [];
   const cues = ids.map((id) => pool.find((cue) => cue.id === id));
   if (cues.some((cue) => !cue) || new Set(ids).size !== ids.length) throw new Error('当前镜头字幕引用无效。');
-  const nextCues = edit(cues as ProductionSubtitleCue[], clip).map((cue) => {
+  const editedCues = edit(cues as ProductionSubtitleCue[], clip);
+  if (editedCues === cues) return document;
+  const nextCues = editedCues.map((cue) => {
     if (cue.startMs < clip.startMs || cue.endMs > clip.startMs + clip.durationMs || cue.endMs <= cue.startMs) throw new Error('字幕时间必须在所属镜头内。');
     // Structure changes alter the spoken sequence. Keep historical assets, but
     // do not silently export audio generated for the previous sequence.

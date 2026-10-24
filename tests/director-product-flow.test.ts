@@ -68,7 +68,7 @@ describe('director product flow', () => {
     expect(routes).toContain('initialSettingsSection');
     expect(routes).toContain('returnFromSettings');
     expect(settings).toContain("useState<SettingsSection>(initialSection ?? 'llm')");
-    expect(settings).toContain('返回 VOX 视频');
+    expect(settings).toContain('返回 创意动画');
     expect(settings).toContain('返回 AI 漫剧');
     expect(vox).toContain("openSettings?.('image', 'editorial-collage')");
     expect(comic).toContain("openSettings?.('image', 'motion-comic')");
@@ -92,7 +92,7 @@ describe('director product flow', () => {
     ]);
     expect(vox).toContain('completedStages={completedStages}');
     expect(comic).toContain('completedStages={completedStages}');
-    expect(workspace).toContain('completedStages.includes(stage)');
+    expect(workspace).toContain('reviewedCompletedStages.includes(stage)');
     expect(workspace).not.toContain('index < 3');
     expect(workspace).toContain('systemStatusTone');
     expect(workspace).toContain('{systemStatus}');
@@ -174,7 +174,9 @@ describe('director product flow', () => {
     expect(workspace).toContain('qualityPassedCount');
     expect(workspace).toContain('formatQualityRecheckScope');
     expect(workspace).toContain('定位复检范围');
-    expect(workspace).toContain('onConfirmQualityReview');
+    expect(workspace).toContain('onReviewQualityArtifact');
+    expect(workspace).toContain('data-artifact-status');
+    expect(workspace).not.toContain('confirmedAt: new Date()');
     expect(workspace).toContain('data-quality-confirmed');
     expect(vox).toContain('qualityReview={qualityReview}');
     expect(comic).toContain('qualityReview={qualityReview}');
@@ -182,8 +184,10 @@ describe('director product flow', () => {
     expect(comic).toContain('directorQualityReview(document, activeEpisode?.id)');
     expect(workspace).toContain('data-quality-freshness={qualityFreshness}');
     expect(workspace).toContain('resolveProductionQualityRecheckScope');
-    expect(vox).toContain('onConfirmQualityReview={confirmQualityReview}');
-    expect(comic).toContain('onConfirmQualityReview={confirmQualityReview}');
+    expect(vox).toContain('onReviewQualityArtifact={reviewQualityArtifact}');
+    expect(comic).toContain('onReviewQualityArtifact={reviewQualityArtifact}');
+    expect(vox).toContain('api.reviewDirectorArtifact');
+    expect(comic).toContain('api.reviewDirectorArtifact');
   });
 
   it('exposes persisted VOX style candidates as a selectable baseline', async () => {

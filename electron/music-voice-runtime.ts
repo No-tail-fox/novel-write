@@ -58,7 +58,7 @@ export function createMusicVoiceRuntime(options: { dataDir: string; storageDirec
     const redact = (value: string) => value.split(apiKey).join('[已隐藏]').slice(0, 2000);
     async function request(path: string, method = 'GET', body?: unknown, idempotencyKey?: string) {
       try {
-        const response = await fetchWithTimeout(`${baseUrl}${path}`, { method, headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), timeoutMs: 120000, maxBytes: 4 * 1024 * 1024, maxRedirects: 0, fetchImpl: options.fetchImpl });
+        const response = await fetchWithTimeout(`${baseUrl}${path}`, { generation: method === 'POST' && !path.endsWith('/check'), method, headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), timeoutMs: 120000, maxBytes: 4 * 1024 * 1024, maxRedirects: 0, fetchImpl: options.fetchImpl });
         const value: unknown = await response.json(); const result = object(value);
         if (!response.ok || result.success === false || result.error || (result.code !== undefined && ![0,200,'0','200'].includes(result.code as number | string))) throw new Error(text(result.message ?? result.error) || `服务请求失败（${response.status}）`);
         return value;

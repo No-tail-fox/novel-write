@@ -289,7 +289,7 @@ export function MotionComicCreateFlow({
             </dl>
             <div className="motion-comic-create__route">
               <strong>后续流程</strong>
-              <span>分集 → 分幕分场 → 角色资产 → 分镜图 → 远程视频 → 配音合成 → 导出</span>
+              <span>分集 → 分幕分场 → 制作资产 → 分镜图 → 远程视频 → 配音合成 → 导出</span>
             </div>
           </aside>
         </div>

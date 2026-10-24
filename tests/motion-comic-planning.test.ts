@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ConfiguredJsonLlm } from '@shared/llm-provider';
 import {
+  appendMotionComicShot,
   createMotionComicDraft,
   createMotionComicImportedProject,
   createMotionComicStarterProject,
   parseMotionComicPipelineData,
+  removeMotionComicShot,
   renameMotionComicAct,
   resolveMotionComicSceneAct,
   setMotionComicActBoundary,
@@ -519,6 +521,53 @@ describe('motion comic AI planning', () => {
     }
   });
 
+  it('persists canonical assets before a reviewed manual-project storyboard and reuses them on retry', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'storydream-motion-comic-confirm-assets-'));
+    try {
+      let current = document();
+      const originalCharacters = structuredClone(current.characters);
+      const input = { id: current.id, expectedUpdatedAt: current.updatedAt, sourceText, targetDurationSec: 11, stage: 'script' as const };
+      const config = { model: 'planner-model', providerScope: 'custom:https://example.test', protocol: 'openai' };
+      const service = new MotionComicPlanningService(() => directory);
+      const save = vi.fn(async (next: typeof current) => {
+        current = parseMotionComicPipelineData({ ...next, updatedAt: new Date(Date.parse(current.updatedAt) + 1).toISOString() });
+        return current;
+      });
+      const run = vi.fn().mockResolvedValueOnce({ json: script(), raw: '{}', requestId: null });
+      const llm = { protocol: 'openai', run } as unknown as ConfiguredJsonLlm;
+      const ready = await service.plan(input, current, llm, config, save);
+      expect(ready.status).toBe('script-ready');
+      expect(save).not.toHaveBeenCalled();
+      if (ready.status !== 'script-ready') throw new Error('expected script review');
+      let identity = '';
+      run.mockImplementation(async () => {
+        expect(save).toHaveBeenCalled();
+        const character = current.characters.find((item) => item.name === '阿青')!;
+        expect(character.id).toBe(identity || character.id);
+        identity = character.id;
+        expect(current.sceneAssets.some((item) => item.label === '旧公寓')).toBe(true);
+        expect(current.props.some((item) => item.label === '未来来信')).toBe(true);
+        throw new Error('storyboard timed out');
+      });
+      const failed = await service.plan({ ...input, stage: 'storyboard', resumeToken: ready.recovery.token }, current, llm, config, save);
+      expect(failed.status).toBe('storyboard-failed');
+      if (failed.status !== 'storyboard-failed') throw new Error('expected retained storyboard failure');
+      expect(failed.recovery.script.characters[0].existingCharacterId).toBe(identity);
+      const assetCounts = [current.characters.length, current.sceneAssets.length, current.props.length];
+      run.mockImplementation(async () => ({ json: storyboard(), raw: '{}', requestId: null }));
+      const resumed = await new MotionComicPlanningService(() => directory).plan({
+        ...input, expectedUpdatedAt: current.updatedAt, stage: 'storyboard', resumeToken: failed.recovery.token,
+      }, current, llm, config, save);
+      expect(resumed.status).toBe('complete');
+      if (resumed.status !== 'complete') throw new Error('expected storyboard preview');
+      expect(resumed.result.plan.script.characters[0].existingCharacterId).toBe(identity);
+      expect([current.characters.length, current.sceneAssets.length, current.props.length]).toEqual(assetCounts);
+      expect(current.characters).toEqual(expect.arrayContaining(originalCharacters));
+      expect(current.episodes).toEqual(document().episodes);
+      expect(current.assets).toEqual([]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
   it('labels legacy acts as rule inferred and keeps manual boundary edits contiguous', () => {
     const original = document();
     const episodeId = original.activeEpisodeId;
@@ -542,7 +591,7 @@ describe('motion comic AI planning', () => {
     expect(() => renameMotionComicAct(merged, episodeId, 1, '幕'.repeat(513))).toThrow('MOTION_COMIC_ACT_TITLE_LIMIT');
   });
 
-  it('links imported plans to stable source episodes and enforces episode order', () => {
+  it('binds imported plans to source text and supports out-of-order reviewed storyboards', () => {
     const imported = createMotionComicImportedProject(createMotionComicDraft({
       id: 'imported-planning-comic', title: '未来来信', premise: sourceText, now,
     }), {
@@ -567,16 +616,54 @@ describe('motion comic AI planning', () => {
     expect(() => applyMotionComicPlan(imported, plan(), {
       sourceEpisodeId: secondSource.id,
       episodeId: 'out-of-order',
-    })).toThrow(/MOTION_COMIC_SOURCE_EPISODE_ORDER/u);
+    })).toThrow(/MOTION_COMIC_SOURCE_EPISODE_MISMATCH/u);
 
-    const first = applyMotionComicPlan(imported, plan(), {
+    const secondScript = script();
+    secondScript.scenes[0].beats = [{ ...secondScript.scenes[0].beats[0], sourceUnitIds: ['S1'], text: secondSource.sourceText }];
+    const secondPlan = parseMotionComicPlanDraft({ ...plan(), sourceText: secondSource.sourceText,
+      sourceUnits: splitMotionComicSource(secondSource.sourceText), script: secondScript,
+      shots: [storyboard().shots[0]], targetDurationSec: 5 }, imported);
+    // Series references belong to the project, not to its empty imported placeholder.
+    imported.characters = document().characters;
+    imported.sceneAssets = document().sceneAssets;
+    imported.props = document().props;
+    imported.assets.push({ id: 'bible-reference', assetId: 'bible-reference', kind: 'image', localPath: 'bible-reference.png', createdAt: now });
+    imported.characters[0].looks[0].referenceAssetVersionIds = ['bible-reference'];
+    expect(isUntouchedMotionComicStarter(imported)).toBe(true);
+    const second = applyMotionComicPlan(imported, secondPlan, {
+      sourceEpisodeId: secondSource.id, episodeId: 'generated-second', replaceStarter: true,
+    });
+    expect(second.episodes.map((episode) => episode.number)).toEqual([2]);
+    expect(parseMotionComicPipelineData(second)).toEqual(second);
+    expect(second.characters).toEqual(expect.arrayContaining(imported.characters));
+    expect(second.sceneAssets).toEqual(expect.arrayContaining(imported.sceneAssets));
+    expect(second.props).toEqual(expect.arrayContaining(imported.props));
+    expect(second.assets).toEqual(imported.assets);
+    expect(second.characters[0].looks[0].referenceAssetVersionIds).toEqual(['bible-reference']);
+
+    const sceneId = second.episodes[0].scenes[0].id;
+    const withExtraShot = appendMotionComicShot(second, second.activeEpisodeId, sceneId, { id: 'temporary-shot' });
+    const afterRemoval = removeMotionComicShot(withExtraShot, second.activeEpisodeId, sceneId, 'temporary-shot');
+    expect(afterRemoval.episodes.map((episode) => episode.number)).toEqual([2]);
+    expect(parseMotionComicPipelineData(afterRemoval)).toEqual(afterRemoval);
+    const wrongNumber = structuredClone(second);
+    wrongNumber.episodes[0].number = 1;
+    expect(() => parseMotionComicPipelineData(wrongNumber)).toThrow(/Episode number must match its source episode/u);
+    const unknownSource = structuredClone(second);
+    unknownSource.episodes[0].planningEvidence!.sourceEpisodeId = 'unknown-source';
+    expect(() => parseMotionComicPipelineData(unknownSource)).toThrow(/Episode number must match its source episode/u);
+
+    const first = applyMotionComicPlan(second, plan(), {
       sourceEpisodeId: firstSource.id,
       episodeId: 'generated-first',
-      replaceStarter: true,
     });
+    expect(first.episodes.map((episode) => episode.number)).toEqual([1, 2]);
+    expect(parseMotionComicPipelineData(first)).toEqual(first);
+    expect(() => parseMotionComicPipelineData({ ...first, episodes: [...first.episodes].reverse() })).toThrow(/unique and ordered/u);
+    expect(first.episodes[1].planningEvidence?.sourceEpisodeId).toBe(secondSource.id);
     expect(first.episodes[0].planningEvidence?.sourceEpisodeId).toBe(firstSource.id);
     expect(first.episodes[0].scenes.every((scene) => scene.actIndex && scene.actTitle)).toBe(true);
-    expect(nextUnplannedMotionComicSourceEpisodeId(first)).toBe(secondSource.id);
+    expect(nextUnplannedMotionComicSourceEpisodeId(first)).toBeUndefined();
     expect(() => applyMotionComicPlan(first, plan(), {
       sourceEpisodeId: firstSource.id,
       episodeId: 'duplicate-first',

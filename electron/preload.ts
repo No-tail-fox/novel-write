@@ -55,6 +55,7 @@ import type {
   HtmlVideoLintFinding,
   HtmlVideoSceneChange,
   HtmlVideoSceneStructureChange,
+  ImageLabBackgroundRemovalInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -104,6 +105,7 @@ import type { PersonAssetImage, PersonAssetSummary, RecycledPersonAsset } from '
 import type { PersonAssetReference } from '../src/shared/storydream-api';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from '../src/shared/director-render';
+import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from '../src/shared/director-render';
 import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from '../src/shared/editorial-collage';
 import type { MotionComicCreateInput, MotionComicSaveInput } from '../src/shared/motion-comic';
 import type { MotionComicEpisodePlanInput, MotionComicEpisodePlanResult } from '../src/shared/motion-comic-episode-planning';
@@ -211,6 +213,7 @@ export const storyDreamApi: StoryDreamApi = {
   deleteImageLabRecordPermanently: (id: string): Promise<AppMutationResult> => invokeTrusted('image-lab:delete', id),
   getImageLabRecordDetail: (id: string): Promise<ImageLabRecord | null> => invokeTrusted('image-lab:get-detail', id),
   openImageLabOutputDirectory: (id: string): Promise<void> => invokeTrusted('image-lab:open-output-directory', id),
+  removeImageLabBackground: (input: ImageLabBackgroundRemovalInput): Promise<AppMutationResult | null> => invokeTrusted('image-lab:remove-background', input),
   listVoiceLabRecords: async (request: HistoryListInput<'voice-lab'> = {}): Promise<HistoryPage<'voice-lab', VoiceLabSummary>> =>
     invokeTrusted('voice-lab:list', normalizeVoiceLabHistoryRequest(request)),
   archiveVoiceLabRecord: (id: string): Promise<AppMutationResult> => invokeTrusted('voice-lab:archive', id),
@@ -279,6 +282,14 @@ export const storyDreamApi: StoryDreamApi = {
   generateVoiceLabPreview: (input: VoiceLabGenerateInput): Promise<AppMutationResult | null> => invokeTrusted('voice-lab:generate', input),
   saveAccount: (account: AccountProfile): Promise<AppMutationResult | null> => invokeTrusted('account:save', account),
   saveActivation: (activation: ActivationState): Promise<AppMutationResult | null> => invokeTrusted('activation:save', activation),
+  getLicenseStatus: () => invokeTrusted('license:status'),
+  activateLicense: (code: string) => invokeTrusted('license:activate', code),
+  refreshLicense: () => invokeTrusted('license:refresh'),
+  releaseLicense: () => invokeTrusted('license:release'),
+  getUpdateStatus: () => invokeTrusted('update:status'),
+  checkForUpdate: () => invokeTrusted('update:check'),
+  downloadUpdate: () => invokeTrusted('update:download'),
+  installUpdate: () => invokeTrusted('update:install'),
   saveUiPreferences: (update: UiPreferencesUpdate): Promise<AppMutationResult | null> => invokeTrusted('ui:save-preferences', update),
   listBookSelections: (theme?: string): Promise<BookSelectionRecord[]> => invokeTrusted('book-selection:list', theme),
   discoverBooks: (input: BookDiscoveryRequest): Promise<BookDiscoveryResult> => invokeTrusted('book-selection:discover', input),
@@ -292,6 +303,12 @@ export const storyDreamApi: StoryDreamApi = {
   deleteBenchmarkPost: (id: string): Promise<void> => invokeTrusted('benchmark:delete-post', id),
   syncBenchmarkGroup: (groupId: string): Promise<BenchmarkGroupSyncResult> => invokeTrusted('benchmark:sync-group', groupId),
   openBenchmarkLogin: (input: BenchmarkLoginInput): Promise<BenchmarkLoginResult> => invokeTrusted('benchmark:open-login', input),
+  listLibraryAssets: (input) => invokeTrusted('library:list', input),
+  getLibraryAsset: (id) => invokeTrusted('library:get', id),
+  saveLibraryAsset: (input) => invokeTrusted('library:save', input),
+  updateLibraryAsset: (input) => invokeTrusted('library:update', input),
+  recycleLibraryAsset: (id) => invokeTrusted('library:recycle', id),
+  restoreLibraryAsset: (id) => invokeTrusted('library:restore', id),
   listPersonAssets: (): Promise<PersonAssetSummary[]> => invokeTrusted('person-assets:list'),
   createPersonAsset: (name: string): Promise<PersonAssetSummary> => invokeTrusted('person-assets:create', name),
   renamePersonAsset: (oldName: string, newName: string): Promise<string> => invokeTrusted('person-assets:rename', { oldName, newName }),
@@ -305,6 +322,8 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('editorial-collage:create', input),
   saveEditorialCollage: (input: EditorialCollageSaveInput): Promise<AppMutationResult | null> =>
     invokeTrusted('editorial-collage:save', input),
+  startVoxProduction: input => invokeTrusted('vox-production:start', input),
+  controlVoxProduction: input => invokeTrusted('vox-production:control', input),
   generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest): Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }> =>
     invokeTrusted('director:generate-shot-video', input),
   createMotionComic: (input: MotionComicCreateInput): Promise<AppMutationResult | null> =>
@@ -317,12 +336,21 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('motion-comic:plan', input),
   applyMotionComicPlan: (input: MotionComicApplyPlanInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:apply-plan', input),
+  getMotionComicScripts: (id) => invokeTrusted('motion-comic:scripts-get', id),
+  enqueueMotionComicScripts: (input) => invokeTrusted('motion-comic:scripts-enqueue', input),
+  controlMotionComicScripts: (input) => invokeTrusted('motion-comic:scripts-control', input),
+  editMotionComicScript: (input) => invokeTrusted('motion-comic:scripts-edit', input),
+  approveMotionComicScripts: (input) => invokeTrusted('motion-comic:scripts-approve', input),
+  storyboardMotionComicScript: (input) => invokeTrusted('motion-comic:scripts-storyboard', input),
+  applyMotionComicScriptStoryboard: (input) => invokeTrusted('motion-comic:scripts-apply-storyboard', input),
   renderDirectorProject: (input: DirectorRenderRequest): Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }> =>
     invokeTrusted('director:render', input),
   recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest): Promise<DirectorSubtitleRecheckResult> =>
     invokeTrusted('director:recheck-subtitles', input),
   recheckDirectorMedia: (input: DirectorMediaRecheckRequest): Promise<DirectorMediaRecheckResult> =>
     invokeTrusted('director:recheck-media', input),
+  reviewDirectorArtifact: (input: DirectorQualityArtifactRequest): Promise<DirectorQualityArtifactResult> =>
+    invokeTrusted('director:review-artifact', input),
   createDirectorBatch: (input: CreateDirectorBatchInput): Promise<DirectorBatchRecord> => invokeTrusted('director:batch-create', input),
   getDirectorBatch: (id: string): Promise<DirectorBatchRecord | null> => invokeTrusted('director:batch-get', id),
   listDirectorBatches: (options = {}): Promise<DirectorBatchRecord[]> => invokeTrusted('director:batch-list', options),

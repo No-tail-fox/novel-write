@@ -4,6 +4,10 @@
  */
 import { invalidateMotionComicShotVideo, type MotionComicPipelineData, type MotionComicShot } from './motion-comic';
 import type { ProductionAssetVersion } from './production-workflow';
+import { videoModelLimits } from './video-models';
+import { selectVideoGenerationRoute } from './video-routing';
+import type { AppConfig } from './types';
+import type { VideoReferenceImage } from './video-lab';
 import type { VideoGenerationRequest } from './video-provider';
 
 export interface MotionComicVideoFrameSet {
@@ -24,6 +28,11 @@ export interface MotionComicVideoInputFingerprintSource {
   ratio: string;
   providerId: string;
   model: string;
+  production?: MotionComicShot['videoProduction'];
+  unit?: MotionComicShot['productionUnit'];
+  dialogue?: ReturnType<typeof motionComicVideoDialogue>;
+  submittedReferences?: Array<{assetVersionId:string;ownerId:string;kind:string;path:string;sha256?:string}>;
+  referenceAudio?: Array<{id:string;sha256?:string;localPath?:string}>;
   continuity: {
     series: {
       worldRules: string[];
@@ -84,14 +93,88 @@ export function buildMotionComicShotVideoRequest(
   shot: MotionComicShot,
 ): VideoGenerationRequest {
   const frames = motionComicVideoFrames(document, shot);
+  const production = shot.videoProduction;
+  const references = production?.referenceMode === 'references' ? motionComicVideoReferences(document, shot) : [];
+  const audio = (production?.audioMode==='audio-driven' ? production.referenceAudioAssetVersionIds ?? [] : []).map(id => {
+    const asset = document.assets.find(a => a.id === id && a.kind === 'audio' && a.localPath);
+    if (!asset) throw new Error('DIRECTOR_VIDEO_AUDIO_REFERENCE_MISSING: 参考声音文件已失效，请重新选择。');
+    return asset.localPath!;
+  });
+  if (production?.audioMode === 'audio-driven' && (!audio.length || production.referenceMode !== 'references')) {
+    throw new Error('DIRECTOR_VIDEO_AUDIO_REFERENCE_REQUIRED: 音频驱动需要多参考模式和已选择的完整对白音频。');
+  }
   return {
     prompt: motionComicVideoPrompt(document, shot),
-    durationSec: Math.max(1, Math.ceil(shot.durationMs / 1_000)),
+    durationSec: shot.productionUnit?.generationDurationSec ?? Math.max(1, Math.ceil(shot.durationMs / 1_000)),
     ratio: document.ratio,
-    generateAudio: false,
-    firstFramePath: frames.first.localPath,
-    ...(frames.last?.localPath ? { lastFramePath: frames.last.localPath } : {}),
+    generateAudio: production?.audioMode === 'native' || production?.audioMode === 'audio-driven',
+    ...(production?.referenceMode === 'references' ? { referenceImages: references.map(({path,kind,description}) => ({path,kind,description})) }
+      : { firstFramePath: frames.first.localPath, ...(frames.last?.localPath ? { lastFramePath: frames.last.localPath } : {}) }),
+    ...(audio.length ? { referenceAudioPaths: audio } : {}),
   };
+}
+
+export interface MotionComicSubmittedReference extends VideoReferenceImage {
+  assetVersionId: string;
+  ownerId: string;
+}
+
+/** Ordered, confirmed versions only. Opening/ending references are explicitly soft constraints. */
+export function motionComicVideoReferences(document: MotionComicPipelineData, shot: MotionComicShot): MotionComicSubmittedReference[] {
+  const frames=motionComicVideoFrames(document,shot);
+  const result:MotionComicSubmittedReference[]=[{assetVersionId:frames.first.id,ownerId:shot.id,path:frames.first.localPath!,kind:'opening',description:'本镜开场构图参考（软约束）'}];
+  for(const lookId of shot.characterLookIds) {
+    const character=document.characters.find(c=>c.looks.some(l=>l.id===lookId));
+    const look=character?.looks.find(l=>l.id===lookId);
+    if(!character||!look)throw new Error(`DIRECTOR_VIDEO_REFERENCE_MISSING: 角色造型 ${lookId} 不存在。`);
+    const fixed=fixedReferenceFingerprint(document,look.referenceAssetVersionIds);
+    if(!fixed?.localPath)throw new Error(`DIRECTOR_VIDEO_REFERENCE_MISSING: 请先确认角色“${character.name} / ${look.label}”的固定参考。`);
+    result.push({assetVersionId:fixed.id,ownerId:look.id,path:fixed.localPath,kind:'character',description:`${character.name} / ${look.label}`});
+  }
+  const scene=document.sceneAssets.find(a=>a.id===shot.sceneAssetId);
+  if(scene) {
+    const fixed=fixedReferenceFingerprint(document,scene.referenceAssetVersionIds);
+    if(!fixed?.localPath)throw new Error(`DIRECTOR_VIDEO_REFERENCE_MISSING: 请先确认场景“${scene.label}”的固定参考。`);
+    result.push({assetVersionId:fixed.id,ownerId:scene.id,path:fixed.localPath,kind:'scene',description:scene.label});
+  }
+  for(const id of shot.propAssetIds) {
+    const prop=document.props.find(p=>p.id===id),fixed=prop&&fixedReferenceFingerprint(document,prop.referenceAssetVersionIds);
+    if(!prop||!fixed?.localPath)throw new Error('DIRECTOR_VIDEO_REFERENCE_MISSING: 请先确认本镜道具的固定参考。');
+    result.push({assetVersionId:fixed.id,ownerId:prop.id,path:fixed.localPath,kind:'object',description:prop.label});
+  }
+  if(frames.last)result.push({assetVersionId:frames.last.id,ownerId:shot.id,path:frames.last.localPath!,kind:'ending',description:'本镜结尾构图参考（软约束）'});
+  return result;
+}
+
+export function motionComicVideoDialogue(document: MotionComicPipelineData, shot: MotionComicShot) {
+ const episode=document.episodes.find(e=>e.id===shot.episodeId);
+ if(!episode)throw new Error('DIRECTOR_VIDEO_EPISODE_NOT_FOUND: 镜头所属集不存在。');
+ const start=episode.timeline.clips.find(c=>c.shotId===shot.id)?.startMs??0;
+ return shot.dialogueCueIds.map(id=>{
+  const cue=episode.dialogueCues.find(c=>c.id===id&&c.shotId===shot.id);
+  if(!cue)throw new Error('DIRECTOR_VIDEO_DIALOGUE_MISSING: 对白引用已失效。');
+  const character=document.characters.find(c=>c.id===cue.characterId);
+  return {id:cue.id,text:cue.text,role:cue.speakerRole??(cue.characterId?'dialogue':'narrative'),characterId:cue.characterId,speaker:cue.speakerName||character?.name||'旁白',
+   startMs:cue.startMs-start,endMs:cue.endMs-start,emotion:cue.emotion,voiceId:character?.voiceId||shot.voiceId,
+   voiceProvider:character?.voiceProvider,voiceSpeed:character?.voiceSpeed??shot.voiceSpeed,
+   audioAssetVersionId:cue.voiceAssetVersionId??cue.audioAssetVersionId};
+ });
+}
+
+/** Shared browser/main routing: validate the actual model before reporting it ready. */
+export function selectMotionComicVideoRoute(config:AppConfig,document:MotionComicPipelineData,shot:MotionComicShot,remainingBudget:number) {
+ const request=buildMotionComicShotVideoRequest(document,shot);
+ const capabilities = [ ...(request.firstFramePath?['i2v' as const]:[]), ...(request.lastFramePath?['first-last-frame' as const]:[]),
+  ...(request.referenceImages?.length?['reference-image' as const]:[]), ...(request.referenceAudioPaths?.length?['reference-audio' as const]:[]), ...(request.generateAudio?['synchronized-audio' as const]:[]) ];
+ const compatible=config.video.providers.filter(provider=>{
+  const limits=videoModelLimits(provider);
+  return request.durationSec>=limits.minDuration&&request.durationSec<=limits.maxDuration
+   &&(!request.generateAudio || limits.family==='seedance' || limits.family==='generic')
+   &&(request.referenceImages?.length??0)<=limits.images&&(request.referenceAudioPaths?.length??0)<=limits.audio
+   &&(limits.family!=='h3'||(request.referenceImages?.length??0)+(request.referenceAudioPaths?.length??0)<=12);
+ });
+ const route=selectVideoGenerationRoute({...config,video:{...config.video,providers:compatible}}, {durationSec:request.durationSec,requiredCapabilities:capabilities,remainingBudget});
+ return {request,capabilities,route};
 }
 
 export function motionComicVideoInputFingerprintSource(
@@ -124,6 +207,13 @@ export function motionComicVideoInputFingerprintSource(
   });
   const scene = document.sceneAssets.find((candidate) => candidate.id === shot.sceneAssetId);
   const props = shot.propAssetIds.flatMap((id) => document.props.find((candidate) => candidate.id === id) ?? []);
+  const submittedAudio = shot.videoProduction?.audioMode === 'audio-driven'
+    ? (shot.videoProduction.referenceAudioAssetVersionIds ?? []).map((id) => {
+      const asset = document.assets.find((candidate) => candidate.id === id && candidate.kind === 'audio' && candidate.localPath);
+      if (!asset) throw new Error('DIRECTOR_VIDEO_AUDIO_REFERENCE_MISSING: 参考声音文件已失效，请重新选择。');
+      return { id, localPath: asset.localPath, sha256: asset.sha256 };
+    })
+    : [];
   return {
     shotId: shot.id,
     episodeId: shot.episodeId,
@@ -136,6 +226,12 @@ export function motionComicVideoInputFingerprintSource(
     ratio: request.ratio,
     providerId,
     model,
+    ...(shot.productionUnit ? {unit:shot.productionUnit} : {}),
+    ...(shot.videoProduction ? {
+      production:{...shot.videoProduction,referenceAudioAssetVersionIds:submittedAudio.map(asset=>asset.id)},dialogue:motionComicVideoDialogue(document,shot),
+      submittedReferences:shot.videoProduction.referenceMode==='references'?motionComicVideoReferences(document,shot).map(r=>({...r,sha256:document.assets.find(a=>a.id===r.assetVersionId)?.sha256})):[],
+      referenceAudio:submittedAudio,
+    } : {}),
     continuity: {
       series: {
         worldRules: document.series.worldRules,
@@ -200,9 +296,16 @@ export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: 
     document.series.worldRules.length ? `世界规则：${document.series.worldRules.map((rule) => compact(rule, 280)).join('；')}` : '',
     document.series.visualRules.length ? `系列视觉规则：${document.series.visualRules.map((rule) => compact(rule, 320)).join('；')}` : '',
     document.series.negativePrompt.trim() ? `必须避免：${compact(document.series.negativePrompt, 700)}` : '',
+    ...(shot.videoProduction ? [
+      `声音制作：${shot.videoProduction.audioMode === 'post-mix' ? '生成静音画面，之后混入已选对白；无需承诺口型同步' : shot.videoProduction.audioMode === 'audio-driven' ? '按照参考音频完整对白和节奏驱动表演，保留说话人；口型与音色须在样片中核验' : '由模型生成原生对白与环境声；说话人、台词与口型须在样片中核验'}`,
+      ...motionComicVideoDialogue(document,shot).map(c=>`[${c.startMs}–${c.endMs}ms] ${c.role==='narrative'?'VO':c.role==='monologue'?'OS':'对白'} ${c.speaker}：${c.text}（${c.emotion}）`),
+      ...(shot.videoProduction.referenceMode==='references'?['开场与结尾图片为构图参考，属于软约束；角色、场景、道具按提交顺序保持一致。']:[]),
+    ] : []),
     '保持首帧中的人物身份、脸型、发型、服装、场景结构和光线方向。动作连续自然，不切镜，不换人，不新增文字或水印。',
   ].filter(Boolean);
-  return compact(sections.join('\n'), 6_800);
+  const prompt=sections.join('\n');
+  if(shot.videoProduction && prompt.length>6800)throw new Error('DIRECTOR_VIDEO_DIALOGUE_TOO_LONG: 本镜提示词和完整对白超过 6800 字，请拆分制作单元。');
+  return compact(prompt,6_800);
 }
 
 /** Preserve history while detaching videos whose exact remote inputs changed. */

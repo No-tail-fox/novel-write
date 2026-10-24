@@ -20,6 +20,8 @@ describe('draft canvas text style', () => {
     expect(styles).toMatch(/\.draft-image-transform-box\s*\{[^}]*z-index:\s*2;/su);
     expect(styles).toMatch(/\.draft-image-transform-box\.selected\s*\{[^}]*z-index:\s*3;/su);
     expect(styles).toMatch(/\.editable-draft-canvas \.text-layer\s*\{[^}]*z-index:\s*4;/su);
+    expect(styles).toMatch(/\.draft-image-transform-handles\s*\{[^}]*z-index:\s*5;[^}]*pointer-events:\s*none;/su);
+    expect(styles).toMatch(/\.draft-transform-handle\s*\{[^}]*pointer-events:\s*auto;/su);
   });
 
   it('previews crop-fill and full-image scaling as distinct image-region modes', () => {

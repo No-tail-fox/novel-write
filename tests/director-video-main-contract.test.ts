@@ -65,7 +65,7 @@ describe('director video main-process lifecycle', () => {
     const recoveryBranch = generator.indexOf('if (resumableJob) {');
     const newSubmissionBranch = generator.indexOf('const frames = motionComicVideoFrames(document, shot);', recoveryBranch);
     const frameStat = generator.indexOf('await stat(asset.localPath)', newSubmissionBranch);
-    const buildRequest = generator.indexOf('request = buildMotionComicShotVideoRequest(document, shot)', newSubmissionBranch);
+    const buildRequest = generator.indexOf('const selection = selectMotionComicVideoRoute(runtimeConfig, document, shot, remainingBudget)', newSubmissionBranch);
     const validateRequest = generator.indexOf('validateVideoGenerationRequest(route.provider, request)', newSubmissionBranch);
     const resume = generator.indexOf('await provider.resume!', newSubmissionBranch);
     const currentHash = generator.indexOf("let currentHash = ''", resume);
@@ -84,6 +84,9 @@ describe('director video main-process lifecycle', () => {
     expect(hashCatch).toBeGreaterThan(currentHash);
     expect(generator.indexOf("currentHash = '';", hashCatch)).toBeGreaterThan(hashCatch);
     expect(generator).toContain('currentPrompt = currentFingerprint.prompt');
+    expect(generator).toContain('resumableJob?.videoInputSnapshot');
+    expect(generator).toContain("submittedFingerprint?.production?.audioMode ?? 'post-mix'");
+    expect(generator).toContain('normalizeSceneVideo(generated.path, temporaryPath, preserveSubmittedAudio)');
     expect(generator).toContain('prompt: (request?.prompt ?? currentPrompt) || shot.prompt');
     expect(generator).toContain('selected: !stale');
     expect(generator).toContain("error: '生成完成，但镜头输入已变化；结果保留在历史版本中。'");
@@ -92,7 +95,7 @@ describe('director video main-process lifecycle', () => {
 
   it('validates a resumed result against the current shot before selecting it', async () => {
     const generator = await motionComicVideoGenerator();
-    const normalize = generator.indexOf('const probe = await normalizeSceneVideo(generated.path, temporaryPath)');
+    const normalize = generator.indexOf('const probe = await normalizeSceneVideo(generated.path, temporaryPath, preserveSubmittedAudio)');
     const stale = generator.indexOf('const stale = !latestShot', normalize);
     const currentOnlyValidation = generator.indexOf('if (!stale && currentValidation)', stale);
     const durationValidation = generator.indexOf('probe.durationMs + 100 < currentValidation.durationMs', currentOnlyValidation);
@@ -112,7 +115,7 @@ describe('director video main-process lifecycle', () => {
   it('rejects a motion-comic video whose normalized aspect ratio differs by more than three percent', async () => {
     const generator = await motionComicVideoGenerator();
     const handler = await directorVideoHandler();
-    const normalize = generator.indexOf('const probe = await normalizeSceneVideo(generated.path, temporaryPath)');
+    const normalize = generator.indexOf('const probe = await normalizeSceneVideo(generated.path, temporaryPath, preserveSubmittedAudio)');
     const validateDimensions = generator.indexOf('if (probe.width <= 0 || probe.height <= 0)', normalize);
     const validateRatio = generator.indexOf('assertMotionComicVideoOutputRatio(currentValidation.ratio, probe.width, probe.height)', validateDimensions);
     const persist = generator.indexOf('await rename(temporaryPath, outputPath)', validateRatio);

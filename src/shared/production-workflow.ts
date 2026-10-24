@@ -13,6 +13,8 @@ export const PRODUCTION_WORKFLOW_KINDS = [
 
 export type ProductionWorkflowKind = (typeof PRODUCTION_WORKFLOW_KINDS)[number];
 
+import type { BackgroundRemovalMetadata } from './types';
+
 export type ProductionJobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type ProductionAssetKind = 'image' | 'video' | 'audio' | 'font' | 'data' | 'document';
 export type ProductionQualityStatus = 'pending' | 'passed' | 'failed' | 'waived';
@@ -24,6 +26,9 @@ export interface ProductionAssetVersion {
   uri?: string;
   localPath?: string;
   sha256?: string;
+  librarySource?: { id: string; revision: string };
+  /** Evidence that an image was produced and assessed as a usable transparent cutout. */
+  backgroundRemoval?: BackgroundRemovalMetadata;
   prompt?: string;
   providerJobId?: string;
   provider?: string;
@@ -54,6 +59,8 @@ export interface ProductionProviderJob {
   actualCost?: number;
   attempt: number;
   remoteTaskId?: string;
+  videoInputSnapshot?: string;
+  phase?: 'prepared' | 'submitted' | 'downloaded' | 'completed';
   createdAt: string;
   updatedAt: string;
   error?: string;
@@ -66,13 +73,15 @@ export interface ProductionProviderJob {
  * history is append-only, so a completed/failed attempt must not win over a
  * newer running retry simply because it happens to be present in the list.
  */
-export function latestProductionProviderJob(
-  jobs: readonly ProductionProviderJob[],
+type ProviderJobOrder = Pick<ProductionProviderJob, 'nodeId' | 'capability' | 'episodeId' | 'attempt' | 'createdAt' | 'updatedAt'>;
+
+export function latestProductionProviderJob<T extends ProviderJobOrder>(
+  jobs: readonly T[],
   nodeId: string,
   capability: string,
   episodeId?: string,
-): ProductionProviderJob | undefined {
-  let latest: ProductionProviderJob | undefined;
+): T | undefined {
+  let latest: T | undefined;
   let latestIndex = -1;
   jobs.forEach((job, index) => {
     if (job.nodeId !== nodeId || job.capability !== capability) return;
@@ -85,7 +94,7 @@ export function latestProductionProviderJob(
   return latest;
 }
 
-function compareProviderJobOrder(left: ProductionProviderJob, right: ProductionProviderJob): number {
+function compareProviderJobOrder(left: ProviderJobOrder, right: ProviderJobOrder): number {
   if (left.attempt !== right.attempt) return left.attempt - right.attempt;
   const leftUpdated = Date.parse(left.updatedAt) || 0;
   const rightUpdated = Date.parse(right.updatedAt) || 0;
@@ -109,6 +118,7 @@ export interface ProductionQualityCheck {
   id: string;
   label: string;
   status: ProductionQualityStatus;
+  priority?: 'P0' | 'P1' | 'P2' | 'P3';
   /** Gate class used by the review surface to separate blockers from follow-up review. */
   severity?: 'blocking' | 'warning' | 'manual';
   detail?: string;
@@ -128,6 +138,7 @@ export interface ProductionQualityRecheckScope {
 export interface ProductionQualityManualReview {
   reportId: string;
   renderFingerprint: string;
+  artifactSha256?: string;
   scope: ProductionQualityRecheckScope;
   confirmedAt: string;
 }
@@ -139,6 +150,8 @@ export interface ProductionQualityReport {
   providerJobId?: string;
   episodeId?: string;
   renderFingerprint?: string;
+  /** SHA-256 of the exact final MP4 that this export report describes. */
+  artifactSha256?: string;
   manualReview?: ProductionQualityManualReview;
   status: ProductionQualityStatus;
   checks: ProductionQualityCheck[];

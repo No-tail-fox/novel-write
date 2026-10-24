@@ -33,3 +33,13 @@
 - Python 控制台编码问题：使用 UTF-8 输出。
 - HyperFrames clone 超时：工作树和 HEAD 已可核验，复用已下载文件，未重复克隆。
 - 浏览器默认值未配置：公开源码不依赖它；本地 Storybound 通过专用 CDP 读取。
+
+### 验收跟进（2026-10-22）
+**Status:** partial; remaining external-quality and workload gates are unverified.
+- [x] 复核两次真实素材 1080p/24fps、48.78 秒 HTML 基准的耗时、进程树工作集/私有字节、完整解码与采样口径。
+- [x] 增加 Windows 基准运行的启动资源预检和运行时内存/磁盘停损。
+- [x] 运行一次 4K/24fps 基准至最终合成阶段；3.5 GiB 进程树私有内存保护触发并主动终止，报告保留为 failed，不视为验收通过。
+- [x] 更正 Vox 对时证据：离线 SAPI token 起点及推导终点，不是声学/ASR 词级对齐；VLM 状态仍 pending。
+- [ ] HTML 24 镜长片及并发负载测试。
+- [ ] Vox ASR/声学对齐与独立 VLM 审查。
+- [ ] AI 漫剧真实远程角色连续性、口型、参考素材接收与完整上传/下载断点恢复验收。

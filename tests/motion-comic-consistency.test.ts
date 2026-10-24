@@ -5,9 +5,11 @@ import {
   collectMotionComicReferenceBundle,
   collectMotionComicReferencePaths,
   createMotionComicReferenceAsset,
+  fixedMotionComicReferenceAsset,
   imageLabRecordIdFromMutation,
   inspectMotionComicShotConsistency,
   motionComicConsistencySummary,
+  motionComicReferenceAssets,
   setMotionComicFixedReference,
 } from '../src/features/motion-comic/motion-comic-consistency';
 import { createMotionComicDraft, createMotionComicStarterProject, motionComicReferencesImageLabRecord, parseMotionComicPipelineData, validateMotionComicPipeline, type MotionComicPipelineData } from '../src/shared/motion-comic';
@@ -46,6 +48,18 @@ function record(id: string, imagePath: string): ImageLabRecord {
 }
 
 describe('motion comic consistency references', () => {
+  it('keeps missing-file versions visible without treating them as usable fixed references', () => {
+    const document = project();
+    const look = document.characters[0].looks[0];
+    const missing = createMotionComicReferenceAsset(record('missing', ''), look.id, 'look');
+    delete missing.localPath;
+    document.assets.push(missing);
+    look.referenceAssetVersionIds = [missing.id];
+    expect(motionComicReferenceAssets(document, look.referenceAssetVersionIds)).toEqual([missing]);
+    expect(fixedMotionComicReferenceAsset(document, look.referenceAssetVersionIds)).toBeUndefined();
+    expect(collectMotionComicReferenceBundle(document, document.episodes[0].scenes[0].shots[0])).toEqual([]);
+  });
+
   it('preserves every reference version after more than 100 imports', () => {
     let document = project();
     const target = { kind: 'look' as const, id: document.characters[0].looks[0].id };

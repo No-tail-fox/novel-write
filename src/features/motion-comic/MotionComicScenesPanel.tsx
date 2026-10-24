@@ -3,7 +3,7 @@ import { Layers3, Plus, Users, Sparkles } from 'lucide-react';
 import { Button, CheckboxField, Toolbar, TextField, TextAreaField } from '../../ui';
 import type { MotionComicPipelineData, MotionComicEpisode, MotionComicDramaticScene, MotionComicWorkflowStage } from '../../shared/motion-comic';
 import { resolveMotionComicSceneAct } from '../../shared/motion-comic';
-import { motionComicSourceEpisodeIdForEpisode, nextUnplannedMotionComicSourceEpisodeId } from '../../shared/motion-comic-planning';
+import { motionComicSourceEpisodeIdForEpisode } from '../../shared/motion-comic-planning';
 
 export interface ScenesPanelProps {
   document: MotionComicPipelineData;
@@ -75,7 +75,7 @@ export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisod
 
   const sourceId = motionComicSourceEpisodeIdForEpisode(document, activeEpisode) ?? activeEpisode.id;
   const currentSource = allSourceEpisodes.find((s) => s.id === sourceId);
-  const canPlan = Boolean(onPlanEpisode && (!currentSource || currentSource.id === nextUnplannedMotionComicSourceEpisodeId(document)));
+  const canPlan = Boolean(onPlanEpisode);
 
   return <div className="motion-comic-stage-panel motion-comic-scenes-panel" data-motion-comic-stage-panel="scenes">
     <header className="motion-comic-stage-panel__heading">
@@ -86,12 +86,12 @@ export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisod
         <small>
           {isCurrentPlanned
             ? `${actGroups.size} 幕 · ${activeEpisode.scenes.length} 场 · ${activeEpisode.scenes.flatMap((scene) => scene.shots).length} 镜头`
-            : '本集尚未生成结构，请先生成并确认预览'}
+            : '本集尚未应用分镜，请先审核剧本及分镜'}
         </small>
       </div>
       <Toolbar aria-label="分幕分场操作">
         {isCurrentPlanned ? <Button variant="secondary" icon={<Plus size={14} />} onClick={onAddScene}>新增场次</Button> : null}
-        {isCurrentPlanned && onContinue ? <Button variant="primary" icon={<Users size={14} />} onClick={() => onContinue('assets')}>确认并进入角色资产</Button> : null}
+        {isCurrentPlanned && onContinue ? <Button variant="primary" icon={<Users size={14} />} onClick={() => onContinue('assets')}>确认并进入制作资产</Button> : null}
       </Toolbar>
     </header>
     {chunkCount > 1 ? (
@@ -149,7 +149,7 @@ export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisod
       <div className="motion-comic-scenes-unplanned-box">
         <h3>{activeEpisode.title} · 尚未生成分幕与分场</h3>
         <p>
-          {currentSource?.sourceText ? `已读取本集源文本（共 ${currentSource.sourceText.length} 字）。逐集规划场次、角色与分镜，确认后再进入制作。` : '可通过 AI 模型规划本集，或手动添加场次。'}
+          {currentSource?.sourceText ? `已保存本集原文（共 ${currentSource.sourceText.length} 字）。在剧本工作台批量生成、审核并批准，再单独生成和审核分镜。` : '可通过 AI 模型规划本集，或手动添加场次。'}
         </p>
         {currentSource?.sourceText ? (
           <div className="motion-comic-scenes-source-preview" tabIndex={0} aria-label="本集原文">
@@ -157,10 +157,9 @@ export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisod
           </div>
         ) : null}
         <div>
-          <Button variant="primary" disabled={!canPlan} icon={<Sparkles size={14} />} onClick={() => onPlanEpisode?.(currentSource?.id ?? activeEpisode.id)}>生成本集结构预览</Button>
+          <Button variant="primary" disabled={!canPlan} icon={<Sparkles size={14} />} onClick={() => onPlanEpisode?.(currentSource?.id ?? activeEpisode.id)}>{currentSource ? '打开本集剧本工作台' : '生成本集结构预览'}</Button>
           {!currentSource ? <Button variant="secondary" icon={<Plus size={14} />} onClick={onAddScene}>手动添加第一场</Button> : null}
         </div>
-        {!canPlan && currentSource ? <p>请先完成前一集的结构化，以复用角色和场景设定。</p> : null}
       </div>
     ) : (
       <div className="motion-comic-scenes-board">

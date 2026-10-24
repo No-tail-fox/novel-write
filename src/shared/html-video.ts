@@ -1,12 +1,20 @@
+import { htmlCompositionBeatTweens, resolveHtmlCompositionLayout } from './html-video-composition';
 import { pathToFileURL } from 'node:url';
 import type { ProductionAudioFadeEnvelope } from './production-audio';
 import type { DirectorTransition } from './director-transitions';
 import type { StoryboundComposeRenderInput } from './storybound-sidecar';
 import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
-import type { DraftTemplate, HtmlVideoJobConfig, HtmlVideoSceneMotion, HtmlVideoScenePlan, PipelineArtifact } from './types';
+import type {
+  DraftTemplate,
+  HtmlVideoJobConfig,
+  HtmlVideoSceneMotion,
+  HtmlVideoScenePlan,
+  HtmlVideoTimedCaptionCue,
+  PipelineArtifact,
+} from './types';
 import {
-  buildHtmlVideoCaptionCues,
   htmlVideoCaptionRegionY,
+  resolveHtmlVideoCaptionCues,
   resolveHtmlVideoCaptionStyle,
   type ResolvedHtmlVideoCaptionStyle,
 } from './html-video-captions';
@@ -23,7 +31,9 @@ export interface HtmlVideoSceneSource {
   description: string;
   imagePath: string;
   foregroundPaths?: string[];
+  foregroundSlots?: number[];
   captions?: string[];
+  captionCues?: HtmlVideoTimedCaptionCue[];
   audioPath: string;
   /** Optional authoritative multi-track mix inputs (times relative to this scene). */
   audioClips?: HtmlVideoAudioClip[];
@@ -51,6 +61,7 @@ export interface HtmlVideoScene extends HtmlVideoSceneSource {
 }
 
 export interface HtmlVideoComposition {
+  normalizeAudio?: boolean;
   workDir: string;
   outputPath: string;
   title: string;
@@ -82,7 +93,7 @@ export interface HtmlVideoBuildInput {
   artifact: PipelineArtifact;
   generatedImages: Array<{ sceneId: number; path: string }>;
   foregroundImages?: Array<{ sceneId: number; path: string; slot?: number }>;
-  narrationAudio: Array<{ sceneId: number; path: string }>;
+  narrationAudio: Array<{ sceneId: number; path: string; captionCues?: HtmlVideoTimedCaptionCue[] }>;
   coverPath?: string;
   openingSequence?: {
     enabled: boolean;
@@ -114,6 +125,7 @@ export interface HtmlVideoExportResult {
 }
 
 export interface HtmlVideoComposePayload {
+  normalize_audio?: boolean;
   mode: 'compose_render';
   work_dir: string;
   scenes: StoryboundComposeRenderInput['scenes'];
@@ -163,6 +175,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
       title: plan?.title ?? input.title,
       caption: scene.cap,
       captions: plan?.captions?.length ? [...plan.captions] : [scene.cap],
+      captionCues: input.narrationAudio.find((voice) => voice.sceneId === scene.id)?.captionCues,
       description: scene.descPrompt,
       imagePath,
       foregroundPaths: plan?.foregroundHidden
@@ -170,6 +183,7 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         : (foregroundImages.get(scene.id) ?? [])
             .filter((asset) => !hiddenSlots.has(asset.slot))
             .map((asset) => asset.path),
+      foregroundSlots: plan?.foregroundHidden ? [] : (foregroundImages.get(scene.id) ?? []).filter(asset => !hiddenSlots.has(asset.slot)).map(asset => asset.slot),
       audioPath,
       durationMs: Math.max(
         800,
@@ -203,9 +217,11 @@ export function buildHtmlVideoExportInput(input: HtmlVideoBuildInput): HtmlVideo
         title: scene.title,
         caption: scene.caption,
         captions: scene.captions,
+        captionCues: scene.captionCues,
         description: scene.description,
         imagePath: scene.imagePath,
         foregroundPaths: scene.foregroundPaths,
+        foregroundSlots: scene.foregroundSlots,
         audioPath: scene.audioPath,
         duration: scene.durationMs / 1000,
         fps: Math.max(1, Math.round(input.fps || 30)),
@@ -249,6 +265,7 @@ export function createHtmlVideoComposePayload(
     }),
     output_path: input.outputPath,
     total_duration_s: input.totalDurationS,
+    ...(input.normalizeAudio ? { normalize_audio: true } : {}),
     ...(input.bgmPath ? { bgm_path: input.bgmPath } : {}),
     ...(typeof input.bgmTargetDb === 'number' ? { bgm_target_db: input.bgmTargetDb } : {}),
     ...(input.transition ? { transition: input.transition } : {}),
@@ -263,9 +280,11 @@ function buildSceneHtml(scene: {
   title: string;
   caption: string;
   captions: string[];
+  captionCues?: HtmlVideoTimedCaptionCue[];
   description: string;
   imagePath: string;
   foregroundPaths?: string[];
+  foregroundSlots?: number[];
   audioPath: string;
   duration: number;
   fps: number;
@@ -295,12 +314,12 @@ function buildSceneHtml(scene: {
     : '';
   const audioDataUrl = safeLocalAssetUrl(scene.audioPath);
   const foregroundMarkup = (scene.foregroundPaths ?? [])
-    .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
+    .map((path, index) => `<img id="foreground-${index + 1}" class="clip scene-foreground" data-slot="${scene.foregroundSlots?.[index] ?? index}" data-start="0" data-duration="${scene.duration}" data-track-index="${index + 2}" src="${safeAssetUrl(path)}" alt="" />`)
     .join('\n    ');
   const captions = scene.captions.length ? scene.captions : [scene.caption];
-  const captionCues = buildHtmlVideoCaptionCues(captions, scene.duration, scene.sceneId);
+  const captionCues = resolveHtmlVideoCaptionCues(captions, scene.duration, scene.sceneId, scene.captionCues);
   const captionMarkup = captionCues.map((cue, index) => (
-    `<div id="caption-${index + 1}" class="clip caption" data-caption-index="${index}" data-start="${cue.startSec}" data-duration="${cue.durationSec}" data-track-index="22" aria-label="字幕 ${index + 1}" style="opacity:${index === 0 ? 1 : 0}">${escapeHtml(cue.text)}</div>`
+    `<div id="caption-${index + 1}" class="clip caption" data-caption-index="${index}" data-start="${cue.startSec}" data-duration="${cue.durationSec}" data-track-index="22" aria-label="字幕 ${index + 1}" data-timing-source="${cue.source}" data-timing-confidence="${cue.confidence}" style="opacity:${index === 0 ? 1 : 0}">${cue.words?.length ? cue.words.map((word, i) => `<span id="caption-${index + 1}-word-${i}" data-word-start="${word.startSec}" data-word-end="${word.endSec}">${escapeHtml(word.text)}</span>`).join('') : escapeHtml(cue.text)}</div>`
   )).join('\n      ');
   const captionColors = scene.captionStyle.colors;
   const captionLayout = scene.captionStyle.layout;
@@ -315,8 +334,25 @@ function buildSceneHtml(scene: {
     : draftTemplateMotionTween(scene.draftTemplate, scene.duration, scene.sceneMotion);
   const titleAnimationTween = scene.plan?.titleHidden || !template.choreography.title
     ? ''
-    : sceneAnimationCall('#scene-title', template.choreography.title, 0.7);
+    : sceneAnimationCall('#scene-title', v2TitleCue(scene.plan, template.choreography.title), 0.7);
+  const v2 = scene.plan?.compositionVersion === 2;
+  const explicitLayout = v2 ? resolveHtmlCompositionLayout(scene.plan!, scene.canvas_h > scene.canvas_w) : undefined;
+  const slots = scene.foregroundSlots ?? (scene.foregroundPaths ?? []).map((_, i) => i);
+  const beatTweens = scene.plan ? htmlCompositionBeatTweens(scene.plan, captionCues, slots, scene.duration) : '';
+  const boxCss = (box: { x: number; y: number; width: number; height: number }) => `left:${box.x}%;top:${box.y}%;width:${box.width}%;height:${box.height}%;`;
+  const explicitLayoutCss = explicitLayout ? `
+    #${compositionId} .copy { z-index:30; }
+    #${compositionId} .scene-foreground { inset:auto; transform:none; }
+    ${explicitLayout.objects.map(({ slot, geometry: g }) => {
+      const index = slots.indexOf(slot);
+      return index < 0 ? '' : `#${compositionId} #foreground-${index + 1} { inset:auto; ${boxCss(g)} z-index:${g.zIndex};object-fit:${g.fit};object-position:${g.anchor}; }`;
+    }).join('\n')}
+    #${compositionId} #scene-title { ${boxCss(explicitLayout.title)} transform:none; display:flex;align-items:center;justify-content:${['left-text-right-object','right-text-left-object'].includes(template.id) && scene.canvas_w > scene.canvas_h ? 'flex-start' : 'center'};white-space:normal;text-wrap:balance;overflow-wrap:anywhere;text-align:${['left-text-right-object','right-text-left-object'].includes(template.id) && scene.canvas_w > scene.canvas_h ? 'left' : 'center'};font-size:${Math.min(scene.canvas_w, scene.canvas_h) * (template.id.includes('quote') ? .09 : .075) * (scene.plan?.titleScale ?? 1)}px; }
+    #${compositionId} #scene-captions { ${boxCss(explicitLayout.caption)} transform:none;align-content:center; }
+    #${compositionId} .caption { font-size:${Math.min(scene.canvas_w, scene.canvas_h) * scene.captionStyle.layout.fontSize / 1080 * (scene.plan?.captionScale ?? 1)}px; }
+  ` : '';
   const foregroundAnimationTweens = (scene.foregroundPaths ?? []).map((_, index) => {
+    if (v2) return sceneAnimationCall(`#foreground-${index + 1}`, { preset: 'fade-up', startSec: 0, durationSec: .5 }, .5);
     const cues = template.choreography.elements;
     const cue = cues[Math.min(index, cues.length - 1)];
     return sceneAnimationCall(`#foreground-${index + 1}`, cue, 0.85);
@@ -895,6 +931,7 @@ function buildSceneHtml(scene: {
       pointer-events: none;
       opacity: 0;
     }
+    ${explicitLayoutCss}
   </style>
   <script nonce="storydream-html-video" src="./${GSAP_RUNTIME_FILENAME}"></script>
   <script nonce="storydream-html-video" src="./${HYPERFRAMES_RUNTIME_FILENAME}"></script>
@@ -1000,6 +1037,8 @@ function buildSceneHtml(scene: {
     tl.fromTo('#scene-veil', { opacity: 0.86 }, { opacity: 0.96, duration: ${scene.duration}, ease: 'none' }, 0);
     ${titleAnimationTween}
     ${foregroundAnimationTweens}
+    ${beatTweens}
+    ${captionCues.flatMap((cue, i) => (cue.words ?? []).map((word, j) => `tl.set('#caption-${i + 1}-word-${j}', { color: '${captionColors.accent}' }, ${word.startSec});tl.set('#caption-${i + 1}-word-${j}', { color: '${captionColors.text}' }, ${word.endSec});`)).join('\n')}
     const captionAnimation = ${JSON.stringify(scene.captionStyle.animation)};
     const captionElements = typeof document === 'undefined'
       ? []
@@ -1030,6 +1069,28 @@ function buildSceneHtml(scene: {
       tl.set(caption, { opacity: 0 }, end);
     }
     tl.set({}, {}, ${scene.duration});
+    // Recompute caption state from absolute time: GSAP zero-time sets alone do
+    // not restore visibility reliably when seeking backwards across a cue end.
+    function syncCaptionsAt(time) {
+      for (const caption of captionElements) {
+        const start = Math.max(0, Number(caption.dataset.start) || 0);
+        const duration = Math.max(0.001, Number(caption.dataset.duration) || 0.001);
+        const visible = time >= start && time < Math.min(window.__duration, start + duration);
+        const progress = Math.min(1, Math.max(0, (time - start) / Math.min(0.28, duration / 3)));
+        const eased = 1 - Math.pow(1 - progress, 3);
+        gsap.set(caption, {
+          opacity: visible ? captionAnimation === 'none' ? 1 : (captionAnimation === 'pop' ? 0.88 : 0.84) + (captionAnimation === 'pop' ? 0.12 : 0.16) * eased : 0,
+          y: visible && captionAnimation === 'fade-up' ? 16 * (1 - eased) : 0,
+          scale: visible && captionAnimation === 'pop' ? 0.92 + 0.08 * eased : 1,
+        });
+      }
+    }
+    const originalSeek = tl.seek;
+    tl.seek = function(position, suppressEvents) {
+      const result = originalSeek.call(this, position, suppressEvents);
+      syncCaptionsAt(typeof tl.time === 'function' ? tl.time() : Number(position) || 0);
+      return result;
+    };
     window.__tl = tl;
     window.__timelines['${compositionId}'] = tl;
     window.__audioPath = ${JSON.stringify(scene.audioPath)};
@@ -1130,6 +1191,7 @@ function buildSceneHtml(scene: {
     }
     function postTick() {
       const time = timelineTime();
+      syncCaptionsAt(time);
       syncPreviewMotion(time);
       window.parent.postMessage({ type: 'hvtick', time, duration: window.__duration, playing: timelinePlaying() }, '*');
     }
@@ -1316,3 +1378,5 @@ function escapeHtml(value: string): string {
 function roundSeconds(value: number): number {
   return Math.max(0, Math.round(value * 100) / 100);
 }
+
+function v2TitleCue(plan: HtmlVideoScenePlan | undefined, cue: HtmlVideoAnimationCue): HtmlVideoAnimationCue { return plan?.compositionVersion === 2 ? { preset: 'fade-up', startSec: 0, durationSec: .5 } : cue; }

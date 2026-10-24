@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "modelRequested": "gpt-image-2",
+  "modelReturned": null,
+  "width": 1536,
+  "height": 1024,
+  "matchesRequestedSize": true,
+  "locallyUpscaled": false,
+  "referenceImageAttached": true,
+  "elapsedSeconds": 51.98,
+  "automaticRetries": 0,
+  "output": "I:\\opc\\docs\\design\\2026-10-22-vox-generation-simplification\\concepts\\process-outline\\design.png"
+}

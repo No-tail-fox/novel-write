@@ -13,23 +13,6 @@
   letter-spacing: 0;
 }
 
-.sd-button--primary {
-  color: #ffffff !important;
-}
-
-.sd-button--primary * {
-  color: #ffffff !important;
-}
-
-.sd-button--danger {
-  background: var(--danger);
-  color: #ffffff;
-}
-
-.sd-button--compact {
-  font-size: 13px;
-}
-
 .sd-button,
 .sd-icon-button {
   transition: background-color var(--sd-motion-fast), border-color var(--sd-motion-fast), color var(--sd-motion-fast);
@@ -55,7 +38,36 @@
 
 .sd-textarea {
   min-height: 84px;
-  resize: vertical;
+}
+
+.sd-error-details {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.sd-confirm-description {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sd-error-details p {
+  margin: 0;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.sd-error-details pre {
+  max-height: 52vh;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--shell-border);
+  border-radius: 4px;
+  padding: 12px;
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .sd-field-label-row {
@@ -77,37 +89,63 @@
   min-width: 0;
 }
 
-.sd-segmented-control {
+.sd-segmented-control.fui-TabList {
   width: fit-content;
   max-width: 100%;
-  padding: 2px;
-  border: 1px solid var(--shell-border);
-  border-radius: 6px;
-  background: var(--shell-surface);
+  flex-wrap: wrap;
 }
 
-.sd-segmented-control .fui-Tab {
-  min-height: 30px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-family: var(--sd-font-ui);
-  font-size: 13px;
+.sd-range-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  align-items: end;
+  gap: 12px;
+  min-width: 0;
 }
 
-.sd-segmented-control .fui-Tab[aria-selected='true'] {
-  background: var(--shell-surface-raised);
-  color: var(--shell-accent-strong);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--shell-text) 12%, transparent);
+.sd-range-number > .fui-Label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
-.sd-segmented-control .fui-Tab::after {
-  display: none;
+.settings-model-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: end;
+  gap: 8px;
+}
+
+.settings-navigation-label {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.settings-navigation-label strong { font-weight: 600; }
+.settings-navigation-label small { color: var(--colorNeutralForeground3); font-size: 11px; }
+.settings-navigation .fui-Tab__content { min-width: 0; }
+.settings-navigation .fui-Tab { justify-content: flex-start; }
+
+@media (max-width: 760px) {
+  .settings-menu .settings-navigation { display: none; }
 }
 
 .sd-menu-popover,
 .sd-dialog-surface {
   color: var(--shell-text);
 }
+
+/* A workspace mount node bypasses Fluent's default portal stacking context. */
+.sd-drawer-backdrop { z-index: var(--sd-layer-overlay); }
+.sd-drawer { z-index: calc(var(--sd-layer-overlay) + 1); background: var(--shell-surface-raised); color: var(--shell-text); }
+.sd-drawer .fui-DrawerHeader { flex-shrink: 0; border-bottom: 1px solid var(--shell-border); padding: 16px; }
+.sd-drawer .fui-DrawerBody { padding: 0; min-height: 0; }
 
 .sd-dialog-surface:has(.workspace-leave-content) .fui-DialogActions {
   display: flex;
@@ -154,4 +192,18 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+.sd-color-swatch {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sd-color-swatch:disabled {
+  cursor: default;
+  opacity: 0.5;
 }

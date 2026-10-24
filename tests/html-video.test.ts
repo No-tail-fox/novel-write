@@ -593,9 +593,9 @@ describe('HTML video pipeline V2 contract', () => {
       .toThrow(/至少保留一个场景/u);
   });
 
-  it('publishes 29 animated scene presets and normalizes legacy ids', () => {
-    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(29);
-    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(29);
+  it('publishes 32 animated scene presets and normalizes legacy ids', () => {
+    expect(HTML_VIDEO_SCENE_TEMPLATES).toHaveLength(32);
+    expect(new Set(HTML_VIDEO_SCENE_TEMPLATES.map((template) => template.id)).size).toBe(32);
     expect(HTML_VIDEO_SCENE_TEMPLATES.every((template) => (
       template.choreography.background.preset
       && template.choreography.caption.preset
@@ -640,7 +640,7 @@ describe('HTML video pipeline V2 contract', () => {
     const next = prepareHtmlVideoPipelineForRerender(pipeline);
     expect(next.current).toBe('render');
     expect(next.steps.render.status).toBe('pending');
-    expect(next.compositions).toEqual(pipeline.compositions);
+    expect(next.compositions).toEqual(parseHtmlVideoPipelineData(JSON.stringify(pipeline)).compositions);
     expect(next.output).toBeUndefined();
   });
 

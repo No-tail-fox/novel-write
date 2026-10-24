@@ -20,6 +20,7 @@ import { Button, CheckboxField, Dialog, SelectField, TextAreaField, TextField } 
 import { beatSelection, speakerOptions, updateFailedBeat } from './motion-comic-script-repair';
 import '../../styles/features/motion-comic.css';
 import { MotionComicScriptReview } from './MotionComicScriptReview';
+import type { MotionComicPipelineData } from '../../shared/motion-comic';
 
 export interface MotionComicPlanDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ export interface MotionComicPlanDialogProps {
   episodeNumber: number;
   result: MotionComicPlanResult | null;
   recovery?: MotionComicPlanRecovery | null;
+  project?: MotionComicPipelineData;
   scriptFailure?: MotionComicScriptFailure | null;
   busy: boolean;
   applying: boolean;
@@ -61,6 +63,7 @@ export function MotionComicPlanDialog({
   episodeNumber,
   result,
   recovery,
+  project,
   scriptFailure,
   busy,
   applying,
@@ -161,7 +164,7 @@ export function MotionComicPlanDialog({
           <div className="motion-comic-plan-warnings" role="status"><CheckCircle2 size={16} /><span><strong>失败草稿保留 7 天</strong><small>关闭后再次打开本集规划仍会显示这份草稿；修正前不会写入正式分集，也不会调用图片、视频或配音服务。</small></span></div>
         </> : null}
         {recovery ? <>
-          <MotionComicScriptReview recovery={recovery} episodeNumber={episodeNumber} locked={locked} reviewed={reviewedScript} onReviewed={setReviewedScript} onChange={onReviewScriptChange} />
+          <MotionComicScriptReview recovery={recovery} project={project} episodeNumber={episodeNumber} locked={locked} reviewed={reviewedScript} onReviewed={setReviewedScript} onChange={onReviewScriptChange} approvalLabel="我已核对本集剧情、人物地点道具及修改记录，确认项目资产后生成分镜" />
           <Button variant="subtle" disabled={locked} onClick={onEdit}>返回修改原文与要求</Button>
         </> : <>
         <div className="motion-comic-plan-lead">

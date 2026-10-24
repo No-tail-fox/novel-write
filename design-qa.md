@@ -1,112 +1,151 @@
-# Director Desk 设计复核（2026-09-06）
+# AI 漫剧成熟流程设计 QA
 
-## 当前结论
+验收日期：2026-09-18
+验收对象：StoryDream AI 漫剧八阶段生产链
+验收范围：分集、分幕分场、角色/场景/道具、分镜图、远程视频、导出
+自动化报告：`I:\opc\.artifacts\motion-comic-workbench\report.json`
 
-声音设计切片于 2026-09-06 15:18 验收通过：VOX/漫剧的 1536×1024 与 1040×720 上下部截图均已复审，修复五页签窄屏折行，控件滚动/命中/横向溢出检查通过。证据：`E:/StoryDream-QA/director-sound/results/report.json` 及同目录八张工作流截图；导入、编辑、重开、预览、真实成片与失效处理通过，未调用收费生成。此切片验收不替代下述整体视觉保真门。
+## 结论
 
-操作回归通过不等于视觉复刻通过。此前以 1536px 对比 1440px 原图的结论已撤回。本报告替代旧报告，不宣称 1:1 或全部完成。
+本轮同画布复核未发现可执行的 P0、P1 或 P2 视觉问题。StoryDream 已把 Huobao 展示的成熟生产顺序落实为自己的八阶段工作区，并沿用现有 StoryDream 壳层、Fluent 语义色和 Director Desk。验收目标是流程结构、信息层级、可操作性和产品质量，不是复制 Huobao 的品牌、源码或 UI。
 
-## 对照证据
+Huobao 参考图使用真实生成媒体，StoryDream 验收图使用离线 raster、MP4 和任务夹具以避免付费调用，因此不能从本轮证据推断真实模型画质相同。该差异属于明确的测试状态边界，不是界面缺失。
 
-- Source visual truth: I:/opc/.artifacts/product-design-rework/director-desk.png，真实尺寸 1440×1024。
-- Implementation screenshot: I:/opc/.artifacts/director-desk-qa/vox-reference-1440x1024.png。
-- 全图同画布：I:/opc/.artifacts/director-desk-comparison/comparison-full-final-1440x1024.png。
-- 预览焦点：I:/opc/.artifacts/director-desk-comparison/comparison-center-preview-final.png。
-- 检查器焦点：I:/opc/.artifacts/director-desk-comparison/comparison-right-inspector-final.png。
-- 比较来源：同目录 report.json，无缩放、补黑或越界裁切。以上三张比较图已逐一打开复审。
-- Viewport: 对照 1440×1024；交互另测 1536×1024 与 1040×720。
-- State: 深色 VOX、本地关键帧、生成 tab。原图八镜头演示选第五镜头；实现四镜头 QA 项目选第一镜头，媒体/字幕/任务数据不同，不作像素误差断言。
+## 来源与比较契约
+
+- Source visual truth：`I:\opc\.artifacts\motion-comic-design-qa\reference\04-episodes.png` 至 `09-export.png`。
+- 上游来源：[chatfire-AI/huobao-drama](https://github.com/chatfire-AI/huobao-drama)，固定提交 `575790acaad0d0ed5346bdbe5a202ac6a3d02ee0`。
+- 许可：CC BY-NC-SA 4.0；这些截图只用于本地设计对照。StoryDream 没有复制 Huobao 源码、提示词、品牌或布局。
+- Huobao 原图：`2880×1800`，深色主题，16:10。
+- StoryDream 主比较图：`1536×1024`，深色主题；另测 `1040×720` 深浅主题。
+- 归一化：Huobao 原图保持纵横比缩到 `1536×960`，在 `1536×1024` 面板内居中；StoryDream 保持原始 `1536×1024`。不拉伸、不裁掉全图。
+- 状态边界：项目内容、镜头数量、媒体和供应商不同，不做像素误差或生成画质等价断言。
+- 文件哈希、原图尺寸、归一化位置和裁切坐标：`I:\opc\.artifacts\motion-comic-design-qa\manifest.json`。
+
+## 全景与聚焦证据
+
+| Huobao 状态 | StoryDream 实现图 | 全景同画布 | 聚焦同画布 |
+| --- | --- | --- | --- |
+| 04 分集 | `21-stage-episodes-dark-desktop-1536x1024.png` | `comparison-full-04-episodes.png` | `comparison-focus-04-episodes.png` |
+| 05 剧本 | `25-stage-scenes-dark-desktop-1536x1024.png` | `comparison-full-05-script-scenes.png` | `comparison-focus-05-script-scenes.png` |
+| 06 资产 | `29-stage-assets-dark-desktop-1536x1024.png` | `comparison-full-06-assets.png` | `comparison-focus-06-assets.png` |
+| 07 分镜 | `45-stage-storyboard-dark-desktop-1536x1024.png` | `comparison-full-07-storyboard.png` | `comparison-focus-07-storyboard.png` |
+| 08 视频 | `49-stage-video-dark-desktop-1536x1024.png` | `comparison-full-08-videos.png` | `comparison-focus-08-videos.png` |
+| 09 导出 | `57-stage-export-dark-desktop-1536x1024.png` | `comparison-full-09-export.png` | `comparison-focus-09-export.png` |
+
+表中实现图位于 `I:\opc\.artifacts\motion-comic-workbench\`，比较图位于 `I:\opc\.artifacts\motion-comic-design-qa\`。六张全景和六张聚焦图均已逐张打开复审。
+
+补充证据：
+
+- 紧凑视口总览：`implementation-compact-dark-contact-sheet.png`。
+- 人物、场景、道具手动补录：`implementation-assets-manual-controls.png`。
+- 资产补录原图：`33-stage-assets-character-dark-desktop-1536x1024.png`、`34-stage-assets-scene-dark-desktop-1536x1024.png`、`35-stage-assets-prop-dark-desktop-1536x1024.png`。
+
+## 逐张检查
+
+### 04 分集
+
+Huobao 用项目卡片管理集；StoryDream 用可编辑分集清单、原文侧栏和八阶段步进器。StoryDream 额外展示“等待 AI 结构化”和继续操作，符合导入后先确认分集的目标。低集数造成的留白不会隐藏控件，也没有改变层级。
+
+### 05 剧本与分幕分场
+
+Huobao 把 AI 改写剧本作为一块长文；StoryDream 将内容拆成幕、场和镜头，并把幕标题、场次标题、摘要与时长直接设为可编辑字段。这是为了支持人工审阅和局部修订的功能扩展。桌面与紧凑视口均未见折行冲突、控件重叠或横向溢出。
+
+### 06 角色、场景与道具
+
+Huobao 首屏突出带预览图的资产卡；StoryDream 先固定系列定位，再按人物、场景、道具维护一致性定义和参考图版本。最终 QA 已实际滚动并点击“新增人物”“新增场景”“新增道具”，三类按钮在深浅主题及两个视口均可见、启用。添加后数量从 `1/1/1` 增至 `2/2/2`，Provider 任务和费用保持不变。
+
+### 07 分镜图
+
+Huobao 将任务列表、提示词、参考素材和已生成媒体放在同一工作区；StoryDream 使用镜头清单、稳定中央预览、胶片条和右侧关键帧检查器。镜头选择、提示词、模板、运镜和关键帧动作集中在可扫读区域，主预览没有空白或被上方导航挤压。
+
+### 08 远程视频
+
+StoryDream 的视频阶段明确显示“远程视频”、服务、模型、关键帧就绪、任务状态、费用、运动提示词和生成队列。它比参考图更清楚地区分关键帧与视频任务，且导入型项目没有本地视频策略入口。右侧检查器内部滚动，主预览与底部胶片条保持稳定。
+
+### 09 导出
+
+Huobao 展示镜头选择和拼接；StoryDream 在同一导演台先显示审片质量门，再进入合成与导出。参考图是部分镜头已生成、部分待生成的项目，StoryDream 是三镜头离线完成但尚待审片的状态，因此不比较按钮文案和素材数量。质量门、镜头列表和预览均可见，未见控件遮挡。
+
+## 五项必检面
+
+- 字体与排版：两者均使用紧凑的中文桌面 UI 层级；StoryDream 的标题、阶段、字段标签、状态和辅助文字权重清楚。长中文在 1536×1024 与 1040×720 没有越界、不可读缩放或异常负字距。
+- 间距与布局：StoryDream 的八阶段步进器、列表/预览/检查器三栏和内部滚动边界稳定。全景与紧凑证据均没有持久控件被裁、重叠或横向溢出。
+- 色彩与 token：Huobao 使用橙色动作和深蓝黑表面；StoryDream 保留项目珊瑚色、绿色完成态、中性深色表面和浅色主题。品牌色不同是既有产品约束，语义状态在各阶段一致。
+- 图像质量与资产保真：参考图中的人物和场景是 Huobao 演示媒体；StoryDream 图像是本地离线 raster 夹具，视频是本地离线 MP4。裁切、比例、锐度和预览容器均正常，但真实远程模型画质不在本轮结论内。
+- 文案与内容：StoryDream 的“剧本、分集、分幕、资产、分镜图、视频、配音、导出”与用户目标一致；“远程视频”、就绪条件、费用和审片状态直接表达实际约束，没有 Vox 流程文案泄漏。
+
+图标来自现有图标库，线宽和尺寸一致；主要操作均有文字标签。自动检查覆盖横向溢出、控件边界和乱码。完整键盘顺序、屏幕阅读器朗读和真实系统缩放仍属于后续无障碍专项，不作为这次成熟流程视觉对照的阻塞项。
 
 ## Findings
 
-- [P2，精确复刻未收口] 目标使用人像；实现已移除冒充人像的茶馆图，改为真实音色信息和“音色头像未提供”状态。主体误导已修复，但没有把未提供的音色头像伪装成目标人像，因此不能称为视觉 1:1。
-- [已修复 P2] 原右侧标签过大、过亮，已统一为 11px/500 权重及 shell-muted；最新同视口检查器图已复审。新增双引擎/服务状态造成部分字段需要内部滚动，这是功能扩展的明确布局差异，保留记录而非归因于栅格化。
-- [已修复 P2] 新字幕面板的单字按钮过宽、时间标签换行、紧凑窗口页签滚出视口；已收紧按钮、把时间标签放在输入框上方，并分离参数/队列滚动。新增滚动边距避免边界被裁 1.3px；严格控件检测和双尺寸上下部截图均通过。
-- [已修复 P0/P2] 操作区曾遮挡“画面比例”。footer 已移出滚动容器，作为独立 flex 区域；参数可滚动，生成操作保持可达。最新检测包含滚动、裁切祖先与五点命中验证，三尺寸通过。
+没有可执行的 P0、P1 或 P2 差异。
 
-## 五项保真表面
+残余证据边界：
 
-- 字体：标签层级已修正，输入文本清晰，时间字段标签不换行；仍不能确认与栅格目标的字体家族完全一致。
-- 间距与布局：1440 下 274/770/396 三栏，1536 下 274/770/492；中央宽度保留。footer 无覆盖；紧凑窗口内部滚动为功能性适配。
-- 色彩：保留项目珊瑚主动作、蓝色 tab、绿/红状态 token；原图 tab 更偏珊瑚，该差异来自现有组件约束，未另建主题。
-- 图像：预览与素材使用实际 raster/本地视频和真实项目内容；叙述者不再错误使用场景图。目标人像与当前无头像数据状态不同，保真门仍保留。
-- 文案：生成、禁用、失败、重试反映实际状态；项目标题、镜头数、时长、Provider 名称为动态内容，允许不同。QA 数据未硬编码进生产默认值。
-
-## 交互证据与限制
-
-I:/opc/.artifacts/director-desk-qa/report.json 最新完成于 2026-09-06 10:52:43；status=passed，runtimeErrors=[]，paidGenerationCalls=0。
-
-- 图片/视频服务可切换保存，不可用选项明确禁用。
-- 等待/进行/失败/重试/完成、播放/暂停/seek、保存重开均有断言；runtimeErrors 为空，paidGenerationCalls 为 0。
-- 三尺寸参数及操作区逐项滚动与命中检查通过；未用几何范围代替可点击性。
-- 只用本地媒体与回环视频桩，未验真实付费 Provider；不能将桩成功称作云端服务验收。
-- 键盘全程和屏幕阅读器仍未完整实测。
-- 新字幕面板实测：新增、按句独立编辑、估算 16 个正时长 token、定位显示、保存重开、错误时间阻断、删除指定句子；旧旁白解除绑定而历史资产保留，画面提示词不变。
-- 新面板证据：I:/opc/.artifacts/director-desk-qa/subtitle-editor-1536x1024.png、subtitle-editor-1040x720.png、subtitle-editor-bottom-1040x720.png；均已打开复审。
-- AI 漫剧现有流程回归：I:/opc/.artifacts/motion-comic-workbench/report.json，10:52:20 passed；当前紧凑重开工作台截图已复审，无黑屏和乱码。该脚本未验证逐角色 TTS。
+- 离线夹具不能证明真实远程图片或视频的主体质量、人物一致性、延迟和账单结果。
+- Huobao 只提供 `2880×1800` 深色桌面参考，没有相同项目数据、1040×720 或浅色状态；这些状态只做 StoryDream 自身的响应式和主题 QA。
+- Huobao 的 07 与 08 截图都使用视频制作工作区，不能作为“分镜图”和“视频”视觉分离的精确目标；StoryDream 通过独立阶段和检查器动作主动消除了该歧义。
 
 ## 比较历史
 
-1. 历史胶片条描边及素材区调整的旧截图，不作为本轮通过依据。
-2. 旧比较补出 96px 黑边；已改真实 1440px，拒绝尺寸差异与越界裁切。
-3. sticky footer 几何可见但覆盖参数；移出滚动区后严格控件 QA 通过，当前检查器图为修复后证据。
-4. 生成 tab 隐藏重复引擎说明，重新捕获及生成三张比较图；仍发现上述人像/密度差异，保持 blocked。
-5. Node-only Provider 和 Windows DPI 修复属于运行/媒体回归，不代替视觉迭代。
-6. 本轮修正人像误导、表单标签层级、逐词按钮密度、时间标签和紧凑滚动；重新构建、捕获、生成完整/预览/检查器同画布图并复审。操作验收通过，但精确目标人像保真仍未完成。
+1. 初始实现证据包含 48 张截图，六组全景/聚焦对比未发现 P0、P1 或 P2，但人物、场景、道具手动补录缺少明确点击证据。该项记录为证据缺口，没有据此宣称通过。
+2. 复核发现原浅色截图只修改根节点 `data-theme`，Fluent Provider 没有同步，输入框仍显示深色。QA 改为调用真实持久化主题接口，并同时断言根节点与 `.storydream-provider[data-storydream-theme]`。
+3. 最终 Electron QA 扩展为 60 张截图，增加三类资产按钮在深浅主题、1536×1024 和 1040×720 的可见/启用断言，并实际点击完成补录。修正主题切换后重新生成全部截图、当前暗色同画布和聚焦图并逐张复审。
+4. 本轮最终比较没有遗留 P0、P1 或 P2，因此不需要产品视觉修复和再次捕获循环；只补全了验收证据。
+
+## 交互与运行证据
+
+- 自动报告状态：`passed`，60 张截图。
+- 视口：`1536×1024`、`1040×720`；主题：dark、light。
+- 已访问：source、episodes、scenes、assets、storyboard、video、audio、export。
+- 手动资产入口：新增人物、新增场景、新增道具，均已点击验证。
+- renderer 外网请求：0；main 外网请求：0；runtime errors：0；paid generation calls：0。
+- 视频任务均为 `image-to-video` 离线夹具，导入型项目 `remoteOnly=true`。
 
 ## 实施清单
 
-- [x] 真实同视口完整和焦点比较。
-- [x] 修复参数遮挡并验证三尺寸可达性。
-- [x] 移除错误主体、修复表单密度，复捕对照。
-- [x] P1 逐句/逐词编辑、保存重开、时间预览、双引擎字幕导出切片验收。
-- [ ] 精确目标人像保真；当前音色配置无头像，不宣称 1:1。
-- [x] P1 逐角色 TTS、多轨声音设计、本地音频导入与实际 MP4 音轨验收。
-- [ ] P1 真实语音时间戳服务接入仍未完成。
+- [x] 六组 Huobao 参考图与当前实现放入同一比较画布。
+- [x] 对高密度内容生成聚焦比较并逐张检查。
+- [x] 深浅主题与桌面/紧凑视口覆盖。
+- [x] 人物、场景、道具补录入口可见、可点击且不触发生成。
+- [x] 八阶段状态与远程视频限定清楚可见。
+- [x] 记录媒体、视口和项目数据不完全相同的证据边界。
+- [x] 无遗留 P0/P1/P2。
 
-final result: blocked
+final result: passed
 
-## 2026-09-08 审片页面增量验收
+## 2026-10-21 最终成片审片绑定
 
-- 本节仅证明审片改动，不改变上文精确设计复刻和真实语音服务的未完成状态。
-- 质量摘要按 blocking/warning/pending 分别计数；警告可导出的报告显示“可导出 · 待复核”，缺失分析显示“未取得”，正常无黑帧显示“未检出”。
-- 报告从 tabs 前的固定区域移入检查器滚动区；复检按钮可滚动到达，报告内容字号提升到 11-13px，重检范围可换行。
-- `.artifacts/director-quality-qa/report.json` 19:56:50 passed，8 个状态/尺寸组合均可命中复检按钮且无横向溢出。已打开复审正常/警告/阻断/未知截图，1536x1024 与 1040x720 未发现报告与其他面板重叠。
-- `.artifacts/director-desk-qa/report.json` 19:58:24 passed，完整操作回归未因滚动所有权调整失败。两份报告 runtimeErrors=[]、paidGenerationCalls=0。
+- 使用生产 Electron 构建、隔离 profile 与既有可播放 MP4；新增脚本 `scripts/qa-director-quality-ui.py` 不触发付费生成。
+- 深浅主题 × 1536×1024 / 1040×720 四张截图，检查质量门文字、SHA、确认状态、滚动到底部和横向溢出。常规与紧凑窗口均通过；截图在 `.artifacts/director-quality-binding/`。
+- 实际点击核验/确认后检查持久数据。相同文件尺寸下修改一个字节后焦点返回，原确认撤销；旧报告缺 SHA、P1 pending 和删除文件均不可确认。Vox/漫剧两路由通过，未保存镜头提示词保留。
+- 发现文件变化后右上角仍写“已通过”，已修复为“成片已变化 / 成片已丢失 / 成片不可读 / 成片待核验 / 成片核验中”，与实际摘要状态同步。
+- 机器报告 8 项检查通过，页面异常 0，外网请求 0。12 条报告项为明确标记的离线 UI 夹具，不能当作影片视觉质量已通过。
 
-## 2026-09-08 全文与长列表增量验收
+## 2026-10-22 后台批量剧本工作台
 
-- 全文创建显示实际分钟/秒、节拍数与镜头数；短时长冲突在原文输入下方显示，下一步禁用；全文模式和原稿可保存离开后恢复。
-- 剧本入口打开只读原稿弹窗；1536x1024、1040x720 可完整显示弹窗、滚动全文和关闭按钮。
-- 224 镜头场景下，选中末镜头自动定位对应胶片和左栏行，保持字幕/提示词/播放位置一致；未生成胶片不再轮播无关示例照片。
-- `.artifacts/director-long-script-qa/report.json` 最终构建 20:40:52 passed，共 12 个截图组合，页面无横向溢出；已复审紧凑创建底部、原稿弹窗、桌面/紧凑末镜头。缩窗后第 224 镜头完整位于胶片可见容器内，额外几何断言通过。原稿 11,990 字符精确保留，最后一镜编辑保存重开成功，runtimeErrors=[]、paidGenerationCalls=0。
-- `.artifacts/director-desk-qa/report.json` 20:39:43 passed。上一轮视频页截图曾超时，截图统一禁用 CSS 动画后单独复跑成功，交互、媒体像素和保存断言均保留。
-- 仍有后续界面工作：创建页紧凑布局的长滚动、项目封面回退图片、长列表滚动后的顶部操作可达性；不将本轮增量验收视为整套界面完成。
-## 2026-09-08 批次故障状态增量验收
+- 依据 Toonflow、Jellyfish、wind-comic 固定提交的分阶段与持久任务流程实现，保留现有 StoryDream 组件、主题和导航。源分集项目不再用阻塞生成弹窗承载逐集制作。
+- 生产 Electron 隔离 profile、24 集离线夹具，深浅主题 × 1536×1024 / 1040×720 四张截图均已查看。报告和截图在 `.artifacts/novel-script-workflow/`，`status=passed`、页面异常 0、付费调用 0。
+- 初验发现 1040×720 的冗余标题挤占编辑区；已将筛选并排并压缩重复标题。最终分集列表/节拍编辑区/场次列表分别为 263/183/102px；桌面分别为 460/345/216px。独立滚动、完整编辑字段、底部批准操作和无横向溢出断言通过。
+- 实际点击覆盖：未审阅禁用批准、当前版本批量批准、后集分镜先应用、重复应用拒绝、草稿切集与重载保持、保存修订后下游过期、批量提交后立即退出弹窗和离开页面再返回。
+- 此结果只证明离线流程与桌面界面，不证明真实小说改编质量、远程连续性、口型或付费媒体恢复。完整证据与未完成项见 `docs/research/2026-10-22-novel-script-workflow/acceptance.md`。
 
-- 队列新增“正在保存批次”，记录创建前不显示暂停/取消操作；状态保存异常后显示暂停和远端核对入口。
-- 队列按已保存节点显示进度，未派发项不出现转圈；恢复时未知远端节点显示“远端状态待核对”。标题/状态分别提升至 12/11px，长节点名有完整 title。
-- 最终 `.artifacts/director-batch-faults-qa/report.json` 21:10:07 passed；1536x1024、1040x720 截图已打开复审，页面横向溢出为 0，恢复/取消按钮均在视口内。
-- 批次故障、父页面刷新、同进程重进、取消与 601/1501 节点应用重启验收通过，runtimeErrors=[]、paidGenerationCalls=0；测试记录确认生成 IPC 0 次、网络调用 0 次。
-- 原导演台完整 `.artifacts/director-desk-qa/report.json` 21:11:59 passed，无运行错误或付费调用；生成、结构编辑、字幕、图层运动、预览和保存重开回归通过。
-- 本节不改变全文/审片部分记录的未完成项，不是整套界面视觉验收结论。
+## 2026-10-22 Vox 第三张流程大纲实施：阶段 A
 
-## 2026-09-12 Preview-first 导演台
+用户选择第三张为实施基准。已完成左侧四阶段及单一镜头导航、中央预览、下方旁白/画面就地编辑、固定整片操作与按需高级抽屉；本节结论只适用于页面简化及定向回归。预设、完整自动链、脱离页面执行和真实自动样片仍属后续 B–E。
 
-- **参考图**：`output/imagegen/storydream-ui-20260912/image25-focused-desk-concise/image.png`，用户选择“预览优先”。
-- **已实现**：浅色/深色语义表面、统一项目栏、文案/分镜/声音/交付四阶段 rail、左侧真实镜头缩略图、中央稳定大预览与 transport、胶片条、素材区、上下文检查器；七个旧步骤通过制作步骤菜单保留。
-- **交互证据**：面板 toggle 使用 `aria-controls`/`aria-expanded`，紧凑窗口支持显隐、关闭、Escape 和焦点回归；选择镜头保持胶片条与检查器同步。
-- **代码证据**：`src/features/director-desk/DirectorDeskWorkspace.tsx`、`src/features/director-desk/director-workspace-navigation.ts`、`src/styles/features/director-desk.css`、`tests/director-preview-first.test.ts`。
-- **截图证据**：`.artifacts/storydream-web-redesign/r3-preview-first-20260912-final/` 已生成完整生产 Electron 证据；36 张截图，`report.json` 为 passed，运行时错误与付费生成调用均为 0。
-## 2026-09-08 历史容量与列表分页
+- 来源：`I:/opc/docs/design/2026-10-22-vox-generation-simplification/concepts/process-outline/design.png`，1536×1024。
+- 实现：`I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/desktop-dark-final.png`，1536×1024，真实 React Vox 页 + Vox runtime、隔离 Electron、模拟 API/保存。
+- 全景及四组聚焦：`I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/comparisons/01-full-view.png` 至 `05-fixed-footer.png`。原尺寸同画布，局部不拉伸；另检查紧凑深浅主题、窄窗口双抽屉、嵌套模板、200% 缩放及共享漫剧，前九张比较画布和桌面深浅原图均已目视复核。
+- 五项必检面：字体使用现有 13px 控件/14px 正文及中文回退；布局采用 300/248px 大纲、独立滚动及 92/80px 固定底栏；颜色/6px 圆角/Lucide 服从 StoryDream token；真实 16:9 项目采用 contain，保留安全区和字幕；文案按真实镜头和状态显示，主按钮明确为「生成现有镜头成片」。静态参考约 2.35:1 的预览、较宽大纲、示例正文与装饰效果没有强加到真实项目。
+- 修复历史：关闭抽屉残留遮挡、紧凑预览过高、受控/嵌套弹窗焦点返回、相同旁白不应使配音失效、截图过渡等待、窄窗口粘性标题遮住抽屉关闭按钮。最终 overlay 修复后重拍，并检查关闭按钮命中、实际点击和焦点返回。
+- Vox：78 项检查 / 24 张截图，覆盖深浅主题、1536×1024 / 1040×720 / 860×720、真实 200% 缩放、100 镜头/长标题/空项目、保存重载、抽屉草稿和键盘、模拟生成忙碌/失败；页面异常、console error、付费调用均为 0。多次 Tab/视口断言不等于独立端到端用例数量。
+- 共享漫剧：最新生产 Electron 离线定向回归 22 项 / 4 张截图通过，原布局/检查器/胶片条、批量取消和共享弹窗焦点正常，无新增 provider job、外网请求或页面异常。
+- 代码检查：6 文件 / 55 项聚焦测试、三套类型检查、生产构建通过。并行高负载运行的调度器超时已如实记录，独立重跑未放宽超时。旧产品流程 4 条字符串断言和旧 8 阶段完整漫剧 QA 不计入本次通过范围。
 
-- 生产历史专项：`.artifacts/director-history-qa/report.json`，21:58:05 passed；VOX/漫剧各 4500 条历史的分页、末页和搜索，最终 20000 条保存重启均通过。
-- 1536x1024、1040x720 共 8 个历史/容量状态组合；列表与页码无横向溢出，容量弹窗的标题、内容滚动区与操作区在视口内。素材每页至多 36 项，生成记录/版本每页至多 20 项；旁白面板固定 162px，不随素材展开拉长。
-- 配音错误在当前字幕页和公共状态区可见，详情正常打开/关闭；容量拒绝不改变旧完成任务的状态。
-- 最终导演台完整 QA 21:56:22 passed，批次故障 QA 21:59:45 passed；截图复审正常。均无运行错误或付费调用，总计划未完成。
+没有遗留可执行 P0 / P1 / P2 视觉问题。预览城市图只为隔离 QA 夹具，未加入正式应用；本次没有新增真实自动样片，也不证明完整导航/真实付费执行、高清长片内存、Vox 词级/VLM 或远程漫剧连续性/口型/完整上传下载恢复。
 
-## 2026-09-08 导出资源与画面增量
+完整来源、差异、修复历史与证据：[本轮设计 QA](I:/opc/docs/design/2026-10-22-vox-generation-simplification/design-qa.md)；命令、旧基线和后续门槛：[实施验收](I:/opc/docs/design/2026-10-22-vox-generation-simplification/acceptance.md)。
 
-- 实际 Electron 3 分钟样片：`.artifacts/html-video-resources-qa/frame-checks.png`，检查 0.5/7.4/7.6/14.9/15.1/29.9/30.1/179.5 秒，字幕 A/B、运动标记、镜头颜色与首尾状态正确，无裁切或重叠。
-- 生产导演台本地 1080p 图层和动态海报两条成片路径通过，HTML 模板预览和转场输出 smoke 通过。本轮没有重做其他页面的视觉评估，既有未完成界面任务继续保留。
-- 新建页默认全文已在最终生产构建验收：`.artifacts/director-long-script-qa/report.json` 22:31:59 passed，defaultFullText=true。复审桌面全文计划、1040x720 底部操作区，时长选项、46 分 20 秒计划与下一步可读可达；草稿恢复和末镜保存重开通过。紧凑页仍需要纵向滚动，其布局简化继续列入 U02 后续，不宣称已改善滚动长度。
+final result: passed（仅阶段 A 页面简化与本次定向验收）

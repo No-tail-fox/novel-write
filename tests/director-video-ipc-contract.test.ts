@@ -4,6 +4,25 @@ import { directorGenerateShotVideoRequestSchema, ipcInputSchemas } from '../src/
 import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
 
 describe('director video IPC contract', () => {
+  it('resolves final media, hash and confirmation time only in the main process', async () => {
+    const input = { id: 'project', reportId: 'report', renderFingerprint: 'fingerprint', expectedUpdatedAt: '2026-10-21T00:00:00.000Z', action: 'verify' };
+    expect(ipcInputSchemas['director:review-artifact'].parse(input)).toEqual(input);
+    expect(ipcInputSchemas['director:review-artifact'].parse({ ...input, action: 'confirm' }).action).toBe('confirm');
+    for (const key of ['localPath', 'outputPath', 'artifactSha256', 'confirmedAt', 'manualReview', 'apiKey']) {
+      expect(() => ipcInputSchemas['director:review-artifact'].parse({ ...input, [key]: 'untrusted' })).toThrow();
+    }
+    expect(INVOKE_CHANNELS).toContain('director:review-artifact');
+    const [preload, fallback, main] = await Promise.all([
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/app/browser-fallback.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+    ]);
+    expect(preload).toContain("invokeTrusted('director:review-artifact', input)");
+    expect(fallback).toContain('DIRECTOR_REVIEW_DESKTOP_ONLY');
+    expect(main).toContain("trustedHandle('director:review-artifact'");
+    expect(main).toContain('artifactSha256: sha256');
+    expect(main).toContain('directorQualityStatus(checks)');
+  });
   it('accepts only the persisted project, shot, and revision token', () => {
     const input = {
       id: 'vox-project-1',

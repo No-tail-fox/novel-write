@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, FileText, Image as ImageIcon, Link2, Loader2, Mic2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Link2, Loader2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
-import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { ToggleField } from '../../components/ToggleField';
 import { EmptyState } from '../../components/EmptyState';
@@ -60,6 +59,7 @@ import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '..
 import { createOrdinaryTaskPipelineData } from '../../shared/ordinary-task-options';
 import { formatWebSearchBackendStatus, formatWebSearchProviderStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
 import { useAsyncAction } from '../../ui/async-action';
+import { Button, CheckboxField, IconButton, SegmentedControl as Choice, SelectField, Tabs, TextAreaField, TextField } from '../../ui';
 import { buildTaskCreateInput } from './task-create-input';
 import { TaskCreationTypePicker, taskCreationTarget, type TaskCreationType } from './TaskCreationTypePicker';
 import {
@@ -194,6 +194,12 @@ export function NewTaskPage({
   const [ratioManuallyOverridden, setRatioManuallyOverridden] = useState(false);
   const [ttsProvider, setTtsProvider] = useState<RuntimeTtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
   const [speaker, setSpeaker] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
+  const taskTtsDefaults = {
+    profileId: state.config.activeTtsProfileId,
+    provider: normalizeRuntimeTtsProvider(state.config.tts.provider),
+    speaker: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config),
+  };
+  const appliedTtsDefaultsRef = useRef(taskTtsDefaults);
   const [bgmId, setBgmId] = useState(() => resolveDefaultBgmId(state.config));
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -666,11 +672,14 @@ export function NewTaskPage({
   }, [state.config.jianying.bgmLibrary, state.config.jianying.defaultBgmId]);
 
   useEffect(() => {
-    const provider = normalizeRuntimeTtsProvider(state.config.tts.provider);
-    const nextSpeaker = defaultTaskSpeakerForProvider(provider, state.config);
-    setTtsProvider(provider);
-    setSpeaker(nextSpeaker);
-  }, [state.config.activeTtsProfileId, state.config.tts.provider, state.config.tts.speaker, state.config.tts.volcengine.speaker, state.config.tts.minimax.voiceId]);
+    const previous = appliedTtsDefaultsRef.current;
+    if (previous.profileId === taskTtsDefaults.profileId
+      && previous.provider === taskTtsDefaults.provider
+      && previous.speaker === taskTtsDefaults.speaker) return;
+    appliedTtsDefaultsRef.current = taskTtsDefaults;
+    setTtsProvider(taskTtsDefaults.provider);
+    setSpeaker(taskTtsDefaults.speaker);
+  }, [taskTtsDefaults.profileId, taskTtsDefaults.provider, taskTtsDefaults.speaker]);
 
   useEffect(() => {
     if (!state.config.llmProfiles.some((profile) => profile.id === selectedTaskLlmProfileId)) {
@@ -1023,21 +1032,13 @@ export function NewTaskPage({
         void run();
       }}
     >
-      <nav className="new-task-stage-tabs" aria-label="新建任务步骤">
-        {NEW_TASK_STAGE_META.map((stage, index) => (
-          <button
-            key={stage.id}
-            type="button"
-            data-new-task-stage-tab={stage.id}
-            className={activeStage === stage.id ? 'active' : ''}
-            aria-current={activeStage === stage.id ? 'step' : undefined}
-            onClick={() => setActiveStage(stage.id)}
-          >
-            <span>{index + 1}</span>
-            {stage.label}
-          </button>
-        ))}
-      </nav>
+      <Tabs
+        className="new-task-stage-tabs"
+        label="新建任务步骤"
+        value={activeStage}
+        items={NEW_TASK_STAGE_META.map((stage, index) => ({ value: stage.id, label: `${index + 1} ${stage.label}` }))}
+        onChange={(value) => setActiveStage(value as NewTaskStage)}
+      />
 
       <div className="new-task-workbench" data-new-task-workbench>
         <main className="new-task-editor">
@@ -1064,18 +1065,18 @@ export function NewTaskPage({
 
           {activeStage === 'creative' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.material.join(' ')}>
-              <Field label="任务标题">
-                <input value={title} placeholder="留空会从文案自动提取" onChange={(event) => setTitle(event.target.value)} />
-              </Field>
-              <div className="new-task-source-actions" role="group" aria-label="素材输入方式">
-                <button type="button" className={mode === 'paste' ? 'active' : ''} onClick={() => setMode('paste')}><FileText size={15} />粘贴文案</button>
-                <button type="button" className={mode === 'ai' ? 'active' : ''} onClick={() => setMode('ai')}><Wand2 size={15} />AI 创作</button>
-                <button type="button" onClick={importBenchmarkScript}><Link2 size={15} />对标导入</button>
+              <TextField label="任务标题" value={title} placeholder="留空会从文案自动提取" onChange={(event) => setTitle(event.target.value)} />
+              <div className="new-task-source-actions">
+                <Choice label="素材输入方式" value={mode} options={[
+                  { value: 'paste', label: '粘贴文案', icon: <FileText size={15} /> },
+                  { value: 'ai', label: 'AI 创作', icon: <Wand2 size={15} /> },
+                ]} onChange={setMode} />
+                <Button icon={<Link2 size={15} />} onClick={importBenchmarkScript}>对标导入</Button>
               </div>
 
               {mode === 'paste' ? (
-                <Field label="文案内容">
-                  <textarea
+                <div>
+                  <TextAreaField label="文案内容"
                     className="source-textarea"
                     value={inputText}
                     onChange={(event) => {
@@ -1085,22 +1086,18 @@ export function NewTaskPage({
                     }}
                   />
                   <ContentMetricsSummary text={inputText} targetLength={targetLength} storyboardSceneCount={storyboardSceneCount} />
-                </Field>
+                </div>
               ) : (
                 <div className="ai-create-panel">
                   <div className="new-task-inline-fields">
-                    <Field label="关键词">
-                      <input value={aiKeyword} onChange={(event) => handleAiKeywordChange(event.target.value)} placeholder="例如：钱学森回国 / 张桂梅 / 苹果秋季发布会" />
-                    </Field>
-                    <Field label="额外要求" hint="可选">
-                      <input className="extra-requirements-input" value={extraRequirements} onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
-                    </Field>
+                    <TextField label="关键词" value={aiKeyword} onChange={(event) => handleAiKeywordChange(event.target.value)} placeholder="例如：钱学森回国 / 张桂梅 / 苹果秋季发布会" />
+                    <TextField label="额外要求" hint="可选" value={extraRequirements} onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
                   </div>
                   <span className="field-title">数据源</span>
                   <div className="new-task-check-grid">
-                    <label className="check-row"><input type="checkbox" checked={webSearchEnabled} onChange={() => handleAiSourceChange('web')} />全网搜索 <small>必应、百度、搜狗、头条与正文来源</small></label>
-                    <label className="check-row"><input type="checkbox" checked={builtinKnowledgeEnabled} onChange={() => handleAiSourceChange('builtin-knowledge')} />AI 内置知识补全 <small>可独立创作，也可补全可靠细节</small></label>
-                    <label className="check-row muted"><input type="checkbox" checked={aiSources.includes('ima')} onChange={() => handleAiSourceChange('ima')} />IMA 知识库 <small>使用系统设置中的知识库</small></label>
+                    <CheckboxField label="全网搜索" title="必应、百度、搜狗、头条与正文来源" checked={webSearchEnabled} onChange={() => handleAiSourceChange('web')} />
+                    <CheckboxField label="AI 内置知识补全" title="可独立创作，也可补全可靠细节" checked={builtinKnowledgeEnabled} onChange={() => handleAiSourceChange('builtin-knowledge')} />
+                    <CheckboxField label="IMA 知识库" title="使用系统设置中的知识库" checked={aiSources.includes('ima')} onChange={() => handleAiSourceChange('ima')} />
                   </div>
                   {webSearchEnabled ? (
                     <>
@@ -1108,20 +1105,16 @@ export function NewTaskPage({
                         <span className="field-title">搜索渠道</span>
                         <div className="web-search-provider-grid">
                           {WEB_SEARCH_PROVIDER_OPTIONS.map((provider) => (
-                            <label className="web-search-provider" key={provider.id}>
-                              <input
-                                type="checkbox"
+                            <CheckboxField key={provider.id}
+                                label={provider.label}
+                                title={provider.domain}
                                 checked={webSearchProviders.includes(provider.id)}
                                 onChange={() => handleWebSearchProviderChange(provider.id)}
                               />
-                              <span><strong>{provider.label}</strong><small>{provider.domain}</small></span>
-                            </label>
                           ))}
                         </div>
                       </div>
-                      <button type="button" className="ghost-action" disabled={searchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0} onClick={searchWebSources}>
-                        {searchAction.busy ? <Loader2 className="spin" size={15} /> : <Search size={15} />}搜索
-                      </button>
+                      <Button disabled={searchAction.busy || !aiKeyword.trim() || webSearchProviders.length === 0} onClick={searchWebSources} icon={searchAction.busy ? <Loader2 className="spin" size={15} /> : <Search size={15} />}>搜索</Button>
                       {searchMessage ? <div className="test-result">{searchMessage}</div> : null}
                       <InlineActionFeedback feedback={searchAction.feedback} />
                       {searchContext && searchContext.query === aiKeyword.trim() ? (
@@ -1153,14 +1146,11 @@ export function NewTaskPage({
                             {searchSections.map((source, index) => {
                               const id = sourceKey(source, index);
                               return (
-                                <label className="search-source-card" key={id}>
-                                  <input type="checkbox" checked={selectedSearchSourceIds.includes(id)} onChange={() => handleSelectedSearchSourceChange(id)} />
-                                  <div>
+                                <CheckboxField className="new-task-source-result" key={id} checked={selectedSearchSourceIds.includes(id)} onChange={() => handleSelectedSearchSourceChange(id)} label={<span className="new-task-source-result-content">
                                     <div className="search-source-heading"><span className="search-source-provider">{formatWebSearchSourceLabel(source)}</span><strong>{source.title}</strong></div>
                                     {source.url ? <span className="search-source-url">{source.url}</span> : null}
                                     <p>{(source.content || source.snippet || '').slice(0, 220)}</p>
-                                  </div>
-                                </label>
+                                  </span>} />
                               );
                             })}
                           </div>
@@ -1169,16 +1159,14 @@ export function NewTaskPage({
                     </>
                   ) : null}
                   <div className="ai-search-actions">
-                    <button type="button" className="primary-action slim" aria-label="生成文案" disabled={composingCopy || !canComposeResearchCopy} onClick={composeResearchCopy}>
-                      {composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}{composeResearchCopyLabel}
-                    </button>
+                    <Button variant="primary" aria-label="生成文案" disabled={composingCopy || !canComposeResearchCopy} onClick={composeResearchCopy} icon={composingCopy ? <Loader2 className="spin" size={15} /> : <Wand2 size={15} />}>{composeResearchCopyLabel}</Button>
                   </div>
                   {researchCopyMessage ? <div className="test-result">{researchCopyMessage}</div> : null}
                   {researchCopy ? (
-                    <Field label="生成文案（可编辑）">
-                      <textarea className="small-textarea research-copy-textarea" value={researchCopy} onChange={(event) => { setResearchCopy(event.target.value); setInputText(event.target.value); }} />
+                    <div>
+                      <TextAreaField label="生成文案（可编辑）" className="research-copy-textarea" value={researchCopy} onChange={(event) => { setResearchCopy(event.target.value); setInputText(event.target.value); }} />
                       <ContentMetricsSummary text={researchCopy} targetLength={targetLength} storyboardSceneCount={storyboardSceneCount} />
-                    </Field>
+                    </div>
                   ) : null}
                 </div>
               )}
@@ -1186,12 +1174,10 @@ export function NewTaskPage({
               <div className="new-task-material-options">
                 <Segmented label="素材来源" value={materialSource} options={['ai', 'local']} labels={['AI 生图', '本地人物素材']} onChange={(value) => setMaterialSource(value as 'ai' | 'local')} />
                 {materialSource === 'local' ? (
-                  <Field label="本地人物素材">
-                    <select value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)}>
-                      <option value="">请选择人物</option>
-                      {personAssets.map((asset) => <option key={asset.name} value={asset.name}>{asset.name} · {asset.count} 张</option>)}
-                    </select>
-                  </Field>
+                  <SelectField label="本地人物素材" value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)} options={[
+                    { value: '', label: '请选择人物' },
+                    ...personAssets.map((asset) => ({ value: asset.name, label: `${asset.name} · ${asset.count} 张` })),
+                  ]} />
                 ) : null}
               </div>
             </section>
@@ -1200,29 +1186,20 @@ export function NewTaskPage({
           {activeStage === 'creative' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.creative.join(' ')}>
               <div className="new-task-track-options">
-                <OptionCloud title="内容赛道" options={storyTemplateOptions} value={selectedStoryTemplateId} onChange={handleStoryTemplateChange} />
+                <SelectField label="内容赛道" options={storyTemplateOptions.map(([value, label, hint]) => ({ value, label: hint ? `${label} · ${hint}` : label }))} value={selectedStoryTemplateId} onChange={(event) => handleStoryTemplateChange(event.target.value)} />
               </div>
               <div className="new-task-field-grid">
-                <Field label="提示词模板" hint={resolvedPromptTemplate ? `当前使用：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'}>
-                  <select className="prompt-template-selector" value={promptTemplateOverrideId || resolvedPromptTemplate?.id || ''} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)}>
-                    <option value="">自动匹配赛道模板</option>
-                    {taskPromptTemplateOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${hint}` : label}</option>)}
-                  </select>
-                </Field>
+                <SelectField label="提示词模板" hint={resolvedPromptTemplate ? `当前使用：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'} className="prompt-template-selector" value={promptTemplateOverrideId || resolvedPromptTemplate?.id || ''} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)} options={[
+                  { value: '', label: '自动匹配赛道模板' },
+                  ...taskPromptTemplateOptions.map(([id, label, hint]) => ({ value: id, label: hint ? `${label} · ${hint}` : label })),
+                ]} />
                 <ImageStylePicker value={style} onChange={handleStyleChange} styles={state.customStyles} options={imageTemplateStyleOptions} />
               </div>
               <div className="new-task-field-grid">
-                <Field label="草稿模板" hint={draftTemplateLabel(templateId, state.draftTemplates)}>
-                  <select value={templateId} onChange={(event) => handleDraftTemplateChange(event.target.value)}>
-                    {state.draftTemplates.map((template) => <option key={template.id} value={template.id}>{template.name} · 出图 {template.image.ratio}</option>)}
-                  </select>
-                </Field>
-                <div className="video-form-panel">
-                  <div className="video-form-head"><span className="field-title">视频形态</span><small>{videoForm === 'two-host-podcast' ? '自动使用对话脚本与播客配图' : '单人配音讲述'}</small></div>
-                  <div className="video-form-grid">
-                    <button type="button" className={videoForm === 'narration' ? 'video-form-option active' : 'video-form-option'} onClick={() => setVideoForm('narration')}><strong>旁白视频</strong><span>单人配音讲述（默认）</span></button>
-                    <button type="button" className={videoForm === 'two-host-podcast' ? 'video-form-option active' : 'video-form-option'} onClick={() => setVideoForm('two-host-podcast')}><strong>双人播客</strong><span>两位主播一问一答</span></button>
-                  </div>
+                <SelectField label="草稿模板" hint={draftTemplateLabel(templateId, state.draftTemplates)} value={templateId} onChange={(event) => handleDraftTemplateChange(event.target.value)} options={state.draftTemplates.map((template) => ({ value: template.id, label: `${template.name} · 出图 ${template.image.ratio}` }))} />
+                <div className="new-task-video-form">
+                  <Segmented label="视频形态" value={videoForm} options={['narration', 'two-host-podcast']} labels={['旁白视频', '双人播客']} onChange={(value) => setVideoForm(value as TaskVideoForm)} />
+                  <span className="hint-text">{videoForm === 'two-host-podcast' ? '自动使用对话脚本与播客配图' : '单人配音讲述'}</span>
                   {videoForm === 'two-host-podcast' ? (
                     <div className="podcast-form-controls">
                       <span className="podcast-form-label">播客配图</span>
@@ -1268,20 +1245,20 @@ export function NewTaskPage({
                   <strong>模板默认项</strong><span>故事模板：{resolvedPromptTemplate.name}</span><span>默认图像模板：{styleLabel(style, state.customStyles)}</span><span>默认草稿模板：{draftTemplateLabel(templateId, state.draftTemplates)}</span><span>主角档案：{characterPolicyLabel(resolvedPromptTemplate.characterPolicy)}</span><span>参考图类型：{referenceKindLabel(resolvedPromptTemplate.referenceKind)}</span><span>Step 3 骨架：{(resolvedPromptTemplate.step3SkeletonModules ?? []).join('、') || '未设置'}</span>
                 </div>
               ) : null}
-              <button type="button" className="advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
-                {showAdvanced ? '收起' : '展开'}高级创作参数 <span>改写强度 · 叙事视角 · 带货 · 文案把控</span>
-              </button>
+              <Button className="new-task-advanced-toggle" variant="subtle" icon={showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />} aria-expanded={showAdvanced} onClick={() => setShowAdvanced(!showAdvanced)}>
+                {showAdvanced ? '收起' : '展开'}高级创作参数
+              </Button>
               {showAdvanced ? (
                 <div className="advanced-grid">
                   <Segmented label="改写强度" value={rewriteIntensity} options={rewriteOptions.map(([id]) => id)} labels={rewriteOptions.map(([, label]) => label)} onChange={(value) => setRewriteIntensity(value as RewriteIntensity)} />
                   <Segmented label="叙事视角" value={narrativePov} options={povOptions.map(([id]) => id)} labels={povOptions.map(([, label]) => label)} onChange={(value) => setNarrativePov(value as Task['narrativePov'])} />
-                  <label className="toggle-row"><input type="checkbox" checked={keepPromotion} onChange={(event) => setKeepPromotion(event.target.checked)} />带货保留 <small>启用后保留原素材中的商品与推广信息</small></label>
+                  <CheckboxField label="带货保留" title="启用后保留原素材中的商品与推广信息" checked={keepPromotion} onChange={(_, data) => setKeepPromotion(data.checked === true)} />
                   <div className="advanced-section copy-control-section">
                     <div className="section-title-row"><span className="field-title">文案把控</span>{productInfo ? <small>已带入：{productInfoSummary(productInfo)}</small> : null}</div>
                     <div className="copy-control-grid">
-                      <Field label="固定开头" hint="可选"><textarea className="small-textarea" value={fixedIntro} onChange={(event) => setFixedIntro(event.target.value)} placeholder="例如：今天这本书，先看第一句话。" /></Field>
-                      <Field label="结尾引导" hint="可用 {主角}"><textarea className="small-textarea" value={outroCta} onChange={(event) => setOutroCta(event.target.value)} placeholder="例如：想读{主角}，去橱窗找这本书。" /></Field>
-                      <Field label="锁定开头句数"><input type="number" min="0" max="20" step="1" value={lockIntroSentences} onChange={(event) => setLockIntroSentences(event.target.value)} /></Field>
+                      <TextAreaField label="固定开头" hint="可选" value={fixedIntro} onChange={(event) => setFixedIntro(event.target.value)} placeholder="例如：今天这本书，先看第一句话。" />
+                      <TextAreaField label="结尾引导" hint="可用 {主角}" value={outroCta} onChange={(event) => setOutroCta(event.target.value)} placeholder="例如：想读{主角}，去橱窗找这本书。" />
+                      <TextField label="锁定开头句数" type="number" min="0" max="20" step="1" value={lockIntroSentences} onChange={(event) => setLockIntroSentences(event.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -1292,11 +1269,11 @@ export function NewTaskPage({
           {activeStage === 'output' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.output.join(' ')}>
               <div className="new-task-field-grid">
-                <label className="target-number-field"><span>目标字数</span><input type="number" min="100" max="5000" step="50" value={targetLength} placeholder="自动" onChange={(event) => handleTargetLengthChange(event.target.value)} /><small>字（±20%，留空跟随原文）</small></label>
-                <label className="target-number-field"><span>目标分镜数</span><input type="number" min="1" max="60" step="1" value={storyboardSceneCount} placeholder={storyboardScenePreviewRange ? `自动（${storyboardScenePreviewRange.target}）` : '自动'} onChange={(event) => setStoryboardSceneCount(event.target.value)} /><small>个（±10%，建议每镜 25-45 字）</small></label>
+                <TextField label="目标字数" hint="字（±20%，留空跟随原文）" type="number" min="100" max="5000" step="50" value={targetLength} placeholder="自动" onChange={(event) => handleTargetLengthChange(event.target.value)} />
+                <TextField label="目标分镜数" hint="个（±10%，建议每镜 25-45 字）" type="number" min="1" max="60" step="1" value={storyboardSceneCount} placeholder={storyboardScenePreviewRange ? `自动（${storyboardScenePreviewRange.target}）` : '自动'} onChange={(event) => setStoryboardSceneCount(event.target.value)} />
               </div>
               <div className="new-task-field-grid">
-                <div><span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><div className="ratio-grid">{['9:16', '4:3', '1:1', '16:9'].map((item) => <button type="button" key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => handleRatioChange(item)}><AspectRatioSwatch ratio={item} />{item}</button>)}</div></div>
+                <div><span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><Choice label="AI 出图比例" value={ratio} options={['9:16', '4:3', '1:1', '16:9'].map((value) => ({ value, label: value, icon: <AspectRatioSwatch ratio={value} /> }))} onChange={handleRatioChange} /></div>
                 <div className="new-task-quality-override">
                   <ToggleField
                     label="覆盖生图质量"
@@ -1311,15 +1288,15 @@ export function NewTaskPage({
               </div>
               <Segmented label="暂停确认" value={pausePoint} options={NEW_TASK_PAUSE_OPTIONS.map(([id]) => id)} labels={NEW_TASK_PAUSE_OPTIONS.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
               <div className="new-task-field-grid">
-                <div><span className="field-title">配音员</span><Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} /></div>
+                <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
                 <Segmented label="配音语速" value={String(ttsSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setTtsSpeed(Number(value))} />
               </div>
               {videoForm !== 'two-host-podcast' ? (
-                <><div className="chip-row">{ttsVoiceOptions.map((voice) => <button type="button" key={voice.id} className={speaker === voice.id ? 'chip active' : 'chip'} title={voice.id} onClick={() => setSpeaker(voice.id)}><Mic2 size={14} />{voice.label}</button>)}</div><span className="hint-text">当前默认配音员：{taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)} · {speaker}</span></>
+                <SelectField label="配音员" value={speaker} onChange={(event) => setSpeaker(event.target.value)} options={ttsVoiceOptions.map((voice) => ({ value: voice.id, label: voice.label }))} hint={`当前默认配音员：${taskSpeakerLabel(ttsProvider, speaker, state.minimaxCloneVoices)} · ${speaker}`} />
               ) : <span className="hint-text">双人播客会按主播组合自动拆分 A/B 音色，当前模型：{ttsProvider}</span>}
               <div className="new-task-field-grid">
-                <div><span className="field-title">背景音乐</span><div className="chip-row"><button type="button" className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>{bgmOptions.map((bgm) => <button type="button" key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>)}<button type="button" className="chip" disabled={taskAction.busy} onClick={addBgmFromTask}><Plus size={14} />添加</button></div></div>
-                <Field label="文本模型"><select value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}>{state.config.llmProfiles.map((profile) => <option key={profile.id ?? profile.model} value={profile.id ?? profile.model}>{profile.provider}: {profile.model}</option>)}</select></Field>
+                <div className="new-task-bgm-field"><SelectField label="背景音乐" value={bgmId} onChange={(event) => setBgmId(event.target.value)} options={[{ value: '', label: '无 BGM' }, ...bgmOptions.map((bgm) => ({ value: bgm.id, label: bgm.title }))]} /><IconButton label="添加背景音乐" disabled={taskAction.busy} onClick={addBgmFromTask} icon={<Plus size={16} />} /></div>
+                <SelectField label="文本模型" value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)} options={state.config.llmProfiles.map((profile) => ({ value: profile.id ?? profile.model, label: `${profile.provider}: ${profile.model}` }))} />
               </div>
               <section className={coverPageEnabled ? 'ordinary-cover-page-editor enabled' : 'ordinary-cover-page-editor'} data-cover-page-enabled={coverPageEnabled ? 'true' : 'false'}>
                 <header>
@@ -1337,37 +1314,33 @@ export function NewTaskPage({
                   <div className="ordinary-cover-page-body">
                     <div className="new-task-field-grid">
                       <Segmented label="封面图片" value={coverImageMode} options={['auto', 'manual']} labels={['AI 单独生成', '本地导入']} onChange={(value) => setCoverImageMode(value as OrdinaryCoverMode)} />
-                      {coverImageMode === 'auto' ? <Field label="封面模板" hint={coverTemplateHint}><select className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)}>{coverTemplateSelectOptions.map(([id, label, hint]) => <option key={id} value={id}>{hint ? `${label} · ${id}` : label}</option>)}</select></Field> : <div className="ordinary-cover-source-note"><ImageIcon size={16} /><span>使用当前视频比例导入封面图</span></div>}
+                      {coverImageMode === 'auto' ? <SelectField label="封面模板" hint={coverTemplateHint} className="cover-template-select" value={coverTemplateId} onChange={(event) => setCoverTemplateId(event.target.value)} options={coverTemplateSelectOptions.map(([id, label, hint]) => ({ value: id, label: hint ? `${label} · ${id}` : label }))} /> : <div className="ordinary-cover-source-note"><ImageIcon size={16} /><span>使用当前视频比例导入封面图</span></div>}
                     </div>
                     {coverImageMode === 'manual' ? (
                       <div className="manual-cover-import" data-manual-cover-state={manualCoverAsset ? 'ready' : 'required'}>
                         <div><strong>{manualCoverAsset ? manualCoverAsset.originalName : '尚未导入手动封面'}</strong><span>{manualCoverAsset ? `${manualCoverAsset.width} × ${manualCoverAsset.height} · ${(manualCoverAsset.sizeBytes / 1024 / 1024).toFixed(2)} MB` : `需要 ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).width} × ${ordinaryTaskCoverDimensions(ratio as OrdinaryTaskCoverRatio).height} 的 PNG / JPG / WebP`}</span></div>
-                        <button type="button" className="ghost-action" disabled={taskAction.busy || isBrowserPreview} onClick={importOrdinaryTaskCover}><Upload size={15} />导入手动封面</button>
+                        <Button disabled={taskAction.busy || isBrowserPreview} onClick={importOrdinaryTaskCover} icon={<Upload size={15} />}>导入手动封面</Button>
                       </div>
                     ) : null}
-                    <Field label="封面文字" hint={coverPageTextHint}><textarea className="small-textarea ordinary-cover-page-text" maxLength={MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH} value={coverPageText} onChange={(event) => setCoverPageText(event.target.value)} placeholder={coverPageTextPlaceholder} /></Field>
+                    <TextAreaField label="封面文字" hint={coverPageTextHint} className="ordinary-cover-page-text" maxLength={MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH} value={coverPageText} onChange={(event) => setCoverPageText(event.target.value)} placeholder={coverPageTextPlaceholder} />
                   </div>
                 ) : null}
               </section>
-              <Field label="主角参考图" hint="可选"><div className="upload-row"><input value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} /><button type="button" className="ghost-action" disabled={taskAction.busy} onClick={selectTaskReferenceImage}><Upload size={15} />上传主角参考图</button></div></Field>
-              <label className="new-task-borrow-toggle toggle-row" title="开启后，生图失败的镜头会在全部尝试结束后借用最近的可用图片。">
-                <input type="checkbox" checked={autoBorrowImage} onChange={(event) => setAutoBorrowImage(event.target.checked)} />
-                <span>相邻镜头补位</span>
-              </label>
+              <div className="new-task-reference-field"><TextField label="主角参考图" hint="可选" value={referenceImagePath} placeholder="上传后出现主角的分镜会以这张为基础保持人物一致" onChange={(event) => setReferenceImagePath(event.target.value)} /><Button disabled={taskAction.busy} onClick={selectTaskReferenceImage} icon={<Upload size={15} />}>上传主角参考图</Button></div>
+              <CheckboxField className="new-task-borrow-toggle" label="相邻镜头补位" title="开启后，生图失败的镜头会在全部尝试结束后借用最近的可用图片。" checked={autoBorrowImage} onChange={(_, data) => setAutoBorrowImage(data.checked === true)} />
             </section>
           ) : null}
 
           <footer className="new-task-stage-footer">
-            <button type="button" className="ghost-action" disabled={activeStage === 'material'} onClick={() => setActiveStage(activeStage === 'output' ? 'creative' : 'material')}>上一步</button>
-            <button
-              type="button"
-              className={activeStage === 'output' ? 'primary-action' : 'ghost-action'}
+            <Button icon={<ArrowLeft size={15} />} disabled={activeStage === 'material'} onClick={() => setActiveStage(activeStage === 'output' ? 'creative' : 'material')}>上一步</Button>
+            <Button
+              variant={activeStage === 'output' ? 'primary' : 'secondary'}
+              icon={activeStage === 'output' ? <Play size={15} /> : <ArrowRight size={15} />}
               disabled={activeStage === 'output' ? createTaskDisabled : false}
               onClick={activeStage === 'output' ? run : advanceStage}
             >
-              {activeStage === 'output' ? <Play size={15} /> : null}
               {activeStage === 'output' ? '创建并开始生成' : '下一步'}
-            </button>
+            </Button>
           </footer>
         </main>
 
@@ -1390,26 +1363,21 @@ export function NewTaskPage({
             <span className={state.config.jianying.draftPath ? 'ready' : ''}><Check size={15} />剪映目录{state.config.jianying.draftPath ? '可写' : '未配置'}</span>
           </div>
           <div className="new-task-summary-actions">
-            <button type="button" className="primary-action" onClick={run} disabled={createTaskDisabled}>
-              {running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}{running ? '生成中' : '创建并开始生成'}
-            </button>
+            <Button variant="primary" onClick={run} disabled={createTaskDisabled} icon={running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}>{running ? '生成中' : '创建并开始生成'}</Button>
             <div className="new-task-draft-actions">
-              <button type="button" className="ghost-action" onClick={saveDraft}><Save size={14} />保存草稿</button>
-              <button type="button" className="ghost-action" disabled={!hasSavedDraft} onClick={restoreDraft}><RotateCcw size={14} />恢复草稿</button>
+              <Button onClick={saveDraft} icon={<Save size={14} />}>保存草稿</Button>
+              <Button disabled={!hasSavedDraft} onClick={restoreDraft} icon={<RotateCcw size={14} />}>恢复草稿</Button>
             </div>
             <section className="new-task-preset-panel" aria-label="创建预设">
               <div className="new-task-preset-heading"><strong>创建预设</strong><span>{taskPresets.length} 个已保存</span></div>
               <div className="new-task-preset-save-row">
-                <input aria-label="预设名称" value={presetName} maxLength={60} placeholder="预设名称" onChange={(event) => setPresetName(event.target.value)} />
-                <button type="button" className="ghost-action" onClick={saveTaskPreset}><Save size={14} />保存为预设</button>
+                <TextField label="预设名称" aria-label="预设名称" value={presetName} maxLength={60} placeholder="预设名称" onChange={(event) => setPresetName(event.target.value)} />
+                <Button onClick={saveTaskPreset} icon={<Save size={14} />}>保存为预设</Button>
               </div>
               <div className="new-task-preset-apply-row">
-                <select aria-label="选择创建预设" value={selectedPresetId} onChange={(event) => selectTaskPreset(event.target.value)}>
-                  <option value="">选择预设</option>
-                  {taskPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-                </select>
-                <button type="button" className="ghost-action" disabled={!selectedPresetId} onClick={applyTaskPreset}><RotateCcw size={14} />应用预设</button>
-                <button type="button" className="icon-button" title="删除预设" aria-label="删除预设" disabled={!selectedPresetId} onClick={deleteTaskPreset}><Trash2 size={14} /></button>
+                <SelectField label="选择创建预设" aria-label="选择创建预设" value={selectedPresetId} onChange={(event) => selectTaskPreset(event.target.value)} options={[{ value: '', label: '选择预设' }, ...taskPresets.map((preset) => ({ value: preset.id, label: preset.name }))]} />
+                <Button disabled={!selectedPresetId} onClick={applyTaskPreset} icon={<RotateCcw size={14} />}>应用预设</Button>
+                <IconButton label="删除预设" disabled={!selectedPresetId} onClick={deleteTaskPreset} icon={<Trash2 size={14} />} />
               </div>
             </section>
           </div>

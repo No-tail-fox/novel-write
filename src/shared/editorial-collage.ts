@@ -1,3 +1,4 @@
+import { createEditorialCuePlan, editorialCuePlanSchema, resolveEditorialCuePlan, compileEditorialCueLayers, type EditorialCuePlan } from './editorial-cue-plan';
 import { voxAnimationSchema, voxAnimationAssetIds, validateVoxAnimation, type VoxAnimation } from './vox-animation';
 import { z } from 'zod';
 import { EDITORIAL_RECIPE_IDS, type EditorialRecipeId } from './editorial-recipe-catalog';
@@ -13,8 +14,9 @@ import { MAX_PRODUCTION_HISTORY_ITEMS } from './production-history';
 import { createEditorialMotionLayers, editorialMotionDescription, selectEditorialMotionStyle, recomposeEditorialMotionLayers, type EditorialMotionStyle } from './editorial-motion';
 import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLE_IDS, type EditorialWritingStyleId } from './editorial-writing-styles';
 import { editorialContentTitle, editorialShotNarration, editorialShotTitle, normalizeEditorialStoryTitles, updateEditorialTitleLayers } from './editorial-storytelling';
-import { DEFAULT_EDITORIAL_TRANSITION, directorTransitionSchema, type DirectorTransition } from './director-transitions';
+import { directorTransitionSchema, type DirectorTransition } from './director-transitions';
 import { buildEditorialScenePrompt } from './editorial-image-prompts';
+import { voxProductionRunSchema, voxProductionSettingsSchema, type VoxProductionRun, type VoxProductionSettings } from './vox-production';
 
 export const EDITORIAL_COLLAGE_TASK_TYPE = 'editorial-collage' as const;
 export const EDITORIAL_COLLAGE_PIPELINE_VERSION = 1 as const;
@@ -89,6 +91,7 @@ export interface EditorialCollageShot {
   /** Audience-facing copy, independent from the beat's outline role. Empty hides the title. */
   title?: string;
   motionStyle?: EditorialMotionStyle;
+  cuePlan?: EditorialCuePlan;
   /** Incoming picture-only transition; omitted legacy settings use a short dissolve. */
   transitionIn?: DirectorTransition;
   beatId: string;
@@ -142,6 +145,8 @@ export interface EditorialCollagePipelineData extends Omit<ProductionDocumentBas
   workflowKind: 'editorial-collage';
   /** Original authoring text retained so structural edits never lose content. */
   sourceText?: string;
+  productionSettings?: VoxProductionSettings;
+  productionRun?: VoxProductionRun;
   writingStyleId?: EditorialWritingStyleId;
   writingRequirements?: string;
   stage: EditorialCollageStage;
@@ -207,6 +212,20 @@ const assetVersionSchema = z.object({
   uri: boundedText(4096).optional(),
   localPath: boundedText(4096).optional(),
   sha256: z.string().max(128).optional(),
+  backgroundRemoval: z.object({
+    method: z.enum(['native-alpha', 'green-key', 'onnx']),
+    model: boundedText(1024).optional(),
+    modelVersion: boundedText(1024).optional(),
+    modelSha256: z.string().max(128).optional(),
+    sourceSha256: z.string().max(128).optional(),
+    outputSha256: z.string().max(128).optional(),
+    transparentFraction: z.number().finite().min(0).max(1),
+    foregroundFraction: z.number().finite().min(0).max(1),
+    edgeFraction: z.number().finite().min(0).max(1),
+    quality: z.enum(['passed', 'warning', 'failed']),
+    errorCode: boundedText(256).optional(),
+    errorMessage: boundedText(16_384).optional(),
+  }).strict().optional(),
   prompt: boundedText().optional(),
   providerJobId: idSchema.optional(),
   provider: z.string().max(256).optional(),
@@ -280,6 +299,7 @@ const layerSchema = z.object({
 const shotSchema = z.object({
   id: idSchema,
   title: z.string().max(512).optional(),
+  cuePlan: editorialCuePlanSchema.optional(),
   motionStyle: z.enum(['cutout-slide', 'focus-reveal', 'comparison', 'evidence-stack', 'path-progress']).optional(),
   transitionIn: directorTransitionSchema.optional(),
   beatId: idSchema,
@@ -358,6 +378,7 @@ const timelineSchema = z.object({
 }).strict();
 
 const qualityReportSchema = z.object({
+  artifactSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
   id: idSchema,
   workflowKind: z.literal(EDITORIAL_COLLAGE_TASK_TYPE),
   stage: z.string().max(256),
@@ -365,6 +386,7 @@ const qualityReportSchema = z.object({
   episodeId: idSchema.optional(),
   renderFingerprint: z.string().max(256).optional(),
   manualReview: z.object({
+    artifactSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
     reportId: idSchema,
     renderFingerprint: z.string().max(256),
     scope: z.object({
@@ -379,6 +401,7 @@ const qualityReportSchema = z.object({
   }).strict().optional(),
   status: z.enum(['pending', 'passed', 'failed', 'waived']),
   checks: z.array(z.object({
+    priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     id: idSchema,
     label: z.string().max(512),
     status: z.enum(['pending', 'passed', 'failed', 'waived']),
@@ -417,6 +440,8 @@ export const editorialCollagePipelineSchema = z.object({
   workflowKind: z.literal(EDITORIAL_COLLAGE_TASK_TYPE),
   title: z.string().max(512),
   sourceText: boundedText().optional(),
+  productionSettings: voxProductionSettingsSchema.optional(),
+  productionRun: voxProductionRunSchema.optional(),
   writingStyleId: z.enum(EDITORIAL_WRITING_STYLE_IDS).optional(),
   writingRequirements: boundedText(8_000).optional(),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS),
@@ -534,7 +559,6 @@ export function createEditorialCollageStarterPlan(
         beatId,
         durationMs,
         renderStrategy: 'deterministic-layers',
-        transitionIn: { ...DEFAULT_EDITORIAL_TRANSITION },
         scenePrompt: buildEditorialScenePrompt({ narration, ratio: draft.ratio, motionStyle: selectEditorialMotionStyle({ narration, index, evidence: plannedBeat.sectionIndex === 2 }) }),
         motionPrompt: editorialMotionDescription(selectEditorialMotionStyle({ narration, index, evidence: plannedBeat.sectionIndex === 2 })),
         layers,
@@ -569,6 +593,7 @@ export function createEditorialCollageStarterPlan(
         ...shot, title, motionStyle, subtitleCueIds: cues.map((cue) => cue.id), scenePrompt: buildEditorialScenePrompt({ narration: narration || beat.narration || draft.title, ratio: draft.ratio, motionStyle }),
         motionPrompt: editorialMotionDescription(motionStyle),
         layers: createEditorialMotionLayers({ shotId: id, narration: narration || beat.narration || draft.title, title, durationMs: shot.durationMs, ratio: draft.ratio, index: indexInFilm, evidence, motionStyle }),
+        cuePlan: createEditorialCuePlan(cues, createEditorialMotionLayers({ shotId: id, narration: narration || beat.narration || draft.title, title, durationMs: shot.durationMs, ratio: draft.ratio, index: indexInFilm, evidence, motionStyle }), motionStyle),
       };
     });
     const owners = new Map(shots.flatMap((shot) => shot.subtitleCueIds.map((cueId) => [cueId, shot.id] as const)));
@@ -597,6 +622,7 @@ export function setEditorialShotMotionStyle(data: EditorialCollagePipelineData, 
   const result = rebuildEditorialTimeline({ ...data, beats: data.beats.map((beat) => ({ ...beat, shots: beat.shots.map((shot) => shot.id !== shotId ? shot : {
     ...shot, motionStyle, motionPrompt: editorialMotionDescription(motionStyle),
     layers: recomposeEditorialMotionLayers(shot.layers, { shotId, title: editorialShotTitle(data, beat, shot), narration: editorialShotNarration(beat, shot) || beat.narration, durationMs: shot.durationMs, ratio: data.ratio, index, evidence: shot.layers.some((layer) => layer.kind === 'archival'), motionStyle }),
+    cuePlan: createEditorialCuePlan(shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []), recomposeEditorialMotionLayers(shot.layers, { shotId, title: editorialShotTitle(data, beat, shot), narration: editorialShotNarration(beat, shot) || beat.narration, durationMs: shot.durationMs, ratio: data.ratio, index, evidence: shot.layers.some(layer => layer.kind === 'archival'), motionStyle }), motionStyle),
     ...(shot.motionStyle !== motionStyle ? { videoAssetVersionId: undefined, videoJobId: undefined } : {}),
   }) })) });
   if (result.beats.flatMap((beat) => beat.shots).some((shot) => shot.layers.length > MAX_LAYERS_PER_SHOT)) throw new Error('EDITORIAL_MOTION_LAYER_LIMIT: 当前自定义图层加上新动作超过 6 层，请先精简图层；已有素材和动作未修改。');
@@ -793,7 +819,19 @@ export function editorialCameraPreset(durationMs: number, preset: NonNullable<Ed
   return [start, { ...end, atMs: durationMs }];
 }
 
+/** Manual keyframes and structural edits operate on the resolved semantic motion. */
+function bakeEditorialSemanticMotion(data: EditorialCollagePipelineData, shotIds: string[]): EditorialCollagePipelineData {
+  return { ...data, beats: data.beats.map(beat => ({ ...beat, shots: beat.shots.map(shot => {
+    if (!shot.cuePlan || !shotIds.includes(shot.id)) return shot;
+    const cues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
+    const start = data.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs;
+    const layers = compileEditorialCueLayers(shot.layers, resolveEditorialCuePlan(shot.cuePlan, cues, start, shot.durationMs), shot.durationMs);
+    return { ...shot, layers, cuePlan: undefined };
+  }) })) };
+}
+
 export function editEditorialShotMotion(data: EditorialCollagePipelineData, shotId: string, edit: EditorialMotionEdit): EditorialCollagePipelineData {
+  data = bakeEditorialSemanticMotion(data, [shotId]);
   const { shot } = findEditorialShot(data, shotId);
   if (shot.renderStrategy !== 'deterministic-layers') {
     throw new Error('请切换到本地关键帧，再编辑图层与相机。');
@@ -913,6 +951,7 @@ export function updateEditorialCameraKeyframe(
 }
 
 export function splitEditorialShot(data: EditorialCollagePipelineData, shotId: string, splitAtMs: number): EditorialCollagePipelineData {
+  data = bakeEditorialSemanticMotion(data, [shotId]);
   const location = findEditorialShot(data, shotId);
   const shot = location.shot;
   if (shot.renderStrategy === 'remotion') throw new Error('动画模板镜头请通过复制镜头并调整时长来分段。');
@@ -967,6 +1006,7 @@ export function splitEditorialShot(data: EditorialCollagePipelineData, shotId: s
 }
 
 export function mergeEditorialShots(data: EditorialCollagePipelineData, firstShotId: string, secondShotId: string): EditorialCollagePipelineData {
+  data = bakeEditorialSemanticMotion(data, [firstShotId, secondShotId]);
   const firstLocation = findEditorialShot(data, firstShotId);
   const secondLocation = findEditorialShot(data, secondShotId);
   if (firstLocation.shot.renderStrategy === 'remotion' || secondLocation.shot.renderStrategy === 'remotion') throw new Error('动画模板镜头保留独立动画，生成成片时会按时间线顺序连接。');
@@ -1051,6 +1091,7 @@ function cloneEditorialShotForEdit(
     videoAssetVersionId: undefined,
     voiceAssetVersionId: undefined,
     subtitleCueIds: [],
+    cuePlan: undefined,
     camera: sourceStartMs === undefined ? source.camera.map((frame) => ({ ...frame, atMs: Math.min(durationMs, Math.round(frame.atMs * scale)) })) : sliceEditorialFrames(source.camera.length ? source.camera : editorialCameraPreset(source.durationMs, source.motionPreset ?? '固定机位'), sourceStartMs, sourceStartMs + durationMs, { atMs: 0, x: .5, y: .5, zoom: 1 }),
     layers: source.layers.map((layer, layerIndex) => ({
       ...layer,

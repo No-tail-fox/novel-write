@@ -5,9 +5,8 @@ import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { defaultConfig } from "../../shared/config";
 import { LLM_PROTOCOL_OPTIONS, resolveLlmProtocol, type LlmProtocol } from '../../shared/llm-protocol';
-import { SelectField } from '../../ui';
+import { Button, IconButton, SelectField, SliderField } from '../../ui';
 import { ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
-import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import {
   ConfigInput,
@@ -102,10 +101,9 @@ export function LlmProfileManager({
           <strong>配置档案</strong>
           <span>{profiles.length} 个配置</span>
         </div>
-        <button className="ghost-action" type="button" onClick={addProfile}>
-          <Plus size={15} />
+        <Button icon={<Plus size={15} />} onClick={addProfile}>
           新增配置
-        </button>
+        </Button>
       </div>
 
       <div className="profile-switcher-list">
@@ -133,9 +131,10 @@ export function LlmProfileManager({
                 {isActive ? (
                   <span className="profile-active-badge">启用中</span>
                 ) : (
-                  <button
-                    className="primary-action slim"
-                    type="button"
+                  <Button
+                    variant="primary"
+                    density="compact"
+                    icon={saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     aria-label={`启用 LLM 配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
@@ -144,19 +143,12 @@ export function LlmProfileManager({
                       void onActivate(profile.id!);
                     }}
                   >
-                    {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     启用
-                  </button>
+                  </Button>
                 )}
-                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
-                  <Palette size={14} />
-                </button>
-                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
-                  <Copy size={14} />
-                </button>
-                <button className="icon-button" type="button" title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
-                  <XCircle size={14} />
-                </button>
+                <IconButton label="编辑" icon={<Palette size={14} />} onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }} />
+                <IconButton label="复制" icon={<Copy size={14} />} onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }} />
+                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
               </div>
             </article>
           );
@@ -360,10 +352,9 @@ export function ImageProfileManager({
           <strong>绘图档案</strong>
           <span>可保存 GPT Image、即梦和自定义图片接口，启用一个作为任务生图配置。</span>
         </div>
-        <button className="ghost-action" type="button" onClick={addProfile}>
-          <Plus size={15} />
+        <Button icon={<Plus size={15} />} onClick={addProfile}>
           新增配置
-        </button>
+        </Button>
       </div>
 
       <div className="profile-switcher-list">
@@ -391,9 +382,10 @@ export function ImageProfileManager({
                 {isActive ? (
                   <span className="profile-active-badge">启用中</span>
                 ) : (
-                  <button
-                    className="primary-action slim"
-                    type="button"
+                  <Button
+                    variant="primary"
+                    density="compact"
+                    icon={saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     aria-label={`启用绘图配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
@@ -402,19 +394,12 @@ export function ImageProfileManager({
                       void onActivate(profile.id!);
                     }}
                   >
-                    {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     启用
-                  </button>
+                  </Button>
                 )}
-                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
-                  <Palette size={14} />
-                </button>
-                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
-                  <Copy size={14} />
-                </button>
-                <button className="icon-button" type="button" title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
-                  <XCircle size={14} />
-                </button>
+                <IconButton label="编辑" icon={<Palette size={14} />} onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }} />
+                <IconButton label="复制" icon={<Copy size={14} />} onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }} />
+                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
               </div>
             </article>
           );
@@ -456,7 +441,7 @@ export function ImageProfileManager({
             />
             <Segmented label="分辨率" value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
             <Segmented label="默认质量" value={gptImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, quality: value as ImageGenerationQuality } })} />
-            <Field label="并发"><input type="range" min="1" max="6" value={gptImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: Number(event.target.value) } })} /></Field>
+            <SliderField label="并发" min={1} max={6} valueLabel={gptImage.concurrency} value={gptImage.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: data.value } })} />
           </>
         ) : null}
         {provider === 'jimeng' ? (
@@ -467,7 +452,7 @@ export function ImageProfileManager({
             <SecretInput label="即梦访问密钥 Secret" value={secrets.value(jimengSecretAccessKeyId)} configured={secrets.configured(jimengSecretAccessKeyId)} onChange={(value) => secrets.change(jimengSecretAccessKeyId, value)} onClear={() => secrets.change(jimengSecretAccessKeyId, null)} />
             <ConfigInput label="即梦请求 Key" value={jimeng.reqKey ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, reqKey: value } })} />
             <Segmented label="分辨率" value={jimeng.resolution} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, resolution: value as ImageResolution } })} />
-            <Field label="并发"><input type="range" min="1" max="6" value={jimeng.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: Number(event.target.value) } })} /></Field>
+            <SliderField label="并发" min={1} max={6} valueLabel={jimeng.concurrency} value={jimeng.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, jimeng: { ...jimeng, concurrency: data.value } })} />
           </>
         ) : null}
         {provider === 'custom' ? (
@@ -492,7 +477,7 @@ export function ImageProfileManager({
             />
             <Segmented label="分辨率" value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
             <Segmented label="默认质量" value={customImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, quality: value as ImageGenerationQuality } })} />
-            <Field label="并发"><input type="range" min="1" max="6" value={customImage.concurrency} onChange={(event) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: Number(event.target.value) } })} /></Field>
+            <SliderField label="并发" min={1} max={6} valueLabel={customImage.concurrency} value={customImage.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: data.value } })} />
           </>
         ) : null}
       </div>
@@ -587,10 +572,9 @@ export function TtsProfileManager({
           <strong>旁白服务档案</strong>
           <span>可保存火山引擎与 MiniMax 配音配置，启用一个作为任务旁白配置。</span>
         </div>
-        <button className="ghost-action" type="button" onClick={addProfile}>
-          <Plus size={15} />
+        <Button icon={<Plus size={15} />} onClick={addProfile}>
           新增配置
-        </button>
+        </Button>
       </div>
 
       <div className="profile-switcher-list">
@@ -618,9 +602,10 @@ export function TtsProfileManager({
                 {isActive ? (
                   <span className="profile-active-badge">启用中</span>
                 ) : (
-                  <button
-                    className="primary-action slim"
-                    type="button"
+                  <Button
+                    variant="primary"
+                    density="compact"
+                    icon={saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     aria-label={`启用旁白服务配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
@@ -629,19 +614,12 @@ export function TtsProfileManager({
                       void onActivate(profile.id!);
                     }}
                   >
-                    {saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
                     启用
-                  </button>
+                  </Button>
                 )}
-                <button className="icon-button" type="button" title="编辑" onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }}>
-                  <Palette size={14} />
-                </button>
-                <button className="icon-button" type="button" title="复制" onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }}>
-                  <Copy size={14} />
-                </button>
-                <button className="icon-button" type="button" title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }}>
-                  <XCircle size={14} />
-                </button>
+                <IconButton label="编辑" icon={<Palette size={14} />} onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }} />
+                <IconButton label="复制" icon={<Copy size={14} />} onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }} />
+                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
               </div>
             </article>
           );
@@ -683,26 +661,15 @@ export function TtsProfileManager({
                 <SecretInput label="音色列表访问密钥 ID" value={secrets.value(volcengineAccessKeyId)} configured={secrets.configured(volcengineAccessKeyId)} onChange={(value) => secrets.change(volcengineAccessKeyId, value)} onClear={() => secrets.change(volcengineAccessKeyId, null)} />
                 <SecretInput label="音色列表访问密钥 Secret" value={secrets.value(volcengineSecretAccessKeyId)} configured={secrets.configured(volcengineSecretAccessKeyId)} onChange={(value) => secrets.change(volcengineSecretAccessKeyId, value)} onClear={() => secrets.change(volcengineSecretAccessKeyId, null)} />
                 <div className="settings-inline-actions">
-                  <button className="ghost-action" type="button" disabled={loadingVolcengineSpeakers} onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}>
-                    {loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
+                  <Button icon={loadingVolcengineSpeakers ? <Loader2 className="spin" size={15} /> : <Search size={15} />} disabled={loadingVolcengineSpeakers} onClick={() => onRefreshVolcengineSpeakers(selectedProfile)}>
                     加载音色
-                  </button>
+                  </Button>
                   {volcengineSpeakerStatus ? <span>{volcengineSpeakerStatus}</span> : null}
                 </div>
               </>
             )}
-            <Field label="默认音色">
-              <div className="model-picker">
-                <select value={voiceSelection} onChange={(event) => updateVolcengineVoice(event.target.value === 'custom' ? '' : event.target.value)}>
-                  <option value="custom">自定义 voice_type</option>
-                  {availableVolcengineVoices.map((voice) => (
-                    <option key={voice.voiceType} value={voice.voiceType}>
-                      {voice.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </Field>
+            <SelectField label="默认音色" value={voiceSelection} onChange={(_, data) => updateVolcengineVoice(data.value === 'custom' ? '' : data.value)}
+              options={[{ value: 'custom', label: '自定义 voice_type' }, ...availableVolcengineVoices.map((voice) => ({ value: voice.voiceType, label: voice.label }))]} />
             {voiceSelection === 'custom' ? (
               <ConfigInput label="自定义 voice_type" value={volcengine.speaker} onChange={updateVolcengineVoice} />
             ) : null}
@@ -713,12 +680,8 @@ export function TtsProfileManager({
             <ProviderConfigNote title="MiniMax TTS" value="填写接口密钥、模型和音色 ID。" />
             <SecretInput label="MiniMax 接口密钥" value={secrets.value(minimaxApiKeyId)} configured={secrets.configured(minimaxApiKeyId)} onChange={(value) => secrets.change(minimaxApiKeyId, value)} onClear={() => secrets.change(minimaxApiKeyId, null)} />
             <ConfigInput label="MiniMax 模型" value={minimax.model} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, model: value } })} />
-            <Field label="MiniMax 音色 ID">
-              <select value={minimaxVoiceSelection} onChange={(event) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: event.target.value === 'custom' ? '' : event.target.value } })}>
-                {minimaxVoiceOptions.map((voice) => <option key={voice.id} value={voice.id}>{voice.label} · {voice.hint}</option>)}
-                <option value="custom">自定义 voice_id</option>
-              </select>
-            </Field>
+            <SelectField label="MiniMax 音色 ID" value={minimaxVoiceSelection} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: data.value === 'custom' ? '' : data.value } })}
+              options={[...minimaxVoiceOptions.map((voice) => ({ value: voice.id, label: `${voice.label} · ${voice.hint}` })), { value: 'custom', label: '自定义 voice_id' }]} />
             {minimaxVoiceSelection === 'custom' ? (
               <ConfigInput label="自定义 MiniMax 音色 ID" value={minimax.voiceId} onChange={(value) => updateSelectedProfile({ ...selectedProfile, minimax: { ...minimax, voiceId: value } })} />
             ) : null}

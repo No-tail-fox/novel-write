@@ -8,6 +8,8 @@ if (Invoke-Utf8Bootstrap -ScriptPath $PSCommandPath -ScriptArgs $args) {
 }
 
 Write-Host "[package] Building renderer"
+node "scripts/check-license-config.mjs"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node "node_modules/vite/bin/vite.js" build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -25,8 +27,8 @@ Write-Host "[package] Preparing bundled Python runtime"
 & (Join-Path $Root "scripts\prepare-python-runtime.ps1")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "[package] Creating Windows unpacked package"
-node "node_modules/electron-builder/cli.js" --win --x64 --dir --publish=never
+Write-Host "[package] Creating Windows installer and unpacked package"
+node "node_modules/electron-builder/cli.js" --win nsis --x64 --publish=never
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $Version = (Get-Content -LiteralPath (Join-Path $Root "package.json") -Raw | ConvertFrom-Json).version
@@ -41,6 +43,7 @@ if (!(Test-Path -LiteralPath (Join-Path $UnpackedDir "StoryDream.exe"))) {
 }
 
 if (Test-Path -LiteralPath $PortableDir) {
+  if ([IO.Path]::GetFullPath($PortableDir) -ne (Join-Path ([IO.Path]::GetFullPath($Root)) 'release\StoryDream-Portable')) { throw 'Unsafe portable directory.' }
   Remove-Item -LiteralPath $PortableDir -Recurse -Force
 }
 if (Test-Path -LiteralPath $ZipPath) {
@@ -48,6 +51,7 @@ if (Test-Path -LiteralPath $ZipPath) {
 }
 Get-ChildItem -LiteralPath $ReleaseDir -Filter "StoryDream-Portable-*.exe" | Remove-Item -Force
 
+if ([IO.Path]::GetFullPath($UnpackedDir) -ne (Join-Path ([IO.Path]::GetFullPath($Root)) 'release\win-unpacked')) { throw 'Unsafe unpacked directory.' }
 Move-Item -LiteralPath $UnpackedDir -Destination $PortableDir
 
 Write-Host "[package] Creating portable zip"

@@ -152,6 +152,7 @@ export function requiredVideoCapabilities(
   if (referenceVideoPaths.length > 0) capabilities.push('reference-video');
   if (referenceAudioPaths.length > 0) capabilities.push('reference-audio');
   if (capabilities.length === 0) capabilities.push('t2v');
+  if (request.generateAudio) capabilities.push('synchronized-audio');
   return capabilities;
 }
 
@@ -387,6 +388,7 @@ async function requestJsonWithRetries(
     try {
       const response = await fetchWithTimeout(url, {
         ...init,
+        generation: init.method === 'POST',
         timeoutMs: provider.timeoutMs,
         timeoutLabel: label,
         maxBytes: 4 * 1024 * 1024,

@@ -550,8 +550,8 @@ describe('file database', () => {
       expect(savedPipeline.compositions).toEqual([{
         ...pipeline.compositions[0],
         captions: [
-          { id: '1-0', text: '第一条字幕', startSec: 0, durationSec: 0.8 },
-          { id: '1-1', text: '第二条字幕', startSec: 0.8, durationSec: 1.2 },
+          { id: '1-0', text: '第一条字幕', startSec: 0, durationSec: 0.8, source: 'estimated', confidence: 0.35 },
+          { id: '1-1', text: '第二条字幕', startSec: 0.8, durationSec: 1.2, source: 'estimated', confidence: 0.35 },
         ],
         rev: 2,
       }]);
@@ -599,8 +599,8 @@ describe('file database', () => {
       expect(parseHtmlVideoPipelineData(afterFailure?.pipelineData).compositions[0]).toMatchObject({
         rev: 2,
         captions: [
-          { id: '1-0', text: '第一条字幕', startSec: 0, durationSec: 0.8 },
-          { id: '1-1', text: '第二条字幕', startSec: 0.8, durationSec: 1.2 },
+          { id: '1-0', text: '第一条字幕', startSec: 0, durationSec: 0.8, source: 'estimated', confidence: 0.35 },
+          { id: '1-1', text: '第二条字幕', startSec: 0.8, durationSec: 1.2, source: 'estimated', confidence: 0.35 },
         ],
       });
     } finally {

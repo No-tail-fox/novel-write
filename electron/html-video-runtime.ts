@@ -17,7 +17,7 @@ import {
   type HtmlVideoExportInput,
   type HtmlVideoExportResult,
 } from '../src/shared/html-video';
-import { buildHtmlVideoCaptionCues } from '../src/shared/html-video-captions';
+import { resolveHtmlVideoCaptionCues } from '../src/shared/html-video-captions';
 import type {
   HtmlVideoPreviewInput,
   HtmlVideoPreviewOutput,
@@ -78,6 +78,8 @@ export interface ElectronHtmlVideoRuntimeOptions {
   taskTitle: string;
   fps?: number;
   maxLongEdge?: number;
+  previewMaxLongEdge?: number;
+  renderMaxLongEdge?: number;
   bgmPath?: string;
   signal?: AbortSignal;
   renderer: HtmlVideoRuntimeRenderer;
@@ -2104,7 +2106,8 @@ function htmlVideoOutputTooLarge(): AppError {
 
 export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntimeOptions): ElectronHtmlVideoRuntime {
   const fps = clampFps(options.fps ?? defaultFps);
-  const maxLongEdge = options.maxLongEdge ?? defaultMaxLongEdge;
+  const maxLongEdge = options.previewMaxLongEdge ?? options.maxLongEdge ?? defaultMaxLongEdge;
+  const renderMaxLongEdge = options.renderMaxLongEdge ?? options.maxLongEdge ?? defaultMaxLongEdge;
   let durationProbeTail = Promise.resolve();
   const renderArtifactProofs = new WeakMap<HtmlVideoOutput, HtmlVideoRenderArtifactProof>();
 
@@ -2169,7 +2172,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
         ensureTaskLocalDirectory(workDir, ['preview-thumbnails']),
       ]);
       return withHtmlVideoRuntimeStage(options.taskDirectory, 'preview', async (stage, stageDir) => {
-        const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, undefined, undefined);
+        const composition = buildRuntimeComposition(options, localInput, fps, localInput.config.previewLongEdge ?? maxLongEdge, stageDir, undefined, undefined);
         const [stageHtmlDir, stageThumbnailDir] = await Promise.all([
           ensureTaskLocalDirectory(stageDir, ['html-scenes']),
           ensureTaskLocalDirectory(stageDir, ['preview-thumbnails']),
@@ -2251,7 +2254,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           canvas: { w: composition.canvas_w, h: composition.canvas_h },
           audio: { src: item.voice.src, durationSec: item.voice.durationSec },
           background: { src: item.background.src },
-          captions: captionTimeline(item.sourceScene.captions, item.durationSec, item.sceneId),
+          captions: captionTimeline(item.sourceScene.captions, item.durationSec, item.sceneId, item.voice.captionCues),
           htmlPath: publishedFiles[index * 2 + 2].path,
           thumbnailPath: publishedFiles[index * 2 + 3].path,
           rev: 1,
@@ -2275,7 +2278,7 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
       await validateHtmlVideoTaskDirectory(options.taskDirectory);
       throwIfAborted(signal);
       return withHtmlVideoRuntimeStage(options.taskDirectory, 'render', async (stage, stageDir) => {
-        const composition = buildRuntimeComposition(options, localInput, fps, maxLongEdge, stageDir, bgmPath, coverPath);
+        const composition = buildRuntimeComposition(options, localInput, fps, localInput.config.renderLongEdge ?? renderMaxLongEdge, stageDir, bgmPath, coverPath);
         composition.totalDurationS = expectedHtmlVideoOutputDuration(composition);
         composition.scenes.forEach((scene) => {
           scene.html = savedSources.get(scene.sceneId) ?? scene.html;
@@ -2508,7 +2511,7 @@ function buildRuntimeComposition(
     foregroundImages: input.assets
       .filter((asset) => asset.kind === 'fg')
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src, slot: asset.slot })),
-    narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src })),
+    narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src, captionCues: voice.captionCues })),
     coverPath,
     openingSequence: coverPath ? {
       enabled: true,
@@ -2549,12 +2552,14 @@ async function resolveTaskLocalRuntimeMedia(
   return { ...input, assets, voices };
 }
 
-function captionTimeline(captions: string[], durationSec: number, sceneIndex: number) {
-  return buildHtmlVideoCaptionCues(captions, durationSec, sceneIndex).map((cue) => ({
+function captionTimeline(captions: string[], durationSec: number, sceneIndex: number, timedCues?: import('../src/shared/types').HtmlVideoTimedCaptionCue[]) {
+  return resolveHtmlVideoCaptionCues(captions, durationSec, sceneIndex, timedCues).map((cue) => ({
     id: cue.id,
     text: cue.text,
     startSec: cue.startSec,
     durationSec: cue.durationSec,
+    source: cue.source,
+    confidence: cue.confidence,
   }));
 }
 

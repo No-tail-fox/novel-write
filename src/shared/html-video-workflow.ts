@@ -2,6 +2,8 @@ import { AppError } from './app-error';
 import type {
   CoverMetadata,
   CreateTaskInput,
+  BackgroundRemovalMetadata,
+  BackgroundRemovalMethod,
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
   HtmlVideoConfigChange,
@@ -12,6 +14,10 @@ import type {
   HtmlVideoPipelineDataV2,
   HtmlVideoPipelineStep,
   HtmlVideoScenePlan,
+  HtmlVideoElementAnchor,
+  HtmlVideoElementFit,
+  HtmlVideoElementGeometry,
+  HtmlVideoElementRole,
   HtmlVideoSceneChange,
   HtmlVideoSceneStructureChange,
   HtmlVideoStepState,
@@ -901,6 +907,7 @@ function parseScenePlan(
         MAX_HTML_VIDEO_SOURCE_CHARS,
         textBudget,
       ),
+      ...(element.layout === undefined ? {} : { layout: parseHtmlVideoElementLayout(element.layout, `${field}.elements[${slot}].layout`) }),
     };
   });
   if (new Set(parsedElements.map((element) => element.slot)).size !== parsedElements.length) {
@@ -918,6 +925,8 @@ function parseScenePlan(
   }
 
   return {
+    ...(scene.compositionVersion === undefined ? {} : scene.compositionVersion === 2 ? { compositionVersion: 2 as const } : (() => { throw invalidPipeline(`${field}.compositionVersion is invalid`); })()),
+    ...(scene.beats === undefined ? {} : { beats: parseHtmlSemanticBeats(scene.beats, `${field}.beats`, parsedElements.map(element => element.slot), captions.length) }),
     index,
     narration,
     title,
@@ -935,12 +944,69 @@ function parseScenePlan(
   };
 }
 
+function parseHtmlSemanticBeats(value: unknown, field: string, slots: number[], cueCount: number): NonNullable<HtmlVideoScenePlan['beats']> {
+  const beats = requireBoundedArray(value, field, 64).map((value, i) => {
+    const beat = requireRecord(value, `${field}[${i}]`);
+    if (!['reveal', 'evidence', 'compare', 'path', 'focus'].includes(String(beat.purpose)) || !['reveal', 'emphasize', 'dim', 'exit'].includes(String(beat.action))) throw invalidPipeline(`${field}[${i}] action or purpose is invalid`);
+    const cueIndex = requireNonNegativeInteger(beat.cueIndex, `${field}[${i}].cueIndex`);
+    if (cueIndex >= cueCount) throw invalidPipeline(`${field}[${i}] references a missing cue`);
+    const targetSlots = requireBoundedArray(beat.targetSlots, `${field}[${i}].targetSlots`, 4).map(slot => requireNonNegativeInteger(slot, field));
+    if (targetSlots.some(slot => !slots.includes(slot))) throw invalidPipeline(`${field}[${i}] references a missing slot`);
+    return { id: requireBoundedString(beat.id, field, 128), purpose: beat.purpose as NonNullable<HtmlVideoScenePlan['beats']>[number]['purpose'], action: beat.action as NonNullable<HtmlVideoScenePlan['beats']>[number]['action'], cueIndex, targetSlots, durationSec: requiredBoundedNumber(beat.durationSec, field, .05, 5) };
+  });
+  if (new Set(beats.map(beat => beat.id)).size !== beats.length) throw invalidPipeline(`${field} contains duplicate ids`);
+  return beats;
+}
+
+function parseHtmlVideoElementLayout(value: unknown, field: string): NonNullable<HtmlVideoScenePlan['elements'][number]['layout']> {
+  const layout = requireRecord(value, field);
+  const role = layout.role;
+  if (role !== 'subject' && role !== 'supporting' && role !== 'annotation' && role !== 'decoration') {
+    throw invalidPipeline(`${field}.role is invalid`);
+  }
+  return {
+    role: role as HtmlVideoElementRole,
+    landscape: parseHtmlVideoElementGeometry(layout.landscape, `${field}.landscape`),
+    portrait: parseHtmlVideoElementGeometry(layout.portrait, `${field}.portrait`),
+  };
+}
+
+function parseHtmlVideoElementGeometry(value: unknown, field: string): HtmlVideoElementGeometry {
+  const geometry = requireRecord(value, field);
+  const allowed = ['x', 'y', 'width', 'height', 'fit', 'anchor', 'zIndex'];
+  const unknownKey = Object.keys(geometry).find((key) => !allowed.includes(key));
+  if (unknownKey) throw invalidPipeline(`${field}.${unknownKey} is not allowed`);
+  const x = requiredBoundedNumber(geometry.x, `${field}.x`, 0, 100);
+  const y = requiredBoundedNumber(geometry.y, `${field}.y`, 0, 100);
+  const width = requiredBoundedNumber(geometry.width, `${field}.width`, 1, 100);
+  const height = requiredBoundedNumber(geometry.height, `${field}.height`, 1, 100);
+  const zIndex = requireNonNegativeInteger(geometry.zIndex, `${field}.zIndex`);
+  if (zIndex > 20) throw invalidPipeline(`${field}.zIndex exceeds the maximum of 20`);
+  if (x + width > 100.01 || y + height > 100.01) throw invalidPipeline(`${field} extends beyond its canvas`);
+  if (geometry.fit !== 'contain' && geometry.fit !== 'cover') throw invalidPipeline(`${field}.fit is invalid`);
+  const anchors: HtmlVideoElementAnchor[] = [
+    'left top', 'center top', 'right top', 'left center', 'center center', 'right center',
+    'left bottom', 'center bottom', 'right bottom',
+  ];
+  if (!anchors.includes(geometry.anchor as HtmlVideoElementAnchor)) throw invalidPipeline(`${field}.anchor is invalid`);
+  return { x, y, width, height, fit: geometry.fit as HtmlVideoElementFit, anchor: geometry.anchor as HtmlVideoElementAnchor, zIndex };
+}
+
+function requiredBoundedNumber(value: unknown, field: string, minimum: number, maximum: number): number {
+  const parsed = optionalBoundedNumber(value, field, minimum, maximum);
+  if (parsed === undefined) throw invalidPipeline(`${field} is required`);
+  return parsed;
+}
+
 function parseAsset(value: unknown, field: string): HtmlVideoAsset {
   const asset = requireRecord(value, field);
   if (asset.kind !== 'bg' && asset.kind !== 'fg') throw invalidPipeline(`${field}.kind is invalid`);
   if (asset.transparency !== undefined && asset.transparency !== 'transparent' && asset.transparency !== 'opaque') {
     throw invalidPipeline(`${field}.transparency is invalid`);
   }
+  const backgroundRemoval = asset.backgroundRemoval === undefined
+    ? undefined
+    : parseBackgroundRemoval(asset.backgroundRemoval, `${field}.backgroundRemoval`);
   return {
     sceneIndex: requirePositiveInteger(asset.sceneIndex, `${field}.sceneIndex`),
     kind: asset.kind,
@@ -948,17 +1014,87 @@ function parseAsset(value: unknown, field: string): HtmlVideoAsset {
     src: requireBoundedString(asset.src, `${field}.src`, MAX_HTML_VIDEO_PATH_CHARS),
     ...(optionalBoundedString(asset.prompt, `${field}.prompt`, MAX_HTML_VIDEO_SOURCE_CHARS) === undefined ? {} : { prompt: String(asset.prompt) }),
     ...(asset.transparency === undefined ? {} : { transparency: asset.transparency }),
+    ...(backgroundRemoval ? { backgroundRemoval } : {}),
     ...(optionalNonNegativeInteger(asset.sizeBytes, `${field}.sizeBytes`) === undefined ? {} : { sizeBytes: Number(asset.sizeBytes) }),
   };
 }
 
+function parseBackgroundRemoval(value: unknown, field: string): BackgroundRemovalMetadata {
+  const metadata = requireRecord(value, field);
+  if (metadata.method !== 'native-alpha' && metadata.method !== 'green-key' && metadata.method !== 'onnx') {
+    throw invalidPipeline(`${field}.method is invalid`);
+  }
+  if (metadata.quality !== 'passed' && metadata.quality !== 'warning' && metadata.quality !== 'failed') {
+    throw invalidPipeline(`${field}.quality is invalid`);
+  }
+  const readOptional = (key: string, maximum: number) => optionalBoundedString(metadata[key], `${field}.${key}`, maximum);
+  const transparentFraction = optionalBoundedNumber(metadata.transparentFraction, `${field}.transparentFraction`, 0, 1);
+  const foregroundFraction = optionalBoundedNumber(metadata.foregroundFraction, `${field}.foregroundFraction`, 0, 1);
+  const edgeFraction = optionalBoundedNumber(metadata.edgeFraction, `${field}.edgeFraction`, 0, 1);
+  if (transparentFraction === undefined || foregroundFraction === undefined || edgeFraction === undefined) {
+    throw invalidPipeline(`${field} alpha metrics are required`);
+  }
+  const result: BackgroundRemovalMetadata = {
+    method: metadata.method as BackgroundRemovalMethod,
+    transparentFraction,
+    foregroundFraction,
+    edgeFraction,
+    quality: metadata.quality,
+  };
+  const model = readOptional('model', 1024);
+  const modelVersion = readOptional('modelVersion', 1024);
+  const modelSha256 = readOptional('modelSha256', 128);
+  const sourceSha256 = readOptional('sourceSha256', 128);
+  const outputSha256 = readOptional('outputSha256', 128);
+  const errorCode = readOptional('errorCode', 256);
+  const errorMessage = readOptional('errorMessage', MAX_HTML_VIDEO_SOURCE_CHARS);
+  if (model !== undefined) result.model = model;
+  if (modelVersion !== undefined) result.modelVersion = modelVersion;
+  if (modelSha256 !== undefined) result.modelSha256 = modelSha256;
+  if (sourceSha256 !== undefined) result.sourceSha256 = sourceSha256;
+  if (outputSha256 !== undefined) result.outputSha256 = outputSha256;
+  if (errorCode !== undefined) result.errorCode = errorCode;
+  if (errorMessage !== undefined) result.errorMessage = errorMessage;
+  return result;
+}
+
 function parseVoice(value: unknown, field: string): HtmlVideoVoiceClip {
   const voice = requireRecord(value, field);
+  const captionCues = voice.captionCues === undefined ? undefined : requireBoundedArray(
+    voice.captionCues,
+    `${field}.captionCues`,
+    MAX_HTML_VIDEO_CAPTIONS_PER_SCENE,
+  ).map((item, index) => {
+    const cue = requireRecord(item, `${field}.captionCues[${index}]`);
+    const source = cue.source;
+    if (source !== 'tts' && source !== 'asr' && source !== 'estimated') {
+      throw invalidPipeline(`${field}.captionCues[${index}].source is invalid`);
+    }
+    const confidence = requiredBoundedNumber(cue.confidence, `${field}.captionCues[${index}].confidence`, 0, 1);
+    const startSec = requireNonNegativeNumber(cue.startSec, `${field}.captionCues[${index}].startSec`);
+    const endSec = requireNonNegativeNumber(cue.endSec, `${field}.captionCues[${index}].endSec`);
+    if (endSec <= startSec) throw invalidPipeline(`${field}.captionCues[${index}] must have positive duration`);
+    return {
+      text: requireBoundedString(cue.text, `${field}.captionCues[${index}].text`, MAX_HTML_VIDEO_SOURCE_CHARS),
+      startSec,
+      endSec,
+      source: source as 'tts' | 'asr' | 'estimated',
+      confidence,
+      ...(cue.words === undefined ? {} : { words: requireBoundedArray(cue.words, `${field}.words`, 1000).map((value, wordIndex) => {
+        const word = requireRecord(value, `${field}.words[${wordIndex}]`);
+        const wordStart = requireNonNegativeNumber(word.startSec, field);
+        const wordEnd = requireNonNegativeNumber(word.endSec, field);
+        if (wordStart < startSec || wordEnd > endSec || wordEnd <= wordStart) throw invalidPipeline(`${field}.words time is invalid`);
+        return { text: requireBoundedString(word.text, field, 512), startSec: wordStart, endSec: wordEnd };
+      }) }),
+    };
+  });
   return {
     sceneIndex: requirePositiveInteger(voice.sceneIndex, `${field}.sceneIndex`),
     src: requireBoundedString(voice.src, `${field}.src`, MAX_HTML_VIDEO_PATH_CHARS),
     durationSec: requireNonNegativeNumber(voice.durationSec, `${field}.durationSec`),
     ...(optionalBoundedString(voice.text, `${field}.text`, MAX_HTML_VIDEO_SOURCE_CHARS) === undefined ? {} : { text: String(voice.text) }),
+    ...(captionCues === undefined ? {} : { captionCues }),
     ...(optionalNonNegativeInteger(voice.sizeBytes, `${field}.sizeBytes`) === undefined ? {} : { sizeBytes: Number(voice.sizeBytes) }),
   };
 }
@@ -1001,6 +1137,12 @@ function parseComposition(value: unknown, field: string, textBudget: TextBudget)
         ),
         startSec: requireNonNegativeNumber(caption.startSec, `${field}.captions[${index}].startSec`),
         durationSec: requireNonNegativeNumber(caption.durationSec, `${field}.captions[${index}].durationSec`),
+        source: caption.source === undefined ? 'estimated' : caption.source === 'tts' || caption.source === 'asr' || caption.source === 'estimated'
+          ? caption.source
+          : (() => { throw invalidPipeline(`${field}.captions[${index}].source is invalid`); })(),
+        confidence: caption.confidence === undefined
+          ? 0.35
+          : requiredBoundedNumber(caption.confidence, `${field}.captions[${index}].confidence`, 0, 1),
       };
     }),
     ...(optionalBoundedString(composition.htmlPath, `${field}.htmlPath`, MAX_HTML_VIDEO_PATH_CHARS) === undefined ? {} : { htmlPath: String(composition.htmlPath) }),

@@ -105,8 +105,15 @@ const musicLabSource = 'src/features/labs/MusicLabPage.tsx';
 const musicOperationSource = 'src/features/labs/MusicSourceTools.tsx';
 const musicVoiceSource = 'src/features/labs/MusicVoicePanel.tsx';
 const musicEnhancedSource = 'src/features/labs/MusicEnhancedPanel.tsx';
+const libraryPageSource = 'src/features/asset-library/AssetLibraryPage.tsx';
+const libraryBehavior = { disabled: 'disabled={busy', loading: 'busy', error: 'role="alert"' };
+const libraryTest = 'tests/asset-library.test.ts';
 
 export const rendererCommandInventory = {
+  saveLibraryAsset: command(owner('person-assets', 'src/features/asset-library/LibrarySaveDialog.tsx', 'save', 'onClick={() => void save()}', '保存素材', libraryTest, undefined, libraryBehavior)),
+  updateLibraryAsset: command(owner('person-assets', libraryPageSource, 'saveMetadata', 'onClick={() => void saveMetadata().catch(() => undefined)}', '保存信息', libraryTest, undefined, libraryBehavior)),
+  recycleLibraryAsset: command(owner('person-assets', libraryPageSource, 'recycle', 'onClick={() => void recycle()}', '移入回收站', libraryTest, undefined, libraryBehavior)),
+  restoreLibraryAsset: command(owner('person-assets', libraryPageSource, 'restore', 'onClick={() => void restore()}', '恢复素材', libraryTest, undefined, libraryBehavior)),
   generateMusicLab: command(owner('music-lab', musicLabSource, 'generateMusic', 'onClick={() => void generateMusic()}', '生成音乐', musicLabTest)),
   refreshMusicLabRecord: command(owner('music-lab', musicLabSource, 'refreshSelected', 'onClick={() => void refreshSelected()}', '刷新音乐作品', musicLabTest)),
   generateMusicLabLyrics: command(owner('music-lab', musicLabSource, 'generateLyrics', 'onClick={() => void generateLyrics()}', '生成歌词', musicLabTest)),
@@ -1112,6 +1119,7 @@ export const rendererCommandInventory = {
   ),
   selectLocalFolder: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'pickJianyingDraftPath', 'onClick={pickJianyingDraftPath}', '选择目录', productShellTest)),
   selectLocalImage: command(
+    owner('person-assets', libraryPageSource, 'importImage', 'onClick={() => void importImage()}', '导入图片', 'tests/asset-library-ui.test.ts', undefined, libraryBehavior),
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'selectImageLabReferenceImage', 'onClick={selectImageLabReferenceImage}', '添加参考图', productShellTest, undefined, { disabled: 'disabled={imageLabAction.busy}', loading: 'imageLabAction.busy', error: 'InlineActionFeedback' }),
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest),
     owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('first')", '首帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsFirstFrame}', loading: 'pickingImage', error: 'submitError' }),

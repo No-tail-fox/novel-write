@@ -1,0 +1,19 @@
+.license-settings { max-width: 900px; width: 100%; min-width: 0; margin: 0 auto; padding: 8px 24px 32px; color: var(--shell-text); }
+.license-settings section { padding: 20px 0; border-bottom: 1px solid var(--shell-border); }
+.license-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.license-heading h2 { margin: 0; font-size: 18px; }
+.license-heading span, .license-message { color: var(--shell-muted); font-size: 13px; }
+.license-settings h3 { font-size: 14px; margin: 20px 0 10px; }
+.license-settings form { max-width: 680px; }
+.license-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.license-details { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px 16px; margin: 24px 0; font-size: 13px; }
+.license-details dt { color: var(--shell-muted); }
+.license-details dd { margin: 0; overflow-wrap: anywhere; }
+.license-device-id { font-family: monospace; }
+.license-devices { padding: 0; margin: 0; list-style: none; }
+.license-devices li { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 10px 0; font-size: 13px; border-bottom: 1px solid var(--shell-border); }
+.license-devices li span { color: var(--shell-muted); }
+.license-release-notes { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.license-progress { display: grid; gap: 8px; font-size: 13px; }
+.license-progress progress { width: 100%; accent-color: var(--shell-accent); }
+@media (max-width: 760px) { .license-settings { padding: 0 12px 24px; } .license-details { grid-template-columns: 90px minmax(0, 1fr); gap: 10px; } }

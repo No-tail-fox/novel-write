@@ -1,13 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, FileText, FolderOpen, MessageCircle, Paperclip, Plus, Search, Send, Sparkles, UserRound } from 'lucide-react';
+import { Bot, Check, Copy, FileText, FolderOpen, MessageCircle, Paperclip, Plus, Save, Search, Send, Sparkles, UserRound, X } from 'lucide-react';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { RendererAppState as AppState } from '../../app/route-types';
 import { Button, IconButton, SegmentedControl, TextAreaField, TextField, Tooltip } from '../../ui';
 import './conversation-workbench.css';
+import { LibraryPicker } from '../asset-library/LibraryPicker';
+import { LibrarySaveDialog, type LibraryDraft } from '../asset-library/LibrarySaveDialog';
 
 type ChatRole = 'assistant' | 'user';
 type ChatMessage = { id: string; role: ChatRole; text: string; time: string; chips?: string[] };
 type ChatSession = { id: string; title: string; meta: string; active?: boolean };
+type ChatSource = { id: string; title: string; text: string };
 
 export function ConversationWorkbenchPage({ api, state }: { api: StoryDreamApi; state: AppState }) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -17,9 +20,13 @@ export function ConversationWorkbenchPage({ api, state }: { api: StoryDreamApi; 
   const [mode, setMode] = useState<'chat' | 'outline'>('chat');
   const model = state.config.llm.model || '当前 LLM';
   const [isThinking, setIsThinking] = useState(false);
+  const [sourceSessionId, setSourceSessionId] = useState('');
+  const [sessionSources, setSessionSources] = useState<Record<string, ChatSource[]>>({});
+  const [libraryDraft, setLibraryDraft] = useState<LibraryDraft | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const activeSession = useMemo(() => sessions.find((session) => session.active) ?? sessions[0], [sessions]);
   const messages = activeSession ? sessionMessages[activeSession.id] ?? [] : [];
+  const sources = activeSession ? sessionSources[activeSession.id] ?? [] : [];
   const projectTitle = state.tasks[0]?.title || '未选择项目';
 
   function selectSession(id: string) {
@@ -52,7 +59,7 @@ export function ConversationWorkbenchPage({ api, state }: { api: StoryDreamApi; 
       const result = await api.composeResearchCopy({
         keyword: nextText,
         extraRequirements: `当前项目：${projectTitle}\n对话模式：${mode === 'outline' ? '结构化输出' : '自由对话'}\n请结合以下对话历史回答用户，直接给出可使用的中文内容，不要重复说明任务：\n${history}`,
-        selectedSources: [],
+        selectedSources: sources.map((source) => ({ source: '素材库', title: source.title, url: '', content: source.text })),
         useBuiltinKnowledge: true,
         targetLength: mode === 'outline' ? 1200 : 900,
       });
@@ -88,15 +95,15 @@ export function ConversationWorkbenchPage({ api, state }: { api: StoryDreamApi; 
         <div className="conversation-thread-title"><div className="conversation-avatar assistant"><Bot size={17} /></div><div><h2>{activeSession?.title ?? '对话工作台'}</h2><span><span className="status-dot" /> {activeSession ? `项目上下文已连接 · ${state.config.llm.model || '未配置模型'}` : '新建对话后连接项目上下文'}</span></div></div>
         <div className="conversation-thread-actions"><Button density="compact" variant="secondary" icon={<FolderOpen size={14} />}>关联项目</Button><IconButton label="更多操作" icon={<Copy size={15} />} density="compact" variant="subtle" /></div>
       </header>
-      {activeSession ? <div className="conversation-context-strip"><FileText size={14} /><span>当前上下文</span><strong>{projectTitle}</strong><span className="conversation-context-count">4 个资料</span><IconButton label="移除上下文" icon={<span aria-hidden="true">×</span>} density="compact" variant="subtle" /></div> : null}
+      {activeSession ? <div className="conversation-context-strip"><FileText size={14} /><span>当前上下文</span><strong>{projectTitle}</strong><span className="conversation-context-count">{sources.length} 个资料</span>{sources.length ? <div className="conversation-source-list" role="region" aria-label="已添加资料" tabIndex={0}>{sources.map((source) => <span className="conversation-source-snapshot" key={source.id}><span title={source.title}>{source.title}</span><IconButton label={`移除资料：${source.title}`} icon={<X size={12} />} density="compact" variant="subtle" onClick={() => setSessionSources((current) => ({ ...current, [activeSession.id]: (current[activeSession.id] || []).filter((item) => item.id !== source.id) }))} /></span>)}</div> : null}</div> : null}
       <div className="conversation-messages" role="log" aria-live="polite">
-        {messages.length === 0 ? <div className="conversation-empty"><div className="conversation-empty-icon"><Sparkles size={22} /></div><strong>{activeSession ? '从一个问题开始' : '开始一个项目对话'}</strong><span>{activeSession ? '围绕项目资料提问，助手会把结果整理成可直接使用的创作素材。' : '先新建一个对话，再把项目问题、文案或分镜交给助手。'}</span>{!activeSession ? <Button density="compact" variant="primary" icon={<Plus size={14} />} onClick={createSession}>新建对话</Button> : null}</div> : messages.map((message) => <MessageBubble key={message.id} message={message} onAction={sendMessage} />)}
+        {messages.length === 0 ? <div className="conversation-empty"><div className="conversation-empty-icon"><Sparkles size={22} /></div><strong>{activeSession ? '从一个问题开始' : '开始一个项目对话'}</strong><span>{activeSession ? '围绕项目资料提问，助手会把结果整理成可直接使用的创作素材。' : '先新建一个对话，再把项目问题、文案或分镜交给助手。'}</span>{!activeSession ? <Button density="compact" variant="primary" icon={<Plus size={14} />} onClick={createSession}>新建对话</Button> : null}</div> : messages.map((message) => <MessageBubble key={message.id} message={message} onAction={sendMessage} onSave={() => setLibraryDraft({ kind: 'text', title: message.text.slice(0, 60), text: message.text, source: { kind: 'conversation', id: message.id } })} />)}
         {isThinking ? <div className="conversation-message-row assistant"><div className="conversation-avatar assistant"><Bot size={16} /></div><div className="conversation-thinking"><span /><span /><span /></div></div> : null}
       </div>
       <div className={`conversation-composer ${activeSession ? '' : 'is-disabled'}`}>
         <div className="conversation-composer-toolbar"><SegmentedControl label="对话模式" value={mode} onChange={(value) => setMode(value as 'chat' | 'outline')} options={[{ value: 'chat', label: '自由对话' }, { value: 'outline', label: '结构化输出' }]} /><span className="conversation-composer-hint">Enter 发送 · Shift + Enter 换行</span></div>
         <TextAreaField ref={composerRef} label="" aria-label="输入消息" placeholder={activeSession ? '问问项目、文案或分镜……' : '新建对话后开始输入'} value={draft} disabled={!activeSession} onChange={(_, data) => setDraft(data.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} resize="vertical" />
-        <div className="conversation-composer-actions"><Button density="compact" variant="subtle" icon={<Paperclip size={14} />} disabled={!activeSession}>添加资料</Button><span className="conversation-composer-spacer" /><Button density="compact" variant="primary" icon={<Send size={14} />} disabled={!activeSession || !draft.trim() || isThinking} onClick={() => void sendMessage()}>发送</Button></div>
+        <div className="conversation-composer-actions"><Button density="compact" variant="subtle" icon={<Paperclip size={14} />} disabled={!activeSession || isThinking || sources.length >= 12} onClick={() => setSourceSessionId(activeSession?.id || '')}>从素材库添加资料</Button><span className="conversation-composer-spacer" /><Button density="compact" variant="primary" icon={<Send size={14} />} disabled={!activeSession || !draft.trim() || isThinking} onClick={() => void sendMessage()}>发送</Button></div>
       </div>
     </section>
 
@@ -104,12 +111,18 @@ export function ConversationWorkbenchPage({ api, state }: { api: StoryDreamApi; 
       <div className="conversation-inspector-heading"><div><span className="eyebrow">ASSISTANT</span><h2>工作台设置</h2></div><span className="conversation-online"><span className="status-dot" /> 在线</span></div>
       <section className="conversation-inspector-section"><h3>当前模型</h3><div className="conversation-model-card"><Bot size={15} /><div><strong>{model}</strong><small>跟随系统设置中的 LLM 配置</small></div></div><div className="conversation-model-meta"><span>上下文窗口</span><strong>128K</strong><span>温度</span><strong>0.7</strong></div></section>
       <section className="conversation-inspector-section"><div className="conversation-section-title"><h3>输出偏好</h3><span>仅影响当前对话</span></div><div className="conversation-preference-row"><span>回答风格</span><strong>清晰 · 有观点</strong></div><div className="conversation-preference-row"><span>默认语言</span><strong>简体中文</strong></div></section>
-      <div className="conversation-inspector-footer"><Check size={14} /><span>自动保存已开启</span></div>
+      <div className="conversation-inspector-footer"><Check size={14} /><span>会话保留在当前工作区</span></div>
     </aside>
+    {sourceSessionId ? <LibraryPicker api={api} kind="text" title="选择对话资料" actionLabel="添加到对话" onClose={() => setSourceSessionId('')} onChoose={(selection) => {
+      if (!sessions.some((session) => session.id === sourceSessionId) || !selection.text) throw new Error('对话或文本已不可用。');
+      const source: ChatSource = { id: selection.libraryId || crypto.randomUUID(), title: selection.title, text: selection.text };
+      setSessionSources((current) => ({ ...current, [sourceSessionId]: [...(current[sourceSessionId] || []).filter((item) => item.id !== source.id), source] }));
+    }} /> : null}
+    {libraryDraft ? <LibrarySaveDialog api={api} draft={libraryDraft} onClose={() => setLibraryDraft(null)} /> : null}
   </div>;
 }
 
-function MessageBubble({ message, onAction }: { message: ChatMessage; onAction: (text: string) => void }) {
+function MessageBubble({ message, onAction, onSave }: { message: ChatMessage; onAction: (text: string) => void; onSave: () => void }) {
   const isAssistant = message.role === 'assistant';
-  return <article className={`conversation-message-row ${isAssistant ? 'assistant' : 'user'}`}><div className={`conversation-avatar ${isAssistant ? 'assistant' : 'user'}`}>{isAssistant ? <Bot size={16} /> : <UserRound size={16} />}</div><div className="conversation-message-content"><div className="conversation-message-meta"><strong>{isAssistant ? 'StoryDream 助手' : '你'}</strong><time>{message.time}</time></div><div className="conversation-bubble">{message.text}</div>{message.chips?.length ? <div className="conversation-message-actions">{message.chips.map((chip) => <Button key={chip} density="compact" variant="subtle" onClick={() => onAction(chip)}>{chip}</Button>)}</div> : null}</div></article>;
+  return <article className={`conversation-message-row ${isAssistant ? 'assistant' : 'user'}`}><div className={`conversation-avatar ${isAssistant ? 'assistant' : 'user'}`}>{isAssistant ? <Bot size={16} /> : <UserRound size={16} />}</div><div className="conversation-message-content"><div className="conversation-message-meta"><strong>{isAssistant ? 'StoryDream 助手' : '你'}</strong><time>{message.time}</time><IconButton label="存入素材库" icon={<Save size={14} />} density="compact" variant="subtle" onClick={onSave} /></div><div className="conversation-bubble">{message.text}</div>{message.chips?.length ? <div className="conversation-message-actions">{message.chips.map((chip) => <Button key={chip} density="compact" variant="subtle" onClick={() => onAction(chip)}>{chip}</Button>)}</div> : null}</div></article>;
 }

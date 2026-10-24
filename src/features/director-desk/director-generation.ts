@@ -13,7 +13,8 @@ import type { ProductionAudioClip } from '../../shared/production-audio';
 import { motionComicDialogueInputMatches, type MotionComicDialogueInput } from '../../shared/motion-comic-dialogue';
 import { invalidateSubtitleAlignment } from '../../shared/audio-alignment';
 import { defaultTaskSpeakerForProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from '../../shared/tts-voices';
-import type { AppConfig, ImageLabRecord, ImageProvider, VoiceLabRecord } from '../../shared/types';
+import type { AppConfig, BackgroundRemovalMetadata, ImageLabRecord, ImageProvider, VoiceLabRecord } from '../../shared/types';
+import { selectMotionComicVideoRoute } from '../../shared/motion-comic-video';
 import { selectVideoGenerationRoute } from '../../shared/video-routing';
 import { resolveVolcengineTtsApiVersion } from '../../shared/volcengine-tts';
 import { buildMotionComicConsistencyPrompt, collectMotionComicReferenceBundle } from '../motion-comic/motion-comic-consistency';
@@ -224,7 +225,7 @@ export function resolveDirectorVideoProviderOptions(config: AppConfig, secrets: 
 export function resolveDirectorVideoProviderStatus(
   config: AppConfig,
   secrets: SecretStatus,
-  input: { durationMs: number; committedCost?: number; requiresLastFrame?: boolean },
+  input: { durationMs: number; committedCost?: number; requiresLastFrame?: boolean; comic?: {document:MotionComicPipelineData;shot:MotionComicPipelineData['episodes'][number]['scenes'][number]['shots'][number]} },
 ): DirectorVideoProviderStatus {
   const durationSec = Math.max(1, input.durationMs / 1000);
   const committedCost = Math.max(0, input.committedCost ?? 0);
@@ -242,11 +243,12 @@ export function resolveDirectorVideoProviderStatus(
       })),
     },
   };
-  const route = selectVideoGenerationRoute(configWithCredentialStatus, {
+  let route;
+  try { route = input.comic ? selectMotionComicVideoRoute(configWithCredentialStatus,input.comic.document,input.comic.shot,remainingBudget).route : selectVideoGenerationRoute(configWithCredentialStatus, {
     durationSec,
     requiredCapabilities: input.requiresLastFrame ? ['i2v', 'first-last-frame'] : ['i2v'],
     remainingBudget,
-  });
+  }); } catch(error) { return {providerId:'',connected:false,label:'输入待补齐',model:'',estimatedCost:0,remainingBudget,unavailableReason:error instanceof Error?error.message:String(error)}; }
   if (route.kind === 'provider') {
     return {
       providerId: route.provider.id,
@@ -833,6 +835,24 @@ function upsertAggregateNarrationAudioClip(
   ];
 }
 
+function imageLabBackgroundRemoval(record: ImageLabRecord): BackgroundRemovalMetadata | undefined {
+  if (!record.cutoutMethod || !record.cutoutQuality || record.cutoutTransparentFraction === null || record.cutoutTransparentFraction === undefined || record.cutoutForegroundFraction === null || record.cutoutForegroundFraction === undefined || record.cutoutEdgeFraction === null || record.cutoutEdgeFraction === undefined) return undefined;
+  return {
+    method: record.cutoutMethod,
+    ...(record.cutoutModel ? { model: record.cutoutModel } : {}),
+    ...(record.cutoutModelVersion ? { modelVersion: record.cutoutModelVersion } : {}),
+    ...(record.cutoutModelSha256 ? { modelSha256: record.cutoutModelSha256 } : {}),
+    ...(record.cutoutSourceSha256 ? { sourceSha256: record.cutoutSourceSha256 } : {}),
+    ...(record.cutoutOutputSha256 ? { outputSha256: record.cutoutOutputSha256 } : {}),
+    transparentFraction: record.cutoutTransparentFraction,
+    foregroundFraction: record.cutoutForegroundFraction,
+    edgeFraction: record.cutoutEdgeFraction,
+    quality: record.cutoutQuality,
+    ...(record.cutoutErrorCode ? { errorCode: record.cutoutErrorCode } : {}),
+    ...(record.cutoutErrorMessage ? { errorMessage: record.cutoutErrorMessage } : {}),
+  };
+}
+
 function directorProductionRecord(
   document: Pick<EditorialCollagePipelineData | MotionComicPipelineData, 'id' | 'workflowKind' | 'providerJobs'>,
   shotId: string,
@@ -858,6 +878,7 @@ function directorProductionRecord(
       assetId: `shot-keyframe-${shotId}`,
       kind: 'image',
       localPath: record.imagePath,
+      ...(imageLabBackgroundRemoval(record) ? { backgroundRemoval: imageLabBackgroundRemoval(record) } : {}),
       prompt: record.prompt,
       providerJobId: jobId,
       provider: record.provider,

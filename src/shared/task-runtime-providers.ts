@@ -1,3 +1,5 @@
+import { upgradeHtmlSceneComposition } from './html-video-composition';
+import { HYPERFRAMES_AUTHORING_RULES, selectHtmlSemanticTemplate } from './html-video-authoring';
 import type { RunTaskOptions } from './runner';
 import type { SceneAsset } from './draft';
 import { AppError, redactErrorText } from './app-error';
@@ -22,7 +24,7 @@ import { resolveVolcengineTtsApiVersion } from './volcengine-tts';
 import { HTML_VIDEO_SCENE_TEMPLATES } from './html-video-scene-templates';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AppConfig, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
+import type { AppConfig, BackgroundRemovalMetadata, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
 
@@ -35,6 +37,7 @@ export interface HtmlVideoRuntimeProviderOptions {
   jobConfig: HtmlVideoJobConfig;
   imageStyle?: CustomStyle | null;
   inspectAssetTransparency?: (path: string) => Promise<boolean>;
+  inspectAssetBackgroundRemoval?: (path: string) => Promise<BackgroundRemovalMetadata>;
   prepareCoverImage?: HtmlVideoCoverImageProcessor;
 }
 
@@ -49,6 +52,7 @@ interface HtmlAssetRequest {
 interface HtmlVideoAssetGeneratorOptions {
   imageStyle?: CustomStyle | null;
   inspectAssetTransparency?: (path: string) => Promise<boolean>;
+  inspectAssetBackgroundRemoval?: (path: string) => Promise<BackgroundRemovalMetadata>;
   imageConcurrency?: number;
 }
 
@@ -160,6 +164,7 @@ export function createHtmlVideoRuntimeProviders(
         ? adaptHtmlVideoAssetGenerator(providers.generateImages, runtimeTask, {
           imageStyle: options.imageStyle,
           inspectAssetTransparency: options.inspectAssetTransparency,
+          inspectAssetBackgroundRemoval: options.inspectAssetBackgroundRemoval,
           imageConcurrency: providers.imageConcurrency,
         })
       : async () => {
@@ -267,7 +272,11 @@ export function adaptHtmlVideoAssetGenerator(
         'IMAGE_PROVIDER_INVALID_OUTPUT',
       ).get(request.syntheticId)!.path;
       let transparency: HtmlVideoAsset['transparency'];
-      if (request.kind === 'fg' && options.inspectAssetTransparency) {
+      let backgroundRemoval: BackgroundRemovalMetadata | undefined;
+      if (request.kind === 'fg' && options.inspectAssetBackgroundRemoval) {
+        backgroundRemoval = await options.inspectAssetBackgroundRemoval(src);
+        transparency = backgroundRemoval.transparentFraction > 0 ? 'transparent' : 'opaque';
+      } else if (request.kind === 'fg' && options.inspectAssetTransparency) {
         transparency = await options.inspectAssetTransparency(src) ? 'transparent' : 'opaque';
       }
       const asset: HtmlVideoAsset = {
@@ -277,6 +286,7 @@ export function adaptHtmlVideoAssetGenerator(
         src,
         prompt: request.prompt,
         ...(transparency ? { transparency } : {}),
+        ...(backgroundRemoval ? { backgroundRemoval } : {}),
       };
       assets[index] = asset;
       await input.onAssetGenerated?.(asset);
@@ -396,7 +406,8 @@ export function adaptHtmlVideoNarrationSynthesizer(
         sceneIndex: request.scene.index,
         src: asset.path,
         durationSec,
-        text: asset.text?.trim() || request.scene.narration,
+        text: request.scene.narration,
+        ...(asset.captionCues ? { captionCues: asset.captionCues } : {}),
       };
     }));
   };
@@ -449,18 +460,19 @@ export function repairHtmlVideoPlanningSlots(
   scenes: HtmlVideoScenePlan[],
   foreground: boolean,
 ): HtmlVideoScenePlan[] {
+  let previous: string | undefined;
   return scenes.map((scene) => {
     if (!Array.isArray(scene?.elements)) return scene;
     const elements = foreground ? scene.elements : [];
-    const currentTemplate = HTML_VIDEO_SCENE_TEMPLATES.find((template) => template.id === scene.sceneTemplate);
-    const template = currentTemplate?.materialSlots === elements.length
-      ? currentTemplate
-      : HTML_VIDEO_SCENE_TEMPLATES.find((candidate) => candidate.materialSlots === elements.length);
-    return {
+    const template = selectHtmlSemanticTemplate(scene, elements.length, previous);
+    previous = template;
+    const changed = template !== scene.sceneTemplate;
+    return upgradeHtmlSceneComposition({
       ...scene,
-      sceneTemplate: template?.id ?? scene.sceneTemplate,
-      elements: elements.map((element, slot) => ({ ...element, slot })),
-    };
+      ...(changed ? { compositionVersion: undefined, beats: undefined } : {}),
+      sceneTemplate: template ?? scene.sceneTemplate,
+      elements: elements.map((element, slot) => ({ ...element, slot, ...(changed ? { layout: undefined } : {}) })),
+    });
   });
 }
 
@@ -482,6 +494,7 @@ export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInpu
 
   return [
     '你是短视频分镜策划。你的唯一任务是把输入旁白拆成可直接生成的 HTML 动画短视频场景，并且只输出 JSON。',
+    HYPERFRAMES_AUTHORING_RULES,
     '一个场景只对应一个清晰的画面单元，用来承载一句关键话、一次转折、一个事实或一句金句；不要把多个互不相关的画面意图塞进同一场景。',
     '',
     `【画面方向】${orientation}`,

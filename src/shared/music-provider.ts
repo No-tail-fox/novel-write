@@ -136,6 +136,7 @@ export function createMusicProvider(options: { apiKey: string; baseUrl?: string;
   async function request(path: string, body?: unknown, binary = false): Promise<Response> {
     try {
       const response = await fetchWithTimeout(`${baseUrl}${path}`, {
+        generation: body !== undefined && !['/api/music/query', '/api/music/wav', '/api/music/download-file'].includes(path),
         method: body === undefined ? 'GET' : 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),

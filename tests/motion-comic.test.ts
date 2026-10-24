@@ -63,6 +63,14 @@ describe('motion comic domain', () => {
     expect(() => parseMotionComicPipelineData(project)).toThrow(/MOTION_COMIC_INVALID_DATA/u);
   });
 
+  it('still rejects numbering gaps in projects without imported source episodes', () => {
+    const project = createMotionComicStarterProject(createMotionComicDraft({
+      id: 'comic-number-gap', title: '集号校验', premise: '保持手工项目集号连续。', now: '2026-10-22T00:00:00.000Z',
+    }));
+    project.episodes[0].number = 2;
+    expect(() => parseMotionComicPipelineData(project)).toThrow(/contiguous and 1-based/u);
+  });
+
   it('keeps dramatic scenes, shots and dialogue segmentation independent', () => {
     const project = createMotionComicStarterProject(createMotionComicDraft({
       id: 'comic-3', title: '钟楼', premise: '守钟人发现城市每天少一分钟。', now: '2026-08-17T00:00:00.000Z',

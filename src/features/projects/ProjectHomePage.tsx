@@ -38,10 +38,10 @@ const archiveOptions = [
 ];
 const projectTypeOptions = [
   { value: 'all', label: '全部制作类型' },
-  { value: 'story', label: '智能成片' },
+  { value: 'story', label: '短片生成' },
   { value: 'music-mv', label: '音乐 MV' },
   { value: 'html-video', label: 'HTML 动画' },
-  { value: 'editorial-collage', label: 'VOX 视频' },
+  { value: 'editorial-collage', label: '创意动画' },
   { value: 'motion-comic', label: 'AI 漫剧' },
 ] as const;
 
@@ -346,7 +346,7 @@ function ProjectCard({
             {taskHistoryTypeLabel(task)} · {formatTaskOperationTime(task.createdAt)}
           </span>
           <span className="project-card-status">
-            <StatusBadge status={task.status} />
+            <StatusBadge status={task.projectActivity?.status ?? task.status} label={task.projectActivity?.label} />
             <small>{taskStatusDetail(task)}</small>
           </span>
         </span>

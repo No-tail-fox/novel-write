@@ -22,8 +22,6 @@ import {
   Settings2,
   Trash2,
   Upload,
-  Volume2,
-  X,
 } from 'lucide-react';
 import type { ApplyMutationResult } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
@@ -50,7 +48,7 @@ import {
   type HtmlVideoAnimationCue,
 } from '../../shared/html-video-scene-templates';
 import { normalizeRuntimeTtsProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
-import { Button, IconButton, Pane, Tabs, Toolbar } from '../../ui';
+import { Button, CheckboxField, Dialog, IconButton, Pane, PreviewSelectField, SegmentedControl, SelectField, SliderField, Tabs, TextAreaField, TextField, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 
 interface EditorialPanelProps {
@@ -137,19 +135,13 @@ function SceneTextEditor({ api, task, data, scene, applyState, refreshTaskDetail
         <IconButton label="在后面新增场景" icon={<Plus size={13} />} density="compact" variant="subtle" disabled={locked || data.scenes.length >= (data.config.maxScenes ?? 30)} onClick={() => void mutateStructure('add-after')} />
         <IconButton label="删除场景" icon={<Trash2 size={13} />} density="compact" variant="danger" disabled={locked || data.scenes.length <= 1} onClick={() => void mutateStructure('remove')} />
       </Toolbar>
-      <label className="hv-reference-scene-copy"><span>口播</span><textarea value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} rows={2} /></label>
-      <label><span>标题</span><input value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} /></label>
-      <label><span>字幕</span><textarea value={captions} onChange={(event) => setCaptions(event.target.value)} disabled={locked} rows={Math.min(4, Math.max(2, scene.captions.length))} /></label>
+      <TextAreaField fieldClassName="hv-reference-scene-copy" label="口播" value={narration} onChange={(event) => setNarration(event.target.value)} disabled={locked} rows={2} />
+      <TextField label="标题" value={title} onChange={(event) => setTitle(event.target.value)} disabled={locked} />
+      <TextAreaField label="字幕" value={captions} onChange={(event) => setCaptions(event.target.value)} disabled={locked} rows={Math.min(4, Math.max(2, scene.captions.length))} />
       <div className="hv-reference-scene-row">
-        <label><span>画面预设</span><select value={template} onChange={(event) => setTemplate(normalizeHtmlVideoSceneTemplate(event.target.value))} disabled={locked}>
-          {HTML_VIDEO_SCENE_TEMPLATES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-        </select></label>
-        <button className="mini-button" type="button" disabled={locked} onClick={() => mutate([{ field: 'titleHidden', value: !scene.titleHidden }])}>
-          {scene.titleHidden ? <Eye size={14} /> : <EyeOff size={14} />}{scene.titleHidden ? '显示标题' : '隐藏标题'}
-        </button>
-        <button className="mini-button primary" type="button" disabled={locked || !narration.trim() || !title.trim() || !captions.trim()} onClick={save}>
-          {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}{narration.trim() !== scene.narration ? '保存并重配' : '保存'}
-        </button>
+        <SelectField label="画面预设" value={template} onChange={(event) => setTemplate(normalizeHtmlVideoSceneTemplate(event.target.value))} disabled={locked} options={HTML_VIDEO_SCENE_TEMPLATES.map((option) => ({ value: option.id, label: option.label }))} />
+        <CheckboxField label="显示标题" checked={!scene.titleHidden} disabled={locked} onChange={(_, data) => mutate([{ field: 'titleHidden', value: data.checked !== true }])} />
+        <Button variant="primary" disabled={locked || !narration.trim() || !title.trim() || !captions.trim()} onClick={save} icon={action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}>{narration.trim() !== scene.narration ? '保存并重配' : '保存'}</Button>
       </div>
       <InlineActionFeedback feedback={action.feedback} />
     </article>
@@ -179,9 +171,7 @@ export function HtmlVideoStoryboundAssetsPanel(props: EditorialPanelProps) {
       <header className="hv-reference-panel-head">
         <strong>前后景素材</strong>
         <span>已生成 {props.data.assets.length}/{expectedCount} 张 · {foregrounds.length} 张前景 · {pendingCount} 张待确认透明</span>
-        <button className="mini-button" type="button" title="批量移除所有不透明前景的背景" disabled={locked || foregrounds.length === 0 || pendingCount === 0} onClick={removeAllBackgrounds}>
-          {action.busy ? <Loader2 className="spin" size={14} /> : <Scissors size={14} />}全部去背景
-        </button>
+        <Button title="批量移除所有不透明前景的背景" disabled={locked || foregrounds.length === 0 || pendingCount === 0} onClick={removeAllBackgrounds} icon={action.busy ? <Loader2 className="spin" size={14} /> : <Scissors size={14} />}>全部去背景</Button>
       </header>
       <InlineActionFeedback feedback={action.feedback} />
       {props.data.scenes.map((scene) => (
@@ -237,20 +227,15 @@ function AddForegroundCard({ api, task, scene, applyState, refreshTaskDetail, bu
 
   return (
     <>
-      <button className="hv-reference-add-asset" type="button" disabled={locked} onClick={() => setOpen(true)}>
-        <span><Plus size={20} /></span>
+      <Button className="hv-reference-add-asset" disabled={locked} onClick={() => setOpen(true)} icon={<Plus size={20} />}>
         <strong>{scene.elements.length >= 4 ? '前景已满' : '手动添加前景'}</strong>
         <small>PNG / JPG / WebP</small>
-      </button>
+      </Button>
       {open ? (
-        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
-          <section className="hv-editor-modal" role="dialog" aria-modal="true" aria-label={`为场景 ${scene.index} 添加前景`}>
-            <header><div><strong>添加前景素材</strong><span>场景 {scene.index}</span></div><button type="button" title="关闭" onClick={() => setOpen(false)}><X size={16} /></button></header>
-            <label><span>前景提示词</span><textarea autoFocus rows={4} value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：人物半身像，侧面光，平静注视镜头…" /></label>
-            <footer><button className="mini-button" type="button" onClick={() => setOpen(false)}>取消</button><button className="mini-button primary" type="button" disabled={!prompt.trim() || action.busy} onClick={addForeground}>{action.busy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}选图并添加</button></footer>
+        <Dialog open title={`为场景 ${scene.index} 添加前景`} onOpenChange={(value) => { if (!action.busy) setOpen(value); }} actions={<><Button disabled={action.busy} onClick={() => setOpen(false)}>取消</Button><Button variant="primary" disabled={!prompt.trim() || locked} onClick={addForeground} icon={action.busy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}>选图并添加</Button></>}>
+            <TextAreaField label="前景提示词" rows={4} value={prompt} disabled={action.busy} onChange={(event) => setPrompt(event.target.value)} placeholder="例如：人物半身像，侧面光，平静注视镜头…" />
             <InlineActionFeedback feedback={action.feedback} />
-          </section>
-        </div>
+        </Dialog>
       ) : null}
     </>
   );
@@ -339,23 +324,20 @@ function AssetCard({
       </div>
       <strong>{target.kind === 'bg' ? 'BG 背景' : `前景 ${target.slot + 1}`}</strong>
       {target.kind === 'fg' ? <span className={`hv-reference-asset-transparency ${asset?.transparency ?? 'unknown'}`}>{transparencyLabel}</span> : null}
-      <textarea value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} rows={3} disabled={locked} />
+      <TextAreaField label="素材提示词" value={draftPrompt} onChange={(event) => setDraftPrompt(event.target.value)} rows={3} disabled={locked} />
       <div className="hv-reference-asset-actions">
-        <button type="button" title="预览素材" disabled={assetStatus !== 'ready' || !url} onClick={() => setPreviewOpen(true)}><Eye size={14} /></button>
-        <button type="button" title="保存提示词" disabled={locked || draftPrompt.trim() === prompt} onClick={savePrompt}><Save size={14} /></button>
-        <button type="button" title="重画素材" disabled={locked} onClick={() => run(() => api.regenerateHtmlVideoAsset(task.id, target))}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}</button>
-        <button type="button" title="本地替换" disabled={locked} onClick={() => run(() => api.replaceHtmlVideoAsset(task.id, target))}><Upload size={14} /></button>
-        {target.kind === 'fg' ? <button type="button" title={asset?.transparency === 'transparent' ? '素材已有透明通道' : '移除背景'} disabled={locked || !asset || asset.transparency === 'transparent'} onClick={() => run(() => api.removeHtmlVideoAssetBackground(task.id, target))}><Scissors size={14} /></button> : null}
-        {target.kind === 'fg' ? <button type="button" title={hidden ? '显示前景' : '隐藏前景'} disabled={locked} onClick={() => run(() => api.updateHtmlVideoScene(task.id, scene.index, [{ field: 'elementHidden', slot: target.slot, value: !hidden }]))}>{hidden ? <Eye size={14} /> : <EyeOff size={14} />}</button> : null}
+        <IconButton label="预览素材" disabled={assetStatus !== 'ready' || !url} onClick={() => setPreviewOpen(true)} icon={<Eye size={14} />} />
+        <IconButton label="保存提示词" disabled={locked || !draftPrompt.trim() || draftPrompt.trim() === prompt} onClick={savePrompt} icon={<Save size={14} />} />
+        <IconButton label="重画素材" disabled={locked} onClick={() => run(() => api.regenerateHtmlVideoAsset(task.id, target))} icon={action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />} />
+        <IconButton label="本地替换" disabled={locked} onClick={() => run(() => api.replaceHtmlVideoAsset(task.id, target))} icon={<Upload size={14} />} />
+        {target.kind === 'fg' ? <IconButton label={asset?.transparency === 'transparent' ? '素材已有透明通道' : '移除背景'} disabled={locked || !asset || asset.transparency === 'transparent'} onClick={() => run(() => api.removeHtmlVideoAssetBackground(task.id, target))} icon={<Scissors size={14} />} /> : null}
+        {target.kind === 'fg' ? <IconButton label={hidden ? '显示前景' : '隐藏前景'} disabled={locked} onClick={() => run(() => api.updateHtmlVideoScene(task.id, scene.index, [{ field: 'elementHidden', slot: target.slot, value: !hidden }]))} icon={hidden ? <Eye size={14} /> : <EyeOff size={14} />} /> : null}
       </div>
       <InlineActionFeedback feedback={action.feedback} />
       {previewOpen && url ? (
-        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPreviewOpen(false)}>
-          <section className="hv-asset-preview-modal" role="dialog" aria-modal="true" aria-label="素材预览">
-            <header><div><strong>{target.kind === 'bg' ? `场景 ${scene.index} 背景` : `场景 ${scene.index} 前景 ${target.slot + 1}`}</strong><span>{draftPrompt}</span></div><button type="button" title="关闭" onClick={() => setPreviewOpen(false)}><X size={16} /></button></header>
-            <img src={url} alt="素材大图预览" />
-          </section>
-        </div>
+        <Dialog open title={target.kind === 'bg' ? `场景 ${scene.index} 背景` : `场景 ${scene.index} 前景 ${target.slot + 1}`} onOpenChange={setPreviewOpen} actions={<Button onClick={() => setPreviewOpen(false)}>关闭</Button>}>
+          <p>{draftPrompt}</p><img className="hv-asset-dialog-image" src={url} alt="素材大图预览" />
+        </Dialog>
       ) : null}
     </div>
   );
@@ -414,20 +396,14 @@ function VoiceSettings({ api, task, data, cloneVoices, applyState, refreshTaskDe
     <section className="hv-voice-settings" aria-label="配音设置">
       <div className="hv-voice-setting-line">
         <strong>配音员</strong>
-        <div className="hv-voice-provider" role="group" aria-label="配音服务">
-          <button type="button" className={provider === 'volcengine' ? 'active' : ''} disabled={locked} onClick={() => changeProvider('volcengine')}>豆包</button>
-          <button type="button" className={provider === 'minimax' ? 'active' : ''} disabled={locked} onClick={() => changeProvider('minimax')}>MiniMax</button>
-        </div>
-        <label className="hv-voice-speed"><span>语速 {speed.toFixed(1)}x</span><input type="range" min={Math.max(0.5, HTML_VIDEO_TTS_SPEED_MIN)} max={Math.min(2, HTML_VIDEO_TTS_SPEED_MAX)} step={0.1} value={speed} disabled={locked} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
-        <button className="mini-button primary" type="button" disabled={locked || !changed || !voiceId} onClick={applyVoiceSettings}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}应用并重配全部</button>
+        <SegmentedControl label="配音服务" value={provider} disabled={locked} onChange={changeProvider} options={[{ value: 'volcengine', label: '豆包' }, { value: 'minimax', label: 'MiniMax' }]} />
+        <SliderField fieldClassName="hv-voice-speed" label="语速" valueLabel={`${speed.toFixed(1)}x`} min={Math.max(0.5, HTML_VIDEO_TTS_SPEED_MIN)} max={Math.min(2, HTML_VIDEO_TTS_SPEED_MAX)} step={0.1} value={speed} disabled={locked} onChange={(_, { value }) => setSpeed(value)} />
+        <Button variant="primary" disabled={locked || !changed || !voiceId} onClick={applyVoiceSettings} icon={action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}>应用并重配全部</Button>
       </div>
-      <div className="hv-voice-choice-list" role="listbox" aria-label="选择音色">
-        {voiceOptions.map((voice) => (
-          <button key={voice.id} type="button" role="option" aria-selected={voiceId === voice.id} className={voiceId === voice.id ? 'active' : ''} disabled={locked} onClick={() => setVoiceId(voice.id)}>
-            <Volume2 size={13} /><span>{voice.label}</span><small>{voice.hint}</small>
-          </button>
-        ))}
-      </div>
+      <SelectField label="选择音色" value={voiceId} disabled={locked} onChange={(event) => setVoiceId(event.target.value)} options={[
+        ...(voiceId && !voiceOptions.some((voice) => voice.id === voiceId) ? [{ value: voiceId, label: taskSpeakerLabel(provider, voiceId, cloneVoices) }] : []),
+        ...voiceOptions.map((voice) => ({ value: voice.id, label: `${voice.label}${voice.hint ? ` · ${voice.hint}` : ''}` })),
+      ]} />
       <InlineActionFeedback feedback={action.feedback} />
     </section>
   );
@@ -493,16 +469,14 @@ function VoiceRow({
       )}
       <p>{scene.narration}</p>
       <small>{voice ? `${voice.durationSec.toFixed(1)}s` : '-'}</small>
-      <button className="mini-button" type="button" disabled={locked} onClick={() => setEditing(true)}>{action.busy ? <Loader2 className="spin" size={14} /> : <Settings2 size={14} />}重配</button>
+      <Button disabled={locked} onClick={() => setEditing(true)} icon={action.busy ? <Loader2 className="spin" size={14} /> : <Settings2 size={14} />}>重配</Button>
       <InlineActionFeedback feedback={action.feedback} />
       {editing ? (
-        <div className="hv-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setEditing(false)}>
-          <section className="hv-editor-modal" role="dialog" aria-modal="true" aria-label={`重配场景 ${scene.index}`}>
-            <header><div><strong>重配场景 {scene.index}</strong><span>{taskSpeakerLabel(data.config.ttsProvider, data.config.voiceId ?? '', cloneVoices)} · {(data.config.ttsSpeed ?? 1).toFixed(1)}x</span></div><button type="button" title="关闭" onClick={() => setEditing(false)}><X size={16} /></button></header>
-            <label><span>口播文案</span><textarea autoFocus rows={6} value={narration} onChange={(event) => setNarration(event.target.value)} /></label>
-            <footer><button className="mini-button" type="button" onClick={() => setEditing(false)}>取消</button><button className="mini-button primary" type="button" disabled={!narration.trim() || action.busy} onClick={() => regenerate(narration)}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}保存并重配</button></footer>
-          </section>
-        </div>
+        <Dialog open title={`重配场景 ${scene.index}`} onOpenChange={(value) => { if (!action.busy) setEditing(value); }} actions={<><Button disabled={action.busy} onClick={() => setEditing(false)}>取消</Button><Button variant="primary" disabled={!narration.trim() || locked} onClick={() => regenerate(narration)} icon={action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}>保存并重配</Button></>}>
+          <p>{taskSpeakerLabel(data.config.ttsProvider, data.config.voiceId ?? '', cloneVoices)} · {(data.config.ttsSpeed ?? 1).toFixed(1)}x</p>
+          <TextAreaField label="口播文案" rows={6} value={narration} disabled={action.busy} onChange={(event) => setNarration(event.target.value)} />
+          <InlineActionFeedback feedback={action.feedback} />
+        </Dialog>
       ) : null}
     </article>
   );
@@ -880,8 +854,8 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
               /> : null}
             </div>
             <div className="hv-reference-transport">
-              <input type="range" min={0} max={1000} value={Math.round(progress * 1000)} onChange={(event) => {
-                const next = Number(event.target.value) / 1000;
+              <SliderField fieldClassName="hv-transport-progress" label="场景播放进度" min={0} max={1000} value={Math.round(progress * 1000)} onChange={(_, { value }) => {
+                const next = value / 1000;
                 autoplayAll.current = false;
                 playbackRequestId.current += 1;
                 pendingCommand.current = null;
@@ -891,28 +865,30 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
                 post({ type: 'hvseek', time: composition.durationSec * next });
                 progressRef.current = next;
                 setProgress(next);
-              }} aria-label="场景播放进度" />
+              }} />
               <IconButton density="compact" variant="subtle" label={playing ? '暂停' : '播放'} icon={playing ? <Pause size={17} /> : <Play size={17} />} onClick={playing ? pause : play} />
               <span>{(progress * composition.durationSec).toFixed(1)}s / {composition.durationSec.toFixed(1)}s</span>
               <IconButton density="compact" variant="subtle" label="上一场景" icon={<ChevronLeft size={16} />} disabled={active === 0} onClick={() => changeScene(active - 1, false, true)} />
               <IconButton density="compact" variant="subtle" label="下一场景" icon={<ChevronRight size={16} />} disabled={active >= compositions.length - 1} onClick={() => changeScene(active + 1, false, true)} />
               <IconButton density="compact" variant="subtle" label="重播" icon={<RotateCcw size={15} />} onClick={restart} />
-              <button
+              <IconButton
                 ref={maximizeButtonRef}
-                type="button"
+                density="compact"
+                variant="subtle"
                 title={maximized ? '退出最大化' : '最大化'}
-                aria-label={maximized ? '退出最大化动画预览' : '最大化动画预览'}
+                label={maximized ? '退出最大化动画预览' : '最大化动画预览'}
                 aria-pressed={maximized}
                 onClick={toggleMaximized}
-              >{maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+                icon={maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              />
             </div>
           </div>
           <aside className="hv-reference-scene-strip" aria-label="场景列表">
             <header>
               <div><strong>场景</strong><span>{activeScene ? `当前 ${activeScene.index}/${data.scenes.length}` : `共 ${data.scenes.length} 个`}</span></div>
               <span className="hv-scene-strip-nav">
-                <button type="button" title="向前浏览场景" onClick={() => scrollScenes(-1)}><ChevronLeft size={14} /></button>
-                <button type="button" title="向后浏览场景" onClick={() => scrollScenes(1)}><ChevronRight size={14} /></button>
+                <IconButton label="向前浏览场景" onClick={() => scrollScenes(-1)} icon={<ChevronLeft size={14} />} />
+                <IconButton label="向后浏览场景" onClick={() => scrollScenes(1)} icon={<ChevronRight size={14} />} />
               </span>
             </header>
             <div ref={sceneStripRef} className="hv-reference-scene-track">
@@ -924,7 +900,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
                   ? htmlVideoMediaStatus(thumbnail, mediaUrls, failedMediaPaths, isBrowserPreview)
                   : 'desktop-only';
                 return <div key={item.index} className={`hv-reference-scene-item${index === active ? ' active' : ''}`}>
-                  <button className="hv-reference-scene-select" type="button" disabled={index < 0} aria-current={index === active ? 'true' : undefined} onClick={() => index >= 0 && changeScene(index, false, true)}>
+                  <Button className="hv-reference-scene-select" disabled={index < 0} aria-current={index === active ? 'true' : undefined} onClick={() => index >= 0 && changeScene(index, false, true)}>
                     <span className="hv-reference-thumb" aria-busy={thumbnailStatus === 'loading'}>
                       <b>{item.index}</b>
                       {thumbnail && thumbnailStatus === 'ready' && mediaUrls[thumbnail] ? (
@@ -946,7 +922,7 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
                       )}
                     </span>
                     <span><strong>{item.title}</strong><small>{snapshot ? `${snapshot.durationSec.toFixed(1)}s` : '生成中'} · {htmlVideoSceneTemplate(item.sceneTemplate).label}</small></span>
-                  </button>
+                  </Button>
                 </div>;
               })}
             </div>
@@ -962,22 +938,12 @@ export function HtmlVideoStoryboundPreviewPanel(props: EditorialPanelProps & { c
                   <Button density="compact" variant="secondary" icon={action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />} disabled={effectsLocked} onClick={() => void saveEffects()}>保存动效</Button>
                 </div>
                 <div className="hv-preview-effects-controls">
-                  <label>
-                    <span>镜头动效</span>
-                    <select value={sceneMotion} disabled={effectsLocked} onChange={(event) => {
+                  <SelectField label="镜头动效" value={sceneMotion} disabled={effectsLocked} onChange={(event) => {
                       const value = event.target.value as typeof sceneMotion;
                       setSceneMotion(value);
                       if (runtimeReady.current) post({ type: 'hvpreviewmotion', preset: value });
-                    }}>
-                      {HTML_VIDEO_SCENE_MOTIONS.map((motion) => <option key={motion} value={motion}>{HTML_VIDEO_SCENE_MOTION_LABELS[motion]}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span>场景转场</span>
-                    <select value={transitionType} disabled={effectsLocked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)}>
-                      {HTML_VIDEO_TRANSITIONS.map((transition) => <option key={transition} value={transition}>{HTML_VIDEO_TRANSITION_LABELS[transition]}</option>)}
-                    </select>
-                  </label>
+                    }} options={HTML_VIDEO_SCENE_MOTIONS.map((motion) => ({ value: motion, label: HTML_VIDEO_SCENE_MOTION_LABELS[motion] }))} />
+                  <SelectField label="场景转场" value={transitionType} disabled={effectsLocked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)} options={HTML_VIDEO_TRANSITIONS.map((transition) => ({ value: transition, label: HTML_VIDEO_TRANSITION_LABELS[transition] }))} />
                   <span className="hv-effect-output-note">转场时长 0.3 秒，连播与最终输出一致</span>
                 </div>
                 {effectsMessage ? <span className="local-note" role="status">{effectsMessage}</span> : null}
@@ -1116,30 +1082,13 @@ function ScenePreviewEditor({
       </header>
       <div className="hv-scene-editor-body">
         {tab === 'layout' ? (
-          <div className="hv-scene-template-grid" aria-label="选择当前场景版式">
-            {templates.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                className={normalizedTemplate === template.id ? 'selected' : ''}
-                aria-pressed={normalizedTemplate === template.id}
-                disabled={locked}
-                title={template.description}
-                onClick={() => void mutate([{ field: 'sceneTemplate', value: template.id }])}
-              >
-                <PresetSwatch template={template} backgroundUrl={backgroundUrl} foregroundUrls={foregroundUrls} />
-                <span><strong>{template.label}</strong><small>{template.description}</small></span>
-              </button>
-            ))}
-          </div>
+          <PreviewSelectField label="当前场景版式" value={normalizedTemplate} disabled={locked} onChange={(value) => void mutate([{ field: 'sceneTemplate', value: normalizeHtmlVideoSceneTemplate(value) }])} options={templates.map((template) => ({ value: template.id, label: template.label, description: template.description, preview: () => <PresetSwatch template={template} backgroundUrl={backgroundUrl} foregroundUrls={foregroundUrls} /> }))} />
         ) : null}
         {tab === 'foreground' ? (
           <div className="hv-scene-foreground-editor">
             <div className="hv-scene-editor-toolbar">
               <span><strong>{foregrounds.length} 个前景</strong><small>{scene.foregroundHidden ? '当前场景前景已隐藏' : '当前场景前景已显示'}</small></span>
-              <button className="mini-button" type="button" disabled={locked || foregrounds.length === 0} onClick={() => void mutate([{ field: 'foregroundHidden', value: !scene.foregroundHidden }])}>
-                {scene.foregroundHidden ? <Eye size={15} /> : <EyeOff size={15} />}{scene.foregroundHidden ? '显示全部' : '隐藏全部'}
-              </button>
+              <CheckboxField label="显示全部前景" checked={!scene.foregroundHidden} disabled={locked || foregrounds.length === 0} onChange={(_, data) => void mutate([{ field: 'foregroundHidden', value: data.checked !== true }])} />
             </div>
             <div className="hv-scene-foreground-list">
               {foregrounds.length ? foregrounds.map(({ element, asset }) => {
@@ -1171,9 +1120,7 @@ function ScenePreviewEditor({
                       ) : status === 'loading' ? <Loader2 className="spin" size={17} /> : <ImageIcon size={18} />}
                     </div>
                     <span><strong>前景 {element.slot + 1}</strong><small data-state={status}>{stateLabel}</small></span>
-                    <button type="button" title={scene.foregroundHidden ? '场景前景已全部隐藏' : slotHidden ? '显示前景' : '隐藏前景'} aria-label={slotHidden ? `显示前景 ${element.slot + 1}` : `隐藏前景 ${element.slot + 1}`} disabled={locked || scene.foregroundHidden} onClick={() => void mutate([{ field: 'elementHidden', slot: element.slot, value: !slotHidden }])}>
-                      {slotHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-                    </button>
+                    <IconButton title={scene.foregroundHidden ? '场景前景已全部隐藏' : slotHidden ? '显示前景' : '隐藏前景'} label={slotHidden ? `显示前景 ${element.slot + 1}` : `隐藏前景 ${element.slot + 1}`} disabled={locked || scene.foregroundHidden} onClick={() => void mutate([{ field: 'elementHidden', slot: element.slot, value: !slotHidden }])} icon={slotHidden ? <Eye size={16} /> : <EyeOff size={16} />} />
                   </article>
                 );
               }) : <div className="hv-scene-editor-empty">当前版式不使用前景素材</div>}
@@ -1182,34 +1129,22 @@ function ScenePreviewEditor({
         ) : null}
         {tab === 'title' ? (
           <div className="hv-scene-title-editor">
-            <label><span>画面标题</span><input value={title} disabled={locked} onChange={(event) => setTitle(event.target.value)} /></label>
-            <button className="mini-button" type="button" disabled={locked} onClick={() => void mutate([{ field: 'titleHidden', value: !scene.titleHidden }])}>
-              {scene.titleHidden ? <Eye size={15} /> : <EyeOff size={15} />}{scene.titleHidden ? '显示标题' : '隐藏标题'}
-            </button>
-            <button className="mini-button primary" type="button" disabled={locked || !title.trim() || !titleChanged} onClick={() => void mutate([{ field: 'title', value: title.trim() }])}>
-              {action.busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}保存标题
-            </button>
+            <TextField label="画面标题" value={title} disabled={locked} onChange={(event) => setTitle(event.target.value)} />
+            <CheckboxField label="显示标题" checked={!scene.titleHidden} disabled={locked} onChange={(_, data) => void mutate([{ field: 'titleHidden', value: data.checked !== true }])} />
+            <Button variant="primary" disabled={locked || !title.trim() || !titleChanged} onClick={() => void mutate([{ field: 'title', value: title.trim() }])} icon={action.busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}>保存标题</Button>
           </div>
         ) : null}
         {tab === 'caption' ? (
           <div className="hv-scene-caption-editor" data-html-video-caption-workspace="true">
             <div className="hv-scene-caption-primary">
               <div className="hv-scene-caption-controls">
-                <label>
-                  <span>场景垂直位置 <b>{captionY.toFixed(0)}%</b></span>
-                  <input type="range" min={8} max={92} step={1} value={captionY} disabled={locked} onChange={(event) => setCaptionY(Number(event.target.value))} />
-                </label>
-                <label>
-                  <span>场景字号倍率 <b>{captionScale.toFixed(2)}x</b></span>
-                  <input type="range" min={0.6} max={1.8} step={0.05} value={captionScale} disabled={locked} onChange={(event) => setCaptionScale(Number(event.target.value))} />
-                </label>
-                <button className="mini-button" type="button" disabled={locked} onClick={() => {
+                <SliderField label="场景垂直位置" valueLabel={`${captionY.toFixed(0)}%`} min={8} max={92} step={1} value={captionY} disabled={locked} onChange={(_, { value }) => setCaptionY(value)} />
+                <SliderField label="场景字号倍率" valueLabel={`${captionScale.toFixed(2)}x`} min={0.6} max={1.8} step={0.05} value={captionScale} disabled={locked} onChange={(_, { value }) => setCaptionScale(value)} />
+                <Button disabled={locked} icon={<RotateCcw size={14} />} onClick={() => {
                   setCaptionY(templateCaptionY);
                   setCaptionScale(1);
-                }}><RotateCcw size={14} />跟随版式</button>
-                <button className="mini-button primary" type="button" disabled={locked || captionChanges.length === 0} onClick={() => void mutate(captionChanges)}>
-                  {action.busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}保存场景字幕
-                </button>
+                }}>跟随版式</Button>
+                <Button variant="primary" disabled={locked || captionChanges.length === 0} onClick={() => void mutate(captionChanges)} icon={action.busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}>保存场景字幕</Button>
               </div>
               {captionEditor}
             </div>
@@ -1231,13 +1166,11 @@ function ScenePreviewEditor({
         ) : null}
         {tab === 'prompt' ? (
           <div className="hv-scene-prompt-editor">
-            <label><span>背景提示词</span><textarea rows={3} value={backgroundPrompt} disabled={locked} onChange={(event) => setBackgroundPrompt(event.target.value)} /></label>
+            <TextAreaField label="背景提示词" rows={3} value={backgroundPrompt} disabled={locked} onChange={(event) => setBackgroundPrompt(event.target.value)} />
             {scene.elements.map((element) => (
-              <label key={element.slot}><span>前景 {element.slot + 1} 提示词</span><textarea rows={3} value={elementPrompts[element.slot] ?? ''} disabled={locked} onChange={(event) => setElementPrompts((current) => ({ ...current, [element.slot]: event.target.value }))} /></label>
+              <TextAreaField key={element.slot} label={`前景 ${element.slot + 1} 提示词`} rows={3} value={elementPrompts[element.slot] ?? ''} disabled={locked} onChange={(event) => setElementPrompts((current) => ({ ...current, [element.slot]: event.target.value }))} />
             ))}
-            <button className="mini-button primary" type="button" disabled={locked || promptChanges.length === 0} onClick={() => void mutate(promptChanges)}>
-              {action.busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}保存提示词
-            </button>
+            <Button variant="primary" disabled={locked || promptChanges.length === 0} onClick={() => void mutate(promptChanges)} icon={action.busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}>保存提示词</Button>
           </div>
         ) : null}
       </div>

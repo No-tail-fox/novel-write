@@ -15,6 +15,7 @@ export class HistoryActivityRegistry {
   private readonly reservations = new Map<string, ReservationState>();
   private readonly idleWaiters = new Set<() => void>();
   private closed = false;
+  get busy(): boolean { return this.reservations.size > 0; }
 
   reserveActive(family: HistoryFamily, id: string): HistoryActivityReservation {
     return this.reserve(family, id, 'active');

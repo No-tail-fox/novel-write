@@ -12,6 +12,7 @@ export const HTML_VIDEO_BACKGROUND_REMOVAL_MODELS = [
 
 export interface HtmlVideoBackgroundRemovalModel {
   path: string;
+  revision?: string;
   kind: typeof HTML_VIDEO_BACKGROUND_REMOVAL_MODELS[number]['kind'];
 }
 

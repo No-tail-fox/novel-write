@@ -1,0 +1,42 @@
+import {app,BrowserWindow} from 'electron';
+import {mkdir,readFile,writeFile,copyFile} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {createMotionComicDraft,createMotionComicStarterProject,rebuildMotionComicEpisode,parseMotionComicPipelineData} from '../src/shared/motion-comic';
+import {buildDirectorRenderScenes} from '../src/shared/director-render';
+import {motionComicVideoInputHash,motionComicVideoInputFingerprintSource} from '../src/shared/motion-comic-video';
+import {renderDirectorVideo} from '../electron/director-renderer';
+import {runStoryboundMediaSidecar} from '../src/shared/storybound-sidecar';
+import {setDefaultPythonRuntimeAppRoot} from '../src/shared/python-runtime';
+import {prepareQaNarration} from './qa-animation-media';
+const root=resolve('.'),work=join(root,'.artifacts/animation-stage-d');
+app.disableHardwareAcceleration();app.setPath('userData',join(work,'profile'));app.on('window-all-closed',()=>{});setDefaultPythonRuntimeAppRoot(root);
+app.whenReady().then(async()=>{const keep=new BrowserWindow({show:false});try{
+ await mkdir(work,{recursive:true});
+ const lines=[['街巷里，她抬头望向远处。','“先往前走，再核对方向。”'],['档案里，藏着下一步的线索。','“把看见的细节，记下来。”'],['城市渐渐亮起。','她终于知道，下一站该去哪里。']];
+ const voices=await prepareQaNarration(join(work,'voices'),lines);
+ const images=['shot-alley.png','shot-archive.png','shot-rooftop.png'].map(x=>join(root,'src/assets/director-desk',x));
+ const doc=createMotionComicStarterProject(createMotionComicDraft({id:'stage-d',title:'沿着线索走 · 本地功能样片',premise:'沿街巷、档案与屋顶寻找方向',ratio:'16:9'}));
+ const episode=doc.episodes[0],templates=episode.scenes.map(s=>s.shots[0]);
+ episode.scenes=episode.scenes.map((scene,i)=>({...scene,title:['街巷','档案','屋顶'][i],shots:[{...templates[i],title:['抬头','核对','下一站'][i],durationMs:voices[i].durationMs,renderStrategy:'remote-video',videoProduction:{version:1,referenceMode:'frames',audioMode:'native'},dialogueCueIds:voices[i].captionCues.map((_,j)=>`cue-${i}-${j}`),firstFrameAssetVersionId:`frame-${i}`,lastFrameAssetVersionId:undefined,videoAssetVersionId:`video-${i}`,videoJobId:`job-${i}`,voiceAssetVersionId:undefined,propAssetIds:[]}]}));
+ episode.dialogueCues=[];doc.assets=[];doc.providerJobs=[];let cursor=0;
+ const ff=join(root,'vendor/python/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-win-x86_64-v7.1.exe');const probes=[];
+ for(let i=0;i<3;i++){
+  const shot=episode.scenes[i].shots[0],raw=join(work,`raw-${i}.mp4`),normalized=join(work,`native-${i}.mp4`);
+  await promisify(execFile)(ff,['-hide_banner','-loglevel','error','-loop','1','-i',images[i],'-i',voices[i].path,'-t',String(shot.durationMs/1000),'-vf','scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720','-r','24','-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-y',raw],{windowsHide:true,timeout:120000});
+  const probe=await runStoryboundMediaSidecar({mode:'normalize_scene_video',work_dir:work,video_path:raw,output_path:normalized,preserve_audio:true,require_nonblack:true});
+  if(!probe.has_audio||!probe.has_nonblack_video)throw new Error('Local native soundtrack normalization failed');probes.push(probe);
+  doc.assets.push({id:`frame-${i}`,assetId:`shot-keyframe-${shot.id}`,kind:'image',localPath:images[i],createdAt:doc.createdAt},{id:`video-${i}`,assetId:`shot-video-${shot.id}`,kind:'video',localPath:normalized,providerJobId:`job-${i}`,durationMs:shot.durationMs,selected:true,createdAt:doc.createdAt});
+  episode.dialogueCues.push(...voices[i].captionCues.map((c,j)=>({id:`cue-${i}-${j}`,shotId:shot.id,startMs:Math.round(c.startSec*1000),endMs:Math.round(c.endSec*1000),text:c.text,speakerRole:j===0?'narrative' as const:'dialogue' as const,...(j===1?{characterId:doc.characters[0].id,speakerName:'行者'}:{}),emotion:'平静'})));
+  cursor+=shot.durationMs;
+ }
+ episode.timeline={durationMs:cursor,clips:[],audioAssetVersionIds:[]};doc.episodes=[rebuildMotionComicEpisode(episode)];
+ for(const shot of doc.episodes[0].scenes.flatMap(s=>s.shots))doc.providerJobs.push({id:shot.videoJobId!,workflowKind:'motion-comic',nodeId:shot.id,episodeId:episode.id,providerId:'qa-local',model:'local-media-function-check',capability:'image-to-video',status:'completed',inputHash:motionComicVideoInputHash(doc,shot,'qa-local','local-media-function-check'),videoInputSnapshot:JSON.stringify(motionComicVideoInputFingerprintSource(doc,shot,'qa-local','local-media-function-check')),phase:'completed',idempotencyKey:shot.id,estimatedCost:0,actualCost:0,attempt:1,createdAt:doc.createdAt,updatedAt:doc.updatedAt});
+ const restored=parseMotionComicPipelineData(JSON.stringify(doc));const scenes=buildDirectorRenderScenes(restored,episode.id);
+ const rendered=await renderDirectorVideo({workDir:work,projectTitle:doc.title,modeLabel:'AI漫剧 · 本地功能验证',ratio:doc.ratio,scenes});
+ await copyFile(rendered.outputPath,join(work,'local-dialogue-sample.mp4'));
+ await writeFile(join(work,'document.json'),JSON.stringify(restored,null,2),'utf8');
+ await writeFile(join(work,'report.json'),JSON.stringify({paidProviderCalls:0,kind:'local-function-validation-only',limitation:'Existing project images and offline SAPI; no remote generation, character continuity or lip-sync proof',voices,probes,scenes,rendered},null,2),'utf8');
+ console.log('D local sample complete',cursor,rendered.outputPath);keep.destroy();app.exit(0);
+}catch(error){console.error(error);await writeFile(join(work,'error.txt'),String(error instanceof Error?error.stack:error),'utf8');keep.destroy();app.exit(1);}});

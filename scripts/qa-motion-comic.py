@@ -1137,7 +1137,7 @@ def inspect_workflow_navigation(page: Page, expected_stage: str | None = None) -
           };
         }"""
     )
-    expected_labels = ("剧本导入", "分集拆解", "分幕分场", "角色资产", "分镜图", "视频生成", "配音合成", "成片导出")
+    expected_labels = ("剧本导入", "分集拆解", "分幕分场", "制作资产", "分镜图", "视频生成", "配音合成", "成片导出")
     labels = snapshot.get("labels")
     if not isinstance(labels, list) or len(labels) != len(expected_labels):
         raise AssertionError(f"Eight-stage workflow navigation is incomplete: {snapshot}")
@@ -2096,7 +2096,7 @@ def main() -> None:
                 (0, "source", "stage-source", "[data-motion-comic-stage-panel='source']", ("01 · 剧本导入", "原始文本", "进入分集拆解"), 100),
                 (1, "episodes", "stage-episodes", "[data-motion-comic-stage-panel='episodes']", ("02 · 分集拆解", "1/2 集已完成结构化", "可开始"), 120),
                 (2, "scenes", "stage-scenes", "[data-motion-comic-stage-panel='scenes']", ("03 · 分幕分场", "第 1 幕", "第 2 幕", "第 3 幕", "AI 规划", "幕边界依据"), 120),
-                (3, "assets", "stage-assets", "[data-motion-comic-series-bible='true']", ("角色资产", "一致性素材已就绪", "角色定妆图", "资产生图模型", "新增人物"), 120),
+                (3, "assets", "stage-assets", "[data-motion-comic-series-bible='true']", ("制作资产", "一致性素材已就绪", "角色定妆图", "资产生图模型", "新增人物"), 120),
                 (4, "storyboard", "stage-storyboard", ".director-desk", ("雨夜来信", "镜头 01", "更新关键帧"), 120),
                 (5, "video", "stage-video", ".director-desk", ("远程视频 API", "视频生成服务", "任务状态", "视频运动提示词"), 140),
                 (6, "audio", "stage-audio", ".director-desk", ("字幕", "旁白服务未连接"), 120),

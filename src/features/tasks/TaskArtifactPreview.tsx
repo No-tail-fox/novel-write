@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckSquare2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, Film, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, RotateCcw, Save, Scissors, Shuffle, Sparkles, Square, Undo2, Upload, Video, Wand2, Wrench, X, XCircle } from 'lucide-react';
+import { Check, CheckSquare2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, ClipboardPaste, Database, Eye, Film, FolderOpen, Image as ImageIcon, Images, ImageUp, Library, Loader2, Pencil, RotateCcw, Save, Scissors, Shuffle, Sparkles, Square, Undo2, Upload, Wand2, Wrench, X, XCircle } from 'lucide-react';
 import { ErrorDetails as ErrorSummaryButton, summarizeErrorMessage } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EventTimeline } from '../../components/EventTimeline';
@@ -22,6 +22,7 @@ import type {
   TaskVideoReplacementSource,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
+import { Button, CheckboxField, Dialog, IconButton, Menu, SliderField, Tabs, TextAreaField, TextField } from '../../ui';
 import {
   activeImageConcurrency,
   countChars,
@@ -225,9 +226,9 @@ export function ArtifactPreviewContent({
             <span className="task-media-progress-track"><i style={{ width: `${Math.round((generatedImageCount / Math.max(1, scenes.length || generatedImageCount)) * 100)}%` }} /></span>
             {coverSelected ? <small className="task-media-cue-empty">封面页 {ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒</small> : selectedSceneCues.length > 0 ? (
               <div className="task-media-cue-control" aria-label="当前场景字幕">
-                <button type="button" title="上一条字幕" aria-label="上一条字幕" disabled={activeCueIndex === 0} onClick={() => setSelectedCueIndex((current) => Math.max(0, current - 1))}><ChevronLeft size={14} /></button>
+                <IconButton label="上一条字幕" icon={<ChevronLeft size={14} />} disabled={activeCueIndex === 0} onClick={() => setSelectedCueIndex((current) => Math.max(0, current - 1))} />
                 <small>字幕 {activeCueIndex + 1} / {selectedSceneCues.length}</small>
-                <button type="button" title="下一条字幕" aria-label="下一条字幕" disabled={activeCueIndex >= selectedSceneCues.length - 1} onClick={() => setSelectedCueIndex((current) => Math.min(selectedSceneCues.length - 1, current + 1))}><ChevronRight size={14} /></button>
+                <IconButton label="下一条字幕" icon={<ChevronRight size={14} />} disabled={activeCueIndex >= selectedSceneCues.length - 1} onClick={() => setSelectedCueIndex((current) => Math.min(selectedSceneCues.length - 1, current + 1))} />
               </div>
             ) : <small className="task-media-cue-empty">暂无字幕</small>}
             <small className="task-media-scene-count">{coverSelected ? '00' : String(selectedSceneIndex + 1).padStart(2, '0')} / {String(scenes.length || generatedImageCount || 0).padStart(2, '0')}</small>
@@ -235,25 +236,17 @@ export function ArtifactPreviewContent({
         </section>
         <aside className="task-scene-rail">
           <div><h3>场景画面</h3><span>{videoAssets.length} 个视频替换</span></div>
-          <div className="task-scene-list">
-            {task.coverPageEnabled ? (
-              <button type="button" className={`task-scene-item cover ${coverAsset ? 'complete' : task.status === 'running' ? 'running' : 'pending'} ${coverSelected ? 'selected' : ''}`} data-scene-kind="cover" onClick={() => setSelectedSceneId(0)}>
-                <span>00</span>
-                <div><strong>封面页</strong><small>{coverAsset ? `${ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒 · 已生成` : task.status === 'running' ? '生成中' : '等待生成'}</small></div>
-              </button>
-            ) : null}
-            {sceneRailItems.map((scene, index) => {
+          <Tabs className="task-scene-list" label="场景画面" vertical
+            value={String(coverSelected ? 0 : selectedScene?.id ?? '')}
+            onChange={(value) => setSelectedSceneId(Number(value))}
+            items={[
+              ...(task.coverPageEnabled ? [{ value: '0', label: <span className="task-scene-label"><span>00</span><span><strong>封面页</strong><small>{coverAsset ? `${ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒 · 已生成` : task.status === 'running' ? '生成中' : '等待生成'}</small></span></span> }] : []),
+              ...sceneRailItems.map((scene, index) => {
               const complete = imageBySceneId.has(scene.id);
               const usesVideo = videoBySceneId.has(scene.id);
               const running = !complete && nextPendingSceneId === scene.id && task.status === 'running';
-              return (
-                <button type="button" className={`task-scene-item ${complete ? 'complete' : running ? 'running' : 'pending'} ${selectedScene?.id === scene.id ? 'selected' : ''}`} key={scene.id} onClick={() => setSelectedSceneId(scene.id)}>
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <div><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{usesVideo ? '视频画面' : complete ? '图片画面' : running ? '生成中' : '等待生成'}</small></div>
-                </button>
-              );
-            })}
-          </div>
+              return { value: String(scene.id), label: <span className="task-scene-label"><span>{String(index + 1).padStart(2, '0')}</span><span><strong>{trimForPreview(scene.cap, 18) || `场景 ${index + 1}`}</strong><small>{usesVideo ? '视频画面' : complete ? '图片画面' : running ? '生成中' : '等待生成'}</small></span></span> };
+            })]} />
         </aside>
       </div>
       <div className="preview-meta-grid">
@@ -276,10 +269,9 @@ export function ArtifactPreviewContent({
           {latestEvent?.type === 'step_error' ? <ErrorSummaryButton fullMessage={latestEvent.detail} title="流水线错误" /> : <span>{snapshot?.message || latestEvent?.detail || '等待当前步骤产物落盘'}</span>}
         </div>
         {task.status === 'completed' && task.outputDir ? (
-          <button className="ghost-action" disabled={artifactAction.busy} onClick={openArtifactOutput}>
-            <FolderOpen size={15} />
+          <Button icon={<FolderOpen size={15} />} disabled={artifactAction.busy} onClick={openArtifactOutput}>
             打开草稿目录
-          </button>
+          </Button>
         ) : null}
       </div>
       <InlineActionFeedback feedback={artifactAction.feedback} />
@@ -501,14 +493,12 @@ function ArtifactStepActions({
   const busy = regenerating || rewriting;
   return (
     <div className="artifact-step-action-buttons">
-      <button className="mini-button" disabled={disabled || busy} title="从本步骤重新生成，并继续执行后续步骤" onClick={() => onAction(step, 'regenerate')}>
-        {regenerating ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+      <Button density="compact" icon={regenerating ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />} disabled={disabled || busy} title="从本步骤重新生成，并继续执行后续步骤" onClick={() => onAction(step, 'regenerate')}>
         重新生成
-      </button>
-      <button className="mini-button" disabled={disabled || busy} title="参考当前产物改写本步骤，并继续执行后续步骤" onClick={() => onAction(step, 'rewrite')}>
-        {rewriting ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />}
+      </Button>
+      <Button density="compact" icon={rewriting ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />} disabled={disabled || busy} title="参考当前产物改写本步骤，并继续执行后续步骤" onClick={() => onAction(step, 'rewrite')}>
         改写后继续
-      </button>
+      </Button>
     </div>
   );
 }
@@ -655,22 +645,18 @@ function StoryboardSubtitleEditor({
           <span>{scenes.length} 个分镜 · {Object.values(linesBySceneId).reduce((sum, lines) => sum + lines.length, 0)} 行字幕</span>
         </div>
         <div className="storyboard-editor-actions">
-          <button className="mini-button" type="button" disabled={locked || dirty} title={dirty ? '请先保存字幕断句' : '重新生成分镜并继续后续步骤'} onClick={() => void onAiStoryboard()}>
-            {regenerating ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />}
+          <Button icon={regenerating ? <Loader2 className="spin" size={14} /> : <Wand2 size={14} />} disabled={locked || dirty} title={dirty ? '请先保存字幕断句' : '重新生成分镜并继续后续步骤'} onClick={() => void onAiStoryboard()}>
             AI 重新分镜
-          </button>
-          <button className="mini-button" type="button" disabled={editorAction.busy} onClick={copyAllCopy}>
-            <ClipboardCopy size={14} />
+          </Button>
+          <Button icon={<ClipboardCopy size={14} />} disabled={editorAction.busy} onClick={copyAllCopy}>
             复制全部文案
-          </button>
-          <button className="mini-button" type="button" disabled={locked} onClick={resplitSubtitles}>
-            <Scissors size={14} />
+          </Button>
+          <Button icon={<Scissors size={14} />} disabled={locked} onClick={resplitSubtitles}>
             重新切分字幕
-          </button>
-          <button className="primary-action compact" type="button" disabled={locked || !dirty || invalidSceneIds.length > 0} onClick={saveSubtitleLines}>
-            {editorAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
+          </Button>
+          <Button variant="primary" icon={editorAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />} disabled={locked || !dirty || invalidSceneIds.length > 0} onClick={saveSubtitleLines}>
             保存字幕断句
-          </button>
+          </Button>
         </div>
       </header>
       {problemLineCount > 0 ? (
@@ -679,7 +665,7 @@ function StoryboardSubtitleEditor({
             {invalidSceneIds.length > 0 ? `分镜 ${invalidSceneIds.join('、')} 存在空字幕行。` : ''}
             {overLimitLineCount > 0 ? ` ${overLimitLineCount} 行超过模板上限 ${maxCharsPerLine} 字，行号已标红。` : ''}
           </span>
-          <button className="mini-button" type="button" disabled={locked} onClick={repairProblemLines}><Wrench size={13} />修复问题行</button>
+          <Button icon={<Wrench size={13} />} disabled={locked} onClick={repairProblemLines}>修复问题行</Button>
         </div>
       ) : null}
       <InlineActionFeedback feedback={editorAction.feedback} />
@@ -716,12 +702,14 @@ function StoryboardSubtitleEditor({
                       );
                     })}
                   </div>
-                  <textarea
+                  <TextAreaField
+                    label={<span className="sr-only">分镜 {sceneIndex + 1} 字幕行</span>}
+                    fieldClassName="storyboard-caption-text"
                     aria-label={`第 ${sceneIndex + 1} 个分镜字幕行，每行最多 ${maxCharsPerLine} 字`}
                     disabled={locked}
                     rows={Math.max(2, lines.length)}
                     spellCheck={false}
-                    wrap="off"
+                    textarea={{ wrap: 'off' }}
                     value={lines.join('\n')}
                     onChange={(event) => updateSceneLines(scene.id, event.target.value)}
                   />
@@ -1151,20 +1139,16 @@ function ImageGenerationGallery({
         <div className="image-generation-tools">
           {multiSelect ? (
             <>
-              <button type="button" className="gallery-tool-button" disabled={imageGenerationAction.busy} onClick={() => setSelectedSceneIds(new Set(scenes.map((scene) => scene.id)))}><CheckSquare2 size={15} />全选</button>
-              <button type="button" className="gallery-tool-button" disabled={imageGenerationAction.busy || selectedSceneIds.size === 0} onClick={() => setSelectedSceneIds(new Set())}><Square size={15} />清空</button>
-              <button type="button" className="gallery-tool-button primary" disabled={taskLocked || imageGenerationAction.busy || selectedSceneIds.size === 0} onClick={() => void regenerateSelected()}>
-                {activeSceneId === 'batch' ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}批量重绘 {selectedSceneIds.size || ''}
-              </button>
+              <Button icon={<CheckSquare2 size={15} />} disabled={imageGenerationAction.busy} onClick={() => setSelectedSceneIds(new Set(scenes.map((scene) => scene.id)))}>全选</Button>
+              <Button icon={<Square size={15} />} disabled={imageGenerationAction.busy || selectedSceneIds.size === 0} onClick={() => setSelectedSceneIds(new Set())}>清空</Button>
+              <Button variant="primary" icon={activeSceneId === 'batch' ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />} disabled={taskLocked || imageGenerationAction.busy || selectedSceneIds.size === 0} onClick={() => void regenerateSelected()}>
+                批量重绘 {selectedSceneIds.size || ''}
+              </Button>
             </>
           ) : (
-            <button type="button" className="gallery-tool-button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void importImages()}>
-              {activeSceneId === 'batch' ? <Loader2 className="spin" size={15} /> : <Upload size={15} />}批量导入
-            </button>
+            <Button icon={activeSceneId === 'batch' ? <Loader2 className="spin" size={15} /> : <Upload size={15} />} disabled={taskLocked || imageGenerationAction.busy} onClick={() => void importImages()}>批量导入</Button>
           )}
-          <button type="button" className={`gallery-tool-button ${multiSelect ? 'active' : ''}`} disabled={imageGenerationAction.busy} onClick={toggleMultiSelect}>
-            {multiSelect ? <X size={15} /> : <CheckSquare2 size={15} />}{multiSelect ? '退出多选' : '多选'}
-          </button>
+          <Button aria-pressed={multiSelect} icon={multiSelect ? <X size={15} /> : <CheckSquare2 size={15} />} disabled={imageGenerationAction.busy} onClick={toggleMultiSelect}>{multiSelect ? '退出多选' : '多选'}</Button>
         </div>
       </div>
       <InlineActionFeedback feedback={imageGenerationAction.feedback} />
@@ -1201,32 +1185,28 @@ function ImageGenerationGallery({
                 {!videoAsset && !image && imageError ? <XCircle size={24} /> : null}
                 {!videoAsset && !image && !imageError ? <ImageIcon size={24} /> : null}
                 {multiSelect ? (
-                  <button type="button" className={`image-select-toggle ${selected ? 'selected' : ''}`} aria-label={`${selected ? '取消选择' : '选择'}分镜 ${scene.id}`} onClick={() => toggleSceneSelection(scene.id)}>
-                    {selected ? <Check size={15} /> : null}
-                  </button>
+                  <CheckboxField className="task-image-selection" aria-label={`选择分镜 ${scene.id}`} checked={selected} disabled={imageGenerationAction.busy} onChange={() => toggleSceneSelection(scene.id)} />
                 ) : null}
                 <span className={`image-card-status ${cardState}`}>{statusText}</span>
                 {!multiSelect ? (
                   <div className="image-card-action-panel">
-                    {!videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || (!image && !imageError)} onClick={() => void regenerate(scene.id)}>{busy ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}重新生成</button> : null}
-                    {!videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText, referenceImagePaths: [] })}><Pencil size={14} />改提示词</button> : null}
-                    {!videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText, referenceImagePaths: [] })}><Wand2 size={14} />参考图编辑</button> : null}
-                    <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => setMediaMenuSceneId((current) => current === scene.id ? null : scene.id)}><Video size={14} />{videoAsset ? '更换画面' : '替换画面'}<ChevronDown size={12} /></button>
-                    {videoAsset ? <button type="button" disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => void restoreImage(scene.id)}><Undo2 size={14} />恢复图片</button> : null}
-                    {!videoAsset ? <button type="button" disabled={!image || imageGenerationAction.busy} onClick={() => void copyImage(scene.id)}>{busy && imageGenerationAction.busy ? <Loader2 className="spin" size={14} /> : <ClipboardCopy size={14} />}复制图</button> : null}
-                    {!videoAsset && copiedSceneId !== null && copiedSceneId !== scene.id ? <button type="button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void pasteImage(scene.id)}><ClipboardPaste size={14} />粘贴图</button> : null}
-                    <button type="button" disabled={!(videoPreviewUrl || previewUrl)} onClick={() => setPreviewSceneId(scene.id)}><Eye size={14} />预览</button>
-                  </div>
-                ) : null}
-                {mediaMenuOpen ? (
-                  <div className="scene-media-menu" role="menu" aria-label={`替换分镜 ${scene.id} 画面`} onClick={(event) => event.stopPropagation()}>
-                    <div><strong>替换画面</strong><button type="button" title="关闭" aria-label="关闭替换画面菜单" onClick={() => setMediaMenuSceneId(null)}><X size={13} /></button></div>
-                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(scene.id)}><ImageUp size={14} /><span>本地图片<small>选择一张图片</small></span></button>
-                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => { setLibrarySceneId(scene.id); setMediaMenuSceneId(null); }}><Library size={14} /><span>图片素材库<small>使用已生成图片</small></span></button>
-                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(scene.id, { kind: 'local' })}><Upload size={14} /><span>本地视频<small>MP4、MOV、WebM</small></span></button>
-                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => { setVideoLibrarySceneId(scene.id); setMediaMenuSceneId(null); }}><Film size={14} /><span>视频素材库<small>选择已导入片段</small></span></button>
-                    <button type="button" role="menuitem" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(scene.id, { kind: 'random' })}><Shuffle size={14} /><span>随机匹配视频<small>按画幅与时长筛选</small></span></button>
-                    <button type="button" role="menuitem" title={videoProviderReady ? undefined : '请先在系统设置中配置并启用云端视频 API'} disabled={taskLocked || imageGenerationAction.busy || !videoProviderReady} onClick={() => void replaceVideo(scene.id, { kind: 'ai', useSceneImage: Boolean(image) })}><Sparkles size={14} /><span>AI 生成视频<small>{videoProviderReady ? `${activeVideoProvider.name} · ${activeVideoProvider.model}` : '请先配置云端视频 API'}</small></span></button>
+                    {!videoAsset ? <Button density="compact" icon={busy ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />} disabled={taskLocked || imageGenerationAction.busy || (!image && !imageError)} onClick={() => void regenerate(scene.id)}>重新生成</Button> : null}
+                    {!videoAsset ? <Button density="compact" icon={<Pencil size={14} />} disabled={taskLocked || imageGenerationAction.busy || !prompt} onClick={() => setEditor({ sceneId: scene.id, mode: 'prompt', text: promptText, referenceImagePaths: [] })}>改提示词</Button> : null}
+                    {!videoAsset ? <Button density="compact" icon={<Wand2 size={14} />} disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => setEditor({ sceneId: scene.id, mode: 'reference', text: promptText, referenceImagePaths: [] })}>参考图编辑</Button> : null}
+                    <Menu open={mediaMenuOpen} onOpenChange={(_, data) => setMediaMenuSceneId(data.open ? scene.id : null)}
+                      trigger={<Button density="compact" icon={<ChevronDown size={14} />} iconPosition="after" disabled={taskLocked || imageGenerationAction.busy}>{videoAsset ? '更换画面' : '替换画面'}</Button>}
+                      options={[
+                        { id: 'image-local', label: '本地图片', icon: <ImageUp size={14} />, onSelect: () => void replaceImage(scene.id) },
+                        { id: 'image-library', label: '图片素材库', icon: <Library size={14} />, onSelect: () => { setLibrarySceneId(scene.id); setMediaMenuSceneId(null); } },
+                        { id: 'video-local', label: '本地视频', icon: <Upload size={14} />, onSelect: () => void replaceVideo(scene.id, { kind: 'local' }) },
+                        { id: 'video-library', label: '视频素材库', icon: <Film size={14} />, onSelect: () => { setVideoLibrarySceneId(scene.id); setMediaMenuSceneId(null); } },
+                        { id: 'video-random', label: '随机匹配视频', icon: <Shuffle size={14} />, onSelect: () => void replaceVideo(scene.id, { kind: 'random' }) },
+                        { id: 'video-ai', label: videoProviderReady ? `AI 生成视频 · ${activeVideoProvider.name}` : 'AI 生成视频（请先配置 API）', icon: <Sparkles size={14} />, disabled: !videoProviderReady, onSelect: () => void replaceVideo(scene.id, { kind: 'ai', useSceneImage: Boolean(image) }) },
+                      ]} />
+                    {videoAsset ? <Button density="compact" icon={<Undo2 size={14} />} disabled={taskLocked || imageGenerationAction.busy || !image} onClick={() => void restoreImage(scene.id)}>恢复图片</Button> : null}
+                    {!videoAsset ? <Button density="compact" icon={busy && imageGenerationAction.busy ? <Loader2 className="spin" size={14} /> : <ClipboardCopy size={14} />} disabled={!image || imageGenerationAction.busy} onClick={() => void copyImage(scene.id)}>复制图</Button> : null}
+                    {!videoAsset && copiedSceneId !== null && copiedSceneId !== scene.id ? <Button density="compact" icon={<ClipboardPaste size={14} />} disabled={taskLocked || imageGenerationAction.busy} onClick={() => void pasteImage(scene.id)}>粘贴图</Button> : null}
+                    <Button density="compact" icon={<Eye size={14} />} disabled={!(videoPreviewUrl || previewUrl)} onClick={() => setPreviewSceneId(scene.id)}>预览</Button>
                   </div>
                 ) : null}
               </div>
@@ -1238,11 +1218,10 @@ function ImageGenerationGallery({
                   <div className="scene-video-details">
                     <span><Film size={12} />{videoAsset.width}×{videoAsset.height} · 素材 {formatMs(videoAsset.durationMs)} · 原图已保留</span>
                     {videoAsset.source === 'ai-video' ? <span><Sparkles size={12} />{videoAsset.providerId} · {videoAsset.model}{videoAsset.estimatedCost !== undefined ? ` · 预计 ${videoAsset.estimatedCost.toFixed(2)}` : ''}</span> : null}
-                    <label>
-                      <span>入点 {formatMs(trimValue)}</span>
-                      <input type="range" min={0} max={maxTrimStartMs} step={100} disabled={taskLocked || imageGenerationAction.busy || maxTrimStartMs === 0} value={Math.min(trimValue, maxTrimStartMs)} onChange={(event) => setTrimDrafts((current) => ({ ...current, [scene.id]: Number(event.target.value) }))} />
-                      <button type="button" disabled={taskLocked || imageGenerationAction.busy || trimValue === videoAsset.trimStartMs} onClick={() => void saveVideoTrim(scene.id, trimValue)}>应用</button>
-                    </label>
+                    <div className="task-video-trim">
+                      <SliderField label="入点" valueLabel={formatMs(trimValue)} min={0} max={maxTrimStartMs} step={100} disabled={taskLocked || imageGenerationAction.busy || maxTrimStartMs === 0} value={Math.min(trimValue, maxTrimStartMs)} onChange={(_, data) => setTrimDrafts((current) => ({ ...current, [scene.id]: data.value }))} />
+                      <Button icon={<Check size={14} />} disabled={taskLocked || imageGenerationAction.busy || trimValue === videoAsset.trimStartMs} onClick={() => void saveVideoTrim(scene.id, trimValue)}>应用</Button>
+                    </div>
                   </div>
                 ) : <p>{trimForPreview(promptText, 120)}</p>}
                 {imageError ? <div className="artifact-image-error" title={imageError.message}>{image?.borrowedFrom ? '原始生成失败：' : ''}{summarizeErrorMessage(imageError.message)}</div> : null}
@@ -1254,12 +1233,14 @@ function ImageGenerationGallery({
       </div>
 
       {editor ? (
-        <div className="image-gallery-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !imageGenerationAction.busy && setEditor(null)}>
-          <section className="image-gallery-editor-dialog" role="dialog" aria-modal="true" aria-label={editor.mode === 'reference' ? `参考图编辑分镜 ${editor.sceneId}` : `修改分镜 ${editor.sceneId} 提示词`} onKeyDown={(event) => event.key === 'Escape' && !imageGenerationAction.busy && setEditor(null)}>
-            <header>
-              <div><small>分镜 {String(editor.sceneId).padStart(2, '0')}</small><strong>{editor.mode === 'reference' ? '参考图编辑' : '修改提示词'}</strong></div>
-              <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}><X size={17} /></button>
-            </header>
+        <Dialog open title={editor.mode === 'reference' ? `参考图编辑分镜 ${editor.sceneId}` : `修改分镜 ${editor.sceneId} 提示词`}
+          onOpenChange={(open) => { if (!open && !imageGenerationAction.busy) setEditor(null); }}
+          actions={<>
+            <Button disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}>取消</Button>
+            <Button variant="primary" icon={imageGenerationAction.busy ? <Loader2 className="spin" size={15} /> : editor.mode === 'reference' ? <Wand2 size={15} /> : <Save size={15} />} disabled={imageGenerationAction.busy || !editor.text.trim()} onClick={() => void submitEditor()}>
+              {editor.mode === 'reference' ? '开始编辑' : '保存并重绘'}
+            </Button>
+          </>}>
             {editor.mode === 'reference' ? (
               <section className="image-gallery-reference-editor" aria-label="参考图选择">
                 <div className="image-gallery-reference-head">
@@ -1275,66 +1256,49 @@ function ImageGenerationGallery({
                     <div className="image-gallery-reference-item" key={path}>
                       <span><img src={toLocalImageUrl(path)} alt={`补充参考图 ${index + 1}`} /></span>
                       <small>补充图 {index + 1}</small>
-                      <button type="button" title={`移除补充参考图 ${index + 1}`} aria-label={`移除补充参考图 ${index + 1}`} disabled={imageGenerationAction.busy} onClick={() => removeEditorReferenceImage(path)}><X size={13} /></button>
+                      <IconButton label={`移除补充参考图 ${index + 1}`} icon={<X size={13} />} disabled={imageGenerationAction.busy} onClick={() => removeEditorReferenceImage(path)} />
                     </div>
                   ))}
-                  <button type="button" className="image-gallery-reference-add" disabled={imageGenerationAction.busy || editor.referenceImagePaths.length >= 9} onClick={() => void addEditorReferenceImage()}>
-                    <ImageUp size={19} />
-                    <span>添加参考图</span>
-                    <small>{editor.referenceImagePaths.length} / 9</small>
-                  </button>
+                  <Button icon={<ImageUp size={19} />} disabled={imageGenerationAction.busy || editor.referenceImagePaths.length >= 9} onClick={() => void addEditorReferenceImage()}>添加参考图 {editor.referenceImagePaths.length} / 9</Button>
                 </div>
               </section>
             ) : null}
-            <textarea autoFocus value={editor.text} disabled={imageGenerationAction.busy} onChange={(event) => setEditor({ ...editor, text: event.target.value })} />
-            <footer>
-              <button type="button" className="ghost-action" disabled={imageGenerationAction.busy} onClick={() => setEditor(null)}>取消</button>
-              <button type="button" className="primary-action" disabled={imageGenerationAction.busy || !editor.text.trim()} onClick={() => void submitEditor()}>
-                {imageGenerationAction.busy ? <Loader2 className="spin" size={15} /> : editor.mode === 'reference' ? <Wand2 size={15} /> : <Save size={15} />}
-                {editor.mode === 'reference' ? '开始编辑' : '保存并重绘'}
-              </button>
-            </footer>
-          </section>
-        </div>
+            <TextAreaField label={editor.mode === 'reference' ? '编辑要求' : '图片提示词'} rows={8} value={editor.text} disabled={imageGenerationAction.busy} onChange={(event) => setEditor({ ...editor, text: event.target.value })} />
+        </Dialog>
       ) : null}
 
       {librarySceneId !== null ? (
-        <div className="image-gallery-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !imageGenerationAction.busy && setLibrarySceneId(null)}>
-          <section className="image-library-dialog" role="dialog" aria-modal="true" aria-label={`为分镜 ${librarySceneId} 选择素材`}>
-            <header>
-              <div><small>替换分镜 {String(librarySceneId).padStart(2, '0')}</small><strong>素材库选图</strong></div>
-              <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setLibrarySceneId(null)}><X size={17} /></button>
-            </header>
+        <Dialog open title={`为分镜 ${librarySceneId} 选择素材`} surfaceClassName="task-library-surface"
+          onOpenChange={(open) => { if (!open && !imageGenerationAction.busy) setLibrarySceneId(null); }}
+          actions={<Button disabled={imageGenerationAction.busy} onClick={() => setLibrarySceneId(null)}>关闭</Button>}>
             <div className="image-library-toolbar">
-              <input aria-label="搜索图片素材" value={libraryQuery} placeholder="搜索提示词、风格或模型" onChange={(event) => setLibraryQuery(event.target.value)} />
-              <button type="button" className="gallery-tool-button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(librarySceneId)}><ImageUp size={15} />本地图片</button>
+              <TextField label="搜索图片素材" value={libraryQuery} placeholder="搜索提示词、风格或模型" onChange={(event) => setLibraryQuery(event.target.value)} />
+              <Button icon={<ImageUp size={15} />} disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceImage(librarySceneId)}>本地图片</Button>
             </div>
             <div className="image-library-grid">
               {libraryLoading ? <div className="image-library-state"><Loader2 className="spin" size={20} />正在读取素材</div> : null}
               {libraryError ? <div className="image-library-state danger"><XCircle size={20} />{libraryError}</div> : null}
               {!libraryLoading && !libraryError && filteredLibraryRecords.length === 0 ? <div className="image-library-state"><Images size={20} />暂无可用图片</div> : null}
               {filteredLibraryRecords.map((record) => (
-                <button type="button" className="image-library-item" key={record.id} disabled={imageGenerationAction.busy} onClick={() => void chooseLibraryImage(record.id)}>
-                  <span>{libraryPreviewUrls[record.imagePath] ? <img src={libraryPreviewUrls[record.imagePath]} alt="" /> : <ImageIcon size={21} />}</span>
+                <article className="task-library-image" key={record.id}>
+                  <div>{libraryPreviewUrls[record.imagePath] ? <img src={libraryPreviewUrls[record.imagePath]} alt="" /> : <ImageIcon size={21} />}</div>
                   <strong>{trimForPreview(record.promptPreview, 42) || '未命名素材'}</strong>
-                  <small>{record.provider} · {record.ratio}<i>选用</i></small>
-                </button>
+                  <small>{record.provider} · {record.ratio}</small>
+                  <Button icon={<Check size={14} />} disabled={imageGenerationAction.busy} onClick={() => void chooseLibraryImage(record.id)}>选用</Button>
+                </article>
               ))}
             </div>
-          </section>
-        </div>
+        </Dialog>
       ) : null}
 
       {videoLibrarySceneId !== null ? (
-        <div className="image-gallery-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !imageGenerationAction.busy && setVideoLibrarySceneId(null)}>
-          <section className="video-library-dialog" role="dialog" aria-modal="true" aria-label={`为分镜 ${videoLibrarySceneId} 选择视频`}>
-            <header>
-              <div><small>替换分镜 {String(videoLibrarySceneId).padStart(2, '0')}</small><strong>视频素材库</strong><span>需要 {formatMs(videoLibraryScene?.durationMs ?? 0)} · 自动静音</span></div>
-              <button type="button" title="关闭" aria-label="关闭" disabled={imageGenerationAction.busy} onClick={() => setVideoLibrarySceneId(null)}><X size={17} /></button>
-            </header>
+        <Dialog open title={`为分镜 ${videoLibrarySceneId} 选择视频`} surfaceClassName="task-library-surface"
+          onOpenChange={(open) => { if (!open && !imageGenerationAction.busy) setVideoLibrarySceneId(null); }}
+          actions={<Button disabled={imageGenerationAction.busy} onClick={() => setVideoLibrarySceneId(null)}>关闭</Button>}>
+            <p>需要 {formatMs(videoLibraryScene?.durationMs ?? 0)} · 自动静音</p>
             <div className="image-library-toolbar">
-              <input aria-label="搜索视频素材" value={videoLibraryQuery} placeholder="搜索文件名或分辨率" onChange={(event) => setVideoLibraryQuery(event.target.value)} />
-              <button type="button" className="gallery-tool-button" disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'local' })}><Upload size={15} />导入视频</button>
+              <TextField label="搜索视频素材" value={videoLibraryQuery} placeholder="搜索文件名或分辨率" onChange={(event) => setVideoLibraryQuery(event.target.value)} />
+              <Button icon={<Upload size={15} />} disabled={taskLocked || imageGenerationAction.busy} onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'local' })}>导入视频</Button>
             </div>
             <div className="video-library-list">
               {videoLibraryLoading ? <div className="image-library-state"><Loader2 className="spin" size={20} />正在读取视频素材</div> : null}
@@ -1343,29 +1307,28 @@ function ImageGenerationGallery({
               {filteredVideoLibraryItems.map((item) => {
                 const tooShort = item.durationMs < (videoLibraryScene?.durationMs ?? 0);
                 return (
-                  <button type="button" className="video-library-item" key={item.id} disabled={imageGenerationAction.busy || tooShort} onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'library', libraryId: item.id })}>
+                  <div className="task-library-video" key={item.id}>
                     <span><Film size={21} /></span>
                     <div><strong>{item.originalName}</strong><small>{item.width}×{item.height} · {formatMs(item.durationMs)}</small></div>
-                    <i>{tooShort ? '时长不足' : '选用'}</i>
-                  </button>
+                    <Button icon={<Check size={14} />} disabled={imageGenerationAction.busy || tooShort} onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'library', libraryId: item.id })}>{tooShort ? '时长不足' : '选用'}</Button>
+                  </div>
                 );
               })}
             </div>
-          </section>
-        </div>
+        </Dialog>
       ) : null}
 
       {previewSceneId !== null ? (
-        <div className="image-gallery-modal-backdrop preview" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPreviewSceneId(null)}>
-          <section className="image-gallery-preview-dialog" role="dialog" aria-modal="true" aria-label={`预览分镜 ${previewSceneId}`}>
+        <Dialog open title={`预览分镜 ${previewSceneId}`} surfaceClassName="task-media-preview-surface" onOpenChange={(open) => { if (!open) setPreviewSceneId(null); }}
+          actions={<Button onClick={() => setPreviewSceneId(null)}>关闭预览</Button>}>
+          <div className="task-media-preview-content">
             {videoPreviewUrls[videoBySceneId.get(previewSceneId)?.path ?? '']
               ? <video src={videoPreviewUrls[videoBySceneId.get(previewSceneId)?.path ?? '']} controls autoPlay muted playsInline aria-label={`分镜 ${previewSceneId} 视频预览`} />
               : imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? '']
                 ? <img src={imagePreviewUrls[imageBySceneId.get(previewSceneId)?.path ?? '']} alt={`分镜 ${previewSceneId}`} />
                 : null}
-            <button type="button" title="关闭预览" aria-label="关闭预览" onClick={() => setPreviewSceneId(null)}><X size={18} /></button>
-          </section>
-        </div>
+          </div>
+        </Dialog>
       ) : null}
     </div>
   );
@@ -1500,10 +1463,9 @@ function NarrationPreviewList({
             {!ready ? <div className="narration-player loading">等待音频落盘</div> : null}
             {item.cues.length > 0 ? <p>{item.cues.map((cue) => cue.text).join(' / ')}</p> : null}
             {!ready ? <small>等待 TTS 返回真实音频</small> : null}
-            <button className="mini-button" disabled={disabled} onClick={() => regenerate(item.sceneId)}>
-              {regeneratingSceneId === item.sceneId ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+            <Button disabled={disabled} icon={regeneratingSceneId === item.sceneId ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />} onClick={() => void regenerate(item.sceneId)}>
               {ready ? '重新生成配音' : '生成配音'}
-            </button>
+            </Button>
           </article>
         );
       })}

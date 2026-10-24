@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Check, FileClock, Loader2, Search, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowRight, Check, FileClock, Library, Loader2, Save, Search, Sparkles, Wand2 } from 'lucide-react';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AiSourceContext, AiSourceSection, ShellView, WebSearchProvider } from '../../shared/types';
 import { formatWebSearchBackendStatus, formatWebSearchSourceLabel } from '../../shared/web-search-presentation';
@@ -7,6 +7,8 @@ import { Button, CheckboxField, SegmentedControl, SelectField, TextAreaField, Te
 import { useAsyncAction } from '../../ui/async-action';
 import { copySourceKey, createCopyRevision, handoffCopyToVideo, readCopyStudioDocument, writeCopyStudioDocument, type CopyRevision, type CopyRevisionKind } from './copy-studio';
 import './copy-studio.css';
+import { LibraryPicker } from '../asset-library/LibraryPicker';
+import { LibrarySaveDialog, type LibraryDraft } from '../asset-library/LibrarySaveDialog';
 
 const providers: ReadonlyArray<{ value: WebSearchProvider; label: string }> = [
   { value: 'bing', label: '必应' }, { value: 'baidu', label: '百度' }, { value: 'sogou', label: '搜狗' }, { value: 'toutiao', label: '头条' }, { value: 'duckduckgo', label: 'DuckDuckGo' },
@@ -33,7 +35,9 @@ export function CopyStudioPage({ api, navigate }: { api: StoryDreamApi; navigate
   const [sourceIds, setSourceIds] = useState<string[]>(restored?.sourceIds || []);
   const [revisions, setRevisions] = useState<CopyRevision[]>(restored?.revisions || []);
   const [activeRevisionId, setActiveRevisionId] = useState(restored?.activeRevisionId || restored?.revisions.at(-1)?.id || '');
-  const [editorText, setEditorText] = useState(() => restored?.revisions.find((item) => item.id === restored.activeRevisionId)?.text || restored?.revisions.at(-1)?.text || '');
+  const [editorText, setEditorText] = useState(() => restored?.editorText ?? restored?.revisions.find((item) => item.id === restored.activeRevisionId)?.text ?? restored?.revisions.at(-1)?.text ?? '');
+  const [libraryPicker, setLibraryPicker] = useState<'source' | 'version' | null>(null);
+  const [libraryDraft, setLibraryDraft] = useState<LibraryDraft | null>(null);
   const [refineInstruction, setRefineInstruction] = useState('压缩重复表达，加强前 3 句吸引力，保留全部可核验事实');
   const [skipReview, setSkipReview] = useState(false);
   const [notice, setNotice] = useState('');
@@ -42,8 +46,8 @@ export function CopyStudioPage({ api, navigate }: { api: StoryDreamApi; navigate
   const selectedSources = (searchContext?.sections || []).filter((source) => sourceIds.includes(copySourceKey(source)));
 
   useEffect(() => {
-    writeCopyStudioDocument(window.localStorage, { version: 1, topic, requirements, track, sourceIds, sources: searchContext?.sections || [], revisions, activeRevisionId, updatedAt: new Date().toISOString() });
-  }, [topic, requirements, track, sourceIds, searchContext, revisions, activeRevisionId]);
+    writeCopyStudioDocument(window.localStorage, { version: 1, topic, requirements, track, sourceIds, sources: searchContext?.sections || [], revisions, activeRevisionId, editorText, updatedAt: new Date().toISOString() });
+  }, [topic, requirements, track, sourceIds, searchContext, revisions, activeRevisionId, editorText]);
 
   function toggleProvider(provider: WebSearchProvider) {
     setSelectedProviders((current) => current.includes(provider) ? current.filter((item) => item !== provider) : [...current, provider]);
@@ -111,6 +115,7 @@ export function CopyStudioPage({ api, navigate }: { api: StoryDreamApi; navigate
       <TextField label="搜索主题" value={topic} placeholder="人物、事件、产品或选题" onChange={(_, data) => setTopic(data.value)} />
       <div className="copy-studio-provider-list" aria-label="搜索渠道">{providers.map((provider) => <CheckboxField key={provider.value} label={provider.label} checked={selectedProviders.includes(provider.value)} onChange={() => toggleProvider(provider.value)} />)}</div>
       <Button variant="primary" icon={searchAction.busy ? <Loader2 className="spin" size={16} /> : <Search size={16} />} disabled={searchAction.busy} onClick={() => void searchSources()}>{searchAction.busy ? '搜索中' : '搜索来源'}</Button>
+      <Button icon={<Library size={15} />} disabled={composeAction.busy} onClick={() => setLibraryPicker('source')}>从素材库添加来源</Button>
       {searchContext?.backendStatuses?.length ? <div className="copy-studio-backend-statuses" aria-label="搜索后端状态">{searchContext.backendStatuses.map((status) => <span className="copy-studio-backend-status" data-state={status.state} key={status.backend} title={status.message}>{formatWebSearchBackendStatus(status)}</span>)}</div> : null}
       <div className="copy-studio-source-list">{searchContext?.sections.map((source) => { const key = copySourceKey(source); return <label key={key} className="copy-studio-source" data-selected={sourceIds.includes(key)}>
         <CheckboxField checked={sourceIds.includes(key)} onChange={() => setSourceIds((current) => current.includes(key) ? current.filter((id) => id !== key) : [...current, key])} />
@@ -120,6 +125,7 @@ export function CopyStudioPage({ api, navigate }: { api: StoryDreamApi; navigate
 
     <main className="copy-studio-editor" aria-label="文案编辑器">
       <div className="copy-studio-editor-toolbar"><div><h2>文案精修</h2><span>{editorText.trim().length} 字 · {revisions.length} 个版本</span></div><Button density="compact" icon={<FileClock size={15} />} disabled={!editorText.trim()} onClick={saveManualVersion}>保存当前版本</Button></div>
+      <div className="library-inline-actions"><Button density="compact" icon={<Library size={15} />} disabled={composeAction.busy} onClick={() => setLibraryPicker('version')}>从素材库采用文本</Button><Button density="compact" icon={<Save size={15} />} disabled={!editorText.trim() || composeAction.busy} onClick={() => setLibraryDraft({ kind: 'text', text: editorText, title: topic || '文案', source: { kind: 'copy-studio', id: activeRevisionId || undefined } })}>存入素材库</Button></div>
       <TextAreaField label="创作要求" rows={3} value={requirements} onChange={(_, data) => setRequirements(data.value)} />
       <Button variant="primary" icon={composeAction.busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />} disabled={composeAction.busy || !selectedSources.length} onClick={() => void compose('draft')}>根据 {selectedSources.length} 条来源生成初稿</Button>
       <TextAreaField className="copy-studio-copy-field" label="当前文案" rows={18} value={editorText} placeholder="选择来源生成初稿，也可以直接在这里粘贴文案" onChange={(_, data) => setEditorText(data.value)} />
@@ -133,5 +139,21 @@ export function CopyStudioPage({ api, navigate }: { api: StoryDreamApi; navigate
       <section className="copy-studio-track"><div className="copy-studio-heading"><h2>特色赛道</h2><span>在最后几轮强化受众与表达</span></div><SelectField label="内容赛道" value={track} options={trackOptions} onChange={(_, data) => setTrack(data.value)} />{track === 'custom' ? <TextField label="自定义赛道" value={customTrack} onChange={(_, data) => setCustomTrack(data.value)} /> : null}</section>
       <section className="copy-studio-handoff"><div className="copy-studio-heading"><h2>送入视频制作</h2><span>回传到原有视频任务创建位置</span></div><SegmentedControl label="预审方式" value={skipReview ? 'skip' : 'review'} options={[{ value: 'review', label: '保留预审' }, { value: 'skip', label: '跳过预审' }]} onChange={(value) => setSkipReview(value === 'skip')} /><p>{skipReview ? '定稿将直接作为正式文案进入分镜与后续制作。' : '定稿会先进入现有预审与改写流程。'}</p><Button variant="primary" icon={<ArrowRight size={16} />} iconPosition="after" disabled={!editorText.trim()} onClick={sendToVideo}>回传并继续视频制作</Button>{editorText.trim() ? <span className="copy-studio-ready"><Check size={14} />当前版本可交接</span> : null}</section>
     </aside>
+    {libraryPicker ? <LibraryPicker api={api} kind="text" title={libraryPicker === 'source' ? '添加创作来源' : '采用文本版本'} actionLabel={libraryPicker === 'source' ? '添加来源' : '采用为新版本'} onClose={() => setLibraryPicker(null)} onChoose={(selection) => {
+      if (!selection.text) throw new Error('该文本素材为空。');
+      if (libraryPicker === 'source') {
+        const source: AiSourceSection = { source: '素材库', title: selection.title, url: '', content: selection.text };
+        const key = copySourceKey(source);
+        setSearchContext((current) => ({ query: current?.query || topic, warnings: current?.warnings || [], sections: [...(current?.sections || []).filter((item) => copySourceKey(item) !== key), source] }));
+        setSourceIds((current) => [...new Set([...current, key])]);
+        setNotice(`已添加来源：${selection.title}`);
+      } else {
+        const preserved = editorText.trim() && revisions.find((item) => item.id === activeRevisionId)?.text !== editorText
+          ? [createCopyRevision({ kind: 'refine', label: '采用素材前', instruction: '保留编辑内容', text: editorText })] : [];
+        const revision = createCopyRevision({ kind: 'draft', label: selection.title, instruction: '从素材库采用', text: selection.text });
+        setRevisions((current) => [...current, ...preserved, revision]); setActiveRevisionId(revision.id); setEditorText(revision.text); setNotice('已采用为新版本。');
+      }
+    }} /> : null}
+    {libraryDraft ? <LibrarySaveDialog api={api} draft={libraryDraft} onClose={() => setLibraryDraft(null)} onSaved={() => setNotice('已存入素材库。')} /> : null}
   </div>;
 }

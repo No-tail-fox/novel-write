@@ -19,7 +19,7 @@ import type {
 import { useAsyncAction } from '../../ui/async-action';
 import { normalizeAppError } from '../../shared/app-error';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
-import { SelectField } from '../../ui';
+import { Button, SelectField, Tabs, TextAreaField, TextField } from '../../ui';
 
 type AuthoringPanel = 'source' | 'properties' | 'lint' | 'queue';
 type DragKind = 'move' | 'trim-start' | 'trim-end';
@@ -303,18 +303,8 @@ export function HtmlVideoAuthoringWorkspace({
         <SelectField fieldClassName="hv-authoring-scene-select" label="场景" value={String(sceneIndex)}
           onChange={(event) => { const next = Number(event.target.value); if (next !== sceneIndex) void sourceLeave.requestLeave(() => setSceneIndex(next)); }}
           disabled={!scenes.length} options={scenes.map((scene) => ({ value: String(scene.index), label: `场景 ${String(scene.index).padStart(2, '0')}` }))} />
-        <nav className="hv-authoring-panels" aria-label="编排工具">
-          {panelItems.map((item) => (
-            <button key={item.key} type="button" className={activePanel === item.key ? 'active' : ''} aria-pressed={activePanel === item.key} onClick={() => setActivePanel(item.key)}>
-              {item.label}
-              {item.key === 'lint' && lintErrorCount ? <span>{lintErrorCount}</span> : null}
-            </button>
-          ))}
-        </nav>
-        <button className="hv-authoring-save" type="button" onClick={saveHtmlVideoCompositionSource} disabled={!canSave} title="保存 HTML 源码">
-          {sourceAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
-          保存
-        </button>
+        <Tabs className="hv-authoring-panels" label="编排工具" value={activePanel} onChange={(value) => setActivePanel(value as typeof activePanel)} items={panelItems.map((item) => ({ value: item.key, label: item.key === 'lint' && lintErrorCount ? `${item.label} (${lintErrorCount})` : item.label }))} />
+        <Button className="hv-authoring-save" onClick={saveHtmlVideoCompositionSource} disabled={!canSave} title="保存 HTML 源码" icon={sourceAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}>保存</Button>
       </header>
 
       <div className="hv-authoring-main">
@@ -343,7 +333,7 @@ export function HtmlVideoAuthoringWorkspace({
           {activePanel === 'source' ? (
             <div className="hv-authoring-panel hv-authoring-source-panel">
               <div className="hv-authoring-panel-title"><Code2 size={14} /><strong>HTML 源码</strong><span>rev {composition?.revision ?? '-'}</span></div>
-              <textarea value={source} onChange={(event) => { setSource(event.target.value); setStatusMessage('场景有未保存修改。'); }} spellCheck={false} disabled={!composition || locked} aria-label="HTML 动画源码" />
+              <TextAreaField fieldClassName="hv-authoring-source-field" label="HTML 动画源码" value={source} onChange={(event) => { setSource(event.target.value); setStatusMessage('场景有未保存修改。'); }} spellCheck={false} disabled={!composition || locked} />
             </div>
           ) : null}
 
@@ -352,12 +342,12 @@ export function HtmlVideoAuthoringWorkspace({
               <div className="hv-authoring-panel-title"><SlidersHorizontal size={14} /><strong>片段属性</strong><span>{selectedClip?.tagName ?? '-'}</span></div>
               {selectedClip ? (
                 <fieldset className="hv-authoring-fields" disabled={locked}>
-                  <label><span>片段</span><input value={selectedClip.label} readOnly /></label>
-                  <label><span>开始时间</span><input type="number" min={0} step={0.1} value={selectedClip.startSec} onChange={(event) => updateClip(selectedClip, { startSec: Math.max(0, Number(event.target.value)) })} /></label>
-                  <label><span>持续时间</span><input type="number" min={0.1} step={0.1} value={selectedClip.durationSec} onChange={(event) => updateClip(selectedClip, { durationSec: Math.max(0.1, Number(event.target.value)) })} /></label>
-                  <label><span>轨道</span><input type="number" min={0} step={1} value={selectedClip.trackIndex} onChange={(event) => updateClip(selectedClip, { trackIndex: Math.max(0, Math.round(Number(event.target.value))) })} /></label>
-                  {selectedClip.media ? <label><span>媒体偏移</span><input type="number" min={0} step={0.1} value={selectedClip.mediaStartSec ?? 0} onChange={(event) => updateClip(selectedClip, { mediaStartSec: Math.max(0, Number(event.target.value)) })} /></label> : null}
-                  <label><span>层级 z-index</span><input type="number" step={1} value={selectedClip.zIndex ?? 0} onChange={(event) => updateClip(selectedClip, { zIndex: Math.round(Number(event.target.value)) })} /></label>
+                  <TextField label="片段" value={selectedClip.label} readOnly disabled={locked} />
+                  <TextField label="开始时间" type="number" min={0} step={0.1} value={String(selectedClip.startSec)} disabled={locked} onChange={(event) => updateClip(selectedClip, { startSec: Math.max(0, Number(event.target.value)) })} />
+                  <TextField label="持续时间" type="number" min={0.1} step={0.1} value={String(selectedClip.durationSec)} disabled={locked} onChange={(event) => updateClip(selectedClip, { durationSec: Math.max(0.1, Number(event.target.value)) })} />
+                  <TextField label="轨道" type="number" min={0} step={1} value={String(selectedClip.trackIndex)} disabled={locked} onChange={(event) => updateClip(selectedClip, { trackIndex: Math.max(0, Math.round(Number(event.target.value))) })} />
+                  {selectedClip.media ? <TextField label="媒体偏移" type="number" min={0} step={0.1} value={String(selectedClip.mediaStartSec ?? 0)} disabled={locked} onChange={(event) => updateClip(selectedClip, { mediaStartSec: Math.max(0, Number(event.target.value)) })} /> : null}
+                  <TextField label="层级 z-index" type="number" step={1} value={String(selectedClip.zIndex ?? 0)} disabled={locked} onChange={(event) => updateClip(selectedClip, { zIndex: Math.round(Number(event.target.value)) })} />
                 </fieldset>
               ) : <div className="hv-authoring-panel-empty">当前场景没有可编辑片段</div>}
             </div>

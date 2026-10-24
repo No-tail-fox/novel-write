@@ -324,6 +324,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
   const maxAttempts = jsonRequestMaxAttempts(request);
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
+      generation: true,
       method: 'POST',
       timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
@@ -347,6 +348,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
   const maxAttempts = jsonRequestMaxAttempts(request);
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetchWithTimeout(endpoint, {
+      generation: true,
       method: 'POST',
       timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
       timeoutLabel: `LLM step ${request.step} ${request.name}`,
@@ -373,6 +375,7 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const response = await fetchWithTimeout(endpoint, {
+        generation: true,
         method: 'POST',
         timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
         timeoutLabel: `LLM step ${request.step} ${request.name}`,
@@ -405,6 +408,7 @@ async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const response = await fetchWithTimeout(endpoint, {
+        generation: true,
         method: 'POST',
         timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
         timeoutLabel: `LLM step ${request.step} ${request.name}`,
@@ -1219,6 +1223,7 @@ function formatRawPreview(raw: string): string {
 async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   return fetchWithTimeout(url, {
     ...init,
+    generation: init.method === 'POST',
     timeoutMs,
     timeoutLabel: 'Request',
     maxBytes: LLM_RESPONSE_MAX_BYTES,

@@ -12,7 +12,7 @@ export interface TextAreaFieldProps extends Omit<ComponentProps<typeof FluentTex
 export function TextAreaField({ label, hint, validationMessage, fieldClassName, className, ...props }: TextAreaFieldProps) {
   return (
     <Field className={mergeStoryDreamClasses('sd-field', fieldClassName)} label={label} hint={hint} validationMessage={validationMessage}>
-      <FluentTextarea {...props} className={mergeStoryDreamClasses('sd-textarea', className)} size="medium" />
+      <FluentTextarea resize="vertical" {...props} className={mergeStoryDreamClasses('sd-textarea', className)} size="medium" />
     </Field>
   );
 }

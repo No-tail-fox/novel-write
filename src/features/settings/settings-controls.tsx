@@ -5,6 +5,7 @@ import { applyConfigSecrets, type ConfigSecrets, type SecretChanges, type Secret
 import { imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizeEditableConfigProviders, saveLlmProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { imageGenerationQualityLabel } from '../../shared/image-quality';
 import { volcengineVoicePresets } from '../../shared/editorial-options';
+import { IconButton, SelectField, TextAreaField, TextField } from '../../ui';
 
 export type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
 
@@ -167,7 +168,7 @@ export function SettingsCard({ title, status, children }: { title: string; statu
 }
 
 export function ConfigInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="config-input"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <TextField fieldClassName="config-input" label={label} value={value} onChange={(_, data) => onChange(data.value)} />;
 }
 
 export function SecretInput({
@@ -185,24 +186,20 @@ export function SecretInput({
 }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <label className="config-input secret-input">
-      <span>{label}<small>{configured ? '已配置' : '待配置'}</small></span>
-      <div className="secret-input-control">
-        <input
-          type={revealed ? 'text' : 'password'}
-          value={value}
-          autoComplete="new-password"
-          spellCheck={false}
-          onChange={(event) => onChange(event.target.value)}
-        />
-        <button className="icon-button" type="button" title={revealed ? '隐藏' : '显示'} aria-label={revealed ? '隐藏密钥' : '显示密钥'} onClick={() => setRevealed((current) => !current)}>
-          {revealed ? <EyeOff size={15} /> : <Eye size={15} />}
-        </button>
-        <button className="icon-button" type="button" title="清除" aria-label="清除密钥" disabled={!configured && !value} onClick={onClear}>
-          <Trash2 size={15} />
-        </button>
-      </div>
-    </label>
+    <TextField
+      fieldClassName="config-input"
+      label={label}
+      hint={configured ? '已配置' : '待配置'}
+      type={revealed ? 'text' : 'password'}
+      value={value}
+      autoComplete="new-password"
+      spellCheck={false}
+      onChange={(_, data) => onChange(data.value)}
+      contentAfter={<>
+        <IconButton variant="subtle" label={revealed ? '隐藏密钥' : '显示密钥'} icon={revealed ? <EyeOff size={15} /> : <Eye size={15} />} onClick={() => setRevealed((current) => !current)} />
+        <IconButton variant="subtle" label="清除密钥" icon={<Trash2 size={15} />} disabled={!configured && !value} onClick={onClear} />
+      </>}
+    />
   );
 }
 
@@ -218,13 +215,7 @@ export function ConfigTextarea({
   hint?: string;
 }) {
   return (
-    <label className="config-input config-textarea">
-      <span>
-        {label}
-        {hint ? <small>{hint}</small> : null}
-      </span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
+    <TextAreaField fieldClassName="config-input" label={label} hint={hint} value={value} onChange={(_, data) => onChange(data.value)} />
   );
 }
 
@@ -242,10 +233,7 @@ export function ConfigNumberInput({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="config-input">
-      <span>{label}</span>
-      <input type="number" min={min} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-    </label>
+    <TextField fieldClassName="config-input" label={label} type="number" min={min} step={step} value={String(value)} onChange={(_, data) => onChange(Number(data.value))} />
   );
 }
 
@@ -269,24 +257,17 @@ export function ModelPicker({
   const hasModels = models.length > 0;
   const options = hasModels && value && !models.some((model) => model.id === value) ? [{ id: value }, ...models] : models;
   return (
-    <div className="field model-picker-field">
-      <span>{label}</span>
-      <div className="model-picker">
+    <div className="config-input model-picker-field">
+      <div className="settings-model-picker">
         {hasModels ? (
-          <select value={value} onChange={(event) => onChange(event.target.value)}>
-            {!value ? <option value="">选择模型</option> : null}
-            {options.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.id}
-              </option>
-            ))}
-          </select>
+          <SelectField label={label} value={value} onChange={(_, data) => onChange(data.value)} options={[
+            ...(!value ? [{ value: '', label: '选择模型' }] : []),
+            ...options.map((model) => ({ value: model.id, label: model.id })),
+          ]} />
         ) : (
-          <input value={value} onChange={(event) => onChange(event.target.value)} />
+          <TextField label={label} value={value} onChange={(_, data) => onChange(data.value)} />
         )}
-        <button className="icon-button model-refresh-button" title="获取模型" aria-label="获取模型" disabled={loading} onClick={onRefresh} type="button">
-          {loading ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />}
-        </button>
+        <IconButton label="获取模型" disabled={loading} onClick={onRefresh} icon={loading ? <Loader2 className="spin" size={15} /> : <RotateCcw size={15} />} />
       </div>
       {status ? <small className="model-list-status">{status}</small> : null}
     </div>

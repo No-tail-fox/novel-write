@@ -1,6 +1,8 @@
 import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { MotionComicScriptStore } from './motion-comic-script-store';
+import { resolveProjectActivity, type ProjectBatchActivity, type ProjectProviderActivity, type ProjectScriptActivity } from './project-activity';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 import { validCustomStylePreview, withoutStaleCustomStylePreview } from './custom-style-preview';
 import { parseHTMLContent } from '@hyperframes/core/compiler/html-document';
@@ -49,6 +51,7 @@ import type {
   TaskEvent,
   TaskSummary,
   TaskStatus,
+  ProjectActivity,
   UiPreferences,
   UiPreferencesUpdate,
   CreateViralAnalysisInput,
@@ -424,7 +427,10 @@ const viralAnalysisSummaryColumns = `
 `;
 const imageLabSummaryColumns = `
   id, archived_at, managed_storage_key, substr(prompt, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS prompt_preview,
-  ratio, style, provider, image_path, status, substr(error_msg, 1, 1024) AS error_msg,
+  ratio, style, provider, image_path, original_image_path, original_image_sha256,
+  cutout_image_path, cutout_method, cutout_model, cutout_model_version, cutout_source_sha256,
+  cutout_output_sha256, cutout_transparent_fraction, cutout_foreground_fraction, cutout_edge_fraction,
+  cutout_quality, cutout_error_code, cutout_error_message, status, substr(error_msg, 1, 1024) AS error_msg,
   resolution, quality, smart_mode, upstream_task_id, created_at, finished_at
 `;
 const voiceLabSummaryColumns = `
@@ -832,6 +838,14 @@ const legacyBundledCozeDraftTemplates = new Map(
 );
 
 export class FileDatabase {
+  readonly motionComicScripts = new MotionComicScriptStore(() => this.db, (mutation) => this.enqueueCommit(mutation), () => this.waitForWrites());
+  private readonly projectActivities = new Map<symbol, { id: string; detail: string }>();
+
+  beginProjectActivity(id: string, detail: string): () => void {
+    const token = Symbol(id);
+    this.projectActivities.set(token, { id, detail });
+    return () => { this.projectActivities.delete(token); };
+  }
   private writeTail: Promise<void> = Promise.resolve();
   private closing = false;
   private closed = false;
@@ -1304,6 +1318,21 @@ export class FileDatabase {
         style TEXT NOT NULL,
         provider TEXT NOT NULL,
         image_path TEXT DEFAULT '',
+        original_image_path TEXT DEFAULT '',
+        original_image_sha256 TEXT DEFAULT '',
+        cutout_image_path TEXT DEFAULT '',
+        cutout_method TEXT,
+        cutout_model TEXT DEFAULT '',
+        cutout_model_version TEXT DEFAULT '',
+        cutout_model_sha256 TEXT DEFAULT '',
+        cutout_source_sha256 TEXT DEFAULT '',
+        cutout_output_sha256 TEXT DEFAULT '',
+        cutout_transparent_fraction REAL,
+        cutout_foreground_fraction REAL,
+        cutout_edge_fraction REAL,
+        cutout_quality TEXT,
+        cutout_error_code TEXT DEFAULT '',
+        cutout_error_message TEXT DEFAULT '',
         status TEXT NOT NULL,
         error_msg TEXT DEFAULT '',
         resolution TEXT DEFAULT '2K',
@@ -1497,6 +1526,21 @@ export class FileDatabase {
     this.backfillDraftTemplateSummaries();
     for (const [column, definition] of [
       ['error_msg', "TEXT DEFAULT ''"],
+      ['original_image_path', "TEXT DEFAULT ''"],
+      ['original_image_sha256', "TEXT DEFAULT ''"],
+      ['cutout_image_path', "TEXT DEFAULT ''"],
+      ['cutout_method', 'TEXT'],
+      ['cutout_model', "TEXT DEFAULT ''"],
+      ['cutout_model_version', "TEXT DEFAULT ''"],
+      ['cutout_model_sha256', "TEXT DEFAULT ''"],
+      ['cutout_source_sha256', "TEXT DEFAULT ''"],
+      ['cutout_output_sha256', "TEXT DEFAULT ''"],
+      ['cutout_transparent_fraction', 'REAL'],
+      ['cutout_foreground_fraction', 'REAL'],
+      ['cutout_edge_fraction', 'REAL'],
+      ['cutout_quality', 'TEXT'],
+      ['cutout_error_code', "TEXT DEFAULT ''"],
+      ['cutout_error_message', "TEXT DEFAULT ''"],
       ['resolution', "TEXT DEFAULT '2K'"],
       ['quality', "TEXT DEFAULT 'medium'"],
       ['smart_mode', "TEXT DEFAULT 'text-to-image'"],
@@ -1524,6 +1568,7 @@ export class FileDatabase {
        WHERE status = 'running'`,
     );
     this.recoverInterruptedDirectorBatches();
+    MotionComicScriptStore.migrate(this.db);
     for (const [column, definition] of [
       ['cleanup_state', "TEXT NOT NULL DEFAULT 'pending'"],
       ['quarantine_name', 'TEXT DEFAULT NULL'],
@@ -2114,6 +2159,21 @@ export class FileDatabase {
         style: input.style,
         provider: input.provider,
         imagePath: input.imagePath ?? '',
+        originalImagePath: input.originalImagePath ?? input.imagePath ?? '',
+        originalImageSha256: input.originalImageSha256 ?? '',
+        cutoutImagePath: input.cutoutImagePath ?? '',
+        cutoutMethod: input.cutoutMethod ?? null,
+        cutoutModel: input.cutoutModel ?? '',
+        cutoutModelVersion: input.cutoutModelVersion ?? '',
+        cutoutModelSha256: input.cutoutModelSha256 ?? '',
+        cutoutSourceSha256: input.cutoutSourceSha256 ?? '',
+        cutoutOutputSha256: input.cutoutOutputSha256 ?? '',
+        cutoutTransparentFraction: input.cutoutTransparentFraction ?? null,
+        cutoutForegroundFraction: input.cutoutForegroundFraction ?? null,
+        cutoutEdgeFraction: input.cutoutEdgeFraction ?? null,
+        cutoutQuality: input.cutoutQuality ?? null,
+        cutoutErrorCode: input.cutoutErrorCode ?? '',
+        cutoutErrorMessage: input.cutoutErrorMessage ?? '',
         status: input.status ?? 'mock',
         errorMessage: input.errorMessage ?? '',
         resolution: input.resolution ?? '2K',
@@ -2128,8 +2188,8 @@ export class FileDatabase {
       this.assertHistoryWritable('image-lab', record.id);
       this.db.run(
         `INSERT INTO image_lab_records
-         (id, archived_at, managed_storage_key, prompt, ratio, style, provider, image_path, status, error_msg, resolution, quality, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, archived_at, managed_storage_key, prompt, ratio, style, provider, image_path, original_image_path, original_image_sha256, cutout_image_path, cutout_method, cutout_model, cutout_model_version, cutout_model_sha256, cutout_source_sha256, cutout_output_sha256, cutout_transparent_fraction, cutout_foreground_fraction, cutout_edge_fraction, cutout_quality, cutout_error_code, cutout_error_message, status, error_msg, resolution, quality, smart_mode, reference_image_paths_json, reference_image_path, upstream_task_id, created_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
          [
            record.id,
            record.archivedAt ?? null,
@@ -2139,6 +2199,21 @@ export class FileDatabase {
           record.style,
           record.provider,
           record.imagePath,
+          record.originalImagePath ?? record.imagePath,
+          record.originalImageSha256 ?? '',
+          record.cutoutImagePath ?? '',
+          record.cutoutMethod ?? null,
+          record.cutoutModel ?? '',
+          record.cutoutModelVersion ?? '',
+          record.cutoutModelSha256 ?? '',
+          record.cutoutSourceSha256 ?? '',
+          record.cutoutOutputSha256 ?? '',
+          record.cutoutTransparentFraction ?? null,
+          record.cutoutForegroundFraction ?? null,
+          record.cutoutEdgeFraction ?? null,
+          record.cutoutQuality ?? null,
+          record.cutoutErrorCode ?? '',
+          record.cutoutErrorMessage ?? '',
           record.status,
           record.errorMessage,
           record.resolution,
@@ -2182,6 +2257,20 @@ export class FileDatabase {
         ImageLabRecord,
         | 'provider'
         | 'imagePath'
+        | 'originalImagePath'
+        | 'originalImageSha256'
+        | 'cutoutImagePath'
+        | 'cutoutMethod'
+        | 'cutoutModel'
+        | 'cutoutModelVersion'
+        | 'cutoutSourceSha256'
+        | 'cutoutOutputSha256'
+        | 'cutoutTransparentFraction'
+        | 'cutoutForegroundFraction'
+        | 'cutoutEdgeFraction'
+        | 'cutoutQuality'
+        | 'cutoutErrorCode'
+        | 'cutoutErrorMessage'
         | 'status'
         | 'errorMessage'
         | 'resolution'
@@ -2199,6 +2288,20 @@ export class FileDatabase {
       const mapping: Array<[keyof typeof patch, string, (value: unknown) => SqlValue]> = [
         ['provider', 'provider', toNullableSqlValue],
         ['imagePath', 'image_path', toNullableSqlValue],
+        ['originalImagePath', 'original_image_path', toNullableSqlValue],
+        ['originalImageSha256', 'original_image_sha256', toNullableSqlValue],
+        ['cutoutImagePath', 'cutout_image_path', toNullableSqlValue],
+        ['cutoutMethod', 'cutout_method', toNullableSqlValue],
+        ['cutoutModel', 'cutout_model', toNullableSqlValue],
+        ['cutoutModelVersion', 'cutout_model_version', toNullableSqlValue],
+        ['cutoutSourceSha256', 'cutout_source_sha256', toNullableSqlValue],
+        ['cutoutOutputSha256', 'cutout_output_sha256', toNullableSqlValue],
+        ['cutoutTransparentFraction', 'cutout_transparent_fraction', toNullableSqlValue],
+        ['cutoutForegroundFraction', 'cutout_foreground_fraction', toNullableSqlValue],
+        ['cutoutEdgeFraction', 'cutout_edge_fraction', toNullableSqlValue],
+        ['cutoutQuality', 'cutout_quality', toNullableSqlValue],
+        ['cutoutErrorCode', 'cutout_error_code', toNullableSqlValue],
+        ['cutoutErrorMessage', 'cutout_error_message', toNullableSqlValue],
         ['status', 'status', toNullableSqlValue],
         ['errorMessage', 'error_msg', toNullableSqlValue],
         ['resolution', 'resolution', toNullableSqlValue],
@@ -2524,7 +2627,7 @@ export class FileDatabase {
     });
   }
 
-  async saveEditorialCollageTask(input: EditorialCollageSaveInput): Promise<Task> {
+  async saveEditorialCollageTask(input: EditorialCollageSaveInput, productionOwner?: string): Promise<Task> {
     const validated = editorialCollageSaveInputSchema.parse(input) as EditorialCollageSaveInput;
     return this.enqueueCommit(() => {
       this.assertHistoryWritable('task', validated.id);
@@ -2538,6 +2641,16 @@ export class FileDatabase {
         throw new Error(`EDITORIAL_COLLAGE_ACTIVE: ${validated.id} is ${task.status} and cannot be edited.`);
       }
       const current = parseEditorialCollagePipelineData(task.pipelineData);
+      if (current.productionRun?.status === 'running' && current.productionRun.id !== productionOwner) {
+        throw new Error('VOX_PRODUCTION_ACTIVE: 自动制作正在后台执行，请暂停后编辑。');
+      }
+      if (!productionOwner && JSON.stringify(current.productionRun) !== JSON.stringify(validated.document.productionRun)) {
+        throw new Error('VOX_PRODUCTION_JOURNAL: 制作记录只能由后台服务更新。');
+      }
+      if (productionOwner && current.productionRun?.id !== productionOwner && !(validated.document.productionRun?.id === productionOwner
+        && current.productionRun?.status !== 'running' && !current.productionRun?.nodes.some(node => node.status === 'unknown'))) {
+        throw new Error('VOX_PRODUCTION_STALE: 制作任务已变更。');
+      }
       if (current.updatedAt !== validated.expectedUpdatedAt) {
         throw new Error('EDITORIAL_COLLAGE_STALE_WRITE: The project changed after it was loaded.');
       }
@@ -2608,7 +2721,7 @@ export class FileDatabase {
     });
   }
 
-  async saveMotionComicTask(input: MotionComicSaveInput): Promise<Task> {
+  async saveMotionComicTask(input: MotionComicSaveInput, validateWithinCommit?: () => void): Promise<Task> {
     const validated = motionComicSaveInputSchema.parse(input) as MotionComicSaveInput;
     return this.enqueueCommit(() => {
       this.assertHistoryWritable('task', validated.id);
@@ -2621,6 +2734,7 @@ export class FileDatabase {
       if (current.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: The project changed after it was loaded.');
       if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) throw new Error('MOTION_COMIC_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
       if (validated.document.updatedAt !== validated.expectedUpdatedAt) throw new Error('MOTION_COMIC_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
+      validateWithinCommit?.();
       const nextUpdatedAt = new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString();
       const document = parseMotionComicPipelineData({ ...validated.document, title: validated.document.title.trim(), updatedAt: nextUpdatedAt });
       const status: TaskStatus = document.stage === 'completed' ? 'completed' : 'draft';
@@ -3883,6 +3997,8 @@ export class FileDatabase {
   }
 
   private async withProjectCover(task: TaskSummary): Promise<TaskSummary> {
+    await this.waitForWrites();
+    const projectActivity = this.getProjectActivity(task);
     let workDir: string | null = null;
     if (task.managedStorageKey) {
       try {
@@ -3891,7 +4007,58 @@ export class FileDatabase {
         // Legacy records may have no usable managed directory.
       }
     }
-    return { ...task, projectCover: await readProjectCover(task, workDir) };
+    return { ...task, ...(projectActivity ? { projectActivity } : {}), projectCover: await readProjectCover(task, workDir) };
+  }
+
+  private getProjectActivity(task: TaskSummary): ProjectActivity | undefined {
+    if ((task.taskType !== 'motion-comic' && task.taskType !== 'editorial-collage') || !['draft', 'completed'].includes(task.status)) return undefined;
+    const live = [...this.projectActivities.values()].find((item) => item.id === task.id);
+    if (live) return { status: 'running', label: '运行中', detail: live.detail };
+    // Extract only activity fields; full scripts, prompts and project documents stay out of list reads.
+    const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT
+      json_extract(pipeline_data, '$.stage') AS stage,
+      json_extract(pipeline_data, '$.productionRun.status') AS production_status,
+      json_array_length(pipeline_data, '$.productionRun.nodes') AS production_total,
+      (SELECT json_extract(n.value, '$.kind') FROM json_each(pipeline_data, '$.productionRun.nodes') n
+        WHERE json_extract(n.value, '$.status') = 'running' LIMIT 1) AS production_kind,
+      (SELECT COUNT(*) FROM json_each(pipeline_data, '$.productionRun.nodes') n
+        WHERE json_extract(n.value, '$.status') = 'completed') AS production_completed,
+      (SELECT json_group_array(json_object(
+        'nodeId', json_extract(j.value, '$.nodeId'), 'capability', json_extract(j.value, '$.capability'),
+        'episodeId', json_extract(j.value, '$.episodeId'), 'status', json_extract(j.value, '$.status'),
+        'attempt', json_extract(j.value, '$.attempt'), 'createdAt', json_extract(j.value, '$.createdAt'),
+        'updatedAt', json_extract(j.value, '$.updatedAt')
+      )) FROM json_each(pipeline_data, '$.providerJobs') j) AS jobs
+      FROM tasks WHERE id = ? AND json_valid(pipeline_data)`, [task.id]);
+    const scripts = task.taskType === 'motion-comic' ? getRows<Record<string, unknown>>(this.db, `SELECT
+      json_extract(s.data, '$.status') AS status, json_extract(s.data, '$.storyboardStatus') AS storyboard_status,
+      EXISTS (SELECT 1 FROM tasks t, json_each(t.pipeline_data, '$.episodes') e
+        WHERE t.id = s.project_id AND json_extract(e.value, '$.planningEvidence.sourceEpisodeId') = json_extract(s.data, '$.sourceEpisodeId')) AS applied
+      FROM motion_comic_script_tasks s WHERE s.project_id = ?
+      AND s.rowid = (SELECT MAX(latest.rowid) FROM motion_comic_script_tasks latest
+        WHERE latest.project_id = s.project_id AND json_extract(latest.data, '$.sourceEpisodeId') = json_extract(s.data, '$.sourceEpisodeId'))
+      AND EXISTS (SELECT 1 FROM tasks t, json_each(t.pipeline_data, '$.sourceDocument.episodes') e
+        WHERE t.id = s.project_id AND json_extract(e.value, '$.id') = json_extract(s.data, '$.sourceEpisodeId'))`, [task.id]) : [];
+    const batches = getRows<Record<string, unknown>>(this.db, `SELECT b.status,
+      json_array_length(b.nodes_json) AS total,
+      (SELECT COUNT(*) FROM json_each(b.nodes_json) n WHERE json_extract(n.value, '$.status') IN ('completed', 'skipped')) AS completed
+      FROM director_batches b WHERE b.project_id = ? AND b.workflow_kind = 'director'
+      AND b.id = (SELECT latest.id FROM director_batches latest WHERE latest.project_id = b.project_id
+        AND latest.workflow_kind = b.workflow_kind AND latest.episode_id IS b.episode_id
+        ORDER BY latest.created_at DESC, latest.rowid DESC LIMIT 1)
+      ORDER BY b.updated_at DESC`, [task.id]);
+    const paused = getFirstRow<{ paused: number }>(this.db, 'SELECT paused FROM motion_comic_script_controls WHERE project_id = ?', [task.id]);
+    return resolveProjectActivity({
+      stage: typeof row?.stage === 'string' ? row.stage : undefined,
+      paused: Boolean(paused?.paused),
+      scripts: scripts.map((item): ProjectScriptActivity => ({ status: String(item.status), storyboardStatus: item.storyboard_status ? String(item.storyboard_status) : undefined, applied: Boolean(item.applied) })),
+      batches: batches.map((item): ProjectBatchActivity => ({ status: String(item.status), completed: Number(item.completed), total: Number(item.total) })),
+      jobs: parseJson<ProjectProviderActivity[]>(row?.jobs, []),
+      production: typeof row?.production_status === 'string' ? {
+        status: row.production_status, activeKind: typeof row.production_kind === 'string' ? row.production_kind : undefined,
+        completed: Number(row.production_completed), total: Number(row.production_total),
+      } : undefined,
+    });
   }
 
   async getTaskDetail(id: string): Promise<Task | null> {
@@ -4665,6 +4832,21 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
     style: String(row.style ?? 'photo-real'),
     provider: String(row.provider ?? 'mock'),
     imagePath: String(row.image_path ?? ''),
+    originalImagePath: String(row.original_image_path ?? row.image_path ?? '') || undefined,
+    originalImageSha256: String(row.original_image_sha256 ?? '') || undefined,
+    cutoutImagePath: String(row.cutout_image_path ?? '') || undefined,
+    cutoutMethod: row.cutout_method ? String(row.cutout_method) as ImageLabRecord['cutoutMethod'] : null,
+    cutoutModel: String(row.cutout_model ?? '') || undefined,
+    cutoutModelVersion: String(row.cutout_model_version ?? '') || undefined,
+    cutoutModelSha256: String(row.cutout_model_sha256 ?? '') || undefined,
+    cutoutSourceSha256: String(row.cutout_source_sha256 ?? '') || undefined,
+    cutoutOutputSha256: String(row.cutout_output_sha256 ?? '') || undefined,
+    cutoutTransparentFraction: row.cutout_transparent_fraction === null || row.cutout_transparent_fraction === undefined ? null : Number(row.cutout_transparent_fraction),
+    cutoutForegroundFraction: row.cutout_foreground_fraction === null || row.cutout_foreground_fraction === undefined ? null : Number(row.cutout_foreground_fraction),
+    cutoutEdgeFraction: row.cutout_edge_fraction === null || row.cutout_edge_fraction === undefined ? null : Number(row.cutout_edge_fraction),
+    cutoutQuality: row.cutout_quality ? String(row.cutout_quality) as ImageLabRecord['cutoutQuality'] : null,
+    cutoutErrorCode: String(row.cutout_error_code ?? '') || undefined,
+    cutoutErrorMessage: String(row.cutout_error_message ?? '') || undefined,
     status: String(row.status ?? 'mock') as ImageLabRecord['status'],
     errorMessage: String(row.error_msg ?? ''),
     resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],
@@ -4688,6 +4870,21 @@ function rowToImageLabSummary(row: Record<string, unknown>): ImageLabSummary {
     style: String(row.style ?? 'photo-real'),
     provider: String(row.provider ?? 'mock'),
     imagePath: String(row.image_path ?? ''),
+    originalImagePath: String(row.original_image_path ?? row.image_path ?? '') || undefined,
+    originalImageSha256: String(row.original_image_sha256 ?? '') || undefined,
+    cutoutImagePath: String(row.cutout_image_path ?? '') || undefined,
+    cutoutMethod: row.cutout_method ? String(row.cutout_method) as ImageLabRecord['cutoutMethod'] : null,
+    cutoutModel: String(row.cutout_model ?? '') || undefined,
+    cutoutModelVersion: String(row.cutout_model_version ?? '') || undefined,
+    cutoutModelSha256: String(row.cutout_model_sha256 ?? '') || undefined,
+    cutoutSourceSha256: String(row.cutout_source_sha256 ?? '') || undefined,
+    cutoutOutputSha256: String(row.cutout_output_sha256 ?? '') || undefined,
+    cutoutTransparentFraction: row.cutout_transparent_fraction === null || row.cutout_transparent_fraction === undefined ? null : Number(row.cutout_transparent_fraction),
+    cutoutForegroundFraction: row.cutout_foreground_fraction === null || row.cutout_foreground_fraction === undefined ? null : Number(row.cutout_foreground_fraction),
+    cutoutEdgeFraction: row.cutout_edge_fraction === null || row.cutout_edge_fraction === undefined ? null : Number(row.cutout_edge_fraction),
+    cutoutQuality: row.cutout_quality ? String(row.cutout_quality) as ImageLabRecord['cutoutQuality'] : null,
+    cutoutErrorCode: String(row.cutout_error_code ?? '') || undefined,
+    cutoutErrorMessage: String(row.cutout_error_message ?? '') || undefined,
     status: String(row.status ?? 'mock') as ImageLabRecord['status'],
     errorMessage: String(row.error_msg ?? ''),
     resolution: String(row.resolution ?? '2K') as ImageLabRecord['resolution'],

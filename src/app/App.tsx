@@ -2,7 +2,7 @@ import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMem
 import type { AppDelta, AppMutationResult, HistoryFamily, ShellView, ThemeName } from "../shared/types";
 import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from "../shared/state-delta";
 import { applyAppMutationResult, applyBufferedMutationResults, applyHistorySelectionBarrier, applyLocalMutationResponse, authoritativeMissingRequestedTaskId, claimMutationResult, collectTaskEventPages, collectViralEventPages, createRequestGenerationCompletionQueue, createRequestGenerationGuard, historyEntityRevisionKey, historyResponseDisposition, mergeAuthoritativeSnapshotDetails, mergeReconciliationSlices, raiseMutationRevisionFloor, reduceCompletionTrackedState, shouldApplyDeltaViewTransition } from "../shared/state-reconciliation";
-import { applyStoredTheme, changeRuntimeTheme, revealThemedApplication, transitionRendererTheme } from "../features/settings/theme-controller";
+import { applyStoredTheme, changeRuntimeTheme, revealThemedApplication, transitionRendererTheme, withRuntimeTheme } from "../features/settings/theme-controller";
 import { defaultUiPreferences } from "../shared/config";
 import { useAsyncAction } from "../ui/async-action";
 import { StoryDreamProvider } from "../ui";
@@ -28,7 +28,9 @@ function AppWorkspace() {
     reduceCompletionTrackedState<AppState>,
     { value: cloneState(initialState), completionToken: 0 },
   );
-  const state = trackedState.value;
+  // A window's explicit theme choice survives unrelated persisted preference updates.
+  const [runtimeTheme, setRuntimeTheme] = useState<ThemeName | null>(null);
+  const state = useMemo(() => withRuntimeTheme(trackedState.value, runtimeTheme), [trackedState.value, runtimeTheme]);
   const taskDetailCompletionEpoch = trackedState.completionToken;
   const setState = useCallback((update: React.SetStateAction<AppState>) => {
     dispatchState({ update });
@@ -64,10 +66,11 @@ function AppWorkspace() {
   useLayoutEffect(() => {
     runtimeThemeRef.current = state.ui.theme;
     applyStoredTheme(state.ui.theme);
-  }, [state.ui.theme]);
+  }, [state]);
   const synchronizeThemeState = useCallback((expectedTheme: ThemeName, nextTheme: ThemeName) => {
     if (runtimeThemeRef.current !== expectedTheme) return false;
     runtimeThemeRef.current = nextTheme;
+    setRuntimeTheme(nextTheme);
     setState((current) => transitionRendererTheme(current, expectedTheme, nextTheme));
     return expectedTheme !== nextTheme;
   }, [setState]);

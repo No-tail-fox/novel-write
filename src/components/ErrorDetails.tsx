@@ -1,5 +1,6 @@
 import { AlertCircle } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
+import { Button, Dialog } from '../ui';
 
 export interface ErrorDetailsProps {
   fullMessage: string;
@@ -38,84 +39,23 @@ export function ErrorDetails({ fullMessage, title, compact = false }: ErrorDetai
   if (!fullMessage.trim()) return null;
   const summary = summarizeErrorMessage(fullMessage);
   return (
-    <>
-      <button
-        type="button"
+    <Dialog
+      open={open}
+      onOpenChange={setOpen}
+      title={title}
+      trigger={<Button
+        variant="subtle"
+        density={compact ? 'compact' : 'comfortable'}
         className={compact ? 'error-summary-button compact' : 'error-summary-button'}
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(true);
-        }}
-      >
-        <span className="error-mark" aria-hidden="true"><AlertCircle size={18} strokeWidth={2.4} /></span>
-        <span>{summary}</span>
-      </button>
-      {open ? <ErrorDetailDialog title={title} summary={summary} fullMessage={fullMessage} onClose={() => setOpen(false)} /> : null}
-    </>
-  );
-}
-
-interface ErrorDetailDialogProps {
-  title: string;
-  summary: string;
-  fullMessage: string;
-  onClose: () => void;
-}
-
-function ErrorDetailDialog({ title, summary, fullMessage, onClose }: ErrorDetailDialogProps) {
-  const id = useId();
-  const titleId = `${id}-title`;
-  const descriptionId = `${id}-description`;
-  const dialogRef = useRef<HTMLElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    queueMicrotask(() => {
-      if (!cancelled) closeButtonRef.current?.focus();
-    });
-    return () => {
-      cancelled = true;
-      previouslyFocused?.focus();
-    };
-  }, []);
-
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      closeButtonRef.current?.focus();
-    }
-  }
-
-  return (
-    <div className="error-dialog-backdrop" onClick={onClose}>
-      <section
-        ref={dialogRef}
-        className="error-dialog"
-        role="dialog"
-        tabIndex={-1}
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
+        icon={<AlertCircle className="error-mark" size={18} />}
         onClick={(event) => event.stopPropagation()}
-        onKeyDown={handleKeyDown}
-      >
-        <div className="error-dialog-head">
-          <div>
-            <span className="error-mark" aria-hidden="true"><AlertCircle size={18} strokeWidth={2.4} /></span>
-            <strong id={titleId}>{title}</strong>
-          </div>
-          <button ref={closeButtonRef} data-dialog-focus className="mini-button" type="button" onClick={onClose}>关闭</button>
-        </div>
-        <p id={descriptionId}>{summary}</p>
+      >{summary}</Button>}
+      actions={<Button onClick={(event) => { event.stopPropagation(); setOpen(false); }}>关闭</Button>}
+    >
+      <div className="sd-error-details" onClick={(event) => event.stopPropagation()}>
+        <p>{summary}</p>
         <pre>{fullMessage}</pre>
-      </section>
-    </div>
+      </div>
+    </Dialog>
   );
 }

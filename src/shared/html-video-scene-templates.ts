@@ -535,6 +535,13 @@ export const HTML_VIDEO_SCENE_TEMPLATES = [
       caption: { preset: 'typewriter', startSec: 0.46, durationSec: 1.05 },
     },
   },
+  ...([
+    ['kinetic-type-beats', '逐句排字', 0, '金句按语音节拍强调，文字主导。'],
+    ['spatial-pan-stations', '空间站点', 3, '三个素材站点按讲述顺序聚焦。'],
+    ['constellation-hub', '中心关系', 3, '中心主体与两侧证据建立关系。'],
+  ] as const).map(([id, label, materialSlots, description]) => ({ id, label, materialSlots, description, swatch: 'center', titleTop: 9, captionY: 87,
+    choreography: { background: { preset: 'static' as const }, title: { preset: 'fade-up' as const, startSec: 0, durationSec: .5 },
+      elements: [{ preset: 'fade-up' as const, startSec: 0, durationSec: .6 }], caption: { preset: 'static' as const } } })),
 ] as const satisfies readonly HtmlVideoSceneTemplate[];
 
 export type HtmlVideoSceneTemplateId = typeof HTML_VIDEO_SCENE_TEMPLATES[number]['id'];

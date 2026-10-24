@@ -44,9 +44,9 @@ export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '
 export const projectHomeNavigationItem: NavigationItem = { view: 'projects', label: '项目', hint: '继续与新建', icon: LayoutTemplate };
 
 export const productionNavItems: NavigationItem[] = [
-  { view: 'editorial-collage', label: 'VOX 视频', hint: '解释型视觉叙事', icon: Clapperboard },
+  { view: 'editorial-collage', label: '创意动画', hint: '风格 · 模板 · AI 代码', icon: Clapperboard },
   { view: 'motion-comic', label: 'AI 漫剧', hint: '系列与分镜', icon: Images },
-  { view: 'html-video', label: 'HTML 动画', hint: '代码驱动视频', icon: Code2 },
+  { view: 'html-video', label: 'HTML 动画', hint: 'HyperFrames · 可编辑场景', icon: Code2 },
   { view: 'music-mv', label: '音乐 MV', hint: '歌词与节奏', icon: Music },
 ];
 
@@ -63,7 +63,7 @@ export const generationNavItems: NavigationItem[] = [
 ];
 
 export const assetLabNavItems: NavigationItem[] = [
-  { view: 'person-assets', label: '素材库', hint: '人物与媒体', icon: Images },
+  { view: 'person-assets', label: '素材库', hint: '图片与文本', icon: Images },
   { view: 'copy-studio', label: '文案创作', hint: '搜索、精修与定稿', icon: PenLine },
   { view: 'conversation-workbench', label: '对话工作台', hint: '讨论与产出', icon: MessageCircle },
   ...generationNavItems,
@@ -92,7 +92,7 @@ export const settingsSectionItems: NavigationItem[] = [
 
 export const utilityNavItems: NavigationItem[] = [
   { view: 'account', label: '账户中心', hint: '资料与积分', icon: Circle },
-  { view: 'activation', label: '激活管理', hint: '试用与授权', icon: KeyRound },
+  { view: 'activation', label: '软件授权', hint: '激活与更新', icon: KeyRound },
 ];
 
 export const primaryNavGroups: NavigationGroup[] = [
@@ -201,7 +201,7 @@ export function pageSubtitle(view: ShellView): string {
     'hot-board': '追踪多平台实时热点，筛选后直接带入创作',
     'book-selection': '汇总对标证据与机会评分，把选品简报带入新任务',
     benchmark: '监控抖音、视频号和 B 站对标作品，筛选后进入拆解或选品',
-    'person-assets': '管理本地人物真图素材，供分镜阶段保持角色一致',
+    'person-assets': '跨项目管理图片与文本素材',
     queue: '查看当前任务、步骤事件、失败重试和输出状态',
     history: '按时间浏览已完成、失败、取消和草稿任务',
     'task-detail': '查看单个任务的独立执行状态和流水线',
@@ -215,8 +215,8 @@ export function pageSubtitle(view: ShellView): string {
     'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',
     settings: '配置 API 凭证、本地路径、TTS、IMA 与诊断',
     account: '管理本机账号资料、设备和模拟余额',
-    activation: '管理本地激活状态与试用说明',
-    'editorial-collage': '把文案拆成节拍、图层、运镜和字幕，先确定风格再进入生成',
+    activation: '管理软件授权、绑定设备和版本更新',
+    'editorial-collage': '选择预设与风格，自动创作镜头、检查并渲染；解释叙事沿用 Vox 流程',
     'motion-comic': '管理系列 Bible、角色造型、分集剧本、镜头引用与一致性门禁',
     'html-video': '文案、素材、配音、动画预览、封面和出片的独立 HTML 视频工作台',
   };

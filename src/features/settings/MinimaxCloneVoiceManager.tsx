@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, FolderOpen, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import type { ApplyMutationResult } from '../../app/route-types';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
-import { FormField as Field } from '../../components/FormField';
+import { Button, IconButton, TextField } from '../../ui';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { AppMutationResult, MinimaxCloneVoice, MinimaxCloneVoiceInput } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
@@ -146,31 +146,20 @@ export function MinimaxCloneVoiceManager({
           <strong>已有 MiniMax 克隆音色</strong>
           <span>{totalCount} 个本地记录，仅登记已从 MiniMax 获得的音色 ID</span>
         </div>
-        <button className="ghost-action" type="button" disabled={action.busy} onClick={beginCreate}>
-          <Plus size={15} />登记音色
-        </button>
+        <Button icon={<Plus size={15} />} disabled={action.busy} onClick={beginCreate}>登记音色</Button>
       </div>
 
       {editorOpen ? (
         <div className="minimax-clone-voice-editor">
-          <Field label="音色 ID">
-            <input value={draft.voiceId} disabled={draft.editingVoiceId !== null} placeholder="MiniMax voice_id" onChange={(event) => setDraft((current) => ({ ...current, voiceId: event.target.value }))} />
-          </Field>
-          <Field label="显示名称">
-            <input value={draft.displayName} placeholder="例如：纪录片旁白" onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))} />
-          </Field>
-          <Field label="来源音频" hint="可选，仅作本地备注">
-            <div className="upload-row">
-              <input value={draft.sourceAudioPath} readOnly placeholder="未关联来源音频" />
-              <button className="icon-button" type="button" title="选择来源音频" aria-label="选择来源音频" disabled={action.busy} onClick={selectSourceAudio}><FolderOpen size={15} /></button>
-            </div>
-          </Field>
+          <TextField label="音色 ID" value={draft.voiceId} disabled={draft.editingVoiceId !== null} placeholder="MiniMax voice_id" onChange={(_, data) => setDraft((current) => ({ ...current, voiceId: data.value }))} />
+          <TextField label="显示名称" value={draft.displayName} placeholder="例如：纪录片旁白" onChange={(_, data) => setDraft((current) => ({ ...current, displayName: data.value }))} />
+          <TextField label="来源音频" hint="可选，仅作本地备注" value={draft.sourceAudioPath} readOnly placeholder="未关联来源音频"
+            contentAfter={<IconButton variant="subtle" label="选择来源音频" disabled={action.busy} onClick={selectSourceAudio} icon={<FolderOpen size={15} />} />} />
           <div className="minimax-clone-voice-editor-actions">
-            <button className="primary-action slim" type="button" disabled={action.busy || !draft.voiceId.trim() || !draft.displayName.trim()} onClick={saveVoice}>
-              {action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
+            <Button variant="primary" icon={action.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />} disabled={action.busy || !draft.voiceId.trim() || !draft.displayName.trim()} onClick={saveVoice}>
               保存记录
-            </button>
-            <button className="ghost-action" type="button" disabled={action.busy} onClick={() => { setDraft(emptyDraft); setEditorOpen(false); }}><X size={14} />取消</button>
+            </Button>
+            <Button icon={<X size={14} />} disabled={action.busy} onClick={() => { setDraft(emptyDraft); setEditorOpen(false); }}>取消</Button>
           </div>
         </div>
       ) : null}
@@ -186,21 +175,21 @@ export function MinimaxCloneVoiceManager({
               <small>{voice.sourceAudioPath || '未关联来源音频'}</small>
             </div>
             <div className="minimax-clone-voice-actions">
-              <button className="icon-button" type="button" title="编辑音色记录" aria-label={`编辑音色记录 ${voice.displayName}`} disabled={action.busy} onClick={() => beginEdit(voice)}><Pencil size={14} /></button>
+              <IconButton label={`编辑音色记录 ${voice.displayName}`} disabled={action.busy} onClick={() => beginEdit(voice)} icon={<Pencil size={14} />} />
               {pendingDelete === voice.voiceId ? (
                 <>
-                  <button className="icon-button danger-action" type="button" title="确认删除音色记录" aria-label={`确认删除音色记录 ${voice.displayName}`} disabled={action.busy} onClick={() => deleteVoice(voice.voiceId)}><Check size={14} /></button>
-                  <button className="icon-button" type="button" title="取消删除" aria-label="取消删除音色记录" disabled={action.busy} onClick={() => setPendingDelete(null)}><X size={14} /></button>
+                  <IconButton variant="danger" label={`确认删除音色记录 ${voice.displayName}`} disabled={action.busy} onClick={() => deleteVoice(voice.voiceId)} icon={<Check size={14} />} />
+                  <IconButton label="取消删除音色记录" disabled={action.busy} onClick={() => setPendingDelete(null)} icon={<X size={14} />} />
                 </>
               ) : (
-                <button className="icon-button danger-action" type="button" title="删除音色记录" aria-label={`删除音色记录 ${voice.displayName}`} disabled={action.busy} onClick={() => setPendingDelete(voice.voiceId)}><Trash2 size={14} /></button>
+                <IconButton label={`删除音色记录 ${voice.displayName}`} disabled={action.busy} onClick={() => setPendingDelete(voice.voiceId)} icon={<Trash2 size={14} />} />
               )}
             </div>
           </div>
         ))}
       </div>
 
-      {nextCursor ? <button className="ghost-action minimax-clone-voice-more" type="button" disabled={action.busy} onClick={loadMore}>加载更多</button> : null}
+      {nextCursor ? <Button className="minimax-clone-voice-more" disabled={action.busy} onClick={loadMore}>加载更多</Button> : null}
       <InlineActionFeedback feedback={catalogError ? { tone: 'error', message: catalogError } : action.feedback} />
     </section>
   );

@@ -44,6 +44,8 @@ const APPROVED_HTML_VIDEO_FIELDS = [
   'foreground',
   'maxScenes',
   'ratio',
+  'previewLongEdge',
+  'renderLongEdge',
 ] as const satisfies readonly (keyof HtmlVideoJobConfig)[];
 
 const fullCustomConfig: Required<HtmlVideoJobConfig> = {
@@ -75,6 +77,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   foreground: false,
   maxScenes: 12,
   ratio: '4:3',
+  previewLongEdge:720,renderLongEdge:1920,
 };
 
 describe('HTML video control manifest', () => {
@@ -161,6 +164,7 @@ describe('HTML video control manifest', () => {
       foreground: 'htmlVideoForeground',
       maxScenes: 'targetScenes|storyboardSceneCount',
       ratio: 'ratio',
+      previewLongEdge:null,renderLongEdge:null,
     });
   });
 
@@ -289,6 +293,8 @@ describe('HTML video control manifest', () => {
       'bgmVolume',
       'coverPrompt',
       'draftTemplate',
+      'previewLongEdge',
+      'renderLongEdge',
     ]);
     expect(recovered.warnings).toEqual([
       expect.stringContaining(recovered.defaultedFields.join(', ')),
@@ -341,6 +347,7 @@ describe('HTML video control manifest', () => {
       assets: { style: 'custom-editorial-film', foreground: false, ratio: '4:3' },
       voice: { voiceId: 'voice-custom', ttsProvider: 'minimax', ttsSpeed: 1.25 },
       preview: {
+        previewLongEdge:720,
         captionPreset: 'editorial',
         captionAnim: 'pop',
         captionColors: { text: '#ffffff', accent: '#11aabb' },
@@ -350,6 +357,7 @@ describe('HTML video control manifest', () => {
         sceneMotion: 'pan_left',
       },
       render: {
+        renderLongEdge:1920,
         bgmId: 'bgm-custom',
         captionPreset: 'editorial',
         captionAnim: 'pop',

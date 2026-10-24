@@ -1,6 +1,7 @@
 import type { TaskSummary } from '../../shared/types';
 
-export function taskStatusDetail(task: Pick<TaskSummary, 'status' | 'currentStep'>): string {
+export function taskStatusDetail(task: Pick<TaskSummary, 'status' | 'currentStep' | 'projectActivity'>): string {
+  if (task.projectActivity) return task.projectActivity.detail;
   switch (task.status) {
     case 'draft':
       return '尚未开始生成';

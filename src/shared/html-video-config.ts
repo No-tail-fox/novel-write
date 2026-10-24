@@ -103,6 +103,8 @@ const HTML_VIDEO_MISSING_COMPATIBLE_FIELDS: readonly HtmlVideoMissingCompatibleF
   'bgmVolume',
   'coverPrompt',
   'draftTemplate',
+  'previewLongEdge',
+  'renderLongEdge',
 ];
 
 export const HTML_VIDEO_JOB_DEFAULTS = {
@@ -123,6 +125,8 @@ export const HTML_VIDEO_JOB_DEFAULTS = {
   coverRatio: '3:4',
   coverPrompt: undefined,
   draftTemplate: undefined,
+  previewLongEdge: undefined,
+  renderLongEdge: undefined,
   foreground: true,
   maxScenes: 8,
   ratio: '9:16',
@@ -169,6 +173,10 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
         throw invalidConfig(`${field} must be an integer from 1 to ${HTML_VIDEO_MAX_SCENES}`);
       }
       result.maxScenes = Number(current);
+    } else if (field === 'previewLongEdge' || field === 'renderLongEdge') {
+      const allowed = field === 'previewLongEdge' ? [720,1080] : [1080,1920];
+      if (!allowed.includes(Number(current)) || typeof current !== 'number') throw invalidConfig(`${field} is invalid`);
+      Object.assign(result, { [field]: current });
     } else if (field === 'ratio') {
       result.ratio = requireEnum(current, field, HTML_VIDEO_RATIOS);
     } else if (field === 'captionPreset') {

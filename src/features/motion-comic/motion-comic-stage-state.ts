@@ -58,6 +58,7 @@ export function motionComicDialogueCueAudioReady(
   cue: MotionComicDialogueCue,
   shot?: MotionComicShot,
 ): boolean {
+  if(shot&&(shot.videoProduction?.audioMode==='native'||shot.videoProduction?.audioMode==='audio-driven'))return motionComicShotVideoReady(document,shot);
   const candidateIds = [cue.audioAssetVersionId, cue.voiceAssetVersionId, shot?.voiceAssetVersionId]
     .filter((id): id is string => Boolean(id));
   return candidateIds.some((id) => hasUsableAsset(document, id, 'audio'));
@@ -113,18 +114,6 @@ export function resolveMotionComicStageState(
       ? act.actIndex === 1
       : act.actIndex === resolvedActs[index - 1].actIndex || act.actIndex === resolvedActs[index - 1].actIndex + 1
   ));
-  const referencedCharacterIds = new Set<string>();
-  const referencedSceneIds = new Set<string>();
-  const referencedPropIds = new Set<string>();
-  const lookOwners = new Map(document.characters.flatMap((character) => character.looks.map((look) => [look.id, character.id] as const)));
-  activeScenes.forEach((scene) => scene.shots.forEach((shot) => {
-    shot.characterLookIds.forEach((lookId) => {
-      const characterId = lookOwners.get(lookId);
-      if (characterId) referencedCharacterIds.add(characterId);
-    });
-    if (shot.sceneAssetId) referencedSceneIds.add(shot.sceneAssetId);
-    shot.propAssetIds.forEach((propId) => referencedPropIds.add(propId));
-  }));
   const audioStageComplete = readiness.videoComplete && readiness.audioComplete;
   return {
     source: { ready: true, complete: sourceReady, detail: sourceReady ? '源文已保存' : '等待导入源文' },
@@ -139,9 +128,9 @@ export function resolveMotionComicStageState(
       detail: scenesReady ? `当前第 ${readiness.episode?.number ?? 1} 集 · ${activeScenes.length} 场` : '当前分集尚未完成规划',
     },
     assets: {
-      ready: scenesReady,
+      ready: true,
       complete: readiness.consistencyComplete,
-      detail: `${referencedCharacterIds.size} 人物 · ${referencedSceneIds.size} 场景 · ${referencedPropIds.size} 道具`,
+      detail: `${document.characters.length} 人物 · ${document.sceneAssets.length} 地点 · ${document.props.length} 道具`,
     },
     storyboard: {
       ready: readiness.consistencyComplete,

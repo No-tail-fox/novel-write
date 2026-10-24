@@ -1,90 +1,277 @@
+/* Design Tokens - Unified System */
 :root {
-  --sd-window-height: 32px;
-  --sd-sidebar-width: 224px;
-  --sd-font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", sans-serif;
-  --sd-page-inset: 24px;
-  --sd-control-height: 36px;
-  --sd-radius: 6px;
-  --sd-motion-fast: 140ms;
-  --sd-text-caption: 12px;
-  --shell-bg: #101214;
-  --shell-surface: #15181b;
-  --shell-surface-raised: #1b1f23;
-  --shell-border: #343a40;
-  --shell-text: #f4f6f8;
-  --shell-muted: #b1b8be;
-  --shell-accent: #f2614b;
-  --shell-accent-strong: #ff755f;
-  --shell-accent-contrast: #ffffff;
-  --shell-focus: #f2614b;
-  --shell-focus-contrast: #ffffff;
-  --shell-selected: #352321;
-  --shell-hover: #23272b;
+  /* Typography Scale */
+  --font-family-primary: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  --font-family-mono: "Cascadia Code", "Fira Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+  
+  /* Fluid Typography */
+  --font-size-xs: clamp(10px, 0.625rem, 11px);
+  --font-size-sm: clamp(11px, 0.75rem, 12px);
+  --font-size-base: clamp(13px, 0.875rem, 14px);
+  --font-size-md: clamp(14px, 0.9375rem, 15px);
+  --font-size-lg: clamp(15px, 1rem, 16px);
+  --font-size-xl: clamp(17px, 1.125rem, 18px);
+  --font-size-2xl: clamp(20px, 1.375rem, 22px);
+  --font-size-3xl: clamp(24px, 1.625rem, 26px);
+  
+  /* Line Heights */
+  --line-height-tight: 1.25;
+  --line-height-base: 1.5;
+  --line-height-relaxed: 1.65;
+  
+  /* Letter Spacing */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+  
+  /* Spacing Scale (8px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 999px;
+  
+  /* Layout */
+  --window-height: 34px;
+  --sidebar-width: 252px;
+  --page-inset: var(--space-6);
+  --control-height: 36px;
+  
+  /* Motion */
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  
+  /* Z-Index Scale */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal-backdrop: 900;
+  --z-modal: 1000;
+  --z-toast: 1100;
+}
 
-  --media-bg: #101316;
-  --media-surface: #181c20;
-  --media-border: #343b42;
-  --media-text: #f4f6f8;
-  --media-muted: #aeb6bd;
-  --media-accent: #f2614b;
-  --media-accent-contrast: #101214;
-  --media-timeline-blue: #3477ad;
-  --media-reel-amber: #e0a34c;
-  --media-ok: #65b883;
-
+/* Dark Theme - Primary Surface Ladder */
+:root,
+:root[data-theme='dark'] {
+  /* Surface Ladder (5 levels, near-black with cyan-amber tint) */
+  --surface-0: #05070c;    /* 3% lightness - deepest */
+  --surface-1: #0a0d12;    /* 5% lightness */
+  --surface-2: #0f131c;    /* 7% lightness */
+  --surface-3: #161d2b;    /* 10% lightness */
+  --surface-4: #1e2636;    /* 14% lightness - raised */
+  
+  /* Semantic Surfaces */
+  --shell-bg: var(--surface-1);
+  --shell-surface: var(--surface-2);
+  --shell-surface-raised: var(--surface-3);
+  --shell-surface-overlay: var(--surface-4);
+  
+  /* Border Colors */
+  --shell-border: rgba(69, 215, 230, 0.12);
+  --shell-border-hover: rgba(69, 215, 230, 0.24);
+  --shell-border-focus: rgba(69, 215, 230, 0.48);
+  
+  /* Text Colors */
+  --shell-text: #f4f7fb;
+  --shell-text-secondary: #d1d8e0;
+  --shell-muted: #92a1b5;
+  --shell-subtle: #6b7c92;
+  
+  /* Accent - Luminous Cyan */
+  --shell-accent: #38bdf8;
+  --shell-accent-strong: #69e3ed;
+  --shell-accent-contrast: #041112;
+  --shell-accent-surface: rgba(56, 189, 248, 0.12);
+  --shell-accent-border: rgba(56, 189, 248, 0.32);
+  
+  /* Supporting Accent - Amber */
+  --shell-warm: #f0b45b;
+  --shell-warm-surface: rgba(240, 180, 91, 0.12);
+  --shell-warm-border: rgba(240, 180, 91, 0.28);
+  
+  /* Focus State */
+  --shell-focus: var(--shell-accent);
+  --shell-focus-contrast: var(--shell-accent-contrast);
+  
+  /* Interactive States */
+  --shell-selected: rgba(56, 189, 248, 0.16);
+  --shell-hover: rgba(255, 255, 255, 0.06);
+  --shell-active: rgba(255, 255, 255, 0.1);
+  
+  /* Feedback Colors */
+  --danger: #ff5d61;
+  --danger-surface: rgba(255, 93, 97, 0.14);
+  --danger-border: rgba(255, 93, 97, 0.46);
+  
+  --warn: #ffb84d;
+  --warn-surface: rgba(255, 184, 77, 0.14);
+  --warn-border: rgba(255, 184, 77, 0.38);
+  
+  --ok: #5fd39a;
+  --ok-surface: rgba(95, 211, 154, 0.14);
+  --ok-border: rgba(95, 211, 154, 0.38);
+  
+  --info: #5bb6ff;
+  --info-surface: rgba(91, 182, 255, 0.14);
+  --info-border: rgba(91, 182, 255, 0.38);
+  
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.32);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.40);
+  
+  /* Focus Ring */
+  --focus-ring: 0 0 0 2px var(--shell-focus), 0 0 0 4px rgba(56, 189, 248, 0.24);
+  
+  /* Legacy Aliases */
   --bg: var(--shell-bg);
   --surface-ink: var(--shell-surface-raised);
   --panel: var(--shell-surface);
   --panel-2: var(--shell-surface-raised);
-  --panel-3: #24292e;
+  --panel-3: var(--shell-surface-overlay);
   --line: var(--shell-border);
   --muted: var(--shell-muted);
   --text: var(--shell-text);
-  --cyanprint: #67c9d4;
-  --paper-warm: #c8b594;
-  --timeline-blue: #3477ad;
-  --reel-amber: #e0a34c;
   --accent: var(--shell-accent);
-  --accent-2: var(--reel-amber);
-  --danger: #ff6666;
-  --warn: #e0a34c;
-  --ok: #65b883;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
-  --focus-ring: 0 0 0 2px var(--shell-focus), 0 0 0 4px var(--shell-focus-contrast);
+  --accent-2: var(--shell-warm);
+  --shadow: var(--shadow-md);
+  --cyanprint: var(--shell-accent);
+  --paper-warm: var(--shell-warm);
+  --timeline-blue: #3477ad;
+  --reel-amber: var(--shell-warm);
+  
+  /* Media Canvas Context */
+  --media-bg: var(--surface-0);
+  --media-surface: var(--surface-1);
+  --media-border: var(--shell-border);
+  --media-text: var(--shell-text);
+  --media-muted: var(--shell-muted);
+  --media-accent: var(--shell-accent);
+  --media-accent-contrast: var(--shell-accent-contrast);
+  --media-timeline-blue: #3477ad;
+  --media-reel-amber: var(--shell-warm);
+  --media-ok: var(--ok);
 }
 
+/* Light Theme - Clean White Surfaces */
 :root[data-theme='light'] {
-  --shell-bg: #f7f7f8;
-  --shell-surface: #f6f7f8;
-  --shell-surface-raised: #ffffff;
-  --shell-border: #e2e5e8;
-  --shell-text: #202326;
+  /* Surface Ladder (white to light gray) */
+  --surface-0: #ffffff;
+  --surface-1: #fafbfc;
+  --surface-2: #f6f7f9;
+  --surface-3: #f0f2f5;
+  --surface-4: #e9edf1;
+  
+  /* Semantic Surfaces */
+  --shell-bg: var(--surface-2);
+  --shell-surface: var(--surface-0);
+  --shell-surface-raised: var(--surface-0);
+  --shell-surface-overlay: var(--surface-0);
+  
+  /* Border Colors */
+  --shell-border: #e0e4e9;
+  --shell-border-hover: #c8d0db;
+  --shell-border-focus: #9db0c7;
+  
+  /* Text Colors */
+  --shell-text: #1a1d21;
+  --shell-text-secondary: #3d4450;
   --shell-muted: #5f6871;
-  --shell-accent: #cf4938;
-  --shell-accent-strong: #a93a2d;
+  --shell-subtle: #848d9a;
+  
+  /* Accent - Deep Cyan */
+  --shell-accent: #0891b2;
+  --shell-accent-strong: #06698a;
   --shell-accent-contrast: #ffffff;
-  --shell-focus: #cf4938;
-  --shell-focus-contrast: #ffffff;
-  --shell-selected: #faeae7;
-  --shell-hover: #eceef0;
-
+  --shell-accent-surface: rgba(8, 145, 178, 0.08);
+  --shell-accent-border: rgba(8, 145, 178, 0.24);
+  
+  /* Supporting Accent - Warm Amber */
+  --shell-warm: #d97706;
+  --shell-warm-surface: rgba(217, 119, 6, 0.08);
+  --shell-warm-border: rgba(217, 119, 6, 0.24);
+  
+  /* Focus State */
+  --shell-focus: var(--shell-accent);
+  --shell-focus-contrast: var(--shell-accent-contrast);
+  
+  /* Interactive States */
+  --shell-selected: rgba(8, 145, 178, 0.12);
+  --shell-hover: rgba(0, 0, 0, 0.04);
+  --shell-active: rgba(0, 0, 0, 0.08);
+  
+  /* Feedback Colors */
+  --danger: #dc2626;
+  --danger-surface: rgba(220, 38, 38, 0.08);
+  --danger-border: rgba(220, 38, 38, 0.32);
+  
+  --warn: #ea580c;
+  --warn-surface: rgba(234, 88, 12, 0.08);
+  --warn-border: rgba(234, 88, 12, 0.28);
+  
+  --ok: #059669;
+  --ok-surface: rgba(5, 150, 105, 0.08);
+  --ok-border: rgba(5, 150, 105, 0.28);
+  
+  --info: #2563eb;
+  --info-surface: rgba(37, 99, 235, 0.08);
+  --info-border: rgba(37, 99, 235, 0.28);
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 8px 32px rgba(0, 0, 0, 0.16);
+  
+  /* Focus Ring */
+  --focus-ring: 0 0 0 2px var(--shell-focus-contrast), 0 0 0 4px var(--shell-focus);
+  
+  /* Legacy Aliases */
   --bg: var(--shell-bg);
   --surface-ink: var(--shell-surface-raised);
-  --panel: var(--shell-surface-raised);
-  --panel-2: var(--shell-surface);
-  --panel-3: #eaebed;
+  --panel: var(--shell-surface);
+  --panel-2: var(--shell-surface-raised);
+  --panel-3: var(--surface-3);
   --line: var(--shell-border);
   --muted: var(--shell-muted);
   --text: var(--shell-text);
-  --cyanprint: #176d7c;
-  --paper-warm: #765d3f;
-  --timeline-blue: #2e6fa3;
-  --reel-amber: #875700;
   --accent: var(--shell-accent);
-  --accent-2: var(--reel-amber);
-  --danger: #a92d36;
-  --warn: #805300;
-  --ok: #18734a;
-  --shadow: 0 8px 24px rgba(24, 28, 32, 0.08);
-  --focus-ring: 0 0 0 2px var(--shell-focus), 0 0 0 4px var(--shell-focus-contrast);
+  --accent-2: var(--shell-warm);
+  --shadow: var(--shadow-md);
+  --cyanprint: var(--shell-accent);
+  --paper-warm: var(--shell-warm);
+  --timeline-blue: #2563eb;
+  --reel-amber: var(--shell-warm);
+  
+  /* Media Canvas Context */
+  --media-bg: var(--surface-1);
+  --media-surface: var(--surface-0);
+  --media-border: var(--shell-border);
+  --media-text: var(--shell-text);
+  --media-muted: var(--shell-muted);
+  --media-accent: var(--shell-accent);
+  --media-accent-contrast: var(--shell-accent-contrast);
+  --media-timeline-blue: #2563eb;
+  --media-reel-amber: var(--shell-warm);
+  --media-ok: var(--ok);
 }

@@ -9,7 +9,7 @@ function renderablePlan(ratio: '9:16' | '16:9' = '9:16') {
   for (const shot of plan.beats.flatMap((beat) => beat.shots)) {
     for (const layer of shot.layers.filter((layer) => !layer.content)) {
       layer.assetVersionId = `asset-${layer.id}`;
-      plan.assets.push({ id: layer.assetVersionId, assetId: layer.id, kind: 'image', localPath: `C:/managed/${layer.id}.png`, createdAt: plan.createdAt });
+      plan.assets.push({ id: layer.assetVersionId, assetId: layer.id, kind: 'image', backgroundRemoval: { method: 'native-alpha', transparentFraction: 0.5, foregroundFraction: 0.48, edgeFraction: 0.02, quality: 'passed' }, localPath: `C:/managed/${layer.id}.png`, createdAt: plan.createdAt });
     }
     shot.voiceAssetVersionId = `voice-${shot.id}`;
     plan.assets.push({ id: shot.voiceAssetVersionId, assetId: shot.voiceAssetVersionId, kind: 'audio', localPath: `C:/managed/${shot.id}.wav`, createdAt: plan.createdAt });
@@ -109,7 +109,7 @@ describe('complete editorial motion scenes', () => {
     expect(elements[1].style.objectFit).toBe('contain');
     expect(elements[1].style.transform).toBe(`translate3d(-50%, -50%, 0) scale(${settled.scale}) rotate(${settled.rotation}deg)`);
     await window.__tl!.seek(scene.durationMs / 1000);
-    expect(elements[1].style.opacity).toBe('0');
+    expect(elements[1].style.opacity).toBe('1'); // Semantic shots hold the evidence through the spoken tail.
   });
 
   it('mixes local motion and actual generated video across shots and blocks unfinished video jobs', () => {

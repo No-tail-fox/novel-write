@@ -16,6 +16,7 @@ import type {
   HtmlVideoRuntimeRenderer,
 } from './html-video-runtime';
 import { attachLocalHtmlSecurity, isAllowedLocalHtmlNavigation } from './security';
+import { CREATIVE_REVIEW_REVISION, creativeUnsupportedClaims, creativeMinimumFontSize, creativeBackgroundMatches } from '../src/shared/creative-animation/review';
 
 const sidecarFramePattern = 'frame_%04d.jpg';
 const hiddenWindowReadyTimeoutMs = 30_000;
@@ -52,6 +53,75 @@ export function createElectronHtmlVideoRenderer(options: {
     capturePreview,
     openPreview,
   };
+}
+
+/** Same isolated capture host as final rendering. This checks execution/layout, not aesthetic quality. */
+export async function reviewHtmlAnimationFrames(input: {
+  workDir: string; htmlPath: string; canvas: HtmlVideoCanvas; durationMs: number;
+  approvedText?: string;
+  expectedBackground?: string;
+}): Promise<string[]> {
+  return withHiddenCaptureLock(undefined, async () => {
+    const window = await openHiddenHtmlWindow(input);
+    try {
+      const paths: string[] = [];
+      for (const fraction of [0.15, 0.5, 0.85]) {
+        await seekHiddenHtmlSceneFrame(window, input.durationMs / 1000 * fraction);
+        const layout = await withRendererTimeout(window.webContents.executeJavaScript(`(() => {
+          const issues=[], texts=[], root=document.querySelector('#root');
+          if(!root) return {issues:['未找到动画内容'],text:''};
+          const minimumFontSize=${creativeMinimumFontSize(input.canvas.width, input.canvas.height)};
+          const backgroundCandidates=Array.from(root.querySelectorAll('*')).flatMap(element=>{
+            const r=element.getBoundingClientRect(),s=getComputedStyle(element);
+            return r.left<=2&&r.top<=2&&r.right>=innerWidth-2&&r.bottom>=innerHeight*.8&&s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)>=.95&&s.backgroundColor!=='rgba(0, 0, 0, 0)'?[s.backgroundColor]:[];
+          });
+          const caption=document.querySelector('.caption'), captionRect=caption?.getBoundingClientRect();
+          const safeBottom=Math.min(innerHeight*.84,captionRect&&captionRect.height>0?captionRect.top:innerHeight);
+          const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+          let node;
+          while(node=walker.nextNode()) {
+            const element=node.parentElement, text=node.textContent?.trim();
+            if(!element||!text||element.closest('.caption,script,style,defs')) continue;
+            let visible=true;
+            for(let parent=element;parent;parent=parent.parentElement){const s=getComputedStyle(parent);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<.1){visible=false;break;}}
+            if(!visible) continue;
+            const range=document.createRange();range.selectNodeContents(node);const r=range.getBoundingClientRect();
+            if(r.width<1||r.height<1) continue;
+            texts.push(text);
+            const s=getComputedStyle(element),fontSize=parseFloat(s.fontSize),elementRect=element.getBoundingClientRect();
+            const svgMatrix=typeof element.getScreenCTM==='function'?element.getScreenCTM():null;
+            const renderedScale=element.offsetHeight?elementRect.height/element.offsetHeight:svgMatrix?Math.hypot(svgMatrix.c,svgMatrix.d):1;
+            const renderedFontSize=fontSize*renderedScale;
+            if(renderedFontSize<minimumFontSize-.5) issues.push('文字过小（'+Math.round(renderedFontSize)+'px，至少'+Math.ceil(minimumFontSize)+'px）：'+text.slice(0,50));
+            if(element.scrollWidth>element.clientWidth+6 || element.scrollHeight>element.clientHeight+6) issues.push('文字容器溢出：'+text.slice(0,50));
+            if(r.left< -2||r.top< -2||r.right>innerWidth+2||r.bottom>innerHeight+2) issues.push('文字超出画布：'+text.slice(0,50));
+            if(r.bottom>safeBottom+2) issues.push('文字侵入字幕保留区：'+text.slice(0,50));
+          }
+          return {issues:issues.slice(0,8),text:texts.join(' '),background:backgroundCandidates.at(-1)};
+        })()`), hiddenFrameTimeoutMs, 'Creative frame layout review');
+        const captured = await withRendererTimeout(window.webContents.capturePage(), hiddenFrameTimeoutMs, 'Creative review capture');
+        const image = normalizeCapturedHtmlSceneImage(captured, input.canvas);
+        const pixels = image.resize({ width: 64, height: 36 }).toBitmap();
+        let minimum = 255, maximum = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          const value = (pixels[index] + pixels[index + 1] + pixels[index + 2]) / 3;
+          minimum = Math.min(minimum, value); maximum = Math.max(maximum, value);
+        }
+        if (maximum - minimum < 8) throw new Error('CREATIVE_EMPTY_FRAME: 抽帧接近纯色，未发现可辨识内容。');
+        const output = join(input.workDir, `review-${Math.round(fraction * 100)}.jpg`);
+        await writeFile(output, image.toJPEG(90)); paths.push(output);
+        const unsupported = input.approvedText === undefined ? [] : creativeUnsupportedClaims(layout.text, input.approvedText);
+        if (input.expectedBackground && layout.background && !creativeBackgroundMatches(layout.background, input.expectedBackground)) layout.issues.push(`背景未遵循所选风格：${layout.background}，预期 ${input.expectedBackground}`);
+        if (layout.issues.length || unsupported.length) {
+          await writeFile(join(input.workDir, 'review.json'), JSON.stringify({ version: CREATIVE_REVIEW_REVISION, passed: false, aestheticReview: false, factualReview: 'limited-patterns-only', layoutIssues: layout.issues, unsupported, paths }, null, 2), 'utf8');
+          if (layout.issues.length) throw new Error(`CREATIVE_LAYOUT: ${layout.issues.join('；')}`);
+          throw new Error(`CREATIVE_CONTENT: 未提供依据的标注：${unsupported.join('；')}`);
+        }
+      }
+      await writeFile(join(input.workDir, 'review.json'), JSON.stringify({ version: CREATIVE_REVIEW_REVISION, kind: 'browser-execution-layout-frames', passed: true, aestheticReview: false, factualReview: 'limited-patterns-only', paths }, null, 2), 'utf8');
+      return paths;
+    } finally { if (!window.isDestroyed()) window.destroy(); }
+  });
 }
 
 export async function cleanupHtmlVideoFrameDirectories(
@@ -319,7 +389,10 @@ function checkedLocalHtmlUrl(htmlPath: string, workDir: string): string {
 
 async function waitForHiddenHtmlSceneReady(window: BrowserWindow): Promise<void> {
   await withRendererTimeout(window.webContents.executeJavaScript(`new Promise((resolve, reject) => {
-    const mediaFailure = () => typeof window.__mediaError === 'string' && window.__mediaError ? new Error(window.__mediaError) : null;
+    const mediaFailure = () => {
+      const error = window.__mediaError || window.__htmlVideoMediaError;
+      return typeof error === 'string' && error ? new Error(error) : null;
+    };
     const isReady = () => document.readyState !== 'loading'
       && window.__ready === true
       && window.__tl

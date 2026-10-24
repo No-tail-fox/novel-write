@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Archive, ArrowUpRight, RotateCcw, SlidersHorizontal, Star, Trash2 } from 'lucide-react';
+import { Archive, ArrowUpRight, RotateCcw, Search, Star, Trash2 } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { CursorPagination } from '../../components/CursorPagination';
@@ -22,6 +22,7 @@ import type {
   VoiceLabSummary,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
+import { Button, IconButton, SelectField, TextField } from '../../ui';
 import { useHistoryPage } from '../history/use-history-page';
 import { formatDate, formatTaskOperationTime, taskHistoryTypeLabel } from './task-formatters';
 import { taskOperationStatusLabel } from './task-pipeline';
@@ -155,27 +156,17 @@ export function HistoryPage({
             <Segmented label="收藏范围" value={favoriteFilter} options={historyFavoriteFilters} labels={historyFavoriteFilterLabels} onChange={(value) => setFavoriteFilter(value as 'all' | 'favorites')} disabled={historyBusy || Boolean(pendingDelete)} />
           ) : null}
         </div>
-        <input className="search-input" aria-label="搜索历史记录" value={query} placeholder={family === 'task' ? '搜索任务标题' : '搜索记录'} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setQuery(event.target.value)} />
+        <TextField fieldClassName="task-history-search" label="搜索历史记录" contentBefore={<Search size={15} />} value={query} placeholder={family === 'task' ? '搜索任务标题' : '搜索记录'} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setQuery(event.target.value)} />
       </div>
       <div className="task-history-filter-row">
         {family === 'task' ? (
-          <label className="task-history-status-select">
-            <span>状态</span>
-            <select aria-label="状态" value={statusFilter} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}>
-              {historyTaskStatuses.map((item) => <option key={item} value={item}>{statusLabel(item)}</option>)}
-            </select>
-          </label>
+          <SelectField fieldClassName="task-history-status-select" label="状态" value={statusFilter} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}
+            options={historyTaskStatuses.map((item) => ({ value: item, label: statusLabel(item) }))} />
         ) : <span className="subtle-copy">{historyFamilyLabels[historyFamilies.indexOf(family)]}历史记录</span>}
-        <details className="task-history-more-filters">
-          <summary aria-label="筛选记录类型" title="筛选记录类型"><SlidersHorizontal size={15} /></summary>
-          <label>
-            <span>记录类型</span>
-            <select aria-label="记录类型" value={family} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setFamily(event.target.value as HistoryFamily)}>
-              {historyFamilies.map((item, index) => <option key={item} value={item}>{historyFamilyLabels[index]}</option>)}
-            </select>
-          </label>
-        </details>
+        <SelectField fieldClassName="task-history-family-select" label="记录类型" value={family} disabled={historyBusy || Boolean(pendingDelete)} onChange={(event) => setFamily(event.target.value as HistoryFamily)}
+          options={historyFamilies.map((item, index) => ({ value: item, label: historyFamilyLabels[index] }))} />
       </div>
+      <div className="task-history-table-scroll">
       <DataTable
         label="历史任务"
         columns={family === 'task' ? ['任务', '类型', '当前状态', '进度', '更新时间', '操作'] : ['记录', '状态', '详情', '创建时间', '操作']}
@@ -193,9 +184,9 @@ export function HistoryPage({
             return (
               <div className="table-row clickable" key={record.id} role="row" onClick={() => openTaskDetail(record.id)}>
                 <span className="task-history-title" role="cell">
-                  <button className="table-row-primary-action" type="button" aria-label={`打开任务 ${row.title}`} onClick={(event) => { event.stopPropagation(); openTaskDetail(record.id); }}>
+                  <Button variant="subtle" className="table-row-primary-action" aria-label={`打开任务 ${row.title}`} onClick={(event) => { event.stopPropagation(); openTaskDetail(record.id); }}>
                     {row.title}
-                  </button>
+                  </Button>
                   <small>{task.targetScenes || task.storyboardSceneCount || 0} 个场景 · {task.ratio}</small>
                 </span>
                 <span role="cell">{taskHistoryTypeLabel(task)}</span>
@@ -209,24 +200,22 @@ export function HistoryPage({
                   <span className="row-actions" onClick={(event) => event.stopPropagation()}>
                     {archiveFilter === 'active' ? (
                       <>
-                        <button
-                          className={`icon-button task-history-action favorite-action${task.isFavorite ? ' active' : ''}`}
-                          type="button"
-                          title={task.isFavorite ? '取消收藏' : '添加收藏'}
-                          aria-label={task.isFavorite ? '取消收藏' : '添加收藏'}
+                        <IconButton
+                          className="task-history-action favorite-action"
+                          variant={task.isFavorite ? 'primary' : 'secondary'}
+                          label={task.isFavorite ? '取消收藏' : '添加收藏'}
                           aria-pressed={Boolean(task.isFavorite)}
                           disabled={historyBusy}
                           onClick={() => void toggleTaskFavorite(task)}
-                        >
-                          <Star size={14} fill={task.isFavorite ? 'currentColor' : 'none'} />
-                        </button>
-                        <button className="icon-button task-history-action" type="button" title="打开任务详情" aria-label="打开任务详情" disabled={historyBusy} onClick={() => openTaskDetail(record.id)}><ArrowUpRight size={14} /></button>
-                        <button className="icon-button task-history-action" type="button" title="归档任务" aria-label="归档任务" disabled={historyBusy} onClick={() => void archiveRecord(record)}><Archive size={14} /></button>
+                          icon={<Star size={14} fill={task.isFavorite ? 'currentColor' : 'none'} />}
+                        />
+                        <IconButton className="task-history-action" label="打开任务详情" disabled={historyBusy} onClick={() => openTaskDetail(record.id)} icon={<ArrowUpRight size={14} />} />
+                        <IconButton className="task-history-action" label="归档任务" disabled={historyBusy} onClick={() => void archiveRecord(record)} icon={<Archive size={14} />} />
                       </>
                     ) : (
                       <>
-                        <button className="icon-button task-history-action" type="button" title="恢复任务" aria-label="恢复任务" disabled={historyBusy} onClick={() => void restoreRecord(record)}><RotateCcw size={14} /></button>
-                        <button className="icon-button task-history-action danger-action" type="button" title="永久删除记录" aria-label="永久删除记录" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })}><Trash2 size={14} /></button>
+                        <IconButton className="task-history-action" label="恢复任务" disabled={historyBusy} onClick={() => void restoreRecord(record)} icon={<RotateCcw size={14} />} />
+                        <IconButton className="task-history-action" variant="danger" label="永久删除记录" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })} icon={<Trash2 size={14} />} />
                       </>
                     )}
                   </span>
@@ -243,11 +232,11 @@ export function HistoryPage({
               <span role="cell">
                 <span className="row-actions" onClick={(event) => event.stopPropagation()}>
                   {archiveFilter === 'active' ? (
-                    <button className="icon-button task-history-action" type="button" title="归档记录" aria-label="归档记录" disabled={historyBusy} onClick={() => void archiveRecord(record)}><Archive size={14} /></button>
+                    <IconButton className="task-history-action" label="归档记录" disabled={historyBusy} onClick={() => void archiveRecord(record)} icon={<Archive size={14} />} />
                   ) : (
                     <>
-                      <button className="icon-button task-history-action" type="button" title="恢复记录" aria-label="恢复记录" disabled={historyBusy} onClick={() => void restoreRecord(record)}><RotateCcw size={14} /></button>
-                      <button className="icon-button task-history-action danger-action" type="button" title="永久删除记录" aria-label="永久删除记录" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })}><Trash2 size={14} /></button>
+                      <IconButton className="task-history-action" label="恢复记录" disabled={historyBusy} onClick={() => void restoreRecord(record)} icon={<RotateCcw size={14} />} />
+                      <IconButton className="task-history-action" variant="danger" label="永久删除记录" disabled={historyBusy} onClick={() => setPendingDelete({ family, record })} icon={<Trash2 size={14} />} />
                     </>
                   )}
                 </span>
@@ -256,6 +245,7 @@ export function HistoryPage({
           );
         })}
       </DataTable>
+      </div>
       <div className="task-history-pagination-row">
         <span className="subtle-copy">{historyPage.page ? `共 ${historyPage.page.totalCount} 条记录 · 每页最多 50 条` : historyPage.loading ? '正在加载' : '暂无记录'}</span>
         <CursorPagination

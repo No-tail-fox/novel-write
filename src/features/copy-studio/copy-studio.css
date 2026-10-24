@@ -2,6 +2,7 @@
 .copy-studio > * { min-width: 0; min-height: 0; padding: 18px; overflow-y: auto; scrollbar-gutter: stable; }
 .copy-studio-sources, .copy-studio-editor { border-right: 1px solid var(--shell-border); }
 .copy-studio-sources, .copy-studio-editor, .copy-studio-inspector, .copy-studio-inspector section { display: grid; align-content: start; gap: 14px; }
+.copy-studio-sources > .sd-button, .copy-studio-editor > .sd-button { min-height: var(--sd-control-height); }
 .copy-studio-heading { display: grid; gap: 4px; }
 .copy-studio-heading h2, .copy-studio-editor-toolbar h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0; }
 .copy-studio-heading span, .copy-studio-editor-toolbar span, .copy-studio-handoff p { margin: 0; color: var(--shell-muted); font-size: var(--sd-text-caption); line-height: 1.55; }

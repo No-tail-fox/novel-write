@@ -233,6 +233,7 @@ async function runMediaRequest(config: LlmConfig, input: ReferenceUnitInput, mod
       }) }],
     };
     const response = await fetchWithTimeout(llmEndpoint(config), {
+      generation: true,
       method: 'POST', body: JSON.stringify(body), signal, timeoutMs: config.timeoutMs ?? 120000,
       timeoutLabel: '整体拆解理解请求', maxBytes: RESPONSE_MAX_BYTES, maxRedirects: 0,
       headers: { 'Content-Type': 'application/json', ...(protocol === 'anthropic'

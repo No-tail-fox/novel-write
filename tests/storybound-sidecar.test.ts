@@ -13,6 +13,53 @@ import {
 } from '@shared/storybound-sidecar';
 
 describe('Storybound-compatible media sidecar', () => {
+  it('normalizes a real quiet final mix while preserving its video clock and optional opt-out', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-normalize-final-'));
+    try {
+      const frames = join(dir, 'frames'), voice = join(dir, 'voice.wav');
+      await mkdir(frames);
+      await writeFile(join(frames, '0001.png'), colorPng());
+      await writeFile(voice, wavTone(1800, 1200));
+      const compose = async (normalize_audio: boolean) => {
+        const output = join(dir, normalize_audio ? 'normalized.mp4' : 'original.mp4');
+        await runStoryboundMediaSidecar({ mode: 'compose_render', work_dir: dir, scenes: [{ frames_dir: frames, audio_path: voice, fps: 10, duration_s: 1.8 }], total_duration_s: 1.8, output_path: output, normalize_audio });
+        return runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: dir, media_path: output, require_nonblack: true, analyze_quality: true });
+      };
+      const original = await compose(false), normalized = await compose(true);
+      expect(original.audio_lufs!).toBeLessThan(-25);
+      expect(normalized.audio_quality_status).toBe('ok');
+      expect(normalized.audio_lufs!).toBeGreaterThan(-17);
+      expect(normalized.audio_lufs!).toBeLessThan(-15);
+      expect(normalized.audio_true_peak_db!).toBeLessThan(-1);
+      expect(normalized.duration!).toBeCloseTo(original.duration!, 1);
+      expect(normalized.has_nonblack_video).toBe(true);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 60_000);
+  it('bounds decoder, filter and encoder pools even for a small composition graph and cleans its filter script', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-compose-thread-budget-'));
+    try {
+      const script = await writeStoryboundSidecarScript(dir);
+      const result = await runBoundedProcess(resolvePythonRuntimeInfo().command, ['-c', `
+import json, os, runpy, sys
+namespace = runpy.run_path(sys.argv[1])
+compose = namespace['run_composition_ffmpeg']
+calls = []
+def inspect(args, cwd=None):
+    index = args.index('-filter_complex_script')
+    path = args[index + 1]
+    calls.append({'args': args, 'cwd': cwd, 'script': path, 'content': open(path, encoding='utf-8').read()})
+compose.__globals__['run_ffmpeg'] = inspect
+compose(['-i', os.path.join(sys.argv[2], 'a.mp4'), '-i', os.path.join(sys.argv[2], 'b.mp4'), '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[out]', '-map', '[out]', '-c:v', 'libx264', os.path.join(sys.argv[2], 'out.mp4')])
+calls[0]['cleaned'] = not os.path.exists(calls[0]['script'])
+print(json.dumps(calls[0]))
+`, script, dir], { cwd: dir, timeoutMs: 10_000, maxStdoutBytes: 65536, maxStderrBytes: 65536 });
+      expect(result.code).toBe(0);
+      const call = JSON.parse(result.stdout);
+      expect(call.args.slice(0, 10)).toEqual(['-filter_complex_threads', '1', '-threads', '1', '-i', 'a.mp4', '-threads', '1', '-i', 'b.mp4']);
+      expect(call.args.slice(-3)).toEqual(['-threads', '2', join(dir, 'out.mp4')]);
+      expect(call).toMatchObject({ cleaned: true, content: '[0:v][1:v]concat=n=2:v=1:a=0[out]' });
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it('counts decoded narration samples without rounding milliseconds to container display precision', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-audio-duration-'));
     try {

@@ -44,6 +44,21 @@ function ttsVolcengineProfile(id: string, enabled: boolean, apiKey: string, spea
 }
 
 describe('provider profile utilities', () => {
+  it('retains parameter edits and resets for the active image profile before credentials are configured', () => {
+    const config = normalizeAppConfig(defaultConfig);
+    const profile = config.imageProfiles.find((item) => item.id === config.activeImageProfileId)!;
+    const saved = saveImageProfile(config, {
+      ...profile,
+      gptImage: { ...profile.gptImage!, concurrency: 4, resolution: '4K', quality: 'high' },
+    });
+    expect(saved.gptImage).toMatchObject({ concurrency: 4, resolution: '4K', quality: 'high' });
+    expect(saved.imageProfiles.find((item) => item.id === profile.id)?.gptImage).toMatchObject({ concurrency: 4 });
+
+    const reset = saveImageProfile(saved, { ...profile, gptImage: { ...defaultConfig.gptImage } });
+    expect(reset.gptImage).toEqual(defaultConfig.gptImage);
+    expect(reset.activeImageProfileId).toBe(config.activeImageProfileId);
+  });
+
   it('adds image profiles as inactive drafts without changing the active image profile', () => {
     const config = normalizeAppConfig({
       ...defaultConfig,

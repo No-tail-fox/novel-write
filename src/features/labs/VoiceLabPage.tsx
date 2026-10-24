@@ -3,7 +3,6 @@ import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { Loader2, Mic2, RefreshCw, Search } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
-import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
@@ -20,6 +19,7 @@ import {
   type TtsVoiceOption,
 } from '../../shared/tts-voices';
 import { useAsyncAction } from '../../ui/async-action';
+import { Button, IconButton, SelectField, TextAreaField, TextField } from '../../ui';
 import { formatDate, toLocalAssetUrl } from '../tasks/task-formatters';
 import '../../styles/features/local-labs.css';
 
@@ -158,43 +158,31 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   return (
     <div className="local-lab-workbench voice-lab-layout lab-layout" data-local-lab-workbench="voice-lab">
       <section className="local-lab-rail voice-lab-controls">
-        <Field label="试听文案">
-          <textarea className="prompt-box voice-lab-text" value={text} onChange={(event) => setText(event.target.value)} />
-        </Field>
+        <TextAreaField label="试听文案" className="voice-lab-text" value={text} onChange={(event) => setText(event.target.value)} />
         <Segmented label="配音模型" value={voiceProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={changeProvider} />
         <div className="voice-lab-voices">
           <div className="voice-lab-voice-header">
             <span className="field-title">音色</span>
             <span className="hint-text">{visibleVoiceOptions.length}/{voiceOptions.length}</span>
             {voiceProvider === 'volcengine' ? (
-              <button className="icon-button" type="button" title="重新加载豆包音色" aria-label="重新加载豆包音色" disabled={catalogLoading || !canLoadVolcengineCatalog} onClick={reloadVolcengineCatalog}>
-                <RefreshCw className={catalogLoading ? 'spin' : undefined} size={14} />
-              </button>
+              <IconButton label="重新加载豆包音色" icon={<RefreshCw className={catalogLoading ? 'spin' : undefined} size={14} />} disabled={catalogLoading || !canLoadVolcengineCatalog} onClick={reloadVolcengineCatalog} />
             ) : null}
           </div>
-          <label className="voice-lab-voice-search">
-            <Search size={14} />
-            <input aria-label="搜索音色" value={voiceQuery} placeholder="搜索名称或 voice ID" onChange={(event) => setVoiceQuery(event.target.value)} />
-          </label>
+          <TextField label="搜索音色" contentBefore={<Search size={14} />} value={voiceQuery} placeholder="搜索名称或 voice ID" onChange={(event) => setVoiceQuery(event.target.value)} />
           {voiceProvider === 'volcengine' && catalogError ? <div className="voice-lab-catalog-status" role="status">{catalogError}</div> : null}
-          <div className="chip-row voice-lab-voice-list" aria-label={`${voiceProvider === 'volcengine' ? '豆包' : 'MiniMax'} 音色列表`}>
-            {visibleVoiceOptions.map((voice) => (
-              <button type="button" key={voice.id} className={voiceId === voice.id ? 'chip active' : 'chip'} title={voice.id} aria-pressed={voiceId === voice.id} onClick={() => setVoiceId(voice.id)}>
-                <strong>{voice.label}</strong>
-                <small>{voice.hint}</small>
-              </button>
-            ))}
-            {visibleVoiceOptions.length === 0 ? <div className="voice-lab-voice-empty">没有匹配的音色</div> : null}
-          </div>
+          <SelectField label="音色" value={voiceId} onChange={(event) => setVoiceId(event.target.value)} options={[
+            ...(!visibleVoiceOptions.some((voice) => voice.id === voiceId) && voiceId ? [{ value: voiceId, label: `${selectedVoiceLabel}（当前已选）` }] : []),
+            ...visibleVoiceOptions.map((voice) => ({ value: voice.id, label: `${voice.label}${voice.hint ? ` · ${voice.hint}` : ''}` })),
+          ]} />
+          {visibleVoiceOptions.length === 0 ? <div className="voice-lab-catalog-status" role="status">没有匹配的音色</div> : null}
         </div>
         <Segmented label="语速" value={String(voiceSpeed)} options={['0.85', '1', '1.15', '1.3']} labels={['慢速 0.85x', '默认 1.0x', '快速 1.15x', '更快 1.3x']} onChange={(value) => setVoiceSpeed(Number(value))} />
         <div className="provider-line">当前音色：{selectedVoiceLabel} · {voiceId}{voiceProvider === 'volcengine' ? ` · ${currentVolcengineConfig.resourceId || 'seed-tts-2.0'}` : ` · ${state.config.tts.minimax.model}`}</div>
         {submitError ? <ErrorSummaryButton compact title="配音实验室提交失败" fullMessage={submitError} /> : null}
         <InlineActionFeedback feedback={voiceLabAction.feedback} />
-        <button className="primary-action" onClick={generatePreview} disabled={generating || !text.trim() || !voiceId}>
-          {generating ? <Loader2 className="spin" size={17} /> : <Mic2 size={17} />}
+        <Button variant="primary" icon={generating ? <Loader2 className="spin" size={17} /> : <Mic2 size={17} />} onClick={generatePreview} disabled={generating || !text.trim() || !voiceId}>
           {generating ? '生成中' : '生成试听'}
-        </button>
+        </Button>
       </section>
       <section className="local-lab-media voice-lab-history">
         <div className="panel-title-row">

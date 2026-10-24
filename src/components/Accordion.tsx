@@ -1,4 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Button } from '../ui';
 
 export interface AccordionProps {
   title: string;
@@ -24,16 +26,18 @@ export function Accordion({ title, open = false, expanded: controlledExpanded, o
 
   return (
     <div className={expanded ? 'accordion open' : 'accordion'}>
-      <button
+      <Button
         id={buttonId}
         type="button"
         aria-expanded={expanded}
         aria-controls={panelId}
         disabled={disabled}
         onClick={toggleExpanded}
+        variant="subtle"
+        icon={expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
       >
-        › {title}
-      </button>
+        {title}
+      </Button>
       {expanded ? <div id={panelId} role="region" aria-labelledby={buttonId}>{children}</div> : null}
     </div>
   );

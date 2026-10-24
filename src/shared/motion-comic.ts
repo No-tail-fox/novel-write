@@ -150,6 +150,13 @@ export interface MotionComicDialogueCue extends ProductionSubtitleCue {
   speakerName?: string;
 }
 
+export interface MotionComicVideoProduction {
+  version: 1;
+  referenceMode: 'frames' | 'references';
+  audioMode: 'post-mix' | 'native' | 'audio-driven';
+  referenceAudioAssetVersionIds?: string[];
+}
+
 export interface MotionComicShot {
   id: string;
   episodeId: string;
@@ -169,6 +176,8 @@ export interface MotionComicShot {
   renderStrategy?: 'image-motion' | 'remote-video';
   videoAssetVersionId?: string;
   videoJobId?: string;
+  videoProduction?: MotionComicVideoProduction;
+  productionUnit?: { sourceShotId: string; sourceStartMs: number; sourceEndMs: number; index: number; total: number; generationDurationSec: number };
   continuity?: MotionComicShotContinuity;
   sourceBeatIds?: string[];
   dialogueCueIds: string[];
@@ -309,6 +318,21 @@ const assetVersionSchema = z.object({
   uri: boundedText(4096).optional(),
   localPath: boundedText(4096).optional(),
   sha256: z.string().max(128).optional(),
+  librarySource: z.object({ id: z.uuid(), revision: z.string().regex(/^[a-f0-9]{64}$/u) }).strict().optional(),
+  backgroundRemoval: z.object({
+    method: z.enum(['native-alpha', 'green-key', 'onnx']),
+    model: boundedText(1024).optional(),
+    modelVersion: boundedText(1024).optional(),
+    modelSha256: z.string().max(128).optional(),
+    sourceSha256: z.string().max(128).optional(),
+    outputSha256: z.string().max(128).optional(),
+    transparentFraction: z.number().finite().min(0).max(1),
+    foregroundFraction: z.number().finite().min(0).max(1),
+    edgeFraction: z.number().finite().min(0).max(1),
+    quality: z.enum(['passed', 'warning', 'failed']),
+    errorCode: boundedText(256).optional(),
+    errorMessage: boundedText(16_384).optional(),
+  }).strict().optional(),
   prompt: boundedText().optional(),
   providerJobId: idSchema.optional(),
   provider: z.string().max(256).optional(),
@@ -336,6 +360,8 @@ const providerJobSchema = z.object({
   actualCost: nonNegativeNumber.optional(),
   attempt: z.number().int().min(1).max(MAX_PRODUCTION_HISTORY_ITEMS),
   remoteTaskId: z.string().max(512).optional(),
+  videoInputSnapshot: boundedText(262_144).optional(),
+  phase: z.enum(['prepared','submitted','downloaded','completed']).optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
   error: boundedText(65_536).optional(),
@@ -374,6 +400,7 @@ const timelineSchema = z.object({
 }).strict();
 
 const qualityReportSchema = z.object({
+  artifactSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
   id: idSchema,
   workflowKind: z.literal(MOTION_COMIC_TASK_TYPE),
   stage: z.string().max(256),
@@ -381,6 +408,7 @@ const qualityReportSchema = z.object({
   episodeId: idSchema.optional(),
   renderFingerprint: z.string().max(256).optional(),
   manualReview: z.object({
+    artifactSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
     reportId: idSchema,
     renderFingerprint: z.string().max(256),
     scope: z.object({
@@ -395,6 +423,7 @@ const qualityReportSchema = z.object({
   }).strict().optional(),
   status: z.enum(['pending', 'passed', 'failed', 'waived']),
   checks: z.array(z.object({
+    priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
     id: idSchema,
     label: z.string().max(512),
     status: z.enum(['pending', 'passed', 'failed', 'waived']),
@@ -605,6 +634,12 @@ const shotSchema = z.object({
   renderStrategy: z.enum(['image-motion', 'remote-video']).optional(),
   videoAssetVersionId: idSchema.optional(),
   videoJobId: idSchema.optional(),
+  productionUnit: z.object({sourceShotId:idSchema,sourceStartMs:nonNegativeNumber,sourceEndMs:finiteNumber.positive(),generationDurationSec:z.number().int().positive().max(600),index:z.number().int().positive(),total:z.number().int().positive()}).strict().refine(unit=>unit.sourceEndMs>unit.sourceStartMs&&unit.index<=unit.total&&unit.generationDurationSec*1000>=unit.sourceEndMs-unit.sourceStartMs,{message:'制作单元区间、序号或生成时长无效'}).optional(),
+  videoProduction: z.object({
+    version: z.literal(1), referenceMode: z.enum(['frames', 'references']),
+    audioMode: z.enum(['post-mix', 'native', 'audio-driven']),
+    referenceAudioAssetVersionIds: z.array(idSchema).max(10).optional(),
+  }).strict().optional(),
   continuity: motionComicShotContinuitySchema.optional(),
   sourceBeatIds: z.array(idSchema).max(MAX_REFERENCES).optional(),
   dialogueCueIds: z.array(idSchema).max(MAX_REFERENCES),
@@ -1534,7 +1569,7 @@ function normalizeMotionComicTimeline(document: MotionComicPipelineData): Motion
       const prior = priorClips.get(shot.id);
       return { id: `clip-${shot.id}`, shotId: shot.id, startMs, durationMs: shot.durationMs, assetVersionIds: prior?.assetVersionIds ?? [], subtitleCueIds: shot.dialogueCueIds, source: prior?.source ?? 'deterministic' as const };
     }));
-    return { ...episode, number: episodeIndex + 1, scenes, dialogueCues, timeline: { ...episode.timeline, durationMs: cursor, clips } };
+    return { ...episode, number: document.sourceDocument ? episode.number : episodeIndex + 1, scenes, dialogueCues, timeline: { ...episode.timeline, durationMs: cursor, clips } };
   });
   return { ...document, episodes, activeEpisodeId: episodes.some((episode) => episode.id === document.activeEpisodeId) ? document.activeEpisodeId : episodes[0]?.id ?? '' };
 }
@@ -1655,7 +1690,19 @@ export function validateMotionComicPipeline(
   data.episodes.forEach((episode, episodeIndex) => {
     const episodePath = `episodes[${episodeIndex}]`;
     if (episode.seriesId !== data.series.id) issues.push({ path: `${episodePath}.seriesId`, message: 'Episode must reference this series.' });
-    if (episode.number !== episodeIndex + 1) issues.push({ path: `${episodePath}.number`, message: 'Episode numbers must be contiguous and 1-based.' });
+    if (data.sourceDocument) {
+      // Background production may finish later source episodes first; source numbering stays authoritative.
+      const sourceEpisodeId = episode.planningEvidence?.sourceEpisodeId;
+      const sourceEpisode = data.sourceDocument.episodes.find((source) => sourceEpisodeId ? source.id === sourceEpisodeId : source.number === episode.number);
+      if (!sourceEpisode || sourceEpisode.number !== episode.number) {
+        issues.push({ path: `${episodePath}.number`, message: 'Episode number must match its source episode.' });
+      }
+      if (episodeIndex > 0 && episode.number <= data.episodes[episodeIndex - 1].number) {
+        issues.push({ path: `${episodePath}.number`, message: 'Source episode numbers must be unique and ordered.' });
+      }
+    } else if (episode.number !== episodeIndex + 1) {
+      issues.push({ path: `${episodePath}.number`, message: 'Episode numbers must be contiguous and 1-based.' });
+    }
     const sceneIds = new Set<string>();
     const dialogue = uniqueIdMap(episode.dialogueCues, `${episodePath}.dialogueCues`, issues);
     const episodeShots = new Map<string, MotionComicShot>();
@@ -1918,7 +1965,6 @@ export function invalidateMotionComicShotVideo(
                 ...shot,
                 videoAssetVersionId: undefined,
                 videoJobId: undefined,
-                videoJobStatus: 'idle' as const,
               }
             : shot
         )),

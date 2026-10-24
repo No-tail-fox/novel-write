@@ -1,8 +1,35 @@
-export interface EditorialGreenCutoutResult {
-  /** Electron nativeImage bitmap: BGRA with premultiplied color channels. */
-  bitmap: Uint8Array;
+export interface EditorialBitmapAlphaMetrics {
   transparentFraction: number;
   foregroundFraction: number;
+  edgeFraction: number;
+}
+
+export interface EditorialGreenCutoutResult extends EditorialBitmapAlphaMetrics {
+  /** Electron nativeImage bitmap: BGRA with premultiplied color channels. */
+  bitmap: Uint8Array;
+}
+
+/** Inspect alpha coverage for nativeImage's BGRA bitmap without decoding color. */
+export function inspectEditorialBitmapAlpha(bitmap: Uint8Array, width: number, height: number): EditorialBitmapAlphaMetrics {
+  const pixels = width * height;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
+    || !Number.isSafeInteger(pixels) || bitmap.length !== pixels * 4) {
+    throw new Error('EDITORIAL_CUTOUT_INVALID_BITMAP: The image bitmap could not be inspected.');
+  }
+  let transparentPixels = 0;
+  let foregroundPixels = 0;
+  let edgePixels = 0;
+  for (let pixel = 0; pixel < pixels; pixel += 1) {
+    const alpha = bitmap[pixel * 4 + 3];
+    if (alpha <= 8) transparentPixels += 1;
+    else if (alpha >= 224) foregroundPixels += 1;
+    else edgePixels += 1;
+  }
+  return {
+    transparentFraction: transparentPixels / pixels,
+    foregroundFraction: foregroundPixels / pixels,
+    edgeFraction: edgePixels / pixels,
+  };
 }
 
 const smoothstep = (minimum: number, maximum: number, value: number): number => {
@@ -56,6 +83,11 @@ export function removeEditorialGreenBackground(
 
   const transparentFraction = transparentPixels / pixels;
   const foregroundFraction = foregroundPixels / pixels;
+  let edgePixels = 0;
+  for (const alpha of matte) {
+    if (alpha > 8 && alpha < 224) edgePixels += 1;
+  }
+  const edgeFraction = edgePixels / pixels;
   if (foregroundFraction < 0.01) {
     throw new Error('EDITORIAL_CUTOUT_EMPTY_FOREGROUND: 抠图后没有足够的主体，请重新生成主体素材，主体不要使用绿色。');
   }
@@ -103,5 +135,5 @@ export function removeEditorialGreenBackground(
     }
   }
 
-  return { bitmap, transparentFraction, foregroundFraction };
+  return { bitmap, ...inspectEditorialBitmapAlpha(bitmap, width, height) };
 }

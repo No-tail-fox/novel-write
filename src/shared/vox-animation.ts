@@ -60,6 +60,10 @@ export const voxPropsSchema = z.object({
   title:z.string().max(300), subtitle:z.string().max(1800).default(''), author:z.string().max(180).default(''), source:z.string().max(400).default(''),
   accent:z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#c7513b'), background:z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#eee8dc'), foreground:z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#242820'),
   unit:z.string().max(30).default(''), highlight:z.string().max(400).default(''),
+  dataPresentation:z.object({
+    reveal:z.boolean(),
+    cues:z.array(z.object({startMs:z.number().nonnegative(),endMs:z.number().nonnegative(),labels:z.array(z.string().max(160)).max(24)}).strict()).max(500),
+  }).strict().optional(),
   items:z.array(voxItemSchema).max(24).default([]), assetIds:z.array(z.string().min(1).max(256)).max(24).default([]),
   audioAssetId:z.string().max(256).optional(), geoJson:z.string().max(500000).default(''),
   focus:z.object({x:z.number().min(0).max(1),y:z.number().min(0).max(1),width:z.number().min(.05).max(1),height:z.number().min(.05).max(1)}).default({x:.25,y:.25,width:.5,height:.5}),
@@ -70,12 +74,18 @@ export const voxAnimationSchema = z.object({
   version:z.literal(1), mode:z.enum(['template','code']),
   template:z.object({id:z.string().min(1).max(120),revision:z.literal(1).optional(),props:voxPropsSchema}).strict(),
   code:z.object({source:z.string().max(100000).default(''), compiled:z.string().max(180000).default(''), prompt:z.string().max(10000).default('')}).strict(),
+  authoring:z.object({
+    owner:z.literal('creative-production'), revision:z.literal(1), styleId:z.string().max(120), upstreamRevision:z.string().max(64),
+    status:z.enum(['generated','reviewed','needs-repair','repaired','fallback']),
+    attempts:z.array(z.object({requestId:z.string().max(256),source:z.string().max(100000)}).strict()).max(2),
+    error:z.string().max(8000).optional(), previewPaths:z.array(z.string().max(2000)).max(3).optional(),
+  }).strict().optional(),
 }).strict();
 export type VoxAnimation = z.infer<typeof voxAnimationSchema>;
 export interface VoxAnimationAsset { id:string; label:string; kind:'image'|'audio'; url:string; }
 export interface VoxAnimationCue {id?:string;text:string;startMs:number;endMs:number;tokens?:{text:string;startMs:number;endMs:number}[];}
 export interface VoxAnimationAudioClip {assetVersionId?:string;startMs:number;durationMs:number;sourceStartMs?:number;muted?:boolean;gainDb?:number;}
-export interface VoxAnimationPayload {animation:VoxAnimation;width:number;height:number;fps:number;durationMs:number;assets:VoxAnimationAsset[];cues:VoxAnimationCue[];subtitleStyle?:string;audioClips?:readonly VoxAnimationAudioClip[];}
+export interface VoxAnimationPayload {semanticLayers?: Array<{id:string;assetId?:string;kind?:string;content?:{type: 'text';text:string};zIndex:number;depth:number;width?:number;height?:number;fit?:'contain'|'cover';motion: Array<{atMs:number;x:number;y:number;scale:number;rotation:number;opacity:number}>}>;semanticBeats?: import('./editorial-cue-plan').ResolvedEditorialBeat[];animation:VoxAnimation;width:number;height:number;fps:number;durationMs:number;assets:VoxAnimationAsset[];cues:VoxAnimationCue[];subtitleStyle?:string;audioClips?:readonly VoxAnimationAudioClip[];}
 export const voxSavedTemplateSchema=z.object({id:z.string().min(1).max(128),name:z.string().trim().min(1).max(100),animation:voxAnimationSchema,updatedAt:z.string().max(64)}).strict();
 export type VoxSavedTemplate=z.infer<typeof voxSavedTemplateSchema>;
 export interface VoxGenerateRequest {requestId:string;prompt:string;source?:string;templateId:string;props:VoxAnimationProps;durationMs:number;ratio:string;}

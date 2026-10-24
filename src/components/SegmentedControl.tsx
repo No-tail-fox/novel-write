@@ -1,3 +1,5 @@
+import { SegmentedControl as FluentSegmentedControl } from '../ui';
+
 export interface SegmentedControlProps<T extends string> {
   label: string;
   value: T;
@@ -18,20 +20,12 @@ export function SegmentedControl<T extends string>({
   return (
     <div className="field">
       {label ? <span>{label}</span> : null}
-      <div className="segmented" role="group" aria-label={label}>
-        {options.map((option, index) => (
-          <button
-            key={option}
-            className={option === value ? 'selected' : ''}
-            aria-pressed={option === value}
-            disabled={disabled}
-            onClick={() => onChange(option)}
-            type="button"
-          >
-            {labels?.[index] ?? option}
-          </button>
-        ))}
-      </div>
+      <FluentSegmentedControl
+        label={label}
+        value={value}
+        options={options.map((option, index) => ({ value: option, label: labels?.[index] ?? option, disabled }))}
+        onChange={onChange}
+      />
     </div>
   );
 }

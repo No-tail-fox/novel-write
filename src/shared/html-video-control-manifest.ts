@@ -23,6 +23,8 @@ export const HTML_VIDEO_CONTROL_FIELDS = [
   'foreground',
   'maxScenes',
   'ratio',
+  'previewLongEdge',
+  'renderLongEdge',
 ] as const satisfies readonly (keyof HtmlVideoJobConfig)[];
 
 export type HtmlVideoControlField = typeof HTML_VIDEO_CONTROL_FIELDS[number];
@@ -47,6 +49,8 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'foreground',
   'maxScenes',
   'ratio',
+  'previewLongEdge',
+  'renderLongEdge',
 ] as const satisfies readonly HtmlVideoEditableConfigField[];
 export type HtmlVideoControlAvailability = 'editable' | 'read-only-compatible';
 export type HtmlVideoControlUiLocation = 'parameters' | 'voice' | 'caption' | 'preview' | 'render' | 'cover' | 'draft';
@@ -159,6 +163,14 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
     schema: 'scene-count', uiLocation: 'parameters', legacyMirror: 'targetScenes|storyboardSceneCount',
     promptDependencyStages: ['rewrite', 'planning'],
     consumerStages: ['rewrite', 'planning'], invalidateFrom: 'rewrite', availability: 'editable',
+  }),
+  previewLongEdge: entry('previewLongEdge', {
+    schema: 'preview-resolution', uiLocation: 'parameters', legacyMirror: null,
+    consumerStages: ['preview'], invalidateFrom: 'preview', availability: 'editable',
+  }),
+  renderLongEdge: entry('renderLongEdge', {
+    schema: 'render-resolution', uiLocation: 'parameters', legacyMirror: null,
+    consumerStages: ['render'], invalidateFrom: 'render', availability: 'editable',
   }),
   ratio: entry('ratio', {
     schema: 'ratio', uiLocation: 'parameters', legacyMirror: 'ratio',

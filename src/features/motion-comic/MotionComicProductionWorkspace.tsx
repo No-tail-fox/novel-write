@@ -17,7 +17,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import type { MotionComicPipelineData, MotionComicWorkflowStage } from '../../shared/motion-comic';
-import { Button, IconButton, Toolbar } from '../../ui';
+import { Button, IconButton, Tabs, Toolbar } from '../../ui';
 
 export interface MotionComicStageState {
   ready: boolean;
@@ -45,7 +45,6 @@ const STAGES: Array<{ id: MotionComicWorkflowStage; label: string; shortLabel: s
   { id: 'source', label: '剧本导入', shortLabel: '剧本', icon: <FileText size={15} /> },
   { id: 'episodes', label: '分集拆解', shortLabel: '分集', icon: <Scissors size={15} /> },
   { id: 'scenes', label: '分幕分场', shortLabel: '分幕', icon: <Layers3 size={15} /> },
-  { id: 'assets', label: '角色资产', shortLabel: '资产', icon: <Users size={15} /> },
   { id: 'storyboard', label: '分镜图', shortLabel: '分镜图', icon: <Images size={15} /> },
   { id: 'video', label: '视频生成', shortLabel: '视频', icon: <Video size={15} /> },
   { id: 'audio', label: '配音合成', shortLabel: '配音', icon: <Volume2 size={15} /> },
@@ -67,7 +66,7 @@ export function MotionComicProductionWorkspace({
   onNewProject,
   onBack,
 }: MotionComicProductionWorkspaceProps): ReactElement {
-  const active = STAGES.find((item) => item.id === stage) ?? STAGES[0];
+  const active = stage === 'assets' ? { label: '项目资产' } : STAGES.find((item) => item.id === stage) ?? STAGES[0];
   return (
     <div className={`motion-comic-production is-${stage}`} data-motion-comic-production data-stage={stage}>
       {showProjectHeader ? <header className="motion-comic-production__header">
@@ -83,7 +82,14 @@ export function MotionComicProductionWorkspace({
         </Toolbar>
       </header> : null}
 
-      <nav className="motion-comic-production__stages" aria-label="AI 漫剧制作流程">
+      <div className="motion-comic-production__sections">
+        <Tabs label="漫剧项目功能区" value={stage === 'assets' ? 'assets' : 'production'} onChange={(value) => { if (!busy) onStageChange(value === 'assets' ? 'assets' : 'episodes'); }} items={[
+          { value: 'production', label: '分集制作', icon: <Clapperboard size={14} /> },
+          { value: 'assets', label: '项目资产', icon: <Users size={14} /> },
+        ]} />
+        <small>{stageState.assets.detail}</small>
+      </div>
+      {stage !== 'assets' ? <nav className="motion-comic-production__stages" aria-label="AI 漫剧制作流程">
         {STAGES.map((item, index) => {
           const status = stageState[item.id];
           return <Button
@@ -101,7 +107,7 @@ export function MotionComicProductionWorkspace({
             <span className="comic-stage-number">{index + 1}</span><span className="comic-stage-copy"><strong>{item.shortLabel}</strong><small>{status.detail}</small></span>
           </Button>;
         })}
-      </nav>
+      </nav> : null}
 
       {feedback || errorMessage ? <div className={`motion-comic-production__notice ${errorMessage ? 'is-error' : 'is-success'}`} role={errorMessage ? 'alert' : 'status'}>
         {errorMessage ? <Clapperboard size={15} /> : <Sparkles size={15} />}

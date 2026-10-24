@@ -1,0 +1,66 @@
+[
+  {
+    "full_name": "heygen-com/hyperframes",
+    "stargazers_count": 68187,
+    "pushed_at": "2026-10-20T14:27:32Z",
+    "description": "Write HTML. Render video. Built for agents.",
+    "html_url": "https://github.com/heygen-com/hyperframes",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "ZhouXiaolin/opencat",
+    "stargazers_count": 71,
+    "pushed_at": "2026-10-19T19:48:01Z",
+    "description": "Write JSONL/XML. Render video/image. Built for agents.",
+    "html_url": "https://github.com/ZhouXiaolin/opencat",
+    "license": null
+  },
+  {
+    "full_name": "Thakuma07/JeskoJets-ScrollAnimation",
+    "stargazers_count": 25,
+    "pushed_at": "2026-02-07T05:15:08Z",
+    "description": "Instead of scrolling past the hero, we scroll into it. In this video, I break down a window-style 3D 3d scroll animation websitescroll animation built with HTML, CSS, JavaScript, GSAP, and ScrollTrigger",
+    "html_url": "https://github.com/Thakuma07/JeskoJets-ScrollAnimation",
+    "license": null
+  },
+  {
+    "full_name": "Relaxkartikey/prior-gsap-animation-portfolio-website-template",
+    "stargazers_count": 14,
+    "pushed_at": "2026-07-12T06:45:40Z",
+    "description": "Free open-source GSAP ScrollTrigger website template with canvas frame-scrub, parallax video, clip-path reveals & cinematic scroll effects. Vanilla HTML/CSS/JS — no frameworks, no build tools. Designed by RelaxKartikey.",
+    "html_url": "https://github.com/Relaxkartikey/prior-gsap-animation-portfolio-website-template",
+    "license": null
+  },
+  {
+    "full_name": "suryakant1811/Scroll-fx-Studio",
+    "stargazers_count": 8,
+    "pushed_at": "2025-04-08T05:13:53Z",
+    "description": "A modern web project utilizing HTML, CSS, and JavaScript to create smooth scroll effects and animations. This project leverages Locomotive Scroll for smooth scrolling and GSAP for smooth animations, enhancing user interaction. It also includes media content with autoplay video and responsive image animations for a dynamic visual experience.",
+    "html_url": "https://github.com/suryakant1811/Scroll-fx-Studio",
+    "license": null
+  },
+  {
+    "full_name": "Rajmund09/neurobrand-site",
+    "stargazers_count": 7,
+    "pushed_at": "2026-02-08T05:38:52Z",
+    "description": "NeuroBrand Studio is a modern AI-powered branding website built with HTML, CSS, JavaScript, GSAP, and Locomotive Scroll. It showcases futuristic design, smooth animations, and immersive video-based storytelling for next-gen digital brands.",
+    "html_url": "https://github.com/Rajmund09/neurobrand-site",
+    "license": null
+  },
+  {
+    "full_name": "ManINeedToSleep/Character_Files-V2",
+    "stargazers_count": 2,
+    "pushed_at": "2025-03-23T01:13:10Z",
+    "description": "Interactive character gallery with smooth hover-to-video transitions and expanding panels. Built with HTML, CSS, JavaScript and GSAP animations.",
+    "html_url": "https://github.com/ManINeedToSleep/Character_Files-V2",
+    "license": null
+  },
+  {
+    "full_name": "TerryG907/html2mp4",
+    "stargazers_count": 1,
+    "pushed_at": "2026-10-19T12:17:57Z",
+    "description": "Render any HTML animation (CSS, GSAP, Canvas, Three.js) to MP4, deterministically, frame by frame. Built for AI coding agents.",
+    "html_url": "https://github.com/TerryG907/html2mp4",
+    "license": "MIT"
+  }
+]

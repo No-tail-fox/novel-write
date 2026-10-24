@@ -1,0 +1,66 @@
+[
+  {
+    "full_name": "santmun/video-vox",
+    "stargazers_count": 32,
+    "pushed_at": "2026-07-14T15:37:33Z",
+    "description": "Crea shorts verticales animados estilo Vox sobre cualquier tema con Claude Code + Remotion (cartoon + voz + música + SFX)",
+    "html_url": "https://github.com/santmun/video-vox",
+    "license": null
+  },
+  {
+    "full_name": "JRufer/VoxCtrl",
+    "stargazers_count": 29,
+    "pushed_at": "2026-10-17T18:00:43Z",
+    "description": "Use key or voice commands to direct your voice to any app or service you require, local or remote.",
+    "html_url": "https://github.com/JRufer/VoxCtrl",
+    "license": "MIT"
+  },
+  {
+    "full_name": "Phantomlau3674/voxstylehub-steven",
+    "stargazers_count": 25,
+    "pushed_at": "2026-07-22T10:35:55Z",
+    "description": "Standalone Codex skill for Vox-inspired editorial collage knowledge videos with deterministic Remotion assembly and optional generated motion.",
+    "html_url": "https://github.com/Phantomlau3674/voxstylehub-steven",
+    "license": "MIT"
+  },
+  {
+    "full_name": "lyyilin/vox-video-starter",
+    "stargazers_count": 21,
+    "pushed_at": "2026-07-27T01:49:43Z",
+    "description": "一套可复用的 VOX 拼纸风格视频制作工作流，基于 Codex 图像生成模型、图像生成工具、rembg 抠图库、Seed-TTS 2 语音合成引擎、Whisper 语音识别模型与 Remotion 视频渲染框架搭建。",
+    "html_url": "https://github.com/lyyilin/vox-video-starter",
+    "license": "MIT"
+  },
+  {
+    "full_name": "liangdabiao/paper-cutout-remotion",
+    "stargazers_count": 14,
+    "pushed_at": "2026-08-02T16:35:57Z",
+    "description": "vox纸片风格动画skill: 把一份分镜脚本变成**纸片分层风格**的视频：背景、主角、配角、前景分别做成独立 PNG 素材，每一层按不同节奏运动，靠前后遮挡制造纵深立体感。  > 真正的纸片动画，核心不是生成一张漂亮的图，而是让每一张图都承担明确的叙事位置。",
+    "html_url": "https://github.com/liangdabiao/paper-cutout-remotion",
+    "license": null
+  },
+  {
+    "full_name": "htlin222/vox-styled-reels",
+    "stargazers_count": 8,
+    "pushed_at": "2026-09-09T09:07:00Z",
+    "description": "Vox-styled board-review flashcard videos, programmatically rendered with Remotion — TTS karaoke narration, paper-collage aesthetic, auto-released via GitHub Actions",
+    "html_url": "https://github.com/htlin222/vox-styled-reels",
+    "license": null
+  },
+  {
+    "full_name": "tembo/voxl",
+    "stargazers_count": 3,
+    "pushed_at": "2026-10-20T14:25:32Z",
+    "description": "extremely fast web remote desktop streaming",
+    "html_url": "https://github.com/tembo/voxl",
+    "license": "MIT"
+  },
+  {
+    "full_name": "dodiyah330/claude-faceless-shorts-creator",
+    "stargazers_count": 3,
+    "pushed_at": "2026-08-11T07:02:56Z",
+    "description": "Faceless YouTube Shorts factory — Remotion TSX, AI video, and Vox collage tracks",
+    "html_url": "https://github.com/dodiyah330/claude-faceless-shorts-creator",
+    "license": "MIT"
+  }
+]

@@ -1,3 +1,4 @@
+import { upgradeHtmlSceneComposition } from '../src/shared/html-video-composition';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -550,7 +551,7 @@ describe('task runtime providers', () => {
       });
 
       expect(rewrite).toEqual({ rewrittenText: '改写后的第一幕。', segments: ['改写后的第一幕。'] });
-      expect(planning).toEqual({ scenes: htmlScenes() });
+      expect(planning).toEqual({ scenes: htmlScenes().map(upgradeHtmlSceneComposition) });
       expect(requests).toHaveLength(2);
       expect(requests.every((request) => request.model === 'html-model')).toBe(true);
       const promptPayloads = requests.map((request) => {

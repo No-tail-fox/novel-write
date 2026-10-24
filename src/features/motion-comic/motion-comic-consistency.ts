@@ -122,6 +122,20 @@ export function createMotionComicReferenceAsset(
     kind: 'image',
     uri: `storydream:image-lab/${record.id}`,
     localPath: record.imagePath,
+    ...(record.cutoutMethod && record.cutoutQuality && record.cutoutTransparentFraction !== null && record.cutoutTransparentFraction !== undefined && record.cutoutForegroundFraction !== null && record.cutoutForegroundFraction !== undefined && record.cutoutEdgeFraction !== null && record.cutoutEdgeFraction !== undefined ? { backgroundRemoval: {
+      method: record.cutoutMethod,
+      ...(record.cutoutModel ? { model: record.cutoutModel } : {}),
+      ...(record.cutoutModelVersion ? { modelVersion: record.cutoutModelVersion } : {}),
+      ...(record.cutoutModelSha256 ? { modelSha256: record.cutoutModelSha256 } : {}),
+      ...(record.cutoutSourceSha256 ? { sourceSha256: record.cutoutSourceSha256 } : {}),
+      ...(record.cutoutOutputSha256 ? { outputSha256: record.cutoutOutputSha256 } : {}),
+      transparentFraction: record.cutoutTransparentFraction,
+      foregroundFraction: record.cutoutForegroundFraction,
+      edgeFraction: record.cutoutEdgeFraction,
+      quality: record.cutoutQuality,
+      ...(record.cutoutErrorCode ? { errorCode: record.cutoutErrorCode } : {}),
+      ...(record.cutoutErrorMessage ? { errorMessage: record.cutoutErrorMessage } : {}),
+    } } : {}),
     prompt: record.prompt,
     provider: 'local-import',
     model: 'managed-reference',
@@ -177,14 +191,14 @@ export function motionComicReferenceAssets(
   referenceAssetVersionIds: readonly string[],
 ): ProductionAssetVersion[] {
   const ids = new Set(referenceAssetVersionIds);
-  return document.assets.filter((asset) => ids.has(asset.id) && asset.kind === 'image' && Boolean(asset.localPath));
+  return document.assets.filter((asset) => ids.has(asset.id) && asset.kind === 'image');
 }
 
 export function fixedMotionComicReferenceAsset(
   document: MotionComicPipelineData,
   referenceAssetVersionIds: readonly string[],
 ): ProductionAssetVersion | undefined {
-  const references = motionComicReferenceAssets(document, referenceAssetVersionIds);
+  const references = motionComicReferenceAssets(document, referenceAssetVersionIds).filter((asset) => Boolean(asset.localPath?.trim()));
   return references.find((asset) => asset.selected === true && asset.pinned === true)
     ?? [...references].reverse().find((asset) => asset.pinned === true);
 }

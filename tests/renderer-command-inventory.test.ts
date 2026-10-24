@@ -13,6 +13,7 @@ const queryOnlyMethods = new Set([
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
   'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getPersonAssetUsage', 'restorePersonAsset', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
+  'listLibraryAssets', 'getLibraryAsset',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
   'fetchHotBoard', 'queryAiHot', 'listBenchmarkGroups', 'listBenchmarkPosts',
   // Director batch persistence is consumed through the workspace capability
@@ -38,7 +39,7 @@ const routeEntryPaths = {
   'music-mv': ['src/features/music-mv/MusicMvPage.tsx'],
   'book-selection': ['src/features/labs/BookSelectionPage.tsx'],
   benchmark: ['src/features/labs/BenchmarkImportPage.tsx'],
-  'person-assets': ['src/features/labs/PersonAssetsPage.tsx'],
+  'person-assets': ['src/features/asset-library/AssetLibraryPage.tsx'],
   'viral-analyzer': ['src/features/viral/ViralAnalyzerPage.tsx'],
   'prompt-templates': ['src/features/templates/PromptTemplatesPage.tsx'],
   'draft-templates': ['src/features/templates/DraftTemplatesPage.tsx'],

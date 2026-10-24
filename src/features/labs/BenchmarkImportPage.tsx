@@ -15,10 +15,9 @@ import {
   Search,
   Star,
   Trash2,
-  X,
 } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
-import { FormField as Field } from '../../components/FormField';
+import { Button, CheckboxField, Dialog, IconButton, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult } from '../../app/route-types';
 import {
@@ -454,24 +453,21 @@ export function BenchmarkImportPage({
             <h2>对标组</h2>
             <span>{groups.length} 组 · 三平台独立状态</span>
           </div>
-          <button className="icon-button" type="button" title="添加对标组" aria-label="添加对标组" onClick={openNewGroup}><Plus size={16} /></button>
+          <IconButton label="添加对标组" onClick={openNewGroup} icon={<Plus size={16} />} />
         </div>
-        <label className="benchmark-search-field">
-          <Search size={14} />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索作品或账号" />
-        </label>
+        <TextField fieldClassName="benchmark-search" label="搜索作品或账号" contentBefore={<Search size={14} />} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索作品或账号" />
         <div className="benchmark-group-list">
-          {groups.length === 0 ? <EmptyState title="暂无对标组" action={<button className="mini-button" type="button" onClick={openNewGroup}><Plus size={14} />添加对标组</button>} /> : null}
+          {groups.length === 0 ? <EmptyState title="暂无对标组" action={<Button onClick={openNewGroup} icon={<Plus size={14} />}>添加对标组</Button>} /> : null}
           {groups.map((group) => (
             <article key={group.id} className={selectedGroup?.id === group.id ? 'benchmark-group-item active' : 'benchmark-group-item'}>
-              <button type="button" className="benchmark-group-main" onClick={() => {
+              <Button variant="subtle" className="benchmark-group-main" aria-pressed={selectedGroup?.id === group.id} onClick={() => {
                 setSelectedGroupId(group.id);
                 setSelectedPostId('');
                 setSelectedPostIds([]);
               }}>
                 <strong>{group.name}</strong>
                 <span>{group.track || '未设置赛道'} · {posts.filter((post) => post.groupId === group.id).length} 条作品</span>
-              </button>
+              </Button>
               <div className="benchmark-account-statuses">
                 {benchmarkPlatforms.map((platform) => {
                   const account = group.accounts.find((item) => item.platform === platform);
@@ -480,27 +476,27 @@ export function BenchmarkImportPage({
                       <span title={account?.errorMessage || undefined}>{benchmarkPlatformLabel(platform)} · {account ? benchmarkAccountStateLabel(account) : '未添加'}</span>
                       {account?.errorMessage && account.syncState !== 'ready' ? <small className="benchmark-account-error">{account.errorMessage}</small> : null}
                       {account && ['requires-login', 'limited', 'error'].includes(account.syncState) ? (
-                        <button
-                          type="button"
-                          className="mini-button"
+                        <Button
+                          density="compact"
+                          icon={<LogIn size={12} />}
                           disabled={loginAccountId === account.id || syncingGroupId === group.id}
                           onClick={() => void openAccountLogin(group, account)}
-                        ><LogIn size={12} />登录/验证</button>
+                        >登录/验证</Button>
                       ) : null}
                     </div>
                   );
                 })}
               </div>
               <div className="benchmark-group-actions">
-                <button type="button" className="mini-button" onClick={() => openEditGroup(group)}>编辑</button>
-                <button
-                  type="button"
-                  className="mini-button"
+                <Button density="compact" onClick={() => openEditGroup(group)}>编辑</Button>
+                <Button
+                  density="compact"
+                  icon={syncingGroupId === group.id ? <Loader2 className="spin" size={13} /> : <RefreshCw size={13} />}
                   disabled={benchmarkAction.busy || isBrowserPreview || group.accounts.length === 0}
                   title={isBrowserPreview ? '浏览器预览只显示本地快照' : '同步账号公开作品与指标'}
                   onClick={() => void syncGroup(group)}
-                >{syncingGroupId === group.id ? <Loader2 className="spin" size={13} /> : <RefreshCw size={13} />}{syncingGroupId === group.id ? '同步中' : '同步账号'}</button>
-                <button type="button" className="icon-button danger" title="删除对标组" aria-label={`删除${group.name}`} disabled={benchmarkAction.busy} onClick={() => deleteGroup(group)}><Trash2 size={14} /></button>
+                >{syncingGroupId === group.id ? '同步中' : '同步账号'}</Button>
+                <IconButton label={`删除${group.name}`} variant="danger" disabled={benchmarkAction.busy} onClick={() => deleteGroup(group)} icon={<Trash2 size={14} />} />
               </div>
             </article>
           ))}
@@ -509,15 +505,9 @@ export function BenchmarkImportPage({
 
       <section className="benchmark-results-panel">
         <div className="benchmark-local-toolbar">
-          <div className="segmented benchmark-platform-tabs" role="tablist" aria-label="平台筛选">
-            {(['all', ...benchmarkPlatforms] as PlatformFilter[]).map((platform) => (
-              <button key={platform} type="button" className={platformFilter === platform ? 'selected' : ''} onClick={() => setPlatformFilter(platform)}>
-                {platform === 'all' ? '全部' : benchmarkPlatformLabel(platform)}
-              </button>
-            ))}
-          </div>
-          <button className="ghost-action compact-action" type="button" onClick={openNewPost}><FileSearch size={15} />单视频解析</button>
-          <button className="primary-action slim" type="button" onClick={openNewGroup}><Plus size={15} />添加对标组</button>
+          <SegmentedControl className="benchmark-platform-tabs" label="平台筛选" value={platformFilter} onChange={setPlatformFilter} options={(['all', ...benchmarkPlatforms] as PlatformFilter[]).map((platform) => ({ value: platform, label: platform === 'all' ? '全部' : benchmarkPlatformLabel(platform) }))} />
+          <Button onClick={openNewPost} icon={<FileSearch size={15} />}>单视频解析</Button>
+          <Button variant="primary" onClick={openNewGroup} icon={<Plus size={15} />}>添加对标组</Button>
         </div>
 
         <div className="benchmark-summary-strip">
@@ -528,35 +518,35 @@ export function BenchmarkImportPage({
         </div>
 
         <div className="benchmark-filter-row">
-          <button type="button" className={onlyFavorites ? 'mini-button active' : 'mini-button'} onClick={() => setOnlyFavorites((value) => !value)}><Star size={14} />只看收藏</button>
+          <CheckboxField label="只看收藏" checked={onlyFavorites} onChange={(_, data) => setOnlyFavorites(data.checked === true)} />
           <span>{selectedGroup ? `${selectedGroup.name} · ${filteredPosts.length} 条` : '请先添加对标组'}</span>
-          <button type="button" className="ghost-action compact-action" disabled={!selectedGroup} onClick={openNewPost}><Plus size={14} />导入作品</button>
+          <Button disabled={!selectedGroup} onClick={openNewPost} icon={<Plus size={14} />}>导入作品</Button>
         </div>
 
         {effectiveSelection.length > 0 ? (
           <div className="benchmark-batch-bar">
             <span>已选 {effectiveSelection.length} 项</span>
-            <button className="primary-action slim" type="button" disabled={benchmarkAction.busy} onClick={addSelectedToSelections}><Check size={14} />加入候选</button>
-            <button className="mini-button" type="button" onClick={() => setSelectedPostIds([])}>取消选择</button>
+            <Button variant="primary" disabled={benchmarkAction.busy} onClick={addSelectedToSelections} icon={<Check size={14} />}>加入候选</Button>
+            <Button onClick={() => setSelectedPostIds([])}>取消选择</Button>
           </div>
         ) : null}
 
-        <div className="benchmark-post-list" role="listbox" aria-label="对标作品">
-          {!selectedGroup ? <EmptyState title="先添加三平台对标组" action={<button className="mini-button" type="button" onClick={openNewGroup}><Plus size={14} />添加对标组</button>} /> : null}
-          {selectedGroup && filteredPosts.length === 0 ? <EmptyState title="暂无匹配作品" action={<button className="mini-button" type="button" onClick={openNewPost}><Plus size={14} />导入作品</button>} /> : null}
+        <div className="benchmark-post-list" role="region" aria-label="对标作品">
+          {!selectedGroup ? <EmptyState title="先添加三平台对标组" action={<Button onClick={openNewGroup} icon={<Plus size={14} />}>添加对标组</Button>} /> : null}
+          {selectedGroup && filteredPosts.length === 0 ? <EmptyState title="暂无匹配作品" action={<Button onClick={openNewPost} icon={<Plus size={14} />}>导入作品</Button>} /> : null}
           {filteredPosts.map((post) => {
             const score = scores.get(post.id) ?? scoreBenchmarkPost(post, groupPosts);
             return (
-              <article key={post.id} className={selectedPost?.id === post.id ? 'benchmark-post-row active' : 'benchmark-post-row'} role="option" aria-selected={selectedPost?.id === post.id}>
-                <input type="checkbox" aria-label={`选择${post.title}`} checked={selectedPostIds.includes(post.id)} onChange={() => toggleSelectedPost(post.id)} />
-                <button type="button" className="benchmark-post-main" onClick={() => setSelectedPostId(post.id)}>
+              <article key={post.id} className={selectedPost?.id === post.id ? 'benchmark-post-row active' : 'benchmark-post-row'}>
+                <CheckboxField aria-label={`选择${post.title}`} checked={selectedPostIds.includes(post.id)} onChange={() => toggleSelectedPost(post.id)} />
+                <Button variant="subtle" className="benchmark-post-main" aria-pressed={selectedPost?.id === post.id} onClick={() => setSelectedPostId(post.id)}>
                   <BenchmarkCover coverUrl={post.coverUrl} platform={post.platform} />
                   <span className="benchmark-post-copy">
                     <strong>{post.title}</strong>
                     <small>{post.author || '未填账号'} · {formatDate(post.publishedAt)}</small>
                     <span>{post.tags.length ? post.tags.join(' · ') : '未添加标签'}</span>
                   </span>
-                </button>
+                </Button>
                 <div className="benchmark-post-metrics">
                   <Metric label="播放" value={benchmarkMetricNumber(post.metrics, 'plays')} reason={post.metrics.plays?.reason} />
                   <Metric label="点赞" value={benchmarkMetricNumber(post.metrics, 'likes')} reason={post.metrics.likes?.reason} />
@@ -568,8 +558,8 @@ export function BenchmarkImportPage({
                   <span>爆发分 · {confidenceLabel(score.confidence)}</span>
                 </div>
                 <div className="benchmark-row-actions">
-                  <button className="icon-button" type="button" title={post.isFavorite ? '取消收藏' : '收藏'} aria-label={post.isFavorite ? '取消收藏' : '收藏'} disabled={benchmarkAction.busy} onClick={() => patchPost(post, { isFavorite: !post.isFavorite })}><Star size={15} fill={post.isFavorite ? 'currentColor' : 'none'} /></button>
-                  <button className="mini-button" type="button" disabled={post.platform === 'wechat-channels'} title={post.platform === 'wechat-channels' ? '视频号连接器待接入' : '进入爆款拆解'} onClick={() => deepAnalyze(post)}><Radar size={13} />拆解</button>
+                  <IconButton label={post.isFavorite ? '取消收藏' : '收藏'} aria-pressed={post.isFavorite} disabled={benchmarkAction.busy} onClick={() => patchPost(post, { isFavorite: !post.isFavorite })} icon={<Star size={15} fill={post.isFavorite ? 'currentColor' : 'none'} />} />
+                  <Button density="compact" disabled={post.platform === 'wechat-channels'} title={post.platform === 'wechat-channels' ? '视频号连接器待接入' : '进入爆款拆解'} onClick={() => deepAnalyze(post)} icon={<Radar size={13} />}>拆解</Button>
                 </div>
               </article>
             );
@@ -583,7 +573,7 @@ export function BenchmarkImportPage({
             <h3>作品详情</h3>
             <span>{selectedPost ? benchmarkPlatformLabel(selectedPost.platform) : '未选择作品'}</span>
           </div>
-          {selectedPost ? <button className="icon-button danger" type="button" title="删除作品" aria-label="删除作品" disabled={benchmarkAction.busy} onClick={() => deletePost(selectedPost)}><Trash2 size={15} /></button> : null}
+          {selectedPost ? <IconButton label="删除作品" variant="danger" disabled={benchmarkAction.busy} onClick={() => deletePost(selectedPost)} icon={<Trash2 size={15} />} /> : null}
         </div>
         {!selectedPost ? <EmptyState title="选择一条作品查看详情" /> : (
           <>
@@ -606,21 +596,17 @@ export function BenchmarkImportPage({
               </div>
               <div className="benchmark-source-box">
                 <span className="field-title">来源链接</span>
-                <button type="button" className="mini-button" onClick={() => navigator.clipboard.writeText(selectedPost.sourceUrl)}><Clipboard size={13} />复制链接</button>
+                <Button density="compact" onClick={() => navigator.clipboard.writeText(selectedPost.sourceUrl)} icon={<Clipboard size={13} />}>复制链接</Button>
                 <small>{selectedPost.sourceUrl}</small>
               </div>
-              <Field label="对标文案">
-                <textarea className="small-textarea" value={selectedPost.transcript} readOnly placeholder="导入作品时可粘贴转写稿或口播文案" />
-              </Field>
-              <Field label="备注">
-                <textarea className="small-textarea" value={detailNote} onChange={(event) => setDetailNote(event.target.value)} />
-              </Field>
+              <TextAreaField label="对标文案" rows={5} value={selectedPost.transcript} readOnly placeholder="导入作品时可粘贴转写稿或口播文案" />
+              <TextAreaField label="备注" rows={4} value={detailNote} onChange={(event) => setDetailNote(event.target.value)} />
             </div>
             <div className="benchmark-inspector-actions">
-              <button className="mini-button" type="button" disabled={benchmarkAction.busy || !detailNote.trim()} onClick={saveDetailNote}><Save size={14} />保存备注</button>
-              <button className="mini-button" type="button" disabled={selectedPost.platform === 'wechat-channels'} onClick={() => deepAnalyze(selectedPost)}><Radar size={14} />深度拆解</button>
-              <button className="mini-button" type="button" disabled={!selectedPost.transcript.trim() || running || benchmarkAction.busy} onClick={() => createBenchmarkTask(selectedPost)}>{running ? <Loader2 size={14} className="spin" /> : <FileSearch size={14} />}用此文案创建任务</button>
-              <button className="primary-action slim" type="button" disabled={benchmarkAction.busy} onClick={addSelectedToSelections}><Check size={14} />加入选品候选</button>
+              <Button disabled={benchmarkAction.busy || detailNote === (selectedPost.note ?? '')} onClick={saveDetailNote} icon={<Save size={14} />}>保存备注</Button>
+              <Button disabled={selectedPost.platform === 'wechat-channels'} onClick={() => deepAnalyze(selectedPost)} icon={<Radar size={14} />}>深度拆解</Button>
+              <Button disabled={!selectedPost.transcript.trim() || running || benchmarkAction.busy} onClick={() => createBenchmarkTask(selectedPost)} icon={running ? <Loader2 size={14} className="spin" /> : <FileSearch size={14} />}>用此文案创建任务</Button>
+              <Button variant="primary" disabled={benchmarkAction.busy} onClick={addSelectedToSelections} icon={<Check size={14} />}>加入选品候选</Button>
             </div>
           </>
         )}
@@ -629,55 +615,51 @@ export function BenchmarkImportPage({
       </aside>
 
       {showGroupDialog ? (
-        <div className="benchmark-dialog-backdrop" role="presentation">
-          <section className="benchmark-dialog" role="dialog" aria-modal="true" aria-labelledby="benchmark-group-dialog-title">
-            <div className="panel-title-row benchmark-panel-head">
-              <div><h3 id="benchmark-group-dialog-title">{groupDraft.id ? '编辑对标组' : '添加对标组'}</h3><span>三个平台分别验证，至少填写一个账号主页链接</span></div>
-              <button className="icon-button" type="button" aria-label="关闭" onClick={() => setShowGroupDialog(false)}><X size={16} /></button>
-            </div>
+        <Dialog open title={groupDraft.id ? '编辑对标组' : '添加对标组'} surfaceClassName="benchmark-group-dialog"
+          onOpenChange={(open) => { if (!benchmarkAction.busy) setShowGroupDialog(open); }}
+          actions={<><Button disabled={benchmarkAction.busy} onClick={() => setShowGroupDialog(false)}>取消</Button><Button variant="primary" disabled={benchmarkAction.busy || !groupDraft.name.trim()} onClick={saveGroup} icon={<Save size={14} />}>保存对标组</Button></>}>
+          <fieldset className="benchmark-dialog-fields" disabled={benchmarkAction.busy}>
             <div className="benchmark-dialog-grid">
-              <Field label="对标组名称"><input value={groupDraft.name} onChange={(event) => setGroupDraft({ ...groupDraft, name: event.target.value })} placeholder="例如：传统文化矩阵" /></Field>
-              <Field label="赛道"><input value={groupDraft.track} onChange={(event) => setGroupDraft({ ...groupDraft, track: event.target.value })} placeholder="例如：图书带货" /></Field>
-              <Field label="标签"><input value={groupDraft.tags} onChange={(event) => setGroupDraft({ ...groupDraft, tags: event.target.value })} placeholder="历史、文化、书单" /></Field>
-              <Field label="监控频率"><select value={groupDraft.refreshPolicy} onChange={(event) => setGroupDraft({ ...groupDraft, refreshPolicy: event.target.value as typeof groupDraft.refreshPolicy })}><option value="manual">手动</option><option value="six-hours">每 6 小时（当前手动触发）</option><option value="daily">每天（当前手动触发）</option></select></Field>
+              <TextField label="对标组名称" value={groupDraft.name} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, name: event.target.value })} placeholder="例如：传统文化矩阵" />
+              <TextField label="赛道" value={groupDraft.track} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, track: event.target.value })} placeholder="例如：图书带货" />
+              <TextField label="标签" value={groupDraft.tags} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, tags: event.target.value })} placeholder="历史、文化、书单" />
+              <SelectField label="监控频率" value={groupDraft.refreshPolicy} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, refreshPolicy: event.target.value as typeof groupDraft.refreshPolicy })} options={[{ value: 'manual', label: '手动' }, { value: 'six-hours', label: '每 6 小时（当前手动触发）' }, { value: 'daily', label: '每天（当前手动触发）' }]} />
             </div>
-            <Field label="抖音账号主页链接"><input value={groupDraft.douyinUrl} onChange={(event) => setGroupDraft({ ...groupDraft, douyinUrl: event.target.value })} placeholder="https://www.douyin.com/user/..." /></Field>
-            <Field label="视频号账号主页 / 分享入口"><input value={groupDraft.wechatUrl} onChange={(event) => setGroupDraft({ ...groupDraft, wechatUrl: event.target.value })} placeholder="https://channels.weixin.qq.com/..." /></Field>
-            <Field label="B 站 UP 主空间链接"><input value={groupDraft.bilibiliUrl} onChange={(event) => setGroupDraft({ ...groupDraft, bilibiliUrl: event.target.value })} placeholder="https://space.bilibili.com/..." /></Field>
-            <Field label="备注"><textarea className="small-textarea" value={groupDraft.notes} onChange={(event) => setGroupDraft({ ...groupDraft, notes: event.target.value })} /></Field>
-            <div className="benchmark-dialog-actions"><button className="mini-button" type="button" onClick={() => setShowGroupDialog(false)}>取消</button><button className="primary-action slim" type="button" disabled={benchmarkAction.busy || !groupDraft.name.trim()} onClick={saveGroup}><Save size={14} />保存对标组</button></div>
-          </section>
-        </div>
+            <TextField label="抖音账号主页链接" value={groupDraft.douyinUrl} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, douyinUrl: event.target.value })} placeholder="https://www.douyin.com/user/..." />
+            <TextField label="视频号账号主页 / 分享入口" value={groupDraft.wechatUrl} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, wechatUrl: event.target.value })} placeholder="https://channels.weixin.qq.com/..." />
+            <TextField label="B 站 UP 主空间链接" value={groupDraft.bilibiliUrl} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, bilibiliUrl: event.target.value })} placeholder="https://space.bilibili.com/..." />
+            <TextAreaField label="备注" rows={3} value={groupDraft.notes} disabled={benchmarkAction.busy} onChange={(event) => setGroupDraft({ ...groupDraft, notes: event.target.value })} />
+          </fieldset>
+          <InlineActionFeedback feedback={benchmarkAction.feedback} />
+        </Dialog>
       ) : null}
 
       {showPostDialog ? (
-        <div className="benchmark-dialog-backdrop" role="presentation">
-          <section className="benchmark-dialog benchmark-post-dialog" role="dialog" aria-modal="true" aria-labelledby="benchmark-post-dialog-title">
-            <div className="panel-title-row benchmark-panel-head">
-              <div><h3 id="benchmark-post-dialog-title">导入作品与指标快照</h3><span>账号同步之外，也可手动补充单条作品和可见数据</span></div>
-              <button className="icon-button" type="button" aria-label="关闭" onClick={() => setShowPostDialog(false)}><X size={16} /></button>
-            </div>
+        <Dialog open title="导入作品与指标快照" surfaceClassName="benchmark-post-dialog"
+          onOpenChange={(open) => { if (!benchmarkAction.busy) setShowPostDialog(open); }}
+          actions={<><Button disabled={benchmarkAction.busy} onClick={() => setShowPostDialog(false)}>取消</Button><Button variant="primary" disabled={benchmarkAction.busy || !postDraft.sourceLink.trim() || !postDraft.title.trim()} onClick={savePost} icon={<Save size={14} />}>保存作品</Button></>}>
+          <fieldset className="benchmark-dialog-fields" disabled={benchmarkAction.busy}>
             <div className="benchmark-dialog-grid">
-              <Field label="平台"><select value={postDraft.platform} onChange={(event) => setPostDraft({ ...postDraft, platform: event.target.value as BenchmarkPlatform })}>{benchmarkPlatforms.map((platform) => <option key={platform} value={platform}>{benchmarkPlatformLabel(platform)}</option>)}</select></Field>
-              <Field label="来源链接"><input value={postDraft.sourceLink} onChange={(event) => handlePostLink(event.target.value)} placeholder="作品分享链接" /></Field>
-              <Field label="封面图链接"><input value={postDraft.coverUrl} onChange={(event) => setPostDraft({ ...postDraft, coverUrl: event.target.value })} placeholder="https://...jpg" /></Field>
-              <Field label="账号 / 标题"><input value={postDraft.title} onChange={(event) => setPostDraft({ ...postDraft, title: event.target.value })} placeholder="作品标题" /></Field>
-              <Field label="账号名称"><input value={postDraft.author} onChange={(event) => setPostDraft({ ...postDraft, author: event.target.value })} /></Field>
-              <Field label="关键词"><input value={postDraft.keyword} onChange={(event) => setPostDraft({ ...postDraft, keyword: event.target.value })} placeholder="历史、文化、图书" /></Field>
-              <Field label="发布时间"><input type="datetime-local" value={postDraft.publishedAt} onChange={(event) => setPostDraft({ ...postDraft, publishedAt: event.target.value })} /></Field>
-              <Field label="时长（秒）"><input type="number" min="0" value={postDraft.durationSeconds} onChange={(event) => setPostDraft({ ...postDraft, durationSeconds: event.target.value })} /></Field>
+              <SelectField label="平台" value={postDraft.platform} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, platform: event.target.value as BenchmarkPlatform })} options={benchmarkPlatforms.map((platform) => ({ value: platform, label: benchmarkPlatformLabel(platform) }))} />
+              <TextField label="来源链接" value={postDraft.sourceLink} disabled={benchmarkAction.busy} onChange={(event) => handlePostLink(event.target.value)} placeholder="作品分享链接" />
+              <TextField label="封面图链接" value={postDraft.coverUrl} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, coverUrl: event.target.value })} placeholder="https://...jpg" />
+              <TextField label="账号 / 标题" value={postDraft.title} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, title: event.target.value })} placeholder="作品标题" />
+              <TextField label="账号名称" value={postDraft.author} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, author: event.target.value })} />
+              <TextField label="关键词" value={postDraft.keyword} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, keyword: event.target.value })} placeholder="历史、文化、图书" />
+              <TextField label="发布时间" type="datetime-local" value={postDraft.publishedAt} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, publishedAt: event.target.value })} />
+              <TextField label="时长（秒）" type="number" min="0" value={postDraft.durationSeconds} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, durationSeconds: event.target.value })} />
             </div>
             <span className="field-title">素材来源 · 平台可见指标</span>
             <div className="benchmark-metric-input-grid">
               {editableMetricKeys.map((key) => (
-                <Field key={key} label={metricLabel(key)}><input type="number" min="0" value={postDraft[key]} onChange={(event) => setPostDraft({ ...postDraft, [key]: event.target.value })} placeholder="未提供则留空" /></Field>
+                <TextField key={key} label={metricLabel(key)} type="number" min="0" value={postDraft[key]} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, [key]: event.target.value })} placeholder="未提供则留空" />
               ))}
             </div>
-            <Field label="对标文案"><textarea className="source-textarea benchmark-dialog-script" value={postDraft.script} onChange={(event) => setPostDraft({ ...postDraft, script: event.target.value })} placeholder="粘贴转写稿、口播文案或人工整理文本" /></Field>
+            <TextAreaField label="对标文案" rows={6} value={postDraft.script} disabled={benchmarkAction.busy} onChange={(event) => setPostDraft({ ...postDraft, script: event.target.value })} placeholder="粘贴转写稿、口播文案或人工整理文本" />
             <div className="benchmark-meta-row"><span>字数：{countVisibleCharacters(postDraft.script)}</span><span>指标只保存本次真实输入，空值不会记为 0</span></div>
-            <div className="benchmark-dialog-actions"><button className="mini-button" type="button" onClick={() => setShowPostDialog(false)}>取消</button><button className="primary-action slim" type="button" disabled={benchmarkAction.busy || !postDraft.sourceLink.trim() || !postDraft.title.trim()} onClick={savePost}><Save size={14} />保存作品</button></div>
-          </section>
-        </div>
+          </fieldset>
+          <InlineActionFeedback feedback={benchmarkAction.feedback} />
+        </Dialog>
       ) : null}
     </div>
   );

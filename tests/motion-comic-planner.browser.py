@@ -160,7 +160,7 @@ def run() -> None:
             expect(retained).to_be_visible()
             retry = page.get_by_role('button', name='保留剧本，仅重试分镜', exact=True)
             expect(retry).to_be_disabled()
-            page.get_by_role('checkbox', name='我已核对本集剧情、角色及修改记录，确认后生成分镜').check()
+            page.get_by_role('checkbox', name='我已核对本集剧情、人物地点道具及修改记录，确认项目资产后生成分镜').check()
             expect(retry).to_be_enabled()
             page.screenshot(path=str(OUTPUT / 'dark-preview-compact-retained-script.png'))
             checks.append('dark-compact: retained script is inspectable and storyboard retry requires review')
@@ -187,7 +187,7 @@ def run() -> None:
                     page.get_by_role('button', name='保存修改并重新校验', exact=True).click()
                     assert page.evaluate('window.motionComicPlannerQA.calls') == ['validate']
                     expect(confirm).to_be_disabled()
-                    checkbox = page.get_by_role('checkbox', name='我已核对本集剧情、角色及修改记录，确认后生成分镜')
+                    checkbox = page.get_by_role('checkbox', name='我已核对本集剧情、人物地点道具及修改记录，确认项目资产后生成分镜')
                     checkbox.check()
                     expect(confirm).to_be_enabled()
                     beats.hover()

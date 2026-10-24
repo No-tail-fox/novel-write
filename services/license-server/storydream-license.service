@@ -1,0 +1,25 @@
+[Unit]
+Description=StoryDream Licensing and Updates
+After=network.target
+
+[Service]
+Type=simple
+User=storydream-license
+Group=storydream-license
+WorkingDirectory=/opt/storydream-license
+ExecStart=/opt/storydream-license/venv/bin/python /opt/storydream-license/server.py --data /var/lib/storydream-license serve --port 443
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/storydream-license
+LimitNOFILE=2048
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

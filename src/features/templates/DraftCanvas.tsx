@@ -629,32 +629,38 @@ function DraftImageTransformBox({
   onResizeKeyDown: (target: DraftImageEditTarget, handle: DraftResizeHandle, event: React.KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   return (
-    <div
-      className={`draft-image-transform-box ${target} ${selected ? 'selected' : ''}`}
-      data-layer={target}
-      data-selected={selected ? 'true' : 'false'}
-      data-drag-surface={selected ? 'active' : 'inactive'}
-      style={draftRectStyle(rect)}
-      role={selected ? 'button' : undefined}
-      tabIndex={selected ? 0 : -1}
-      aria-label={selected ? `${label}，拖动移动，方向键微调` : undefined}
-      onPointerDown={(event) => onPointerDown(target, event)}
-      onKeyDown={(event) => onKeyDown(target, event)}
-    >
-      <span>{label}</span>
-      {selected ? draftResizeHandles.map((handle) => (
-        <button
-          key={handle}
-          type="button"
-          className="draft-transform-handle"
-          data-resize-handle={handle}
-          style={draftTransformHandleStyle(rect, handle)}
-          aria-label={`${label}${draftResizeHandleLabels[handle]}缩放`}
-          onPointerDown={(event) => onResizePointerDown(target, handle, event)}
-          onKeyDown={(event) => onResizeKeyDown(target, handle, event)}
-        />
-      )) : null}
-    </div>
+    <>
+      <div
+        className={`draft-image-transform-box ${target} ${selected ? 'selected' : ''}`}
+        data-layer={target}
+        data-selected={selected ? 'true' : 'false'}
+        data-drag-surface={selected ? 'active' : 'inactive'}
+        style={draftRectStyle(rect)}
+        role={selected ? 'button' : undefined}
+        tabIndex={selected ? 0 : -1}
+        aria-label={selected ? `${label}，拖动移动，方向键微调` : undefined}
+        onPointerDown={(event) => onPointerDown(target, event)}
+        onKeyDown={(event) => onKeyDown(target, event)}
+      >
+        <span>{label}</span>
+      </div>
+      {selected ? (
+        <div className="draft-image-transform-handles" data-transform-target={target} style={draftRectStyle(rect)}>
+          {draftResizeHandles.map((handle) => (
+            <button
+              key={handle}
+              type="button"
+              className="draft-transform-handle"
+              data-resize-handle={handle}
+              style={draftTransformHandleStyle(rect, handle)}
+              aria-label={`${label}${draftResizeHandleLabels[handle]}缩放`}
+              onPointerDown={(event) => onResizePointerDown(target, handle, event)}
+              onKeyDown={(event) => onResizeKeyDown(target, handle, event)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }
 

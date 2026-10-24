@@ -1,3 +1,4 @@
+import { resolveEditorialCuePlan, compileEditorialCueLayers } from '../../shared/editorial-cue-plan';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { navigationReturnLabel } from '../../app/navigation';
@@ -10,6 +11,9 @@ import { editorialRecipe } from '../../shared/editorial-recipe-catalog';
 import { EDITORIAL_IMAGE_REQUEST_OPTIONS } from '../../shared/editorial-image-prompts';
 import { applyEditorialRecipe, setEditorialLastFrame, setEditorialRecipeKeyframe } from '../../shared/editorial-recipes';
 import { EditorialRecipeInspector } from './EditorialRecipeInspector';
+import { VoxProductionDialog } from './VoxProductionDialog';
+import { VoxProductionProgress, voxProductionNodeLabels } from './VoxProductionProgress';
+import { type VoxProductionControl, type VoxProductionSettings } from '../../shared/vox-production';
 import { editorialShotTitle } from '../../shared/editorial-storytelling';
 import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLES, editorialWritingStyle, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
 import { editorialStylePreview } from './editorial-style-previews';
@@ -44,7 +48,7 @@ import {
 import { activeImageProfileId, enableImageProfile } from '../../shared/provider-profile-utils';
 import { AppError } from '../../shared/app-error';
 import { alignDirectorSubtitleCueFromTimestampFile, updateDirectorSubtitleCue, estimateDirectorSubtitleCue } from '../../shared/director-subtitles';
-import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech } from '../../shared/director-subtitle-structure';
+import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech, setDirectorShotNarration } from '../../shared/director-subtitle-structure';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { Button, CheckboxField, Dialog, PreviewSelectField, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
@@ -78,9 +82,9 @@ import {
   type DirectorVideoProviderStatus,
 } from '../director-desk/director-generation';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
-import { confirmDirectorQualityReview, directorQualityReview, directorRenderOutputs } from '../../shared/director-render';
+import { directorQualityReview, directorRenderOutputs } from '../../shared/director-render';
 import type { DirectorSubtitleRecheckRequest, DirectorMediaRecheckRequest } from '../../shared/director-render';
-import type { ProductionQualityManualReview } from '../../shared/production-workflow';
+import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from '../../shared/director-render';
 export function EditorialCollagePage({
   api,
   state,
@@ -104,6 +108,9 @@ export function EditorialCollagePage({
   const providerAction = useAsyncAction();
   const copyAction = useAsyncAction();
   const [document, setDocument] = useState<EditorialCollagePipelineData | null>(null);
+  const [productionOpen, setProductionOpen] = useState(false);
+  const [productionDetailsOpen, setProductionDetailsOpen] = useState(false);
+  const [productionIntent, setProductionIntent] = useState('');
   const documentRef = useRef<EditorialCollagePipelineData | null>(null);
   const savedDocumentRef = useRef<EditorialCollagePipelineData | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -142,7 +149,7 @@ export function EditorialCollagePage({
   const [createSeedLocked, setCreateSeedLocked] = useState(true);
   const [dirty, setDirty] = useState(false);
   const projectLeave = useUnsavedChanges({
-    id: 'editorial-project', label: 'VOX 项目', dirty, busy: projectAction.busy,
+    id: 'editorial-project', label: '创意动画项目', dirty, busy: projectAction.busy,
     onSave: saveProject,
     onDiscard: () => {
       const saved = savedDocumentRef.current;
@@ -152,7 +159,7 @@ export function EditorialCollagePage({
   });
   const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
   const creationDraft = useWorkspaceDraft({
-    id: 'editorial-create', label: 'VOX 新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim() || createWritingStyleId !== DEFAULT_EDITORIAL_WRITING_STYLE),
+    id: 'editorial-create', label: '创意动画新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim() || createWritingStyleId !== DEFAULT_EDITORIAL_WRITING_STYLE),
     busy: projectAction.busy || copyAction.busy,
     value: { createTitle, createSource, createRequirements, createWritingStyleId, createRatio, createDurationMs: createDurationMs === 'auto' ? 30_000 : createDurationMs, createFullText: createDurationMs === 'auto', createStyleId, createLayoutTemplate, createMotionPreset, createVoiceId, createSubtitleStyle, createSeedLocked },
     restore: (draft) => {
@@ -189,7 +196,7 @@ export function EditorialCollagePage({
   const renderOutputs = useMemo(() => document ? directorRenderOutputs(document) : { history: [], current: undefined }, [document]);
   const qualityReview = useMemo(() => document ? directorQualityReview(document) : undefined, [document]);
   const outputAsset = renderOutputs.current;
-  const projectOptions = useMemo(() => projects.map((task) => ({ id: task.id, title: task.title || '未命名 VOX 项目', meta: `创建于 ${new Date(task.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` })), [projects]);
+  const projectOptions = useMemo(() => projects.map((task) => ({ id: task.id, title: task.title || '未命名 创意动画项目', meta: `创建于 ${new Date(task.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` })), [projects]);
   const directorAssets = useMemo<DirectorAsset[]>(() => {
     if (!document) return [];
     const styleAssets = document.assets.filter((asset) => asset.kind === 'image' && asset.localPath && asset.assetId.startsWith('style-candidate-'));
@@ -308,7 +315,7 @@ export function EditorialCollagePage({
     setLoadingProjectId(taskId);
     const result = await projectAction.run(async () => {
       const task = await api.getTaskDetail(taskId);
-      if (!task || task.taskType !== 'editorial-collage') throw new Error('VOX 项目不存在或已被移除。');
+      if (!task || task.taskType !== 'editorial-collage') throw new Error('创意动画项目不存在或已被移除。');
       return parseEditorialCollagePipelineData(task.pipelineData);
     });
     if (request !== projectOpenRequestRef.current) return;
@@ -318,10 +325,36 @@ export function EditorialCollagePage({
     documentRef.current = result.value;
     savedDocumentRef.current = result.value;
     setActiveProjectId(taskId);
+    setProductionIntent('');
+    setProductionOpen(false);
+    setProductionDetailsOpen(false);
     setSelectedShotId(result.value.beats[0]?.shots[0]?.id ?? '');
     setCreateOpen(false);
     setDirty(false);
   }, [api, projectAction.run]);
+
+  // The main process owns execution. Polling only projects its persisted journal;
+  // unmount and project selection never send cancellation.
+  useEffect(() => {
+    if (!activeProjectId) return;
+    let disposed = false, pending = false;
+    const refresh = async () => {
+      if (pending || documentRef.current?.id !== activeProjectId || documentRef.current !== savedDocumentRef.current) return;
+      pending = true;
+      try {
+        const task = await api.getTaskDetail(activeProjectId);
+        if (disposed || documentRef.current?.id !== activeProjectId || documentRef.current !== savedDocumentRef.current || !task) return;
+        const next = parseEditorialCollagePipelineData(task.pipelineData);
+        if (next.updatedAt !== documentRef.current.updatedAt) {
+          documentRef.current = next; savedDocumentRef.current = next; setDocument(next); setDirty(false);
+        }
+        if (next.productionRun?.status !== 'running') setProductionIntent('');
+      } catch (error) { if (!disposed) projectAction.reportError(error); }
+      finally { pending = false; }
+    };
+    const timer = window.setInterval(() => void refresh(), 1500);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeProjectId, api]);
 
   useEffect(() => {
     if (!requestedTaskId) return;
@@ -331,6 +364,7 @@ export function EditorialCollagePage({
   function mutateDocument(update: (current: EditorialCollagePipelineData) => EditorialCollagePipelineData) {
     const current = documentRef.current;
     if (!current) return;
+    if (current.productionRun?.status === 'running') { projectAction.reportError(new Error('自动制作正在后台执行，请暂停后编辑。')); return; }
     const next = update(current);
     projectAction.clearFeedback();
     documentRef.current = next;
@@ -402,6 +436,10 @@ export function EditorialCollagePage({
   }
 
   function updateShot(id: string, update: Partial<DirectorShot>) {
+    if (update.subtitle !== undefined) {
+      try { mutateDocument(current => setDirectorShotNarration(current, id, update.subtitle!)); }
+      catch (error) { projectAction.reportError(error); return; }
+    }
     const before = shots.find((shot) => shot.id === id);
     if (before && ((update.voiceId !== undefined && update.voiceId !== before.voiceId) || (update.voiceSpeed !== undefined && update.voiceSpeed !== before.voiceSpeed))) {
       mutateDocument((current) => invalidateDirectorShotSpeech(current, id));
@@ -623,9 +661,9 @@ export function EditorialCollagePage({
     const result = await projectAction.run(async () => {
       const mutation = await api.createEditorialCollage({ title: createTitle, sourceText: createSource, ratio: createRatio, durationMs: createDurationMs, writingStyleId: createWritingStyleId, writingRequirements: createRequirements });
       applyState(mutation);
-      if (!mutation || mutation.kind !== 'task-upsert') throw new Error('VOX 项目已保存，但未返回可打开的任务记录。');
+      if (!mutation || mutation.kind !== 'task-upsert') throw new Error('创意动画项目已保存，但未返回可打开的任务记录。');
       const task = await api.getTaskDetail(mutation.task.id);
-      if (!task) throw new Error('VOX 项目已创建，但无法重新读取。');
+      if (!task) throw new Error('创意动画项目已创建，但无法重新读取。');
       const created = parseEditorialCollagePipelineData(task.pipelineData);
       const style = created.styleCandidates.find((candidate) => candidate.id === createStyleId) ?? created.styleCandidates[0];
       const configured: EditorialCollagePipelineData = {
@@ -649,9 +687,9 @@ export function EditorialCollagePage({
       const savedMutation = await api.saveEditorialCollage({ id: task.id, expectedUpdatedAt: configured.updatedAt, document: configured });
       applyState(savedMutation);
       const savedTask = await api.getTaskDetail(task.id);
-      if (!savedTask) throw new Error('VOX 项目创建预检保存后无法重新读取。');
+      if (!savedTask) throw new Error('创意动画项目创建预检保存后无法重新读取。');
       return { id: task.id, document: parseEditorialCollagePipelineData(savedTask.pipelineData) };
-    }, { successMessage: 'VOX 项目已创建。' });
+    }, { successMessage: '创意动画项目已创建。' });
     if (!result.ok) return;
     if (!creationDraft.complete(submittedDraft)) return;
     setActiveProjectId(result.value.id);
@@ -671,7 +709,7 @@ export function EditorialCollagePage({
     const mutation = await api.saveEditorialCollage({ id: nextDocument.id, expectedUpdatedAt: nextDocument.updatedAt, document: nextDocument });
     applyState(mutation);
     const task = await api.getTaskDetail(nextDocument.id);
-    if (!task) throw new Error('VOX 项目保存后无法重新读取。');
+    if (!task) throw new Error('创意动画项目保存后无法重新读取。');
     const saved = parseEditorialCollagePipelineData(task.pipelineData);
     acceptSavedDocument(saved, baseline);
     return saved;
@@ -695,7 +733,7 @@ export function EditorialCollagePage({
   ): Promise<EditorialCollagePipelineData> {
     const pending = persistQueueRef.current.then(async () => {
       const latest = documentRef.current;
-      if (!latest || latest.id !== projectId) throw new Error('VOX 项目已切换，本次生成结果未写入其他项目。');
+      if (!latest || latest.id !== projectId) throw new Error('创意动画项目已切换，本次生成结果未写入其他项目。');
       const next = update(latest);
       if (optimistic) {
         documentRef.current = next;
@@ -713,20 +751,57 @@ export function EditorialCollagePage({
     if (!current) return false;
     const result = await projectAction.run(async () => {
       return enqueueProjectMutation(current.id, (latest) => latest);
-    }, { successMessage: 'VOX 项目已保存。' });
+    }, { successMessage: '创意动画项目已保存。' });
     return result.ok && documentRef.current === result.value;
   }
 
-  async function confirmQualityReview(input: ProductionQualityManualReview) {
+  async function startProduction(settings: VoxProductionSettings) {
     const current = documentRef.current;
-    if (!current) throw new Error('请先打开项目。');
-    const result = await projectAction.run(() => enqueueProjectMutation(current.id, (latest) => confirmDirectorQualityReview(latest, input), false), { successMessage: '已记录当前版本的人工复核。' });
-    if (!result.ok) throw result.error ?? new Error('人工复核记录失败。');
+    if (!current) return;
+    await projectAction.run(async () => {
+      const saved = await enqueueProjectMutation(current.id, latest => latest);
+      await api.startVoxProduction({ id: saved.id, expectedUpdatedAt: saved.updatedAt, settings });
+      const task = await api.getTaskDetail(saved.id);
+      if (task && documentRef.current?.id === saved.id) {
+        const next = parseEditorialCollagePipelineData(task.pipelineData);
+        documentRef.current = next; savedDocumentRef.current = next; setDocument(next); setDirty(false);
+      }
+      if (documentRef.current?.id === saved.id) setProductionOpen(false);
+    });
+  }
+
+  async function controlProduction(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence'>) {
+    const current = documentRef.current;
+    if (!current?.productionRun) return;
+    await projectAction.run(async () => {
+      if (current.productionRun?.status !== 'running' && documentRef.current !== savedDocumentRef.current) await enqueueProjectMutation(current.id, latest => latest);
+      const run = await api.controlVoxProduction({ id: current.id, runId: current.productionRun!.id, action, ...extra });
+      if (documentRef.current?.id === current.id && run.status === 'running' && action !== 'resume') setProductionIntent(run.message || '等待当前步骤保存…');
+      const task = await api.getTaskDetail(current.id);
+      if (task && documentRef.current?.id === current.id) {
+        const next = parseEditorialCollagePipelineData(task.pipelineData);
+        documentRef.current = next; savedDocumentRef.current = next; setDocument(next); setDirty(false);
+      }
+    });
+  }
+
+  async function reviewQualityArtifact(input: DirectorQualityArtifactRequest): Promise<DirectorQualityArtifactResult> {
+    const pending = persistQueueRef.current.then(async () => {
+      const current = documentRef.current;
+      const baseline = savedDocumentRef.current;
+      if (!current || current.id !== input.id || baseline?.id !== input.id) throw new Error('项目已切换，请重新打开审片报告。');
+      const result = await api.reviewDirectorArtifact({ ...input, expectedUpdatedAt: baseline.updatedAt });
+      if (result.document.workflowKind !== 'editorial-collage') throw new Error('审片项目类型不一致。');
+      acceptSavedDocument(result.document, baseline);
+      return result;
+    });
+    persistQueueRef.current = pending.then(() => undefined, () => undefined);
+    return pending;
   }
 
   async function recheckSubtitles(input: DirectorSubtitleRecheckRequest) {
     const current = documentRef.current;
-    if (!current || current.id !== input.id) throw new Error('请先打开当前 VOX 项目。');
+    if (!current || current.id !== input.id) throw new Error('请先打开当前 创意动画项目。');
     const result = await projectAction.run(() => api.recheckDirectorSubtitles({ ...input, expectedUpdatedAt: current.updatedAt }), { successMessage: '字幕局部复检已完成。' });
     if (!result.ok) throw result.error ?? new Error('字幕局部复检失败。');
     const task = await api.getTaskDetail(current.id);
@@ -736,7 +811,7 @@ export function EditorialCollagePage({
 
   async function recheckMedia(input: DirectorMediaRecheckRequest) {
     const current = documentRef.current;
-    if (!current || current.id !== input.id) throw new Error('请先打开当前 VOX 项目。');
+    if (!current || current.id !== input.id) throw new Error('请先打开当前 创意动画项目。');
     const result = await projectAction.run(() => api.recheckDirectorMedia({ ...input, expectedUpdatedAt: current.updatedAt }), { successMessage: '媒体局部复检已完成。' });
     if (!result.ok) throw result.error ?? new Error('媒体局部复检失败。');
     const task = await api.getTaskDetail(current.id);
@@ -746,13 +821,13 @@ export function EditorialCollagePage({
 
   async function generateShot(shotId: string) {
     const initial = documentRef.current;
-    if (!initial) throw new Error('当前 VOX 镜头不存在。');
+    if (!initial) throw new Error('当前 创意动画镜头不存在。');
     if (!providerStatus.connected) throw new Error(providerStatus.unavailableReason ?? '图片服务未配置。');
     const prepared = prepareEditorialLayerGeneration(initial, shotId);
     if (prepared !== initial) await enqueueProjectMutation(initial.id, (latest) => prepareEditorialLayerGeneration(latest, shotId));
     const current = documentRef.current;
     const shot = current?.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === shotId);
-    if (!current || !shot || current.id !== initial.id) throw new Error('当前 VOX 镜头不存在。');
+    if (!current || !shot || current.id !== initial.id) throw new Error('当前 创意动画镜头不存在。');
     if (shot.productionRecipe === 'paper-cut') {
       if (!providerStatus.supportsReferenceImages) throw new Error('原画参考分层需要支持参考图的图片服务，请先切换图片服务。');
       if (!current.assets.some(asset => asset.id === shot.keyframeAssetVersionId && asset.kind === 'image' && asset.localPath)) await generateShotImage(current, shotId);
@@ -814,7 +889,7 @@ export function EditorialCollagePage({
   async function generateStyleCandidate(styleId: string) {
     const current = documentRef.current;
     const candidate = current?.styleCandidates.find((item) => item.id === styleId);
-    if (!current || !candidate) throw new Error('当前 VOX 风格候选不存在。');
+    if (!current || !candidate) throw new Error('当前 创意动画风格候选不存在。');
     if (!providerStatus.connected) throw new Error(providerStatus.unavailableReason ?? '图片服务未配置。');
     const input: DirectorStyleCandidateInput = directorStyleCandidateInput(current, styleId);
     const recordId = `director-vox-style-${crypto.randomUUID()}`;
@@ -856,7 +931,7 @@ export function EditorialCollagePage({
   async function generateVoice(shotId: string) {
     const current = documentRef.current;
     const shot = shots.find((candidate) => candidate.id === shotId);
-    if (!current || !shot) throw new Error('当前 VOX 镜头不存在。');
+    if (!current || !shot) throw new Error('当前 创意动画镜头不存在。');
     if (!voiceStatus.connected) throw new Error(voiceStatus.unavailableReason ?? '旁白服务未配置。');
     const input = editorialVoiceInput(current, shotId, voiceStatus);
     if (!input.text.trim()) throw new Error('当前镜头没有可生成的旁白文本。');
@@ -901,10 +976,10 @@ export function EditorialCollagePage({
 
   async function generateVideo(shotId: string) {
     const projectId = documentRef.current?.id;
-    if (!projectId) throw new Error('当前 VOX 项目不存在。');
+    if (!projectId) throw new Error('当前 创意动画项目不存在。');
     const pending = persistQueueRef.current.then(async () => {
       const latest = documentRef.current;
-      if (!latest || latest.id !== projectId) throw new Error('VOX 项目已切换，本次视频生成已取消。');
+      if (!latest || latest.id !== projectId) throw new Error('创意动画项目已切换，本次视频生成已取消。');
       const current = await persistProject(latest);
       try {
         const response = await api.generateDirectorShotVideo({
@@ -942,13 +1017,13 @@ export function EditorialCollagePage({
   async function renderProject() {
     await persistQueueRef.current;
     let current = documentRef.current;
-    if (!current) throw new Error('当前 VOX 项目不存在。');
+    if (!current) throw new Error('当前 创意动画项目不存在。');
     if (dirty) current = await enqueueProjectMutation(current.id, (latest) => latest);
     try {
       const response = await api.renderDirectorProject({ id: current.id });
       applyState(response.mutation);
       const task = await api.getTaskDetail(current.id);
-      if (!task) throw new Error('VOX 成片已生成，但项目无法重新读取。');
+      if (!task) throw new Error('创意动画成片已生成，但项目无法重新读取。');
       const saved = parseEditorialCollagePipelineData(task.pipelineData);
       acceptSavedDocument(saved, current);
     } catch (error) {
@@ -961,7 +1036,7 @@ export function EditorialCollagePage({
   async function exportAnimationShot(shotId:string) {
     await persistQueueRef.current;
     let current=documentRef.current;
-    if(!current)throw new Error('当前 VOX 项目不存在。');
+    if(!current)throw new Error('当前 创意动画项目不存在。');
     if(dirty)current=await enqueueProjectMutation(current.id,latest=>latest);
     return api.exportVoxAnimationShot({id:current.id,shotId,expectedUpdatedAt:current.updatedAt});
   }
@@ -1042,12 +1117,19 @@ export function EditorialCollagePage({
 
   if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" errorMessage={actionError} onNewProject={startCreate} /></div>;
 
+  const productionRun = document.productionRun;
+  const productionRunning = productionRun?.status === 'running';
+  const productionUnknown = Boolean(productionRun?.nodes.some(node => node.status === 'unknown'));
+  const productionResume = productionRun && ['paused', 'failed'].includes(productionRun.status);
+  const activeNode = productionRun?.nodes.find(node => node.status === 'running' || node.status === 'unknown' || node.status === 'failed');
   return <div data-editorial-collage-workbench="true">
+    {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} /> : null}
+    {productionDetailsOpen && productionRun ? <VoxProductionProgress key={productionRun.id} run={productionRun} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} /> : null}
     <DirectorDeskWorkspace
       mode="vox"
       projectTitle={document.title}
       projectMeta={`${projects.length} 个项目`}
-      episodeTitle="VOX 片段 · 01"
+      episodeTitle="解释叙事 · 01"
       stageLabel="镜头生成"
       completedStages={completedStages}
       systemStatus={systemStatus}
@@ -1064,7 +1146,16 @@ export function EditorialCollagePage({
       projectId={document.id}
       expectedUpdatedAt={document.updatedAt}
       dirty={dirty}
-      busy={projectAction.busy || providerAction.busy}
+      busy={projectAction.busy || providerAction.busy || productionRunning}
+      production={{
+        running: productionRunning,
+        summary: productionIntent || (productionRun ? `${productionRun.nodes.filter(n => n.status === 'completed').length}/${productionRun.nodes.length} 步 · ${activeNode ? voxProductionNodeLabels[activeNode.kind] : productionRun.status === 'completed' ? '已完成' : productionRun.status === 'paused' ? '已暂停' : '制作任务'}${productionRun.message ? ` · ${productionRun.message}` : ' · 应用保持打开时可离开页面继续执行'}` : '选择预设后自动制作；高级设置可保留自定义镜头'),
+        label: productionUnknown ? '云端结果待核对' : productionIntent ? '等待当前步骤…' : productionRunning ? '暂停制作' : productionResume ? '继续自动制作' : '自动制作…',
+        disabled: !shots.length || projectAction.busy || providerAction.busy || productionUnknown || Boolean(productionIntent),
+        onAction: () => productionResume ? void controlProduction('resume') : setProductionOpen(true),
+        onPause: () => void controlProduction('pause'), onCancel: () => void controlProduction('cancel'), onSettings: () => setProductionOpen(true),
+        onDetails: productionRun ? () => setProductionDetailsOpen(true) : undefined,
+      }}
       feedback={actionFeedback}
       errorMessage={actionError}
       estimatedCost={document.estimatedCost}
@@ -1093,7 +1184,7 @@ export function EditorialCollagePage({
       outputUrl={outputAsset?.localPath ? toLocalAssetUrl(outputAsset.localPath) : undefined}
       outputHistory={renderOutputs.history.map((asset) => ({ id: asset.id, url: asset.localPath ? toLocalAssetUrl(asset.localPath) : undefined, createdAt: asset.createdAt, current: asset.id === outputAsset?.id }))}
       qualityReview={qualityReview}
-      onConfirmQualityReview={confirmQualityReview}
+      onReviewQualityArtifact={reviewQualityArtifact}
       onRecheckSubtitles={recheckSubtitles}
       onRecheckMedia={recheckMedia}
       styleCandidates={directorStyleCandidates}
@@ -1183,7 +1274,11 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
   const videoJob = shot.videoJobId
     ? document.providerJobs.find((candidate) => candidate.id === shot.videoJobId && candidate.capability === 'image-to-video')
     : latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video');
-  const previewLayers = shot.layers.map((layer) => {
+  const sourceCues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
+  let semanticBeats;
+  try { semanticBeats = shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined; } catch { /* Export reports stale source spans; keep the authored preview available. */ }
+  const compiledLayers = semanticBeats ? compileEditorialCueLayers(shot.layers, semanticBeats, shot.durationMs) : shot.layers;
+  const previewLayers = compiledLayers.map((layer) => {
     const layerAsset = layer.assetVersionId ? document.assets.find((candidate) => candidate.id === layer.assetVersionId && candidate.kind === 'image') : undefined;
     return { id: layer.id, label: layer.label, src: layerAsset?.localPath ? toLocalImageUrl(layerAsset.localPath) : '', zIndex: layer.zIndex, visible: layer.visible, depth: layer.depth, motion: layer.motion, width: layer.width, height: layer.height, fit: layer.fit, content: layer.content, kind: layer.kind };
   });
@@ -1202,7 +1297,7 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     title: editorialShotTitle(document, beat, shot),
     motionStyle: shot.motionStyle,
     transitionIn: shot.transitionIn,
-    scene: `VOX · ${beat.title.trim() || `节拍 ${beat.index}`}`,
+    scene: `创意动画 · ${beat.title.trim() || `节拍 ${beat.index}`}`,
     durationMs: shot.durationMs,
     framing: shot.layers.length > 1 ? '中景 / 叙事' : shot.subtitleCueIds.length > 0 ? '近景 / 细节' : '全景 / 建立',
     characterLabel: '旁白 · 叙事者',
@@ -1234,6 +1329,7 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     renderStrategy: shot.renderStrategy as DirectorShot['renderStrategy'],
     animation: shot.animation,
     previewLayers,
+    ...(semanticBeats ? { semanticBeats, semanticLayers: compiledLayers.map(layer => ({ ...layer, assetId: layer.assetVersionId })) } : {}),
     cameraKeyframes: shot.camera,
     videoInputReady,
     videoFirstFrameReady: Boolean(videoFrames.first?.localPath),

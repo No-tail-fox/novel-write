@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Copy, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, RefreshCcw, RotateCcw, Save, Trash2, Wand2 } from 'lucide-react';
+import { Copy, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, Maximize2, RefreshCcw, RotateCcw, Save, Trash2, Wand2 } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
-import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
@@ -10,7 +9,7 @@ import type { ApplyMutationResult, RendererAppState as AppState } from '../../ap
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode } from '../../shared/types';
 import { smartImageModeOptions } from '../../shared/editorial-options';
-import { Button, HoverPreview } from '../../ui';
+import { Button, CheckboxField, Dialog, HoverPreview, IconButton, SelectField, SliderField, TextAreaField, TextField } from '../../ui';
 import { ImageStyleSample } from '../image-style-preview/ImageStylePreview';
 import { useAsyncAction } from '../../ui/async-action';
 import { formatDate, toLocalImageUrl } from '../tasks/task-formatters';
@@ -36,8 +35,28 @@ import {
 } from './image-lab-workspace';
 import '../../styles/features/local-labs.css';
 import { imageGenerationQualityLabel, normalizeImageGenerationQuality } from '../../shared/image-quality';
+import { LibraryPicker } from '../asset-library/LibraryPicker';
+import { LibrarySaveDialog, type LibraryDraft } from '../asset-library/LibrarySaveDialog';
 
 type ImageResolution = ImageLabRecord['resolution'];
+
+function alphaPercent(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—';
+}
+
+function cutoutMethodLabel(method: ImageLabRecord['cutoutMethod']): string {
+  if (method === 'onnx') return 'ONNX 模型';
+  if (method === 'green-key') return '绿幕抠图';
+  if (method === 'native-alpha') return '原生透明';
+  return '尚未去底';
+}
+
+function cutoutQualityLabel(quality: ImageLabRecord['cutoutQuality']): string {
+  if (quality === 'passed') return '合格';
+  if (quality === 'warning') return '需复核';
+  if (quality === 'failed') return '失败';
+  return '待处理';
+}
 
 const imageLabRatioChoices = [
   ['21:9', '宽屏'],
@@ -88,6 +107,8 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   const [submitError, setSubmitError] = useState('');
   const [expandedReferenceImage, setExpandedReferenceImage] = useState('');
   const [copiedTaskId, setCopiedTaskId] = useState('');
+  const [libraryPicker, setLibraryPicker] = useState<'image' | 'text' | null>(null);
+  const [libraryDraft, setLibraryDraft] = useState<LibraryDraft | null>(null);
   const imageLabAction = useAsyncAction();
   const referenceLimit = 10;
   const referenceCandidates = parseReferenceImagePaths(referenceImagePath);
@@ -229,12 +250,32 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
     }, { onError: (error) => setSubmitError(error.message) });
   }
 
+  async function retryImageLabBackground(record: ImageLabRecord) {
+    if (generating || imageLabAction.busy || record.status !== 'generated') return;
+    await imageLabAction.run(async () => {
+      const detail = await imageLabRecordDetail(record);
+      const mutation = await api.removeImageLabBackground({
+        id: detail.id,
+        method: detail.cutoutMethod ?? 'onnx',
+      });
+      applyState(mutation);
+    }, { onError: (error) => setSubmitError(error.message) });
+  }
+
   async function refillImageLabPrompt(record: ImageLabRecord) {
     await imageLabAction.run(async () => {
       const detail = await imageLabRecordDetail(record);
       setPrompt(detail.prompt);
       setSelectedPromptTemplateId('');
       setPromptTemplateName('');
+    }, { onError: (error) => setSubmitError(error.message) });
+  }
+
+  async function saveImageToLibrary(record: ImageLabRecord) {
+    await imageLabAction.run(async () => {
+      const detail = await imageLabRecordDetail(record);
+      if (!detail.imagePath || detail.status !== 'generated') throw new Error('图片尚未生成完成。');
+      setLibraryDraft({ kind: 'image', imagePath: detail.imagePath, prompt: detail.prompt, title: detail.prompt.slice(0, 80) || '生成图片', source: { kind: 'image-lab', id: detail.id } });
     }, { onError: (error) => setSubmitError(error.message) });
   }
 
@@ -321,19 +362,19 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                 <div className="image-lab-section-head">
                   <strong>参考图</strong>
                   <small>最多 {referenceLimit} 张 · 已选 {references.length}</small>
+                  <Button density="compact" variant="subtle" icon={<ImagePlus size={14} />} disabled={imageLabAction.busy || references.length >= referenceLimit} onClick={() => setLibraryPicker('image')}>从素材库选择</Button>
                 </div>
                 <div className="image-lab-dropzone">
-                  <button className="image-lab-upload-card" type="button" disabled={imageLabAction.busy} onClick={selectImageLabReferenceImage}>
-                    <ImageIcon size={18} />
+                  <Button icon={<ImageIcon size={18} />} disabled={imageLabAction.busy} onClick={selectImageLabReferenceImage}>
                     添加参考图
-                  </button>
+                  </Button>
                   <span>
                     <strong>选择或粘贴本地图片路径</strong>
                     <small>PNG / JPG / WEBP，每行一张</small>
                   </span>
                 </div>
-                <textarea
-                  className="reference-image-list"
+                <TextAreaField
+                  label="参考图路径"
                   value={referencePasteDraft}
                   placeholder="粘贴本地图片路径，每行一张"
                   onPaste={(event) => {
@@ -352,12 +393,12 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                     <div className="image-lab-reference-grid">
                       {references.map((reference, index) => (
                         <article className="image-lab-reference-thumb" key={`${reference}-${index}`}>
-                          <button type="button" className="image-lab-reference-image" onClick={() => setExpandedReferenceImage(reference)} aria-label={`放大参考图 ${index + 1}`}>
+                          <Button variant="subtle" className="image-lab-reference-image" onClick={() => setExpandedReferenceImage(reference)} aria-label={`放大参考图 ${index + 1}`}>
                             <img src={toLocalImageUrl(reference)} alt={`参考图 ${index + 1}`} loading="lazy" />
-                          </button>
+                          </Button>
                           <div className="image-lab-reference-actions">
-                            <button type="button" className="mini-button" onClick={() => setExpandedReferenceImage(reference)}>放大</button>
-                            <button type="button" className="mini-button" onClick={() => removeReferenceImagePath(reference)}>删除</button>
+                            <IconButton label={`放大参考图 ${index + 1}`} icon={<Maximize2 size={14} />} onClick={() => setExpandedReferenceImage(reference)} />
+                            <IconButton label={`删除参考图 ${index + 1}`} icon={<Trash2 size={14} />} onClick={() => removeReferenceImagePath(reference)} />
                           </div>
                         </article>
                       ))}
@@ -373,41 +414,23 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                 <small>{promptTemplates.length} 个已保存</small>
               </div>
               <div className="image-lab-prompt-template-row">
-                <select aria-label="选择提示词模板" value={selectedPromptTemplateId} onChange={(event) => selectPromptTemplate(event.target.value)}>
-                  <option value="">选择模板</option>
-                  {promptTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                </select>
-                <input aria-label="提示词模板名称" maxLength={60} value={promptTemplateName} placeholder="模板名称" onChange={(event) => setPromptTemplateName(event.target.value)} />
-                <button className="ghost-action compact" type="button" title="保存当前提示词模板" onClick={savePromptTemplate}>
-                  <Save size={14} />
-                  保存
-                </button>
-                <button className="icon-button" type="button" title="删除提示词模板" aria-label="删除提示词模板" disabled={!selectedPromptTemplateId} onClick={removePromptTemplate}>
-                  <Trash2 size={14} />
-                </button>
+                <SelectField label="选择提示词模板" value={selectedPromptTemplateId} onChange={(event) => selectPromptTemplate(event.target.value)} options={[{ value: '', label: '选择模板' }, ...promptTemplates.map((template) => ({ value: template.id, label: template.name }))]} />
+                <TextField label="提示词模板名称" maxLength={60} value={promptTemplateName} placeholder="模板名称" onChange={(event) => setPromptTemplateName(event.target.value)} />
+                <IconButton label="保存当前提示词模板" icon={<Save size={14} />} onClick={savePromptTemplate} />
+                <IconButton label="删除提示词模板" icon={<Trash2 size={14} />} disabled={!selectedPromptTemplateId} onClick={removePromptTemplate} />
               </div>
               {promptTemplateNotice ? <small className="image-lab-prompt-template-notice" aria-live="polite">{promptTemplateNotice}</small> : null}
             </section>
-            <Field label="需求描述">
-              <textarea className="prompt-box image-lab-prompt" value={prompt} placeholder="描述主体、场景、构图和用途" onChange={(event) => setPrompt(event.target.value)} />
-            </Field>
+            <TextAreaField label="需求描述" className="image-lab-prompt" value={prompt} placeholder="描述主体、场景、构图和用途" onChange={(event) => setPrompt(event.target.value)} />
+            <div className="library-inline-actions"><Button density="compact" variant="subtle" icon={<ImagePlus size={14} />} onClick={() => setLibraryPicker('text')}>从素材库追加文本</Button><Button density="compact" variant="subtle" icon={<Save size={14} />} disabled={!prompt.trim()} onClick={() => setLibraryDraft({ kind: 'text', text: prompt, title: prompt.slice(0, 60), source: { kind: 'image-lab', label: '生图提示词' } })}>存入素材库</Button></div>
             <div className="image-lab-slider">
-              <div className="image-lab-section-head">
-                <strong>每组合数量</strong>
-                <small>1-10 张</small>
-              </div>
-              <input type="range" min={1} max={10} step={1} value={imageLabOutputCount} onChange={(event) => setImageLabOutputCount(Number(event.target.value))} />
-              <strong>{quantity} 张</strong>
+              <SliderField label="每组合数量" valueLabel={`${quantity} 张`} min={1} max={10} step={1} value={imageLabOutputCount} onChange={(_, data) => setImageLabOutputCount(data.value)} />
             </div>
           </div>
 
           <aside className="image-lab-inspector">
             {tab === 'smart' ? (
-              <Field label="智能用途">
-                <select value={smartMode} onChange={(event) => setSmartMode(event.target.value as ImageLabSmartMode)}>
-                  {smartPurposeOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                </select>
-              </Field>
+              <SelectField label="智能用途" value={smartMode} onChange={(event) => setSmartMode(event.target.value as ImageLabSmartMode)} options={smartPurposeOptions.map(([value, label]) => ({ value, label }))} />
             ) : null}
             <div className="image-lab-control-group">
               <div className="image-lab-section-head">
@@ -416,11 +439,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               </div>
               <div className="image-lab-ratio-grid">
                 {imageLabRatioChoices.map(([value, label]) => (
-                  <button key={value} className={selectedRatios.includes(value) ? 'selected' : ''} aria-pressed={selectedRatios.includes(value)} onClick={() => toggleRatio(value)} type="button">
-                    <AspectRatioSwatch ratio={value} />
-                    <strong>{value}</strong>
-                    <small>{label}</small>
-                  </button>
+                  <CheckboxField key={value} checked={selectedRatios.includes(value)} onChange={() => toggleRatio(value)} label={<span className="image-lab-ratio-label"><AspectRatioSwatch ratio={value} /><span>{value} · {label}</span></span>} />
                 ))}
               </div>
             </div>
@@ -432,35 +451,25 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               <div className="image-lab-style-grid">
                 {state.customStyles.map(style => (
                   <HoverPreview key={style.id} title={style.name} description={style.description} renderPreview={() => <ImageStyleSample style={style} />}>
-                  <Button variant="subtle" className={selectedStyles.includes(style.id) ? 'selected' : ''} aria-pressed={selectedStyles.includes(style.id)} onClick={() => toggleStyle(style.id)}>
-                    <ImageStyleSample style={style} thumbnail />
-                    <strong>{style.name}</strong>
-                    <small>{style.description}</small>
-                  </Button>
+                  <CheckboxField checked={selectedStyles.includes(style.id)} onChange={() => toggleStyle(style.id)} label={<span className="image-lab-style-label"><ImageStyleSample style={style} thumbnail /><span>{style.name}</span></span>} />
                   </HoverPreview>
                 ))}
               </div>
             </div>
             <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
             {supportsImageQuality ? <Segmented label="生成质量" value={quality} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => setQuality(value as ImageGenerationQuality)} /> : null}
-            <Field label="Provider">
-              <select value={provider} onChange={(event) => setProvider(event.target.value as ImageLabProviderChoice)}>
-                {imageLabProviderChoices.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-              </select>
-            </Field>
+            <SelectField label="Provider" value={provider} onChange={(event) => setProvider(event.target.value as ImageLabProviderChoice)} options={imageLabProviderChoices.map(([value, label]) => ({ value, label }))} />
             <div className="image-lab-batch-summary">
               <strong>{selectedRatios.length} 比例 × {selectedStyles.length} 风格 × {quantity} 张</strong>
               <span>共 {batchRequestCount} 个任务 · {supportsImageQuality ? `${imageGenerationQualityLabel(quality)}质量` : `${resolution} 分辨率`}</span>
             </div>
             <div className="image-lab-footer">
-              <button className="ghost-action" type="button" onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
-                <ImagePlus size={17} />
+              <Button icon={<ImagePlus size={17} />} onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
                 导入成品
-              </button>
-              <button className="primary-action" onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
-                {generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />}
+              </Button>
+              <Button variant="primary" icon={generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />} onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
                 {generating ? '生成中' : `智能生成 ${batchRequestCount} 项`}
-              </button>
+              </Button>
               <div className="provider-line">{provider} · {smartImageModeLabel(resolvedSmartMode)}</div>
             </div>
             {submitError ? <ErrorSummaryButton compact title="画图实验室操作失败" fullMessage={submitError} /> : null}
@@ -469,25 +478,16 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
         </div>
       </section>
 
-      {expandedReferenceImage ? (
-        <div className="error-dialog-backdrop" onClick={() => setExpandedReferenceImage('')}>
-          <section className="error-dialog image-lab-preview-dialog" role="dialog" aria-modal="true" aria-label="参考图预览" onClick={(event) => event.stopPropagation()}>
-            <div className="error-dialog-head">
-              <strong>参考图预览</strong>
-              <button className="mini-button" type="button" onClick={() => setExpandedReferenceImage('')}>关闭</button>
-            </div>
-            <img src={toLocalImageUrl(expandedReferenceImage)} alt="参考图预览" />
-          </section>
-        </div>
-      ) : null}
+      <Dialog open={Boolean(expandedReferenceImage)} title="参考图预览" surfaceClassName="image-lab-preview-dialog" onOpenChange={(open) => { if (!open) setExpandedReferenceImage(''); }} actions={<Button onClick={() => setExpandedReferenceImage('')}>关闭</Button>}>
+        {expandedReferenceImage ? <img src={toLocalImageUrl(expandedReferenceImage)} alt="参考图预览" /> : null}
+      </Dialog>
 
       <section className="local-lab-media image-lab-recent">
         <div className="image-lab-recent-head">
           <h3>最近生成 · {state.imageLabRecords.length}</h3>
-          <button className="ghost-action compact" type="button" onClick={retryFailedImageLabRecords} disabled={generating || imageLabAction.busy || failedRecords.length === 0}>
-            <RefreshCcw size={15} />
+          <Button density="compact" icon={<RefreshCcw size={15} />} onClick={retryFailedImageLabRecords} disabled={generating || imageLabAction.busy || failedRecords.length === 0}>
             重试全部失败项 ({failedRecords.length})
-          </button>
+          </Button>
         </div>
         {copiedTaskId ? <small className="image-lab-copy-status" aria-live="polite">已复制：{copiedTaskId}</small> : null}
         {state.imageLabRecords.length === 0 ? <EmptyState title="暂无画图记录" /> : null}
@@ -505,30 +505,60 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               <strong title={record.prompt}>{record.prompt}</strong>
               <small>{record.provider} · {record.ratio} · {record.resolution}{record.provider === 'jimeng' ? '' : ` · ${imageGenerationQualityLabel(record.quality ?? 'medium')}质量`} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
               {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
+              {record.status === 'generated' && record.originalImagePath ? (
+                <div className="image-record-cutout" aria-label="透明主体处理状态">
+                  <div className={`image-record-cutout-status ${record.cutoutQuality ?? 'pending'}`}>
+                    <strong>{record.cutoutQuality === 'passed' && record.cutoutImagePath ? '当前：透明图' : '当前：原图'}</strong>
+                    <span>{cutoutQualityLabel(record.cutoutQuality)} · {cutoutMethodLabel(record.cutoutMethod)}</span>
+                  </div>
+                  <small>
+                    原图已保留
+                    {record.cutoutQuality ? ` · 透明 ${alphaPercent(record.cutoutTransparentFraction)} · 前景 ${alphaPercent(record.cutoutForegroundFraction)} · 边缘 ${alphaPercent(record.cutoutEdgeFraction)}` : ' · 尚未建立透明主体'}
+                  </small>
+                  {record.cutoutErrorMessage ? <ErrorSummaryButton compact title="去底失败" fullMessage={record.cutoutErrorMessage} /> : null}
+                </div>
+              ) : null}
               <div className="image-record-actions">
-                {record.status === 'failed' ? (
-                  <button className="mini-button" type="button" title="按原参数创建一次新尝试" onClick={() => retryImageLabRecord(record)} disabled={generating || imageLabAction.busy}>
-                    <RotateCcw size={14} />
-                    重试
-                  </button>
+                {record.status === 'generated' && record.imagePath ? <Button density="compact" variant="subtle" icon={<Save size={14} />} disabled={imageLabAction.busy} onClick={() => void saveImageToLibrary(record)}>存入素材库</Button> : null}
+                {record.status === 'generated' && record.originalImagePath ? (
+                  <Button
+                    variant="subtle"
+                    density="compact"
+                    icon={<Wand2 size={14} />}
+                    className="image-record-cutout-action"
+                    onClick={() => retryImageLabBackground(record)}
+                    disabled={generating || imageLabAction.busy}
+                    title="只重新处理透明主体，不会重新调用生图模型"
+                  >
+                    {record.cutoutQuality ? '重试去底' : '去底'}
+                  </Button>
                 ) : null}
-                <button className="mini-button" type="button" onClick={() => refillImageLabPrompt(record)} disabled={imageLabAction.busy}>
-                  <RefreshCcw size={14} />
+                {record.status === 'failed' ? (
+                  <Button density="compact" icon={<RotateCcw size={14} />} title="按原参数创建一次新尝试" onClick={() => retryImageLabRecord(record)} disabled={generating || imageLabAction.busy}>
+                    重试
+                  </Button>
+                ) : null}
+                <Button density="compact" icon={<RefreshCcw size={14} />} onClick={() => refillImageLabPrompt(record)} disabled={imageLabAction.busy}>
                   回填提示词
-                </button>
-                <button className="mini-button" type="button" onClick={() => copyImageLabTaskId(record)} disabled={imageLabAction.busy}>
-                  <Copy size={14} />
+                </Button>
+                <Button density="compact" icon={<Copy size={14} />} onClick={() => copyImageLabTaskId(record)} disabled={imageLabAction.busy}>
                   复制任务 ID
-                </button>
-                <button className="mini-button" type="button" onClick={() => openImageLabOutputDirectory(record)} disabled={imageLabAction.busy}>
-                  <FolderOpen size={14} />
+                </Button>
+                <Button density="compact" icon={<FolderOpen size={14} />} onClick={() => openImageLabOutputDirectory(record)} disabled={imageLabAction.busy}>
                   打开目录
-                </button>
+                </Button>
               </div>
             </article>
           ))}
         </div>
       </section>
+      {libraryPicker ? <LibraryPicker api={api} kind={libraryPicker} title={libraryPicker === 'image' ? '选择参考图' : '选择提示文本'} actionLabel={libraryPicker === 'image' ? '添加参考图' : '追加到需求描述'} onClose={() => setLibraryPicker(null)} onChoose={(selection) => {
+        if (selection.kind === 'image' && selection.imagePath) {
+          if (references.length >= referenceLimit) throw new Error('参考图已达到上限，请先移除一张。');
+          appendReferenceImagePaths(selection.imagePath);
+        } else if (selection.text) setPrompt((current) => [current.trim(), selection.text].filter(Boolean).join('\n\n'));
+      }} /> : null}
+      {libraryDraft ? <LibrarySaveDialog api={api} draft={libraryDraft} onClose={() => setLibraryDraft(null)} /> : null}
     </div>
   );
 }

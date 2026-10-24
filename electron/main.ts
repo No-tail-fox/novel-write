@@ -15,18 +15,36 @@ import { prepareEditorialNarrationForRender } from '../src/shared/editorial-narr
 import { motionComicReferencesImageLabRecord, parseMotionComicPipelineData, type MotionComicCreateInput, type MotionComicPipelineData, type MotionComicSaveInput } from '../src/shared/motion-comic';
 import type { MotionComicEpisodePlanInput } from '../src/shared/motion-comic-episode-planning';
 import { generateMotionComicEpisodePlan } from '../src/shared/motion-comic-episode-planner';
-import { applyMotionComicPlan as applyGeneratedMotionComicPlan, type MotionComicApplyPlanInput, type MotionComicPlanInput } from '../src/shared/motion-comic-planning';
+import { applyMotionComicPlan as applyGeneratedMotionComicPlan, isUntouchedMotionComicStarter, type MotionComicApplyPlanInput, type MotionComicPlanInput } from '../src/shared/motion-comic-planning';
 import { MotionComicPlanningService } from './motion-comic-planning-service';
-import { buildMotionComicShotVideoRequest, motionComicVideoFrames, motionComicVideoInputFingerprintSource } from '../src/shared/motion-comic-video';
+import { MotionComicScriptBatchService } from './motion-comic-script-batch-service';
+import { VoxProductionService, voxInputHash } from './vox-production-service';
+import { createVoxProductionRuntime } from './vox-production-runtime';
+import { resolveCreativeStyle } from '../src/shared/creative-animation/styles';
+import { loadCreativeStyleReference } from './creative-style-references';
+import { reviewCreativeAnimation } from './creative-animation-preview';
+import { buildVoxProductionNodes } from '../src/shared/vox-production';
+import { resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../src/features/director-desk/director-generation';
+import { buildMotionComicShotVideoRequest, motionComicVideoFrames, motionComicVideoInputFingerprintSource, selectMotionComicVideoRoute } from '../src/shared/motion-comic-video';
 import { buildDirectorRenderScenes, directorCanvasForRatio, directorDocumentRenderFingerprint, directorNarrationAlignment, directorQualityReview, evaluateDirectorQuality, persistDirectorRenderCompletion, type DirectorRenderDocument, type DirectorGenerateShotVideoRequest, type DirectorGenerateShotVideoResult, type DirectorRenderRequest, type DirectorSubtitleRecheckRequest, type DirectorSubtitleRecheckResult, type DirectorMediaRecheckRequest, type DirectorMediaRecheckResult } from '../src/shared/director-render';
 import { evaluateDirectorVisualContinuity, productionVisualContinuityEvidenceSchema, type ProductionVisualContinuityEvidence } from '../src/shared/production-visual-continuity';
 import { evaluateDirectorSubtitleLayout } from '../src/shared/production-subtitle-layout';
-import { isCancellation, normalizeAppError } from '../src/shared/app-error';
+import { directorQualityStatus, isDirectorQualityBlocker, type DirectorQualityArtifactRequest } from '../src/shared/director-render';
+import { reviewDirectorQualityArtifact } from './director-quality-review';
+import { AppError, isCancellation, normalizeAppError } from '../src/shared/app-error';
+import licensePublicConfig from '../config/license-public.json';
+import { LicenseService } from './license-service';
+import { UpdateService } from './update-service';
+import { needsLicense } from './license-policy';
+import type { LicenseStatus } from '../src/shared/licensing';
+import { setGenerationAuthorization } from '../src/shared/generation-authorization';
 import { fromLlmModelTestResult, testConfigTarget } from '../src/shared/config-utils';
 import { generateImageLabRecord } from '../src/shared/image-lab';
 import { generateCustomStylePreviewDraft } from './custom-style-preview';
 import { AgentSearchMcpService } from './agent-search';
-import { removeEditorialGreenBackground } from '../src/shared/editorial-cutout';
+import { ensureBackgroundRemovalModel } from './background-removal-model';
+import { inspectImageBackgroundRemoval, removeImageBackground } from './background-removal';
+import { BACKGROUND_REMOVAL_ERROR_CODES, backgroundRemovalFailure } from '../src/shared/background-removal';
 import { createVideoLabRuntime } from '../src/shared/video-lab-runtime';
 import { createMusicProfileService } from './music-profile-service';
 import type { MusicTrackInput } from '../src/shared/music-lab';
@@ -37,7 +55,7 @@ import { findJianyingExecutable } from '../src/shared/jianying-app';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint, synchronizeHtmlVideoPreviewArtifact } from '../src/shared/html-video-runner';
-import { findHtmlVideoBackgroundRemovalModel, htmlVideoBitmapHasTransparency, HTML_VIDEO_BACKGROUND_REMOVAL_MODELS, type HtmlVideoBackgroundRemovalModel } from '../src/shared/html-video-background-removal';
+import { type HtmlVideoBackgroundRemovalModel } from '../src/shared/html-video-background-removal';
 import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
 import {
   MAX_ORDINARY_TASK_COVER_BYTES,
@@ -66,7 +84,7 @@ import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
 import { createConfiguredVideoProvider, requiredVideoCapabilities, selectVideoGenerationRoute, validateVideoGenerationRequest, type VideoGenerationRequest } from '../src/shared/video-provider';
 import { latestProductionProviderJob } from '../src/shared/production-workflow';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import type { AccountProfile, ActivationState, AppConfig, AppDelta, BackgroundRemovalMetadata, BackgroundRemovalMethod, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabBackgroundRemovalInput, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState, type RunViralAnalysisOptions } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { parseViralAnalysisResult } from '../src/shared/viral-result';
@@ -104,6 +122,8 @@ import { hashDirectorRenderOutput } from './director-render-output';
 import { createTrustedIpcRegistrar } from './ipc';
 import { openExistingDirectory } from './open-directory';
 import { importManagedImageLabRecord } from './image-lab-import';
+import { AssetLibraryStore } from './asset-library-store';
+import { inspectImportedImage } from './imported-image-inspection';
 import { importManagedBgm, resolveManagedBgmFilePath, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
 import { writeWindowsManagedFile } from './windows-managed-file';
 import type { LocalSubtitleTimestampFile, LocalTextFile } from '../src/shared/storydream-api';
@@ -163,6 +183,12 @@ let mainWindowPolicyInstalled = false;
 let db: FileDatabase | null = null;
 let dbInitializationPromise: Promise<FileDatabase> | null = null;
 let configService: ConfigService | null = null;
+let motionComicScriptService: MotionComicScriptBatchService | null = null;
+let voxProductionService: VoxProductionService | null = null;
+let licenseService: LicenseService | null = null;
+let updateService: UpdateService | null = null;
+let updateTimer: ReturnType<typeof setInterval> | undefined;
+let activeInvocations = 0;
 const hotBoardSourceCache = new Map<string, { expiresAt: number; value: HotBoardSourceContent }>();
 interface RunningTaskRun extends TaskRunIntentState {
   activityReservation: HistoryActivityReservation | null;
@@ -230,7 +256,52 @@ const trustedHandle = createTrustedIpcRegistrar({
   register: (channel, handler) => ipcMain.handle(channel, handler),
   getWindow: () => mainWindow,
   getPolicy: () => mainRendererPolicy,
+  beginInvocation: (channel) => {
+    if (['license:status', 'update:status', 'update:install', 'window:control'].includes(channel)) return () => undefined;
+    activeInvocations++;
+    return () => { activeInvocations--; };
+  },
+  authorize: async (channel, input) => {
+    if (updateService?.installing && !['license:status', 'update:status', 'window:control'].includes(channel)) {
+      throw new AppError('UPDATE_INSTALLING', '正在安装更新，请稍候。');
+    }
+    if (needsLicense(channel, input)) await requireDesktopGeneration();
+  },
 });
+
+async function requireDesktopGeneration(): Promise<void> {
+  if (!licenseService) throw new AppError('LICENSE_NOT_READY', '授权服务正在初始化。');
+  if (updateService?.installing) throw new AppError('UPDATE_INSTALLING', '正在安装更新。');
+  updateService?.assertVersionAllowed();
+  await licenseService.requireActive();
+}
+
+async function syncLicenseStatus(status: LicenseStatus): Promise<void> {
+  if (!db || isShuttingDown) return;
+  const active = ['active', 'offline'].includes(status.status);
+  const activation: ActivationState = { plan: active ? 'local' : 'inactive', status: active ? 'active' : 'inactive', code: '', expiresAt: status.expiresAt, message: status.message };
+  await db.upsertActivation(activation);
+  await publishStatePatch({ kind: 'activation', activation });
+  const account = { ...(await db.getBootstrapMetadata()).account, deviceId: status.deviceId };
+  await db.upsertAccount(account);
+  await publishStatePatch({ kind: 'account', account });
+}
+
+async function initializeLicensing(): Promise<void> {
+  licenseService = new LicenseService({ config: licensePublicConfig, vaultPath: join(appDataDir(), 'machine-license.v1.bin'),
+    encryption: safeStorage, packaged: app.isPackaged, onChange: syncLicenseStatus });
+  setGenerationAuthorization(requireDesktopGeneration);
+  await licenseService.initialize();
+  updateService = new UpdateService({ license: licenseService, version: app.getVersion(), directory: join(appDataDir(), 'updates'),
+    packaged: app.isPackaged, quit: () => app.quit(),
+    canInstall: () => !isShuttingDown && activeInvocations === 0 && !historyActivityRegistry.busy && !motionComicScriptService?.busy && !voxProductionService?.busy
+      && runningTasks.size === 0 && runningViralAnalyses.size === 0 && directorRenderControllers.size === 0 && voxGenerationControllers.size === 0 && activeMusicSubmissions.size === 0 });
+  if (licenseService.config) await updateService.check().catch(() => undefined);
+  updateTimer = setInterval(() => { void updateService?.check().catch(() => undefined); }, 3600000);
+  updateTimer.unref();
+  await getDb();
+  await syncLicenseStatus(licenseService.status());
+}
 const appDataName = 'storydream';
 const pipelineStepAgents: Record<number, string> = {
   0: 'Reviewer',
@@ -290,6 +361,7 @@ async function initializeDatabase(): Promise<FileDatabase> {
       decryptString: (value) => safeStorage.decryptString(value),
     }),
   });
+  let scriptService: MotionComicScriptBatchService | null = null;
   try {
     const candidates = await database.listMissingManagedStorageKeys();
     await backfillLegacyManagedHistoryStorage(
@@ -306,10 +378,25 @@ async function initializeDatabase(): Promise<FileDatabase> {
     if (isShuttingDown) {
       throw new Error('DATABASE_INITIALIZATION_CANCELLED: Application shutdown started before database publication.');
     }
+    database.motionComicScripts.onChange = (id) => { void publishTaskUpsert(database, id).catch(console.error); };
+    scriptService = new MotionComicScriptBatchService(database.motionComicScripts, async () => {
+      await requireDesktopGeneration();
+      const runtime = await service.getRuntimeConfig();
+      return { provider: `${runtime.llm.provider}:${runtime.llm.baseUrl}`, model: runtime.llm.model, llm: createConfiguredJsonLlm(runtime.llm) };
+    });
+    await scriptService.restore();
+    if (isShuttingDown) throw new Error('DATABASE_INITIALIZATION_CANCELLED: Application shutdown started during job recovery.');
     db = database;
     configService = service;
+    motionComicScriptService = scriptService;
+    voxProductionService = createMainVoxProductionService(database, service);
+    await voxProductionService.restore();
     return database;
   } catch (error) {
+    await voxProductionService?.stop().catch(() => undefined);
+    voxProductionService = null;
+    if (db === database) { db = null; configService = null; motionComicScriptService = null; }
+    await scriptService?.stop().catch(() => undefined);
     await database.close().catch(() => undefined);
     throw error;
   }
@@ -1151,14 +1238,16 @@ function sceneVideoLibraryRoot(): string {
   return join(appDataDir(), 'scene-video-library');
 }
 
-async function normalizeSceneVideo(sourcePath: string, outputPath: string) {
+async function normalizeSceneVideo(sourcePath: string, outputPath: string, preserveAudio = false) {
   const result = await runStoryboundMediaSidecar({
     mode: 'normalize_scene_video',
+    preserve_audio: preserveAudio,
     work_dir: sceneVideoLibraryRoot(),
     video_path: sourcePath,
     output_path: outputPath,
     require_nonblack: true,
   });
+  if (preserveAudio && result.has_audio !== true) throw new Error('DIRECTOR_VIDEO_AUDIO_MISSING: 原生音画模式的视频没有音轨，请检查模型输出。');
   if (result.has_video !== true) throw new Error('SCENE_VIDEO_SOURCE_INVALID: 所选文件不包含视频画面。');
   if (result.has_nonblack_video !== true) {
     throw new Error('SCENE_VIDEO_SOURCE_BLACK: 视频未检测到有效非黑画面。');
@@ -1464,6 +1553,7 @@ async function runHtmlVideoTask(
       jobConfig: initialState.config,
       imageStyle: await database.getCustomStyleDetail(initialState.config.style ?? ''),
       inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
+      inspectAssetBackgroundRemoval: inspectHtmlVideoAssetBackgroundRemoval,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const finalState = await runHtmlVideoPipeline({
@@ -1616,50 +1706,75 @@ const prepareHtmlVideoCoverImage: HtmlVideoCoverImageProcessor = async (input) =
 };
 
 async function inspectHtmlVideoAssetTransparency(sourcePath: string): Promise<boolean> {
-  const value = await stat(sourcePath);
-  if (!value.isFile() || value.size <= 0) {
-    throw new Error('HTML_VIDEO_ASSET_INVALID: 图片文件为空或不存在。');
+  return (await inspectImageBackgroundRemoval(sourcePath)).quality === 'passed';
+}
+
+const inspectHtmlVideoAssetBackgroundRemoval = inspectImageBackgroundRemoval;
+
+async function sha256File(sourcePath: string): Promise<string> {
+  return createHash('sha256').update(await readFile(sourcePath)).digest('hex');
+}
+
+function imageLabCutoutPath(sourcePath: string): string {
+  return join(dirname(sourcePath), `${basename(sourcePath, extname(sourcePath))}.cutout-${randomUUID()}.png`);
+}
+
+function errorCodeFromBackgroundRemovalError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/\b(BACKGROUND_REMOVAL_[A-Z0-9_]+|EDITORIAL_CUTOUT_[A-Z0-9_]+|HTML_VIDEO_BACKGROUND_[A-Z0-9_]+)\b/);
+  return match?.[1] ?? BACKGROUND_REMOVAL_ERROR_CODES.workerFailed;
+}
+
+async function removeImageLabBackgroundFromSource(
+  sourcePath: string,
+  method: BackgroundRemovalMethod,
+): Promise<{ outputPath: string; metadata: BackgroundRemovalMetadata }> {
+  const sourceSha256 = await sha256File(sourcePath);
+  const outputPath = imageLabCutoutPath(sourcePath);
+  try {
+    const metadata = await removeImageBackground(sourcePath, outputPath, {
+      method, modelDirectory: join(appDataDir(), 'models'), workerPath: join(__dirname, 'remove-background-worker.py'),
+    });
+    return { outputPath, metadata };
+  } catch (error) {
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+      code: errorCodeFromBackgroundRemovalError(error), sourceSha256,
+    });
   }
-  const image = nativeImage.createFromPath(sourcePath);
-  if (image.isEmpty()) throw new Error('HTML_VIDEO_ASSET_INVALID: 无法解码图片并检查透明通道。');
-  return htmlVideoBitmapHasTransparency(image.toBitmap());
+}
+
+function imageLabCutoutFields(metadata: BackgroundRemovalMetadata, outputPath?: string): Partial<ImageLabRecord> {
+  return {
+    ...(outputPath ? { cutoutImagePath: outputPath, ...(metadata.quality === 'passed' ? { imagePath: outputPath } : {}) } : {}),
+    cutoutMethod: metadata.method,
+    cutoutModel: metadata.model ?? '',
+    cutoutModelVersion: metadata.modelVersion ?? '',
+    cutoutModelSha256: metadata.modelSha256 ?? '',
+    cutoutSourceSha256: metadata.sourceSha256 ?? '',
+    cutoutOutputSha256: metadata.outputSha256 ?? '',
+    cutoutTransparentFraction: metadata.transparentFraction,
+    cutoutForegroundFraction: metadata.foregroundFraction,
+    cutoutEdgeFraction: metadata.edgeFraction,
+    cutoutQuality: metadata.quality,
+    cutoutErrorCode: metadata.errorCode ?? '',
+    cutoutErrorMessage: metadata.errorMessage ?? '',
+  };
 }
 
 async function resolveHtmlVideoBackgroundRemovalModel(): Promise<HtmlVideoBackgroundRemovalModel> {
-  const modelDirectory = join(appDataDir(), 'models');
-  await mkdir(modelDirectory, { recursive: true });
-  const model = findHtmlVideoBackgroundRemovalModel(modelDirectory, existsSync);
-  if (model) return model;
-  await shell.openPath(modelDirectory);
-  throw new Error(
-    `HTML_VIDEO_BACKGROUND_MODEL_MISSING: 未找到本地抠图模型。已打开模型目录，请放入 ${HTML_VIDEO_BACKGROUND_REMOVAL_MODELS.map((candidate) => candidate.file).join('、')} 中的任意一个文件。`,
-  );
+  return ensureBackgroundRemovalModel(join(appDataDir(), 'models'));
 }
 
 async function removeHtmlVideoImageBackground(
   inputPath: string,
   outputPath: string,
   model: Awaited<ReturnType<typeof resolveHtmlVideoBackgroundRemovalModel>>,
-): Promise<void> {
-  const runtime = resolvePythonRuntimeInfo();
-  const workerPath = join(__dirname, 'remove-background-worker.py');
-  if (!existsSync(workerPath)) {
-    throw new Error('HTML_VIDEO_BACKGROUND_WORKER_MISSING: 本地抠图工具缺失，请重新安装应用。');
-  }
-  await execFileAsync(runtime.command, [
-    workerPath,
-    '--input', inputPath,
-    '--output', outputPath,
-    '--model', model.path,
-    '--model-kind', model.kind,
-  ], {
-    timeout: 10 * 60 * 1000,
-    windowsHide: true,
-    maxBuffer: 2 * 1024 * 1024,
+): Promise<BackgroundRemovalMetadata> {
+  const metadata = await removeImageBackground(inputPath, outputPath, {
+    method: 'onnx', modelDirectory: join(appDataDir(), 'models'), workerPath: join(__dirname, 'remove-background-worker.py'), model,
   });
-  if (!await inspectHtmlVideoAssetTransparency(outputPath)) {
-    throw new Error('HTML_VIDEO_BACKGROUND_OUTPUT_INVALID: 抠图结果没有真实透明通道。');
-  }
+  if (metadata.quality !== 'passed') throw Object.assign(new Error(`${metadata.errorCode ?? 'BACKGROUND_REMOVAL_EDGE_REVIEW'}: 去底结果未通过 alpha 质量评估，原图已保留。`), { backgroundRemoval: metadata });
+  return metadata;
 }
 
 function ordinaryTaskCoverPendingPaths(id: string): { image: string; metadata: string } {
@@ -2427,6 +2542,25 @@ trustedHandle('vox:templates-save', (_event, input) => getVoxTemplateStore().sav
 trustedHandle('vox:templates-delete', (_event, id: string) => getVoxTemplateStore().remove(id));
 trustedHandle('vox:cancel', (_event, id: string) => { voxGenerationControllers.get(id)?.abort(); });
 trustedHandle('director:cancel-render', (_event, id: string) => { directorRenderControllers.get(id)?.abort(); });
+/** Migrate legacy transparent PNGs by inspecting bytes; opaque assets still fail preflight. */
+async function hydrateLegacyCutouts<T extends DirectorRenderDocument>(document: T): Promise<T> {
+  if (document.workflowKind !== 'editorial-collage') return document;
+  const ids = new Set(document.beats.flatMap(beat => beat.shots.flatMap(shot => shot.layers
+    .filter(layer => !layer.content && layer.visible !== false && (layer.kind === 'subject' || layer.kind === 'archival'))
+    .map(layer => layer.assetVersionId))));
+  let changed = false;
+  const assets = await Promise.all(document.assets.map(async asset => {
+    if (!ids.has(asset.id) || asset.backgroundRemoval || !asset.localPath) return asset;
+    try {
+      const metadata = await inspectImageBackgroundRemoval(asset.localPath);
+      if (metadata.quality !== 'passed') return asset;
+      changed = true;
+      return { ...asset, backgroundRemoval: metadata };
+    } catch { return asset; }
+  }));
+  return changed ? { ...document, assets } : document;
+}
+
 trustedHandle('vox:export-shot', async (_event, input) => {
   const database=await getDb(),task=await database.getTaskDetail(input.id);
   if(!task||task.taskType!=='editorial-collage'||task.archivedAt)throw new Error('当前 VOX 项目不可导出。');
@@ -2439,7 +2573,7 @@ trustedHandle('vox:export-shot', async (_event, input) => {
     const target=await dialog.showSaveDialog({title:'导出当前动画镜头',defaultPath:`VOX-${input.shotId.replace(/[^a-zA-Z0-9_-]/g,'_')}.mp4`,filters:[{name:'MP4 视频',extensions:['mp4']}]});
     if(target.canceled||!target.filePath)return false;
     controller.signal.throwIfAborted();
-    const scenes=buildDirectorRenderScenes(document,undefined,{shotIds:[input.shotId]});
+    const scenes=buildDirectorRenderScenes(await hydrateLegacyCutouts(document),undefined,{shotIds:[input.shotId]});
     const result=await renderDirectorVideo({workDir:taskWorkDir(task),projectTitle:document.title,modeLabel:'VOX',ratio:document.ratio,scenes,signal:controller.signal});
     controller.signal.throwIfAborted();
     await copyFile(result.outputPath,target.filePath);
@@ -2572,16 +2706,26 @@ trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput)
         undefined,
         await database.getCustomStyleDetail(input.style) ?? undefined,
       );
-      if (input.cutout === 'green' && generatedRecord.status === 'generated') {
-        const source = nativeImage.createFromBuffer(await readFile(generatedRecord.imagePath));
-        if (source.isEmpty()) throw new Error('EDITORIAL_CUTOUT_INVALID_IMAGE: 无法读取生成的主体图片，请重新生成素材。');
-        const { width, height } = source.getSize();
-        const cutout = removeEditorialGreenBackground(source.toBitmap({ scaleFactor: 1 }), width, height);
-        const transparentPng = nativeImage.createFromBitmap(Buffer.from(cutout.bitmap), { width, height, scaleFactor: 1 }).toPNG();
-        if (!transparentPng.length) throw new Error('EDITORIAL_CUTOUT_ENCODE_FAILED: 无法保存透明主体素材，请重新生成。');
-        const cutoutPath = join(dirname(generatedRecord.imagePath), `${basename(generatedRecord.imagePath, extname(generatedRecord.imagePath))}.cutout.png`);
-        await writeFile(cutoutPath, transparentPng);
-        generatedRecord.imagePath = cutoutPath;
+      if (generatedRecord.status === 'generated' && generatedRecord.imagePath) {
+        const originalImagePath = generatedRecord.imagePath;
+        generatedRecord.originalImagePath = originalImagePath;
+        generatedRecord.originalImageSha256 = await sha256File(originalImagePath);
+        await database.updateImageLabRecord(id, generatedRecord);
+        if (input.cutout === 'green') {
+          try {
+            const result = await removeImageLabBackgroundFromSource(originalImagePath, 'green-key');
+            Object.assign(generatedRecord, imageLabCutoutFields(result.metadata, result.outputPath));
+          } catch (error) {
+            const sourceSha256 = (error as { sourceSha256?: string }).sourceSha256 ?? generatedRecord.originalImageSha256;
+            const metadata = backgroundRemovalFailure(
+              'green-key',
+              (error as { code?: string }).code ?? errorCodeFromBackgroundRemovalError(error),
+              error instanceof Error ? error.message : String(error),
+              { sourceSha256 },
+            );
+            Object.assign(generatedRecord, imageLabCutoutFields(metadata));
+          }
+        }
       }
       const saved = await database.updateImageLabRecord(id, generatedRecord);
       return await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
@@ -2599,6 +2743,44 @@ trustedHandle('image-lab:generate', async (_event, input: ImageLabGenerateInput)
   }
 });
 
+trustedHandle('image-lab:remove-background', async (_event, input: ImageLabBackgroundRemovalInput) => {
+  const activityReservation = historyActivityRegistry.reserveActive('image-lab', input.id);
+  try {
+    const database = await getDb();
+    const record = await database.getImageLabRecordDetail(input.id);
+    if (!record) throw new Error(`IMAGE_LAB_RECORD_NOT_FOUND: ${input.id}`);
+    if (record.status !== 'generated') throw new Error('IMAGE_LAB_BACKGROUND_REMOVAL_REQUIRES_GENERATED: 只有已完成的图片可以去底。');
+    const sourcePath = record.originalImagePath || record.imagePath;
+    if (!sourcePath) throw new Error('BACKGROUND_REMOVAL_SOURCE_INVALID: 找不到生图原图。');
+    const method = input.method ?? record.cutoutMethod ?? 'onnx';
+    try {
+      const result = await removeImageLabBackgroundFromSource(sourcePath, method);
+      const saved = await database.updateImageLabRecord(input.id, {
+        imagePath: sourcePath,
+        originalImagePath: sourcePath,
+        originalImageSha256: record.originalImageSha256 || await sha256File(sourcePath),
+        ...imageLabCutoutFields(result.metadata, result.outputPath),
+      });
+      return await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
+    } catch (error) {
+      const sourceSha256 = (error as { sourceSha256?: string }).sourceSha256 ?? record.originalImageSha256 ?? '';
+      const metadata = backgroundRemovalFailure(
+        method,
+        (error as { code?: string }).code ?? errorCodeFromBackgroundRemovalError(error),
+        error instanceof Error ? error.message : String(error),
+        { sourceSha256 },
+      );
+      const saved = await database.updateImageLabRecord(input.id, {
+        originalImagePath: sourcePath,
+        originalImageSha256: sourceSha256,
+        imagePath: sourcePath,
+        ...imageLabCutoutFields(metadata),
+      });
+      return await publishStatePatch({ kind: 'image-lab-upsert', record: imageLabSummary(saved) });
+    }
+  } finally { activityReservation.release(); }
+});
+
 trustedHandle('image-lab:add-record', async (_event, input) => {
   const database = await getDb();
   const saved = await importManagedImageLabRecord(
@@ -2606,11 +2788,7 @@ trustedHandle('image-lab:add-record', async (_event, input) => {
     input,
     (record) => database.addImageLabRecord(record),
     {
-      inspectImage: (bytes) => {
-        const image = nativeImage.createFromBuffer(bytes);
-        if (image.isEmpty()) throw new Error('IMAGE_LAB_IMPORT_SOURCE_INVALID: Electron could not decode the selected image.');
-        return image.getSize();
-      },
+      inspectImage: inspectImportedImage,
       writeDestination: writeWindowsManagedFile,
     },
   );
@@ -2655,15 +2833,21 @@ trustedHandle('voice-lab:generate', async (_event, input: VoiceLabGenerateInput)
 
 trustedHandle('account:save', async (_event, account: AccountProfile) => {
   const database = await getDb();
+  const current = (await database.getState()).account;
+  account = { ...account, deviceId: licenseService?.status().deviceId ?? current.deviceId, balance: current.balance };
   await database.upsertAccount(account);
   return publishStatePatch({ kind: 'account', account });
 });
 
-trustedHandle('activation:save', async (_event, activation: ActivationState) => {
-  const database = await getDb();
-  await database.upsertActivation(activation);
-  return publishStatePatch({ kind: 'activation', activation });
-});
+trustedHandle('activation:save', () => { throw new AppError('LICENSE_READ_ONLY', '授权状态由服务器验证，不能手动修改。'); });
+trustedHandle('license:status', () => licenseService!.status());
+trustedHandle('license:activate', (_event, code) => licenseService!.activate(code));
+trustedHandle('license:refresh', () => licenseService!.refresh());
+trustedHandle('license:release', () => licenseService!.release());
+trustedHandle('update:status', () => updateService!.status());
+trustedHandle('update:check', () => updateService!.check());
+trustedHandle('update:download', () => updateService!.download());
+trustedHandle('update:install', () => updateService!.install());
 
 trustedHandle('ui:save-preferences', async (_event, update: UiPreferencesUpdate) => {
   const database = await getDb();
@@ -2750,6 +2934,20 @@ trustedHandle('benchmark:sync-group', async (_event, groupId: string): Promise<B
 
 trustedHandle('benchmark:open-login', async (_event, input: BenchmarkLoginInput) => openBenchmarkLoginWindow(input));
 
+let assetLibraryStore: AssetLibraryStore | undefined;
+function getAssetLibraryStore() {
+  return assetLibraryStore ??= new AssetLibraryStore(appDataDir(), {
+    inspectImage: inspectImportedImage,
+    writeDestination: writeWindowsManagedFile,
+  });
+}
+trustedHandle('library:list', (_event, input) => getAssetLibraryStore().list(input));
+trustedHandle('library:get', (_event, id) => getAssetLibraryStore().get(id));
+trustedHandle('library:save', (_event, input) => getAssetLibraryStore().save(input));
+trustedHandle('library:update', (_event, input) => getAssetLibraryStore().update(input));
+trustedHandle('library:recycle', (_event, id) => getAssetLibraryStore().recycle(id));
+trustedHandle('library:restore', (_event, id) => getAssetLibraryStore().restore(id));
+
 trustedHandle('person-assets:list', async () => listPersonAssets(personAssetsRoot()));
 
 trustedHandle('person-assets:create', async (_event, name: string) => createPersonAsset(personAssetsRoot(), name));
@@ -2805,23 +3003,160 @@ trustedHandle('editorial-collage:save', async (_event, input: EditorialCollageSa
   return publishTaskUpsert(database, task.id);
 });
 
-trustedHandle('director:batch-create', async (_event, input: CreateDirectorBatchInput) => (await getDb()).createDirectorBatch(input));
+trustedHandle('vox-production:start', async (_event, input) => {
+  await getDb();
+  return voxProductionService!.start(input);
+});
+trustedHandle('vox-production:control', async (_event, input) => {
+  await getDb();
+  return voxProductionService!.control(input);
+});
+
+function createMainVoxProductionService(database: FileDatabase, service: ConfigService) {
+  const load = async (id: string) => {
+    const task = await database.getTaskDetail(id);
+    if (!task || task.taskType !== 'editorial-collage' || task.archivedAt) throw new Error('VOX_PROJECT_UNAVAILABLE: 项目不存在或已归档。');
+    return parseEditorialCollagePipelineData(task.pipelineData);
+  };
+  return new VoxProductionService({
+    load,
+    acquire: id => {
+      const reservation = historyActivityRegistry.reserveActive('task', id);
+      const finish = database.beginProjectActivity(id, 'Vox 自动制作中');
+      return () => { finish(); reservation.release(); void publishTaskUpsert(database, id).catch(console.error); };
+    },
+    checkpoint: async (id, node, result) => {
+      const task = (await database.getTaskDetail(id))!;
+      const directory = join(taskWorkDir(task), 'vox-production', node.requestId!);
+      await mkdir(directory, { recursive: true });
+      const current = await load(id);
+      const temp = join(directory, `result-${randomUUID()}.tmp`);
+      await writeFile(temp, JSON.stringify({ before: current, result }), 'utf8');
+      await rename(temp, join(directory, 'result.json'));
+    },
+    recover: async (id, node) => {
+      const task = (await database.getTaskDetail(id))!;
+      const file = join(taskWorkDir(task), 'vox-production', node.requestId!, 'result.json');
+      try {
+        const receipt = JSON.parse(await readFile(file, 'utf8'));
+        const stripJournal = (d: EditorialCollagePipelineData) => { const { productionRun: _run, updatedAt: _revision, ...content } = d; return content; };
+        if (voxInputHash(stripJournal(receipt.before)) !== voxInputHash(stripJournal(await load(id)))) return undefined;
+        return parseEditorialCollagePipelineData(receipt.result);
+      } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+    },
+    save: async (document, owner) => {
+      const saved = await database.saveEditorialCollageTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document }, owner);
+      await publishTaskUpsert(database, document.id);
+      return parseEditorialCollagePipelineData(saved.pipelineData);
+    },
+    projects: async () => {
+      const ids: string[] = []; let cursor: string | null = null;
+      do { const page = await database.listTaskSummaries({ taskType: 'editorial-collage', cursor, limit: 100 }); ids.push(...page.items.map(t => t.id)); cursor = page.nextCursor; } while (cursor);
+      return ids;
+    },
+  }, async id => {
+    const config = await service.getRuntimeConfig();
+    const { secretStatus } = await service.getPublicState();
+    const image = resolveDirectorImageProviderStatus(config, secretStatus);
+    const voice = resolveDirectorVoiceProviderStatus(config, secretStatus);
+    const task = (await database.getTaskDetail(id))!;
+    const work = join(taskWorkDir(task), 'vox-production');
+    const styleReferences = new Map<string, string>();
+    return createVoxProductionRuntime({
+      identity: voxInputHash({ llm: { provider: config.llm.provider, baseUrl: config.llm.baseUrl, model: config.llm.model }, image, voice,
+        imageEndpoint: image.provider === 'gpt_image' ? config.gptImage.baseUrl : image.provider === 'custom' ? config.customImage.baseUrl : 'jimeng',
+        voiceEndpoint: voice.provider === 'minimax' ? 'https://api.minimaxi.com/v1/t2a_v2' : config.tts.volcengine.endpoint,
+      }),
+      imageModel: image.model, voiceModel: voice.model, voice,
+      preflight: async (document, settings, pending) => {
+        const nodes = pending ?? buildVoxProductionNodes(document, settings);
+        if (nodes.some(n => ['plan', 'code', 'code-repair'].includes(n.kind)) && (!config.llm.apiKey || !config.llm.baseUrl)) throw new Error('请在系统设置中配置文本模型。');
+        if (nodes.some(n => n.kind === 'image' && n.paid) && !image.connected) throw new Error(image.unavailableReason);
+        if (nodes.some(n => n.kind === 'voice') && !voice.connected) throw new Error(voice.unavailableReason);
+        // Validate local references before claiming a paid request.
+        if (nodes.some(n => ['code', 'code-repair'].includes(n.kind))) {
+          const style = resolveCreativeStyle(settings.authoring?.styleId, settings.presetId)!;
+          styleReferences.set(style.slug, await loadCreativeStyleReference(join(__dirname, 'lemo-opuscar'), style.slug));
+        }
+        const demand = { assets: nodes.filter(n => ['image', 'cutout', 'voice', 'render'].includes(n.kind)).length, providerJobs: nodes.filter(n => n.paid || n.kind === 'render').length, qualityReports: 2 };
+        const reservation = directorHistoryReservations.reserve(document, demand); return () => reservation.release();
+      },
+      plan: async prompt => (await createConfiguredJsonLlm(config.llm).run({ step: 1, name: 'VOX 预设画面规划', messages: [{ role: 'user', content: prompt }], maxRetries: 0, timeoutMs: 180000 })).json,
+      image: (input, requestId) => generateImageLabRecord(config, join(work, requestId), { id: requestId, prompt: input.prompt, ratio: input.ratio, style: 'none', provider: image.provider, referenceImagePaths: input.references.map(r => r.path), smartMode: input.references.length ? 'reference-edit' : 'text-to-image', resolution: image.resolution, quality: image.quality }),
+      recoverImage: async (input, requestId) => {
+        const record = await generateImageLabRecord(config, join(work, requestId), { id: requestId, prompt: input.prompt, ratio: input.ratio, style: 'none', provider: image.provider, referenceImagePaths: input.references.map(r => r.path), smartMode: input.references.length ? 'reference-edit' : 'text-to-image', resolution: image.resolution, quality: image.quality }, undefined, undefined, { recoveryOnly: true });
+        if (record.status === 'failed' && record.errorMessage.startsWith('IMAGE_RECOVERY_UNAVAILABLE:')) return undefined;
+        return record;
+      },
+      speech: async (input, requestId) => {
+        const record = await generateConfiguredVoicePreview(config, join(work, requestId), { ...input, id: requestId });
+        const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: work, media_path: record.audioPath, measure_audio_duration: true });
+        if (!probe.has_audio || !probe.audio_duration_ms) throw new Error('VOX_VOICE_DECODE: 配音无法解码或测长。');
+        return { record, durationMs: probe.audio_duration_ms };
+      },
+      cutout: path => removeImageLabBackgroundFromSource(path, 'green-key'),
+      render: async document => {
+        await renderDirectorProject({ id }, document.productionRun!.id);
+        return load(id);
+      },
+      compileCode: compileVoxCode,
+      generateCode: async (input, styleId) => {
+        const reference = styleReferences.get(styleId);
+        if (!reference) throw new Error('CREATIVE_REFERENCE_MISSING: 请先检查本地风格资料。');
+        const messages = voxAnimationMessages(input);
+        messages[0].content += `\n${reference}`;
+        return (await createConfiguredTextLlm(config.llm).run({ step: 1, name: '创意动画代码', messages, maxTokens: 10000, maxRetries: 0, timeoutMs: 180000 })).text;
+      },
+      previewCode: (document, shotId, requestId) => reviewCreativeAnimation(document, shotId, join(work, requestId), join(__dirname, 'vox-animation-runtime.js')),
+      verifyVideo: async (path, expected, narration) => {
+        const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: work, media_path: path, require_nonblack: true, analyze_quality: true });
+        if (!probe.has_video || !probe.has_nonblack_video || narration && (!probe.has_audio || probe.audio_is_silent) || Math.abs(Number(probe.duration) * 1000 - expected) > 750) throw new Error('VOX_MEDIA_VERIFY: 成片轨道、时长或可见画面检查失败。');
+      },
+    });
+  });
+}
+
+trustedHandle('director:batch-create', async (_event, input: CreateDirectorBatchInput) => {
+  const database = await getDb();
+  const batch = await database.createDirectorBatch(input);
+  await publishTaskUpsert(database, batch.projectId);
+  return batch;
+});
 trustedHandle('director:batch-get', async (_event, id: string) => (await getDb()).getDirectorBatch(id));
 trustedHandle('director:batch-list', async (_event, options: { projectId?: string; episodeId?: string | null; statuses?: readonly DirectorBatchStatus[] }) => (await getDb()).listDirectorBatches(options));
-trustedHandle('director:batch-update', async (_event, input: { id: string; patch: UpdateDirectorBatchInput }) => (await getDb()).updateDirectorBatch(input.id, input.patch));
-trustedHandle('director:batch-delete', async (_event, id: string) => (await getDb()).deleteDirectorBatch(id));
+trustedHandle('director:batch-update', async (_event, input: { id: string; patch: UpdateDirectorBatchInput }) => {
+  const database = await getDb();
+  const batch = await database.updateDirectorBatch(input.id, input.patch);
+  await publishTaskUpsert(database, batch.projectId);
+  return batch;
+});
+trustedHandle('director:batch-delete', async (_event, id: string) => {
+  const database = await getDb();
+  const batch = await database.getDirectorBatch(id);
+  const deleted = await database.deleteDirectorBatch(id);
+  if (deleted && batch) await publishTaskUpsert(database, batch.projectId);
+  return deleted;
+});
 
 const directorHistoryReservations = createProductionHistoryReservations();
 
 function withDirectorHistoryCapacity<I extends { id: string }, O>(demand: ProductionHistoryDemand, handler: (event: IpcMainInvokeEvent, input: I, reservation: ProductionHistoryReservation) => Promise<O>) {
   return async (event: IpcMainInvokeEvent, input: I): Promise<O> => {
-    const task = await (await getDb()).getTaskDetail(input.id);
+    const database = await getDb();
+    const task = await database.getTaskDetail(input.id);
     if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
     if (task.taskType !== 'editorial-collage' && task.taskType !== 'motion-comic') throw new Error('DIRECTOR_PROJECT_INVALID: 当前任务不是 VOX 或 AI 漫剧项目。');
     const document = task.taskType === 'editorial-collage' ? parseEditorialCollagePipelineData(task.pipelineData) : parseMotionComicPipelineData(task.pipelineData);
     const reservation = directorHistoryReservations.reserve(document, demand);
-    try { return await handler(event, input, reservation); }
-    finally { reservation.release(); }
+    const finishActivity = database.beginProjectActivity(input.id, demand.qualityReports ? '正在渲染成片' : '正在生成镜头视频');
+    try {
+      await publishTaskUpsert(database, input.id);
+      return await handler(event, input, reservation);
+    } finally {
+      reservation.release();
+      finishActivity();
+      await publishTaskUpsert(database, input.id);
+    }
   };
 }
 
@@ -2868,13 +3203,18 @@ async function generateMotionComicShotVideo(
       const metadata = await stat(asset.localPath).catch(() => null);
       if (!metadata?.isFile() || metadata.size <= 0) throw new Error(`DIRECTOR_VIDEO_FRAME_MISSING: 当前镜头${label}文件不存在或为空，请重新生成图片。`);
     }
-    request = buildMotionComicShotVideoRequest(document, shot);
-    const requiredCapabilities = requiredVideoCapabilities(request);
     const committedVideoCost = document.providerJobs
       .filter((job) => job.capability === 'image-to-video')
       .reduce((total, job) => job.actualCost !== undefined ? total + job.actualCost : ['failed', 'cancelled'].includes(job.status) ? total : total + job.estimatedCost, 0);
     const remainingBudget = Math.max(0, runtimeConfig.video.automation.budgetLimit - committedVideoCost);
-    const route = selectVideoGenerationRoute(runtimeConfig, { durationSec: request.durationSec, requiredCapabilities, remainingBudget });
+    const selection = selectMotionComicVideoRoute(runtimeConfig, document, shot, remainingBudget);
+    request = selection.request;
+    const requiredCapabilities = selection.capabilities;
+    const route = selection.route;
+    for(const path of [...(request.referenceImages??[]).map(r=>r.path),...(request.referenceAudioPaths??[])]) {
+      const info=await stat(path).catch(()=>null);
+      if(!info?.isFile()||info.size<=0)throw new Error('DIRECTOR_VIDEO_REFERENCE_MISSING: 参考文件不存在或为空，请重新选择。');
+    }
     if (route.kind !== 'provider') {
       throw new Error(`DIRECTOR_VIDEO_PROVIDER_UNAVAILABLE: ${route.reason} AI 漫剧视频不会自动降级或切换任务所属服务。`);
     }
@@ -2887,12 +3227,20 @@ async function generateMotionComicShotVideo(
       route.provider.id,
       route.provider.model,
     ))).digest('hex');
-    provider = createConfiguredVideoProvider(runtimeConfig, taskWorkDir(task), {
+    provider = createConfiguredVideoProvider({...runtimeConfig,video:{...runtimeConfig.video,providers:[route.provider]}}, taskWorkDir(task), {
       durationSec: request.durationSec,
       requiredCapabilities,
       remainingBudget,
     }, { submitRetryCount: 0 });
   }
+  // Recovery uses the submitted input, even when the current shot has since changed.
+  const submittedFingerprint = resumableJob?.videoInputSnapshot
+    ? JSON.parse(resumableJob.videoInputSnapshot) as { production?: { audioMode?: string } }
+    : undefined;
+  const submittedAudioMode = resumableJob
+    ? submittedFingerprint?.production?.audioMode ?? 'post-mix'
+    : shot.videoProduction?.audioMode ?? 'post-mix';
+  const preserveSubmittedAudio = submittedAudioMode === 'native' || submittedAudioMode === 'audio-driven';
   let jobId = resumableJob?.id;
   if (!resumableJob) {
     jobId = `director-video-job-${randomUUID()}`;
@@ -2908,6 +3256,8 @@ async function generateMotionComicShotVideo(
       capability: 'image-to-video',
       status: 'running',
       inputHash,
+      videoInputSnapshot: JSON.stringify(motionComicVideoInputFingerprintSource(document, shot, selectedProvider.id, selectedProvider.model)),
+      phase: 'prepared',
       idempotencyKey: `${document.id}:${episode.id}:${shot.id}:video:${inputHash}:${attempt}`,
       estimatedCost,
       attempt,
@@ -2959,7 +3309,7 @@ async function generateMotionComicShotVideo(
         const saved = await database.saveMotionComicTask({
           id: latest.id,
           expectedUpdatedAt: latest.updatedAt,
-          document: { ...latest, providerJobs: latest.providerJobs.map((candidate) => candidate.id === jobId ? { ...candidate, remoteTaskId, updatedAt: now } : candidate) },
+          document: { ...latest, providerJobs: latest.providerJobs.map((candidate) => candidate.id === jobId ? { ...candidate, remoteTaskId, phase: 'submitted' as const, updatedAt: now } : candidate) },
         });
         await publishTaskUpsert(database, saved.id);
         return;
@@ -2980,7 +3330,7 @@ async function generateMotionComicShotVideo(
       : await provider.generate({ ...request!, onSubmitted: persistRemoteTaskId });
     chargedCost = resumableJob?.estimatedCost ?? generated.estimatedCost;
     await mkdir(outputDir, { recursive: true });
-    const probe = await normalizeSceneVideo(generated.path, temporaryPath);
+    const probe = await normalizeSceneVideo(generated.path, temporaryPath, preserveSubmittedAudio);
     if (probe.width <= 0 || probe.height <= 0) throw new Error('DIRECTOR_VIDEO_OUTPUT_INVALID: 视频尺寸不可读取。');
 
     const latestTask = await database.getTaskDetail(document.id);
@@ -3038,6 +3388,7 @@ async function generateMotionComicShotVideo(
       providerJobs: latest.providerJobs.map((candidate) => candidate.id === jobId ? {
         ...candidate,
         status: 'completed' as const,
+        phase: 'completed' as const,
         actualCost: completedCost,
         remoteTaskId: generated.remoteTaskId ?? candidate.remoteTaskId,
         updatedAt: finishedAt,
@@ -3410,7 +3761,9 @@ trustedHandle('motion-comic:save', async (_event, input: MotionComicSaveInput) =
   return publishTaskUpsert(database, task.id);
 });
 
-trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, async (_event, input: DirectorRenderRequest) => {
+trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, async (_event, input: DirectorRenderRequest) => renderDirectorProject(input)));
+
+async function renderDirectorProject(input: DirectorRenderRequest, productionOwner?: string) {
   const database = await getDb();
   const task = await database.getTaskDetail(input.id);
   if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${input.id}`);
@@ -3421,6 +3774,7 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
   let document = task.taskType === 'editorial-collage'
     ? parseEditorialCollagePipelineData(task.pipelineData)
     : parseMotionComicPipelineData(task.pipelineData);
+  if (document.workflowKind === 'editorial-collage' && document.productionRun?.status === 'running' && document.productionRun.id !== productionOwner) throw new Error('VOX_PRODUCTION_ACTIVE: 自动制作正在后台执行，请暂停后手动渲染。');
   if (directorRenderControllers.has(input.id)) throw new Error('该项目正在渲染');
   const renderController = new AbortController(); directorRenderControllers.set(input.id, renderController);
   try {
@@ -3431,7 +3785,7 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
       return Number(probe.audio_duration_ms);
     });
     if (prepared !== document) {
-      const saved = await database.saveEditorialCollageTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: prepared });
+      const saved = await database.saveEditorialCollageTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: prepared }, productionOwner);
       document = parseEditorialCollagePipelineData(saved.pipelineData);
       await publishTaskUpsert(database, task.id);
     }
@@ -3444,7 +3798,7 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
   const renderFingerprint = directorDocumentRenderFingerprint(document, renderEpisodeId);
   let generatedOutputPath: string | undefined;
   try {
-    const scenes = buildDirectorRenderScenes(document, renderEpisodeId);
+    const scenes = buildDirectorRenderScenes(await hydrateLegacyCutouts(document), renderEpisodeId);
     const result = await renderDirectorVideo({
       workDir: taskWorkDir(task),
       projectTitle: document.title,
@@ -3496,8 +3850,9 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
       stage: 'export',
       providerJobId: renderJob.id,
       renderFingerprint,
+      artifactSha256: sha256,
       ...(renderEpisodeId ? { episodeId: renderEpisodeId } : {}),
-      status: qualityChecks.some((check) => check.status === 'failed' && check.severity === 'blocking') ? 'failed' as const : 'passed' as const,
+      status: directorQualityStatus(qualityChecks),
       checks: qualityChecks,
       evidence: {
         ...(result.subtitleLayout ? { subtitleLayout: result.subtitleLayout } : {}),
@@ -3516,26 +3871,26 @@ trustedHandle('director:render', withDirectorHistoryCapacity(PRODUCTION_RENDER_H
       },
       createdAt: finishedAt,
     };
-    if (qualityReport.status === 'failed') {
-      const qualityFailure = qualityChecks.filter((check) => check.status === 'failed' && check.severity === 'blocking').map((check) => check.detail || check.label).join('；');
+    if (qualityReport.status !== 'passed') {
+      const qualityFailure = qualityChecks.filter(isDirectorQualityBlocker).map((check) => check.detail || check.label).join('；');
       await persistDirectorRenderCompletion({
         job: { ...renderJob, status: 'failed' as const, error: qualityFailure.slice(0, 65_536) },
         report: qualityReport,
-      }, directorRenderStore(database, document.id));
+      }, directorRenderStore(database, document.id, productionOwner));
       throw new Error(`DIRECTOR_RENDER_QUALITY_GATE_FAILED: ${qualityFailure}`);
     }
     generatedOutputPath = result.outputPath;
     await writeFile(`${result.outputPath}.render.json`, JSON.stringify({ projectId: document.id, asset: outputAsset, job: renderJob, report: qualityReport }), 'utf8');
-    await persistDirectorRenderCompletion({ asset: outputAsset, job: renderJob, report: qualityReport }, directorRenderStore(database, document.id));
+    await persistDirectorRenderCompletion({ asset: outputAsset, job: renderJob, report: qualityReport }, directorRenderStore(database, document.id, productionOwner));
     await database.updateTask(task.id, { outputDir: dirname(result.outputPath) });
     return { result, mutation: await publishTaskUpsert(database, task.id) };
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('DIRECTOR_RENDER_QUALITY_GATE_FAILED:')) throw error;
     if (generatedOutputPath) throw new Error(`DIRECTOR_RENDER_REGISTRATION_FAILED: 成片已生成于 ${generatedOutputPath}，项目登记失败：${error instanceof Error ? error.message : String(error)}`);
-    await persistDirectorRenderFailure(database, document, renderId, startedAt, error, renderEpisodeId, renderFingerprint).catch(() => undefined);
+    await persistDirectorRenderFailure(database, document, renderId, startedAt, error, renderEpisodeId, renderFingerprint, productionOwner).catch(() => undefined);
     throw error;
   } finally { directorRenderControllers.delete(input.id); }
-}));
+}
 
 trustedHandle('director:recheck-subtitles', async (_event, input: DirectorSubtitleRecheckRequest): Promise<DirectorSubtitleRecheckResult> => {
   const database = await getDb();
@@ -3556,7 +3911,7 @@ trustedHandle('director:recheck-subtitles', async (_event, input: DirectorSubtit
   const selectedShotIds = [...new Set(input.shotIds)];
   const selectedCueIds = [...new Set(input.cueIds)];
   if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检开始前已发生变化，请重新打开当前报告。');
-  const scenes = buildDirectorRenderScenes(document, renderEpisodeId, { shotIds: selectedShotIds });
+  const scenes = buildDirectorRenderScenes(await hydrateLegacyCutouts(document), renderEpisodeId, { shotIds: selectedShotIds });
   if (scenes.length !== selectedShotIds.length) throw new Error('DIRECTOR_RECHECK_SCOPE_MISSING: 复检镜头已不存在，请重新生成整片。');
   // Other cues in each selected shot affect the shared grid and overlap evidence.
   const scopedScenes = scenes;
@@ -3581,18 +3936,18 @@ trustedHandle('director:recheck-subtitles', async (_event, input: DirectorSubtit
     const mergedLayout = { ...(previousLayout ?? renderResult.subtitleLayout), measuredAt: renderResult.subtitleLayout.measuredAt, scenes: mergedScenes };
     // Re-evaluate against every current scene so a passing local scope cannot
     // hide an unresolved subtitle issue in an unselected scene.
-    const allScenes = buildDirectorRenderScenes(document, renderEpisodeId);
+    const allScenes = buildDirectorRenderScenes(await hydrateLegacyCutouts(document), renderEpisodeId);
     const allSceneStarts = new Map(allScenes.map((scene) => [scene.id, renderSceneStartMs(document, renderEpisodeId, scene.id)]));
     const layoutChecks = evaluateDirectorSubtitleLayout(allScenes, mergedLayout, directorCanvasForRatio(document.ratio), allSceneStarts);
     const updatedById = new Map(layoutChecks.map((check) => [check.id, check]));
-    const checks = report.checks.map((check) => updatedById.get(check.id) ?? check);
+    const checks = report.checks.map((check) => updatedById.has(check.id) ? { ...check, ...updatedById.get(check.id) } : check);
     layoutChecks.forEach((check) => { if (!checks.some((candidate) => candidate.id === check.id)) checks.push(check); });
     const updatedReport = {
       ...report,
       checks,
       evidence: { ...(report.evidence ?? {}), subtitleLayout: mergedLayout },
       manualReview: undefined,
-      status: checks.some((check) => check.status === 'failed' && check.severity === 'blocking') ? 'failed' as const : report.status,
+      status: directorQualityStatus(checks),
     };
     const latestTask = await database.getTaskDetail(input.id);
     if (!latestTask || latestTask.archivedAt || latestTask.taskType !== task.taskType) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检期间已发生变化，结果未保存。');
@@ -3628,7 +3983,7 @@ trustedHandle('director:recheck-media', async (_event, input: DirectorMediaReche
   }
   if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检开始前已发生变化，请重新打开当前报告。');
   const report = review.report;
-  const allScenes = buildDirectorRenderScenes(document, renderEpisodeId);
+  const allScenes = buildDirectorRenderScenes(await hydrateLegacyCutouts(document), renderEpisodeId);
   const selectedIds = [...new Set(input.shotIds)];
   const selectedScenes = allScenes.filter((scene) => selectedIds.includes(scene.id));
   if (selectedScenes.length !== selectedIds.length) throw new Error('DIRECTOR_RECHECK_SCOPE_MISSING: 复检镜头已不存在，请重新生成整片。');
@@ -3652,8 +4007,8 @@ trustedHandle('director:recheck-media', async (_event, input: DirectorMediaReche
     const longBlack = mergedBlack.filter((interval) => interval.endMs - interval.startMs >= 500);
     const blackStatus = blackValid ? (longBlack.length ? 'failed' : 'passed') : renderResult.blackDetectionStatus === 'failed' || renderResult.blackDetectionStatus === 'ok' ? 'failed' : 'pending';
     const blackCheck = { id: 'black-intervals', label: '成片没有未解释的长黑帧区间', severity: 'warning' as const, status: blackStatus as 'pending' | 'passed' | 'failed', ...(blackStatus !== 'passed' ? { detail: renderResult.blackDetectionError || (longBlack.length ? `${longBlack.length} 个长黑帧区间仍需复核` : '黑帧探测未取得完整证据') } : {}) };
-    const checks = report.checks.map((check) => check.id === 'black-intervals' ? blackCheck : check.id === 'visual-continuity' ? visualCheck : check);
-    const updatedReport = { ...report, checks, evidence: { ...(report.evidence ?? {}), blackIntervalsMs: mergedBlack, ...(mergedVisual ? { visualContinuity: productionVisualContinuityEvidenceSchema.parse(mergedVisual) } : {}), blackDetectionStatus: renderResult.blackDetectionStatus, ...(renderResult.blackDetectionError ? { blackDetectionError: renderResult.blackDetectionError } : {}) }, manualReview: undefined };
+    const checks = report.checks.map((check) => check.id === 'black-intervals' ? { ...check, ...blackCheck } : check.id === 'visual-continuity' ? { ...check, ...visualCheck } : check);
+    const updatedReport = { ...report, checks, status: directorQualityStatus(checks), evidence: { ...(report.evidence ?? {}), blackIntervalsMs: mergedBlack, ...(mergedVisual ? { visualContinuity: productionVisualContinuityEvidenceSchema.parse(mergedVisual) } : {}), blackDetectionStatus: renderResult.blackDetectionStatus, ...(renderResult.blackDetectionError ? { blackDetectionError: renderResult.blackDetectionError } : {}) }, manualReview: undefined };
     const latestTask = await database.getTaskDetail(input.id);
     if (!latestTask || latestTask.archivedAt || latestTask.taskType !== task.taskType) throw new Error('DIRECTOR_RECHECK_STALE: 项目在复检期间已发生变化，结果未保存。');
     const latestDocument = latestTask.taskType === 'editorial-collage' ? parseEditorialCollagePipelineData(latestTask.pipelineData) : parseMotionComicPipelineData(latestTask.pipelineData);
@@ -3711,18 +4066,26 @@ function renderSceneStartMs(document: DirectorRenderDocument, episodeId: string 
   return episode?.timeline.clips.find((clip) => clip.shotId === shotId)?.startMs ?? 0;
 }
 
-function directorRenderStore(database: FileDatabase, taskId: string) {
+trustedHandle('director:review-artifact', async (_event, input: DirectorQualityArtifactRequest) => {
+  const database = await getDb();
+  const result = await reviewDirectorQualityArtifact(input, directorRenderStore(database, input.id));
+  await publishTaskUpsert(database, input.id);
+  return result;
+});
+
+function directorRenderStore(database: FileDatabase, taskId: string, productionOwner?: string) {
   return {
     load: async (): Promise<DirectorRenderDocument> => {
       const task = await database.getTaskDetail(taskId);
       if (!task) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${taskId}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
       if (task.taskType === 'editorial-collage') return parseEditorialCollagePipelineData(task.pipelineData);
       if (task.taskType === 'motion-comic') return parseMotionComicPipelineData(task.pipelineData);
       throw new Error(`DIRECTOR_PROJECT_INVALID: ${taskId}`);
     },
     save: (document: DirectorRenderDocument) => document.workflowKind === 'motion-comic'
       ? database.saveMotionComicTask({ id: taskId, expectedUpdatedAt: document.updatedAt, document })
-      : database.saveEditorialCollageTask({ id: taskId, expectedUpdatedAt: document.updatedAt, document }),
+      : database.saveEditorialCollageTask({ id: taskId, expectedUpdatedAt: document.updatedAt, document }, productionOwner),
   };
 }
 
@@ -3734,6 +4097,7 @@ async function persistDirectorRenderFailure(
   error: unknown,
   episodeId?: string,
   renderFingerprint?: string,
+  productionOwner?: string,
 ): Promise<void> {
   const finishedAt = new Date().toISOString();
   const detail = error instanceof Error ? error.message : String(error);
@@ -3766,7 +4130,7 @@ async function persistDirectorRenderFailure(
     checks: [{ id: 'video-output', label: 'MP4 成片生成', status: 'failed' as const, severity: 'blocking' as const, detail: detail.slice(0, 65_536), recheckScope: { kind: 'project' as const } }],
     createdAt: finishedAt,
   };
-  await persistDirectorRenderCompletion({ job: failedJob, report: qualityReport }, directorRenderStore(database, document.id));
+  await persistDirectorRenderCompletion({ job: failedJob, report: qualityReport }, directorRenderStore(database, document.id, productionOwner));
 }
 
 trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {
@@ -3917,10 +4281,12 @@ trustedHandle('html-video:remove-asset-background', (_event, input: { id: string
     return persistHtmlVideoEditorialMutation(database, task, result.pipeline, {
       type: 'html_video_asset_remove_background',
       tool: 'onnx-background-removal',
-      detail: result.skipped
-        ? `场景 ${input.target.sceneIndex} 的前景 ${input.target.slot + 1} 已有透明通道，未重复处理。`
-        : `已移除场景 ${input.target.sceneIndex} 前景 ${input.target.slot + 1} 的背景。`,
-      data: { ...input.target, skipped: result.skipped },
+      detail: result.failed
+        ? `场景 ${input.target.sceneIndex} 前景 ${input.target.slot + 1} 去背景失败，已保留原图并记录失败原因。`
+        : result.skipped
+          ? `场景 ${input.target.sceneIndex} 的前景 ${input.target.slot + 1} 已有透明通道，未重复处理。`
+          : `已移除场景 ${input.target.sceneIndex} 前景 ${input.target.slot + 1} 的背景。`,
+      data: { ...input.target, skipped: result.skipped, failed: result.failed },
     });
   }));
 
@@ -3965,6 +4331,7 @@ trustedHandle('html-video:regenerate-cover', (_event, id: string) =>
       jobConfig: pipeline.config,
       imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
       inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
+      inspectAssetBackgroundRemoval: inspectHtmlVideoAssetBackgroundRemoval,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const coverAsset = await resolveHtmlVideoCoverForRender({
@@ -4258,7 +4625,7 @@ async function replaceHtmlVideoEditorialAsset(
   pipeline: HtmlVideoPipelineDataV2,
   target: HtmlVideoAssetTarget,
   sourcePath: string,
-  options: { rebuildPreview?: boolean } = {},
+  options: { rebuildPreview?: boolean; backgroundRemoval?: BackgroundRemovalMetadata } = {},
 ): Promise<HtmlVideoPipelineDataV2> {
   const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
   if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
@@ -4295,7 +4662,10 @@ async function replaceHtmlVideoEditorialAsset(
     src: destination,
     ...(prompt ? { prompt } : {}),
     ...(target.kind === 'fg'
-      ? { transparency: await inspectHtmlVideoAssetTransparency(destination) ? 'transparent' as const : 'opaque' as const }
+      ? {
+        transparency: await inspectHtmlVideoAssetTransparency(destination) ? 'transparent' as const : 'opaque' as const,
+        backgroundRemoval: options.backgroundRemoval ?? await inspectHtmlVideoAssetBackgroundRemoval(destination),
+      }
       : {}),
     sizeBytes: copied.size,
   };
@@ -4312,26 +4682,39 @@ async function removeHtmlVideoEditorialAssetBackground(
   task: Task,
   pipeline: HtmlVideoPipelineDataV2,
   target: HtmlVideoAssetTarget,
-): Promise<{ pipeline: HtmlVideoPipelineDataV2; skipped: boolean }> {
+): Promise<{ pipeline: HtmlVideoPipelineDataV2; skipped: boolean; failed: boolean }> {
   if (target.kind !== 'fg') throw new Error('HTML_VIDEO_BACKGROUND_TARGET_INVALID: 只能处理前景素材。');
   const asset = pipeline.assets.find((candidate) => (
     candidate.sceneIndex === target.sceneIndex && candidate.kind === 'fg' && candidate.slot === target.slot
   ));
   if (!asset) throw new Error(`HTML_VIDEO_ASSET_NOT_FOUND: ${target.sceneIndex}/fg/${target.slot}`);
-  if (await inspectHtmlVideoAssetTransparency(asset.src)) {
+  const nativeMetadata = await inspectHtmlVideoAssetBackgroundRemoval(asset.src);
+  if (nativeMetadata.quality === 'passed') {
     pipeline.assets = pipeline.assets.map((candidate) => candidate === asset
-      ? { ...candidate, transparency: 'transparent' }
+      ? { ...candidate, transparency: 'transparent', backgroundRemoval: asset.backgroundRemoval?.quality === 'passed' ? asset.backgroundRemoval : nativeMetadata }
       : candidate);
     pipeline.revision += 1;
-    return { pipeline, skipped: true };
+    return { pipeline, skipped: true, failed: false };
   }
 
-  const model = await resolveHtmlVideoBackgroundRemovalModel();
   const temporaryPath = join(dirname(asset.src), `.${randomUUID()}-remove-background.png`);
   try {
-    await removeHtmlVideoImageBackground(asset.src, temporaryPath, model);
-    const replaced = await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, temporaryPath);
-    return { pipeline: replaced, skipped: false };
+    const model = await resolveHtmlVideoBackgroundRemovalModel();
+    const backgroundRemoval = await removeHtmlVideoImageBackground(asset.src, temporaryPath, model);
+    const replaced = await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, temporaryPath, { backgroundRemoval });
+    return { pipeline: replaced, skipped: false, failed: false };
+  } catch (error) {
+    const metadata = backgroundRemovalFailure(
+      'onnx',
+      errorCodeFromBackgroundRemovalError(error),
+      error instanceof Error ? error.message : String(error),
+      { sourceSha256: await sha256File(asset.src) },
+    );
+    pipeline.assets = pipeline.assets.map((candidate) => candidate === asset
+      ? { ...candidate, transparency: 'opaque', backgroundRemoval: metadata }
+      : candidate);
+    pipeline.revision += 1;
+    return { pipeline, skipped: false, failed: true };
   } finally {
     await rm(temporaryPath, { force: true });
   }
@@ -4358,10 +4741,11 @@ async function removeAllHtmlVideoEditorialAssetBackgrounds(
       candidate.sceneIndex === item.target.sceneIndex && candidate.kind === 'fg' && candidate.slot === item.target.slot
     ));
     if (!currentAsset) continue;
-    if (await inspectHtmlVideoAssetTransparency(currentAsset.src)) {
-      if (currentAsset.transparency !== 'transparent') {
+    const nativeMetadata = await inspectHtmlVideoAssetBackgroundRemoval(currentAsset.src);
+    if (nativeMetadata.quality === 'passed') {
+      if (currentAsset.transparency !== 'transparent' || currentAsset.backgroundRemoval?.quality !== 'passed') {
         pipeline.assets = pipeline.assets.map((candidate) => candidate === currentAsset
-          ? { ...candidate, transparency: 'transparent' }
+          ? { ...candidate, transparency: 'transparent', backgroundRemoval: currentAsset.backgroundRemoval?.quality === 'passed' ? currentAsset.backgroundRemoval : nativeMetadata }
           : candidate);
         metadataChanged = true;
       }
@@ -4369,20 +4753,29 @@ async function removeAllHtmlVideoEditorialAssetBackgrounds(
       continue;
     }
 
-    model ??= await resolveHtmlVideoBackgroundRemovalModel();
     const temporaryPath = join(dirname(currentAsset.src), `.${randomUUID()}-remove-background.png`);
     try {
-      await removeHtmlVideoImageBackground(currentAsset.src, temporaryPath, model);
-      pipeline = await replaceHtmlVideoEditorialAsset(database, task, pipeline, item.target, temporaryPath, { rebuildPreview: false });
+      model ??= await resolveHtmlVideoBackgroundRemovalModel();
+      const backgroundRemoval = await removeHtmlVideoImageBackground(currentAsset.src, temporaryPath, model);
+      pipeline = await replaceHtmlVideoEditorialAsset(database, task, pipeline, item.target, temporaryPath, { rebuildPreview: false, backgroundRemoval });
       completed += 1;
     } catch (error) {
       lastError = error;
       failed += 1;
+      const metadata = backgroundRemovalFailure(
+        'onnx',
+        errorCodeFromBackgroundRemovalError(error),
+        error instanceof Error ? error.message : String(error),
+        { sourceSha256: await sha256File(currentAsset.src) },
+      );
+      pipeline.assets = pipeline.assets.map((candidate) => candidate === currentAsset
+        ? { ...candidate, transparency: 'opaque', backgroundRemoval: metadata }
+        : candidate);
+      metadataChanged = true;
     } finally {
       await rm(temporaryPath, { force: true });
     }
   }
-  if (completed === 0 && failed > 0) throw lastError;
   if (metadataChanged) pipeline.revision += 1;
   if (completed > 0) pipeline = await rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
   return { pipeline, completed, skipped, failed };
@@ -4405,6 +4798,7 @@ async function regenerateHtmlVideoEditorialAsset(
       jobConfig: pipeline.config,
       imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
       inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
+      inspectAssetBackgroundRemoval: inspectHtmlVideoAssetBackgroundRemoval,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const requestedScene = target.kind === 'bg'
@@ -4419,7 +4813,9 @@ async function regenerateHtmlVideoEditorialAsset(
     });
     const selected = generated.find((asset) => asset.kind === target.kind && asset.slot === target.slot);
     if (!selected) throw new Error('HTML_VIDEO_ASSET_GENERATION_FAILED: 图片服务没有返回目标素材。');
-    return await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, selected.src);
+    return await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, selected.src, {
+      ...(selected.backgroundRemoval ? { backgroundRemoval: selected.backgroundRemoval } : {}),
+    });
   } finally {
     await rm(stageDirectory, { recursive: true, force: true });
   }
@@ -4442,6 +4838,7 @@ async function regenerateHtmlVideoEditorialVoice(
       jobConfig: pipeline.config,
       imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
       inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
+      inspectAssetBackgroundRemoval: inspectHtmlVideoAssetBackgroundRemoval,
       prepareCoverImage: prepareHtmlVideoCoverImage,
     });
     const generated = await providers.synthesizeVoices({ scenes: [scene], config: pipeline.config });
@@ -4572,6 +4969,43 @@ trustedHandle('viral:import-local', async (_event, input) => {
 });
 
 const motionComicPlanningService = new MotionComicPlanningService(() => join(appDataDir(), 'motion-comic-planning'));
+trustedHandle('motion-comic:scripts-get', async (_event, id) => (await getDb()).motionComicScripts.refresh(id));
+trustedHandle('motion-comic:scripts-enqueue', async (_event, input) => {
+  const database = await getDb();
+  const runtime = await (await getConfigService()).getRuntimeConfig();
+  const snapshot = await database.motionComicScripts.enqueue(input, {
+    provider: `${runtime.llm.provider}:${runtime.llm.baseUrl}`, model: runtime.llm.model,
+  });
+  motionComicScriptService!.start(input.id);
+  return snapshot;
+});
+trustedHandle('motion-comic:scripts-control', async (_event, input) => {
+  await getDb();
+  return motionComicScriptService!.control(input.id, input.action, input.taskId);
+});
+trustedHandle('motion-comic:scripts-edit', async (_event, input) => (await getDb()).motionComicScripts.edit(input));
+trustedHandle('motion-comic:scripts-approve', async (_event, input) => (await getDb()).motionComicScripts.approve(input));
+trustedHandle('motion-comic:scripts-storyboard', async (_event, input) => {
+  await getDb();
+  return motionComicScriptService!.startStoryboard(input);
+});
+trustedHandle('motion-comic:scripts-apply-storyboard', async (_event, input) => {
+  const database = await getDb();
+  const { reviewedAdjustments, ...revision } = input;
+  const { document, task, storyboard } = await database.motionComicScripts.approvedRevision(revision);
+  if (!storyboard) throw new Error('MOTION_COMIC_STORYBOARD_REQUIRED: 请先生成并审阅分镜候选。');
+  const next = applyGeneratedMotionComicPlan(document, storyboard.plan, {
+    sourceEpisodeId: task.sourceEpisodeId, replaceStarter: isUntouchedMotionComicStarter(document),
+    reviewedAdjustments,
+  });
+  const saved = await database.saveMotionComicTask({ id: input.id, expectedUpdatedAt: input.expectedUpdatedAt, document: next }, () => {
+    const current = database.motionComicScripts.assertApprovedRevision(revision);
+    if (!current.storyboard || JSON.stringify(current.storyboard) !== JSON.stringify(storyboard)) {
+      throw new Error('MOTION_COMIC_SCRIPT_REVISION: 分镜候选已变化，请重新审核。');
+    }
+  });
+  return publishTaskUpsert(database, saved.id);
+});
 trustedHandle('motion-comic:plan', async (_event, input: MotionComicPlanInput) => {
   const database = await getDb();
   const task = await database.getTaskDetail(input.id);
@@ -4579,13 +5013,26 @@ trustedHandle('motion-comic:plan', async (_event, input: MotionComicPlanInput) =
   if (task.taskType !== 'motion-comic') throw new Error('MOTION_COMIC_TASK_INVALID: 当前任务不是 AI 漫剧项目。');
   if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
   const document = parseMotionComicPipelineData(task.pipelineData);
+  if (document.sourceDocument?.episodes.length) throw new Error('MOTION_COMIC_SCRIPT_WORKSPACE_REQUIRED: 已导入分集的项目请使用后台剧本队列与独立分镜审核。');
+  if (!input.stage) throw new Error('MOTION_COMIC_SCRIPT_APPROVAL_REQUIRED: 请先生成并审核剧本，再确认项目资产和生成分镜。');
   if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: 项目已发生变化，请刷新后重新规划。');
   const runtimeConfig = await (await getConfigService()).getRuntimeConfig();
-  return motionComicPlanningService.plan(input, document, createConfiguredJsonLlm(runtimeConfig.llm), {
-    model: runtimeConfig.llm.model,
-    providerScope: `${runtimeConfig.llm.provider}:${runtimeConfig.llm.baseUrl}`,
-    protocol: runtimeConfig.llm.protocol ?? 'openai',
-  });
+  const finishActivity = database.beginProjectActivity(input.id, input.stage === 'storyboard' ? '正在生成分镜' : '正在生成剧本');
+  try {
+    await publishTaskUpsert(database, input.id);
+    return await motionComicPlanningService.plan(input, document, createConfiguredJsonLlm(runtimeConfig.llm), {
+      model: runtimeConfig.llm.model,
+      providerScope: `${runtimeConfig.llm.provider}:${runtimeConfig.llm.baseUrl}`,
+      protocol: runtimeConfig.llm.protocol ?? 'openai',
+    }, async (confirmed) => {
+      const saved = await database.saveMotionComicTask({ id: input.id, expectedUpdatedAt: document.updatedAt, document: confirmed });
+      await publishTaskUpsert(database, saved.id);
+      return parseMotionComicPipelineData(saved.pipelineData);
+    });
+  } finally {
+    finishActivity();
+    await publishTaskUpsert(database, input.id);
+  }
 });
 
 trustedHandle('motion-comic:apply-plan', async (_event, input: MotionComicApplyPlanInput) => {
@@ -4595,6 +5042,7 @@ trustedHandle('motion-comic:apply-plan', async (_event, input: MotionComicApplyP
   if (task.taskType !== 'motion-comic') throw new Error('MOTION_COMIC_TASK_INVALID: 当前任务不是 AI 漫剧项目。');
   if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只读。');
   const document = parseMotionComicPipelineData(task.pipelineData);
+  if (document.sourceDocument?.episodes.length) throw new Error('MOTION_COMIC_SCRIPT_APPROVAL_REQUIRED: 请在剧本工作台批准当前剧本并应用已保存的分镜候选。');
   if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: 项目已发生变化，请刷新后重新应用方案。');
   const next = applyGeneratedMotionComicPlan(document, input.plan, {
     replaceStarter: input.replaceStarter,
@@ -6004,11 +6452,15 @@ async function checkStoryboundSidecarDependencies(): Promise<{ status: 'pass' | 
 
 async function shutdownApplication(): Promise<void> {
   isShuttingDown = true;
+  licenseService?.close();
+  clearInterval(updateTimer);
   acceptingAppDeltas = false;
   historyActivityRegistry.close();
   musicProfileService?.close();
   await Promise.allSettled([...activeMusicSubmissions, musicBgmImportQueue]);
   const completions: Promise<void>[] = [];
+  if (motionComicScriptService) completions.push(motionComicScriptService.stop());
+  if (voxProductionService) completions.push(voxProductionService.stop());
 
   for (const run of runningTasks.values()) {
     run.intent = null;
@@ -6040,6 +6492,7 @@ if (isPrimaryInstance) {
   app.whenReady().then(async () => {
     setDefaultPythonRuntimeAppRoot(app.getAppPath());
     registerHtmlVideoMediaProtocol();
+    await initializeLicensing();
     await createWindow();
     await runSmokeHandshake();
     await runEditorialQaCapture();

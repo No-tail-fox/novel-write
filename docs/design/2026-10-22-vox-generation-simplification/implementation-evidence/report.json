@@ -1,0 +1,1537 @@
+{
+  "surface": "real React Vox page in isolated Electron, mocked API/persistence",
+  "paidCalls": 0,
+  "screenshots": [
+    "desktop-initial.png",
+    "desktop-dark.png",
+    "desktop-advanced.png",
+    "desktop-advanced-bottom.png",
+    "desktop-template.png",
+    "desktop-template-closed.png",
+    "desktop-production-settings.png",
+    "desktop-render-busy.png",
+    "desktop-render-error.png",
+    "desktop-long-list.png",
+    "desktop-empty.png",
+    "desktop-dark-final.png",
+    "desktop-dark-production-settings.png",
+    "desktop-dark-creative-advanced.png",
+    "compact-dark-final.png",
+    "compact-dark-production-settings.png",
+    "compact-dark-creative-advanced.png",
+    "narrow-dark-final.png",
+    "narrow-outline-dark.png",
+    "narrow-advanced-dark.png",
+    "desktop-light-final.png",
+    "desktop-light-production-settings.png",
+    "desktop-light-creative-advanced.png",
+    "compact-light-final.png",
+    "compact-light-production-settings.png",
+    "compact-light-creative-advanced.png",
+    "narrow-light-final.png",
+    "narrow-outline-light.png",
+    "narrow-advanced-light.png",
+    "desktop-100-long-title.png",
+    "desktop-200-percent.png",
+    "desktop-200-percent-advanced.png"
+  ],
+  "checks": [
+    {
+      "name": "single visible shot navigation",
+      "passed": true
+    },
+    {
+      "name": "no persistent inspector",
+      "passed": true
+    },
+    {
+      "name": "footer at bottom",
+      "passed": true
+    },
+    {
+      "name": "edits survive selection",
+      "passed": true
+    },
+    {
+      "name": "edits survive save/reload",
+      "passed": true
+    },
+    {
+      "name": "desktop-advanced stable drawer within viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-advanced header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "desktop-advanced header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "drawer receives focus",
+      "passed": true
+    },
+    {
+      "name": "advanced scroll reaches bottom",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus trapped in drawer",
+      "passed": true
+    },
+    {
+      "name": "focus returns to advanced trigger",
+      "passed": true
+    },
+    {
+      "name": "single template entry",
+      "passed": true
+    },
+    {
+      "name": "escape closes innermost modal only",
+      "passed": true
+    },
+    {
+      "name": "template focus returns to opener",
+      "passed": true
+    },
+    {
+      "name": "editor draft retained on drawer close",
+      "passed": true
+    },
+    {
+      "name": "data preset blocks missing sourced rows",
+      "passed": true
+    },
+    {
+      "name": "data preset exposes a shared unit",
+      "passed": true
+    },
+    {
+      "name": "data preset accepts sourced values",
+      "passed": true
+    },
+    {
+      "name": "map preset blocks invalid latitude",
+      "passed": true
+    },
+    {
+      "name": "map preset accepts valid coordinates",
+      "passed": true
+    },
+    {
+      "name": "archive preset blocks missing provenance",
+      "passed": true
+    },
+    {
+      "name": "archive preset accepts imported reference and provenance",
+      "passed": true
+    },
+    {
+      "name": "long list canonical selection",
+      "passed": true
+    },
+    {
+      "name": "long list selection visible",
+      "passed": true
+    },
+    {
+      "name": "empty project action disabled",
+      "passed": true
+    },
+    {
+      "name": "desktop-dark footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-dark no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "name": "desktop-dark advanced dialog has fixed action",
+      "passed": true
+    },
+    {
+      "name": "desktop-dark unadapted styles disabled",
+      "passed": true
+    },
+    {
+      "name": "desktop-dark advanced dialog fits viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-dark center scroll",
+      "passed": true
+    },
+    {
+      "name": "compact-dark footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "compact-dark no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "name": "compact-dark advanced dialog has fixed action",
+      "passed": true
+    },
+    {
+      "name": "compact-dark unadapted styles disabled",
+      "passed": true
+    },
+    {
+      "name": "compact-dark advanced dialog fits viewport",
+      "passed": true
+    },
+    {
+      "name": "compact-dark center scroll",
+      "passed": true
+    },
+    {
+      "name": "narrow-dark footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "narrow-dark no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "name": "narrow-dark center scroll",
+      "passed": true
+    },
+    {
+      "name": "narrow-outline-dark header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "narrow-outline-dark header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "outline close restores opener dark",
+      "passed": true
+    },
+    {
+      "name": "narrow drawers mutually exclusive",
+      "passed": true
+    },
+    {
+      "name": "narrow-advanced-dark stable drawer within viewport",
+      "passed": true
+    },
+    {
+      "name": "narrow-advanced-dark header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "narrow-advanced-dark header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "advanced close restores opener dark",
+      "passed": true
+    },
+    {
+      "name": "desktop-light footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-light no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "name": "desktop-light advanced dialog has fixed action",
+      "passed": true
+    },
+    {
+      "name": "desktop-light unadapted styles disabled",
+      "passed": true
+    },
+    {
+      "name": "desktop-light advanced dialog fits viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-light center scroll",
+      "passed": true
+    },
+    {
+      "name": "compact-light footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "compact-light no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "name": "compact-light advanced dialog has fixed action",
+      "passed": true
+    },
+    {
+      "name": "compact-light unadapted styles disabled",
+      "passed": true
+    },
+    {
+      "name": "compact-light advanced dialog fits viewport",
+      "passed": true
+    },
+    {
+      "name": "compact-light center scroll",
+      "passed": true
+    },
+    {
+      "name": "narrow-light footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "narrow-light no horizontal page overflow",
+      "passed": true
+    },
+    {
+      "name": "narrow-light center scroll",
+      "passed": true
+    },
+    {
+      "name": "narrow-outline-light header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "narrow-outline-light header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "outline close restores opener light",
+      "passed": true
+    },
+    {
+      "name": "narrow drawers mutually exclusive",
+      "passed": true
+    },
+    {
+      "name": "narrow-advanced-light stable drawer within viewport",
+      "passed": true
+    },
+    {
+      "name": "narrow-advanced-light header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "narrow-advanced-light header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "advanced close restores opener light",
+      "passed": true
+    },
+    {
+      "name": "100 shot selection",
+      "passed": true
+    },
+    {
+      "name": "long content no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "200 percent actual Electron zoom",
+      "passed": true
+    },
+    {
+      "name": "200 percent no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "200 percent footer in viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-200-percent-advanced stable drawer within viewport",
+      "passed": true
+    },
+    {
+      "name": "desktop-200-percent-advanced header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "desktop-200-percent-advanced header control unobscured",
+      "passed": true
+    },
+    {
+      "name": "no provider calls",
+      "passed": true
+    },
+    {
+      "name": "no page errors",
+      "passed": true
+    }
+  ],
+  "states": {
+    "desktop-initial": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-dark": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-advanced": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 748,
+        "scroll": 1302,
+        "top": 0
+      },
+      "drawer": {
+        "left": 1076,
+        "right": 1536,
+        "top": 0,
+        "bottom": 1024,
+        "opacity": "1",
+        "width": 1536,
+        "height": 1024,
+        "overflow": 0,
+        "scrollTop": 0,
+        "header": {
+          "x": 1076.800048828125,
+          "y": 0,
+          "width": 459.20001220703125,
+          "height": 64.80000305175781,
+          "top": 0,
+          "right": 1536.0000610351562,
+          "bottom": 64.80000305175781,
+          "left": 1076.800048828125
+        },
+        "children": [
+          {
+            "className": "",
+            "rect": {
+              "x": 1076.800048828125,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 1077.800048828125,
+              "bottom": 1,
+              "left": 1076.800048828125
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          },
+          {
+            "className": "fui-DrawerHeader r3ovn4i",
+            "rect": {
+              "x": 1076.800048828125,
+              "y": 0,
+              "width": 459.20001220703125,
+              "height": 64.80000305175781,
+              "top": 0,
+              "right": 1536.0000610351562,
+              "bottom": 64.80000305175781,
+              "left": 1076.800048828125
+            },
+            "scrollTop": 0,
+            "display": "flex",
+            "flex": "0 0 auto"
+          },
+          {
+            "className": "fui-DrawerBody ri6rvx7",
+            "rect": {
+              "x": 1076.800048828125,
+              "y": 64.80000305175781,
+              "width": 459.20001220703125,
+              "height": 959.2000122070312,
+              "top": 64.80000305175781,
+              "right": 1536.0000610351562,
+              "bottom": 1024.000015258789,
+              "left": 1076.800048828125
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "1 1 0%"
+          },
+          {
+            "className": "",
+            "rect": {
+              "x": 1076.800048828125,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 1077.800048828125,
+              "bottom": 1,
+              "left": 1076.800048828125
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          }
+        ]
+      }
+    },
+    "desktop-advanced-bottom": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 748,
+        "scroll": 1302,
+        "top": 554.4000244140625
+      }
+    },
+    "desktop-template": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 808,
+        "scroll": 1033,
+        "top": 156.8000030517578
+      }
+    },
+    "desktop-template-closed": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 808,
+        "scroll": 1033,
+        "top": 156.8000030517578
+      }
+    },
+    "desktop-production-settings": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-render-busy": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-render-error": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-long-list": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-empty": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 872,
+        "top": 0
+      },
+      "inspector": {
+        "client": null,
+        "scroll": null,
+        "top": null
+      }
+    },
+    "desktop-dark-final": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-dark-production-settings": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-dark-creative-advanced": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "compact-dark-final": {
+      "width": 1040,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "compact-dark-production-settings": {
+      "width": 1040,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "compact-dark-creative-advanced": {
+      "width": 1040,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "narrow-dark-final": {
+      "width": 860,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "narrow-outline-dark": {
+      "width": 860,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "narrow-advanced-dark": {
+      "width": 860,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 444,
+        "scroll": 1302,
+        "top": 0
+      },
+      "drawer": {
+        "left": 400,
+        "right": 860,
+        "top": 0,
+        "bottom": 720,
+        "opacity": "1",
+        "width": 860,
+        "height": 720,
+        "overflow": 0,
+        "scrollTop": 0,
+        "header": {
+          "x": 400.8000183105469,
+          "y": 0,
+          "width": 459.20001220703125,
+          "height": 64.80000305175781,
+          "top": 0,
+          "right": 860.0000305175781,
+          "bottom": 64.80000305175781,
+          "left": 400.8000183105469
+        },
+        "children": [
+          {
+            "className": "",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 401.8000183105469,
+              "bottom": 1,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          },
+          {
+            "className": "fui-DrawerHeader r3ovn4i",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 0,
+              "width": 459.20001220703125,
+              "height": 64.80000305175781,
+              "top": 0,
+              "right": 860.0000305175781,
+              "bottom": 64.80000305175781,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "flex",
+            "flex": "0 0 auto"
+          },
+          {
+            "className": "fui-DrawerBody ri6rvx7",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 64.80000305175781,
+              "width": 459.20001220703125,
+              "height": 655.2000122070312,
+              "top": 64.80000305175781,
+              "right": 860.0000305175781,
+              "bottom": 720.0000152587891,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "1 1 0%"
+          },
+          {
+            "className": "",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 401.8000183105469,
+              "bottom": 1,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          }
+        ]
+      }
+    },
+    "desktop-light-final": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-light-production-settings": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-light-creative-advanced": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "compact-light-final": {
+      "width": 1040,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "compact-light-production-settings": {
+      "width": 1040,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "compact-light-creative-advanced": {
+      "width": 1040,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "narrow-light-final": {
+      "width": 860,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "narrow-outline-light": {
+      "width": 860,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "narrow-advanced-light": {
+      "width": 860,
+      "height": 720,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 640,
+        "bottom": 720,
+        "height": 80
+      },
+      "center": {
+        "client": 580,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 444,
+        "scroll": 1302,
+        "top": 0
+      },
+      "drawer": {
+        "left": 400,
+        "right": 860,
+        "top": 0,
+        "bottom": 720,
+        "opacity": "1",
+        "width": 860,
+        "height": 720,
+        "overflow": 0,
+        "scrollTop": 0,
+        "header": {
+          "x": 400.8000183105469,
+          "y": 0,
+          "width": 459.20001220703125,
+          "height": 64.80000305175781,
+          "top": 0,
+          "right": 860.0000305175781,
+          "bottom": 64.80000305175781,
+          "left": 400.8000183105469
+        },
+        "children": [
+          {
+            "className": "",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 401.8000183105469,
+              "bottom": 1,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          },
+          {
+            "className": "fui-DrawerHeader r3ovn4i",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 0,
+              "width": 459.20001220703125,
+              "height": 64.80000305175781,
+              "top": 0,
+              "right": 860.0000305175781,
+              "bottom": 64.80000305175781,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "flex",
+            "flex": "0 0 auto"
+          },
+          {
+            "className": "fui-DrawerBody ri6rvx7",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 64.80000305175781,
+              "width": 459.20001220703125,
+              "height": 655.2000122070312,
+              "top": 64.80000305175781,
+              "right": 860.0000305175781,
+              "bottom": 720.0000152587891,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "1 1 0%"
+          },
+          {
+            "className": "",
+            "rect": {
+              "x": 400.8000183105469,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 401.8000183105469,
+              "bottom": 1,
+              "left": 400.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          }
+        ]
+      }
+    },
+    "desktop-100-long-title": {
+      "width": 1536,
+      "height": 1024,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 932,
+        "bottom": 1024,
+        "height": 92
+      },
+      "center": {
+        "client": 872,
+        "scroll": 887,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-200-percent": {
+      "width": 768,
+      "height": 512,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 432,
+        "bottom": 512,
+        "height": 80
+      },
+      "center": {
+        "client": 372,
+        "scroll": 593,
+        "top": 0
+      },
+      "inspector": {
+        "client": 0,
+        "scroll": 0,
+        "top": 0
+      }
+    },
+    "desktop-200-percent-advanced": {
+      "width": 768,
+      "height": 512,
+      "bodyOverflow": 0,
+      "footer": {
+        "top": 432,
+        "bottom": 512,
+        "height": 80
+      },
+      "center": {
+        "client": 372,
+        "scroll": 593,
+        "top": 221.1999969482422
+      },
+      "inspector": {
+        "client": 236,
+        "scroll": 1303,
+        "top": 0
+      },
+      "drawer": {
+        "left": 308,
+        "right": 768,
+        "top": 0,
+        "bottom": 512,
+        "opacity": "1",
+        "width": 768,
+        "height": 512,
+        "overflow": 0,
+        "scrollTop": 0,
+        "header": {
+          "x": 308.8000183105469,
+          "y": 0,
+          "width": 459.20001220703125,
+          "height": 64.80000305175781,
+          "top": 0,
+          "right": 768.0000305175781,
+          "bottom": 64.80000305175781,
+          "left": 308.8000183105469
+        },
+        "children": [
+          {
+            "className": "",
+            "rect": {
+              "x": 308.8000183105469,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 309.8000183105469,
+              "bottom": 1,
+              "left": 308.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          },
+          {
+            "className": "fui-DrawerHeader r3ovn4i",
+            "rect": {
+              "x": 308.8000183105469,
+              "y": 0,
+              "width": 459.20001220703125,
+              "height": 64.80000305175781,
+              "top": 0,
+              "right": 768.0000305175781,
+              "bottom": 64.80000305175781,
+              "left": 308.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "flex",
+            "flex": "0 0 auto"
+          },
+          {
+            "className": "fui-DrawerBody ri6rvx7",
+            "rect": {
+              "x": 308.8000183105469,
+              "y": 64.80000305175781,
+              "width": 459.20001220703125,
+              "height": 447.20001220703125,
+              "top": 64.80000305175781,
+              "right": 768.0000305175781,
+              "bottom": 512.0000152587891,
+              "left": 308.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "1 1 0%"
+          },
+          {
+            "className": "",
+            "rect": {
+              "x": 308.8000183105469,
+              "y": 0,
+              "width": 1,
+              "height": 1,
+              "top": 0,
+              "right": 309.8000183105469,
+              "bottom": 1,
+              "left": 308.8000183105469
+            },
+            "scrollTop": 0,
+            "display": "block",
+            "flex": "0 1 auto"
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "consoleErrors": [],
+  "initialNavigation": [
+    {
+      "visible": true,
+      "rect": {
+        "x": 12,
+        "y": 196.8000030517578,
+        "width": 275.20001220703125,
+        "height": 88,
+        "top": 196.8000030517578,
+        "right": 287.20001220703125,
+        "bottom": 284.8000030517578,
+        "left": 12
+      },
+      "hidden": null
+    },
+    {
+      "visible": true,
+      "rect": {
+        "x": 12,
+        "y": 288.8000183105469,
+        "width": 275.20001220703125,
+        "height": 88,
+        "top": 288.8000183105469,
+        "right": 287.20001220703125,
+        "bottom": 376.8000183105469,
+        "left": 12
+      },
+      "hidden": null
+    },
+    {
+      "visible": true,
+      "rect": {
+        "x": 12,
+        "y": 380.8000183105469,
+        "width": 275.20001220703125,
+        "height": 88,
+        "top": 380.8000183105469,
+        "right": 287.20001220703125,
+        "bottom": 468.8000183105469,
+        "left": 12
+      },
+      "hidden": null
+    },
+    {
+      "visible": true,
+      "rect": {
+        "x": 12,
+        "y": 472.8000183105469,
+        "width": 275.20001220703125,
+        "height": 88,
+        "top": 472.8000183105469,
+        "right": 287.20001220703125,
+        "bottom": 560.8000183105469,
+        "left": 12
+      },
+      "hidden": null
+    },
+    {
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "hidden": "fui-OverlayDrawer r7dfyj8 sd-drawer vox-outline-drawer ___cojfaq0 f1xteiwb f1vgc2s3 fvfyk4 fqofjzu f1euv43f"
+    },
+    {
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "hidden": "fui-OverlayDrawer r7dfyj8 sd-drawer vox-outline-drawer ___cojfaq0 f1xteiwb f1vgc2s3 fvfyk4 fqofjzu f1euv43f"
+    },
+    {
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "hidden": "fui-OverlayDrawer r7dfyj8 sd-drawer vox-outline-drawer ___cojfaq0 f1xteiwb f1vgc2s3 fvfyk4 fqofjzu f1euv43f"
+    },
+    {
+      "visible": false,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "hidden": "fui-OverlayDrawer r7dfyj8 sd-drawer vox-outline-drawer ___cojfaq0 f1xteiwb f1vgc2s3 fvfyk4 fqofjzu f1euv43f"
+    }
+  ],
+  "templateReturnFocus": "<button type=\"button\" aria-expanded=\"false\" class=\"fui-Button r1f29ykk sd-button sd-button--secondary sd-button--comfortable\" data-fui-focus-visible=\"\"><span class=\"sd-button__content\">选择模板 · 大字开场</span></button>",
+  "blockedCalls": [],
+  "status": "passed"
+}

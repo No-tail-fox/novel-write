@@ -19,6 +19,7 @@ const templatePreviewOnly = process.env.STORYDREAM_QA_TEMPLATE_PREVIEW_ONLY === 
 const assetRemovalOnly = process.env.STORYDREAM_QA_ASSET_REMOVAL_ONLY === '1';
 const assetProgressOnly = process.env.STORYDREAM_QA_ASSET_PROGRESS_ONLY === '1';
 const hyperframesOnly = process.env.STORYDREAM_QA_HYPERFRAMES_ONLY === '1';
+const resolutionOnly = process.env.STORYDREAM_QA_RESOLUTION_ONLY === '1';
 const CDP_CONNECT_TIMEOUT_MS = 10_000;
 const CDP_COMMAND_TIMEOUT_MS = 15_000;
 const WAIT_FOR_CHECK_TIMEOUT_MS = 5_000;
@@ -192,6 +193,58 @@ try {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     break qaRun;
   }
+  if (resolutionOnly) {
+    await evaluate(cdp, `document.querySelector('.new-task-button')?.click()`);
+    await waitFor(async () => evaluate(cdp, `Boolean(document.querySelector('[data-task-creation-type="html-video"]'))`), 10_000, 'creation type picker');
+    await evaluate(cdp, `document.querySelector('[data-task-creation-type="html-video"]').click()`);
+    await waitFor(async () => evaluate(cdp, `Boolean(document.querySelector('select[aria-label="打开已有 HTML 动画视频任务"]'))`), 10_000, 'HTML video task selector');
+    await selectHtmlVideoTask(cdp, seededTasks.primary);
+    await evaluate(cdp, `(() => { const settings = document.querySelector('.hv-reference-task-settings'); if (!(settings instanceof HTMLDetailsElement)) throw new Error('Task settings are missing'); settings.open = true; })()`);
+    await waitFor(async () => evaluate(cdp, `Boolean(document.querySelector('[data-html-video-edit-field="previewLongEdge"] select')) && Boolean(document.querySelector('[data-html-video-edit-field="renderLongEdge"] select'))`), 10_000, 'resolution controls');
+    const evidenceDirectory = resolve(process.env.STORYDREAM_QA_EVIDENCE_DIR || qaTempDir);
+    const resolutionScreenshots = [join(evidenceDirectory, 'resolution-controls-desktop.png'), join(evidenceDirectory, 'resolution-controls-compact.png')];
+    await mkdir(evidenceDirectory, { recursive: true });
+    const viewportChecks = [];
+    for (const [index, viewport] of [[0, { width: 1320, height: 860 }], [1, { width: 1040, height: 720 }]]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1, mobile: false });
+      const layout = await evaluate(cdp, `(() => {
+        const preview = document.querySelector('[data-html-video-edit-field="previewLongEdge"] select');
+        const render = document.querySelector('[data-html-video-edit-field="renderLongEdge"] select');
+        preview.scrollIntoView({ block: 'center' });
+        const rect = element => { const r = element.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height }; };
+        return { preview: rect(preview), render: rect(render), viewport: { width: innerWidth, height: innerHeight }, horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      })()`);
+      await delay(150);
+      const visible = [layout.preview, layout.render].every(rect => rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= layout.viewport.height && rect.left >= 0 && rect.right <= layout.viewport.width);
+      if (!visible || layout.horizontalOverflow > 2) throw new Error(`Resolution controls are clipped at ${JSON.stringify(viewport)}: ${JSON.stringify(layout)}`);
+      viewportChecks.push({ ...layout, controlsVisible: visible });
+      await saveScreenshot(cdp, resolutionScreenshots[index]);
+    }
+    const before = await evaluate(cdp, `({ preview: document.querySelector('[data-html-video-edit-field="previewLongEdge"] select').value, render: document.querySelector('[data-html-video-edit-field="renderLongEdge"] select').value })`);
+    const selected = await evaluate(cdp, `(() => {
+      const set = (selector, value) => { const select = document.querySelector(selector); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, value); select.dispatchEvent(new Event('change', { bubbles: true })); };
+      set('[data-html-video-edit-field="previewLongEdge"] select', '720');
+      set('[data-html-video-edit-field="renderLongEdge"] select', '1920');
+      return { preview: document.querySelector('[data-html-video-edit-field="previewLongEdge"] select').value, render: document.querySelector('[data-html-video-edit-field="renderLongEdge"] select').value };
+    })()`);
+    await evaluate(cdp, `document.querySelector('.hv-config-editor button')?.click()`);
+    let persisted = null;
+    await waitFor(async () => {
+      persisted = await evaluate(cdp, `(async id => { const task = await window.storydream.getTaskDetail(id); const pipeline = JSON.parse(task.pipelineData); return { preview: pipeline.config.previewLongEdge, render: pipeline.config.renderLongEdge }; })(${JSON.stringify(seededTasks.primary.id)})`);
+      return persisted.preview === 720 && persisted.render === 1920;
+    }, 15_000, 'resolution config save').catch(async () => {
+      const diagnostic = await evaluate(cdp, `({ settings: document.querySelector('.hv-config-editor')?.innerText || '', selected: { preview: document.querySelector('[data-html-video-edit-field="previewLongEdge"] select')?.value, render: document.querySelector('[data-html-video-edit-field="renderLongEdge"] select')?.value }, buttonDisabled: document.querySelector('.hv-config-editor button')?.disabled })`);
+      throw new Error(`Resolution config save did not persist: ${JSON.stringify({ selected, persisted, diagnostic, runtimeErrors: runtimeErrors.slice(-10) })}`);
+    });
+    if (persisted?.preview !== 720 || persisted?.render !== 1920) throw new Error(`Resolution config values mismatch: ${JSON.stringify({ selected, persisted })}`);
+    if (persisted.preview !== 720 || persisted.render !== 1920) throw new Error(`Resolution settings did not persist: ${JSON.stringify(persisted)}`);
+    const relevantRuntimeErrors = runtimeErrors.filter((error) => error.level !== 'warning' && error.message && !error.message.includes('DevTools'));
+    if (relevantRuntimeErrors.length) throw new Error(`Resolution settings runtime errors: ${JSON.stringify(relevantRuntimeErrors)}`);
+    const report = { status: 'passed', scope: 'html-video-resolution-controls', before, persisted, screenshots: resolutionScreenshots, viewportChecks, runtimeErrors: relevantRuntimeErrors };
+    await writeFile(join(evidenceDirectory, 'resolution-report.json'), JSON.stringify(report, null, 2), 'utf8');
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    break qaRun;
+  }
   const themePreference = localizationOnly
     ? { skipped: true, reason: 'localization-only scope' }
     : await exerciseThemePreference(cdp, themeLightScreenshot);
@@ -224,7 +277,7 @@ try {
   await delay(300);
   await evaluate(cdp, `(() => {
     const button = [...document.querySelectorAll('.hv-copy-mode button')]
-      .find((item) => item.textContent?.trim() === 'AI 创作');
+      .find((item) => item.querySelector('.fui-Tab__content')?.textContent?.trim() === 'AI 创作');
     if (!(button instanceof HTMLButtonElement)) throw new Error('AI creation mode button is missing');
     button.click();
   })()`);
@@ -1082,8 +1135,8 @@ try {
 async function exerciseThemePreference(cdpConnection, screenshotPath) {
   await navigateToSettingsAppearance(cdpConnection);
   const lightClicked = await evaluate(cdpConnection, `(() => {
-    const button = [...document.querySelectorAll('.settings-content .segmented button')]
-      .find((item) => item.textContent.trim() === '浅色');
+    const button = [...document.querySelectorAll('.settings-content [role="tablist"][aria-label="主题"] button')]
+      .find((item) => item.querySelector('.fui-Tab__content')?.textContent.trim() === '浅色');
     if (!button) return false;
     button.click();
     return true;
@@ -1091,7 +1144,7 @@ async function exerciseThemePreference(cdpConnection, screenshotPath) {
   if (!lightClicked) throw new Error('Light theme selector was not found.');
   await waitFor(
     async () => evaluate(cdpConnection, `document.documentElement.dataset.theme === 'light'
-      && document.querySelector('.settings-content .segmented button.selected')?.textContent.trim() === '浅色'`),
+      && document.querySelector('.settings-content [aria-label="主题"] button[aria-selected="true"] .fui-Tab__content')?.textContent.trim() === '浅色'`),
     10_000,
     'light theme application',
   );
@@ -1103,7 +1156,7 @@ async function exerciseThemePreference(cdpConnection, screenshotPath) {
       storedTheme: bootstrap.ui.theme,
       mirrorTheme: bootstrap.config.ui.theme,
       shellBackground: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(),
-      selectedLabel: document.querySelector('.settings-content .segmented button.selected')?.textContent.trim() || '',
+      selectedLabel: document.querySelector('.settings-content [aria-label="主题"] button[aria-selected="true"] .fui-Tab__content')?.textContent.trim() || '',
     };
   })()`);
   if (light.domTheme !== 'light' || light.storedTheme !== 'light' || light.mirrorTheme !== 'light') {
@@ -1121,8 +1174,8 @@ async function exerciseThemePreference(cdpConnection, screenshotPath) {
   );
   await navigateToSettingsAppearance(cdpConnection);
   const darkClicked = await evaluate(cdpConnection, `(() => {
-    const button = [...document.querySelectorAll('.settings-content .segmented button')]
-      .find((item) => item.textContent.trim() === '深色');
+    const button = [...document.querySelectorAll('.settings-content [role="tablist"][aria-label="主题"] button')]
+      .find((item) => item.querySelector('.fui-Tab__content')?.textContent.trim() === '深色');
     if (!button) return false;
     button.click();
     return true;
@@ -1596,7 +1649,7 @@ async function navigateToSettingsAppearance(cdpConnection) {
     'settings page',
   );
   const appearanceClicked = await evaluate(cdpConnection, `(() => {
-    const button = [...document.querySelectorAll('.settings-tab')].find((item) => item.textContent.includes('外观'));
+    const button = document.querySelector('.settings-navigation [data-tab-value="appearance"]');
     if (!button) return false;
     button.click();
     return true;
@@ -2352,8 +2405,8 @@ async function exerciseMediaElementState(cdpConnection, options) {
 
 function clickTab(cdpConnection, tabLabel) {
   return evaluate(cdpConnection, `(() => {
-    const tab = [...document.querySelectorAll('.hv-tab')]
-      .find((item) => item.textContent.trim() === ${JSON.stringify(tabLabel)});
+    const tab = [...document.querySelectorAll('.hv-tabs [role="tab"]')]
+      .find((item) => item.querySelector('.fui-Tab__content')?.textContent.trim() === ${JSON.stringify(tabLabel)});
     if (!tab) return false;
     tab.click();
     return true;

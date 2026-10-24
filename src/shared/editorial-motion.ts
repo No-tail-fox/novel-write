@@ -187,10 +187,10 @@ export function createEditorialMotionLayers(input: EditorialMotionLayerInput): E
       motion: [frame(0, index ? 0.74 : 0.26, 0.73, 1, 0, 0), frame(index ? 0.35 : 0.15, index ? 0.74 : 0.26, 0.73, 1, 0, 0), frame(index ? 0.43 : 0.23, index ? 0.74 : 0.26, 0.73), frame(0.93, index ? 0.74 : 0.26, 0.73), frame(1, index ? 0.74 : 0.26, 0.73, 1, 0, 0)],
     }));
   } else {
-    // User-chosen split layout without two concrete subjects: pair the artwork with the actual title.
-    label.width = portrait ? 0.44 : 0.4;
-    label.height = portrait ? 0.23 : 0.29;
-    label.motion = [frame(0, 0.74, 0.49, 0.9, 0, 0), frame(0.24, 0.74, 0.49, 0.9, 0, 0), frame(0.37, 0.74, 0.49), frame(0.9, 0.74, 0.49), frame(1, 0.74, 0.49, 0.95, 0, 0)];
+    // Keep a comparison heading above both slots; do not cover the second subject.
+    label.width = 0.72;
+    label.height = 0.12;
+    label.motion = [frame(0, 0.5, 0.13, 1, 0, 0), frame(0.12, 0.5, 0.13), frame(0.93, 0.5, 0.13), frame(1, 0.5, 0.13, 1, 0, 0)];
   }
   return layers;
 }

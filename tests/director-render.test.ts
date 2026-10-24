@@ -22,6 +22,12 @@ import {
 } from '../src/shared/editorial-collage';
 
 describe('director render contracts', () => {
+  it.each([undefined, 'warning', 'failed'] as const)('blocks subject without passing cutout metadata: %s', (quality) => {
+    const document = voxRenderDocument('deterministic-layers');
+    const asset = document.assets.find(item => item.id === 'asset-subject')!;
+    asset.backgroundRemoval = quality ? { ...asset.backgroundRemoval!, quality } : undefined;
+    expect(() => buildDirectorRenderScenes(document)).toThrow('透明主体');
+  });
   it('persists visual-only incoming transitions without changing the narration clock', () => {
     const document = voxRenderDocument('deterministic-layers');
     const originalClock = structuredClone(document.timeline);
@@ -198,6 +204,7 @@ describe('director render contracts', () => {
           id: 'layer-subject',
           label: '主体',
           imagePath: 'C:/managed/subject.png',
+          backgroundRemoval: { method: 'native-alpha', transparentFraction: 0.5, foregroundFraction: 0.48, edgeFraction: 0.02, quality: 'passed' },
           zIndex: 10,
           depth: 0.12,
           motion: [{ atMs: 0, x: 0.62, y: 0.5, scale: 0.96, rotation: -2, opacity: 0.92 }],
@@ -549,7 +556,7 @@ function voxRenderDocument(strategy: 'deterministic-layers' | 'living-poster'): 
     }],
     assets: [
       { id: 'asset-bg', assetId: 'background', kind: 'image', localPath: 'C:/managed/background.png', createdAt: draft.createdAt },
-      { id: 'asset-subject', assetId: 'subject', kind: 'image', localPath: 'C:/managed/subject.png', createdAt: draft.createdAt },
+      { id: 'asset-subject', assetId: 'subject', kind: 'image', backgroundRemoval: { method: 'native-alpha', transparentFraction: 0.5, foregroundFraction: 0.48, edgeFraction: 0.02, quality: 'passed' }, localPath: 'C:/managed/subject.png', createdAt: draft.createdAt },
       { id: 'asset-voice', assetId: 'voice', kind: 'audio', localPath: 'C:/managed/voice.wav', createdAt: draft.createdAt },
       { id: 'asset-video', assetId: 'video', kind: 'video', localPath: 'C:/managed/shot-1.mp4', providerJobId: 'job-video', createdAt: draft.createdAt },
     ],

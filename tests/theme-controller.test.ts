@@ -4,9 +4,12 @@ import {
   changeRuntimeTheme,
   revealThemedApplication,
   transitionRendererTheme,
+  withRuntimeTheme,
 } from '../src/features/settings/theme-controller';
 import { defaultConfig } from '@shared/config';
 import type { AppMutationResult } from '@shared/types';
+import { applyAppMutationResult } from '@shared/state-reconciliation';
+import { cloneState, initialState } from '../src/app/app-state';
 
 function root() {
   return { dataset: {} as Record<string, string> };
@@ -117,21 +120,28 @@ describe('runtime theme controller', () => {
     expect(element.dataset.theme).toBe('dark');
   });
 
-  it('rolls the DOM and control owner back when persistence fails', async () => {
+  it('keeps the DOM and control owner on the requested theme when persistence fails', async () => {
     const element = root();
     applyStoredTheme('dark', element);
+    let state = cloneState(initialState);
 
     await expect(changeRuntimeTheme({
       currentTheme: 'dark',
       nextTheme: 'light',
       root: element,
-      persist: async () => { throw new Error('theme save failed'); },
-    })).rejects.toThrow('theme save failed');
+      synchronizeState: (expected, next) => {
+        state = transitionRendererTheme(state, expected, next);
+        return state.ui.theme === next;
+      },
+      persist: async () => { throw new Error('ENOSPC: no space left on device, write'); },
+    })).rejects.toMatchObject({ code: 'THEME_SAVE_FAILED', message: expect.stringContaining('主题已应用，但未能保存') });
 
-    expect(element.dataset.theme).toBe('dark');
+    expect(element.dataset.theme).toBe('light');
+    expect(state.ui.theme).toBe('light');
+    expect(state.config.ui.theme).toBe('light');
   });
 
-  it('rejects non-canonical persistence responses and restores the previous theme', async () => {
+  it('reports non-canonical persistence responses without undoing the current theme', async () => {
     const element = root();
     applyStoredTheme('light', element);
 
@@ -140,8 +150,39 @@ describe('runtime theme controller', () => {
       nextTheme: 'dark',
       root: element,
       persist: async () => null,
-    })).rejects.toThrow('THEME_MUTATION_INVALID');
+    })).rejects.toMatchObject({
+      code: 'THEME_SAVE_FAILED',
+      message: expect.stringContaining('canonical preference pair'),
+    });
 
-    expect(element.dataset.theme).toBe('light');
+    expect(element.dataset.theme).toBe('dark');
+  });
+
+  it('preserves the window theme across unrelated preference deltas and authoritative snapshots', () => {
+    const stored = cloneState(initialState);
+    const navigation = themeMutation('dark');
+    if (navigation.kind !== 'state-patch' || navigation.patch.kind !== 'theme-preference') throw new Error('Invalid fixture');
+    navigation.patch.ui.activeView = 'queue';
+    const reconciled = applyAppMutationResult(stored, navigation, new Map());
+    const visible = withRuntimeTheme(reconciled, 'light');
+    expect(visible.ui).toMatchObject({ activeView: 'queue', theme: 'light' });
+    expect(visible.config.ui.theme).toBe('light');
+    expect(withRuntimeTheme(structuredClone(stored), 'light').ui.theme).toBe('light');
+    expect(stored.ui.theme).toBe('dark');
+    expect(withRuntimeTheme(stored, null)).toBe(stored);
+    expect(withRuntimeTheme(visible, 'light')).toBe(visible);
+  });
+
+  it('does not let a failed older save revert a newer theme choice', async () => {
+    const element = root();
+    let reject!: (error: Error) => void;
+    const changing = changeRuntimeTheme({
+      currentTheme: 'dark', nextTheme: 'light', root: element,
+      persist: () => new Promise((_, fail) => { reject = fail; }),
+    });
+    applyStoredTheme('dark', element);
+    reject(new Error('ENOSPC: no space left on device, write'));
+    await expect(changing).rejects.toMatchObject({ code: 'THEME_SAVE_FAILED' });
+    expect(element.dataset.theme).toBe('dark');
   });
 });

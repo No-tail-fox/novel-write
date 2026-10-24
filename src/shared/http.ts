@@ -4,8 +4,10 @@ import {
   type NetworkFetch,
   type NetworkPurpose,
 } from './network-policy';
+import { requireGenerationAuthorization } from './generation-authorization';
 
 export interface FetchWithTimeoutOptions extends RequestInit {
+  generation?: boolean;
   timeoutMs?: number;
   timeoutLabel?: string;
   maxBytes?: number;
@@ -17,6 +19,7 @@ export interface FetchWithTimeoutOptions extends RequestInit {
 
 export async function fetchWithTimeout(url: string | URL, options: FetchWithTimeoutOptions = {}): Promise<Response> {
   const {
+    generation = false,
     timeoutMs = 120_000,
     timeoutLabel = 'Request',
     maxBytes,
@@ -26,6 +29,7 @@ export async function fetchWithTimeout(url: string | URL, options: FetchWithTime
     fetchImpl,
     ...init
   } = options;
+  if (generation) await requireGenerationAuthorization();
   try {
     return await fetchWithNetworkPolicy(url, {
       ...init,

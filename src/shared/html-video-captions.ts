@@ -5,6 +5,7 @@ import type {
   HtmlVideoCaptionLayout,
   HtmlVideoCaptionRegion,
   HtmlVideoJobConfig,
+  HtmlVideoTimedCaptionCue,
 } from './types';
 
 export const HTML_VIDEO_CAPTION_PRESETS = ['classic', 'editorial', 'karaoke'] as const;
@@ -95,12 +96,16 @@ export function buildHtmlVideoCaptionCues(
 ): HtmlVideoCaptionCue[] {
   const lines = captions.map((caption) => caption.trim()).filter(Boolean);
   if (!lines.length) return [];
+  const weights = lines.map((text) => Math.max(1, [...text].filter((character) => !/\s/u.test(character)).length));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
   const durationMs = Math.max(lines.length, Math.round(Math.max(0.001, durationSec) * 1000));
+  let elapsedWeight = 0;
   return lines.map((text, index) => {
-    const startMs = Math.floor(index * durationMs / lines.length);
+    const startMs = Math.floor(elapsedWeight * durationMs / totalWeight);
+    elapsedWeight += weights[index];
     const endMs = index === lines.length - 1
       ? durationMs
-      : Math.floor((index + 1) * durationMs / lines.length);
+      : Math.floor(elapsedWeight * durationMs / totalWeight);
     return {
       id: `${idPrefix}-${index}`,
       text,
@@ -109,6 +114,50 @@ export function buildHtmlVideoCaptionCues(
       durationSec: (endMs - startMs) / 1000,
     };
   });
+}
+
+export function resolveHtmlVideoCaptionCues(
+  captions: readonly string[],
+  durationSec: number,
+  idPrefix: string | number,
+  timedCues?: readonly HtmlVideoTimedCaptionCue[],
+): Array<HtmlVideoCaptionCue & Pick<HtmlVideoTimedCaptionCue, 'source' | 'confidence' | 'words'>> {
+  const lines = captions.map((caption) => caption.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const duration = Math.max(0.001, durationSec);
+  const usable = timedCues?.length === lines.length
+    && timedCues.every((cue, index) => (
+      cue.text === lines[index]
+      && Number.isFinite(cue.startSec)
+      && Number.isFinite(cue.endSec)
+      && cue.startSec >= 0
+      && cue.endSec > cue.startSec
+      && cue.endSec <= duration
+      && (index === 0 || cue.startSec >= timedCues[index - 1].endSec)
+      && Number.isFinite(cue.confidence)
+      && cue.confidence >= 0
+      && cue.confidence <= 1
+      && (cue.source === 'tts' || cue.source === 'asr')
+      && (!cue.words?.length || (cue.words.map(word => word.text).join('') === cue.text
+        && cue.words.every((word, i) => Number.isFinite(word.startSec) && Number.isFinite(word.endSec) && word.startSec >= cue.startSec && word.endSec <= cue.endSec && word.endSec > word.startSec && (!i || word.startSec >= cue.words![i - 1].endSec))))
+    ));
+  if (usable) {
+    return timedCues!.map((cue, index) => ({
+      id: `${idPrefix}-${index}`,
+      text: cue.text,
+      startSec: cue.startSec,
+      endSec: cue.endSec,
+      durationSec: cue.endSec - cue.startSec,
+      source: cue.source,
+      confidence: cue.confidence,
+      ...(cue.words ? { words: cue.words.map(word => ({ ...word })) } : {}),
+    }));
+  }
+  return buildHtmlVideoCaptionCues(lines, duration, idPrefix).map((cue) => ({
+    ...cue,
+    source: 'estimated' as const,
+    confidence: 0.35,
+  }));
 }
 
 export function validateHtmlVideoCaptionPreset(value: unknown): HtmlVideoCaptionPreset {

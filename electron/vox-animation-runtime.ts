@@ -19,7 +19,18 @@ export function compileVoxCode(source:string):VoxCompileResult {
     if(ts.canHaveModifiers(node)&&ts.getModifiers(node)?.some(m=>m.kind===ts.SyntaxKind.DefaultKeyword))defaultExport=true;
     if(ts.isExportDeclaration(node)&&node.moduleSpecifier)throw new Error('不支持从外部模块重新导出');
     if(ts.isCallExpression(node)&&node.expression.kind===ts.SyntaxKind.ImportKeyword)throw new Error('不支持动态导入');
-    if(ts.isIdentifier(node)&&banned.has(node.text))throw new Error(`动画代码不能访问 ${node.text}`);
+    // Static property keys are not reads of the browser/global binding. In particular,
+    // CSS { top: 20 } must not be treated as accessing window.top. Computed keys,
+    // shorthand properties and the receiver of a property access remain checked.
+    const propertyName=ts.isIdentifier(node)&&(
+      ts.isPropertyAssignment(node.parent)&&node.parent.name===node||
+      ts.isPropertySignature(node.parent)&&node.parent.name===node||
+      ts.isPropertyAccessExpression(node.parent)&&node.parent.name===node||
+      ts.isBindingElement(node.parent)&&node.parent.propertyName===node||
+      ts.isJsxAttribute(node.parent)&&node.parent.name===node||
+      (ts.isMethodDeclaration(node.parent)||ts.isMethodSignature(node.parent)||ts.isGetAccessor(node.parent)||ts.isSetAccessor(node.parent))&&node.parent.name===node
+    );
+    if(ts.isIdentifier(node)&&banned.has(node.text)&&!propertyName)throw new Error(`动画代码不能访问 ${node.text}`);
     if(ts.isPropertyAccessExpression(node)&&node.expression.getText(file)==='Math'&&node.name.text==='random')throw new Error('请使用由帧驱动的确定性动画，不能使用 Math.random');
     if(ts.isJsxOpeningElement(node)||ts.isJsxSelfClosingElement(node)){const tag=node.tagName.getText(file).toLowerCase();if(['script','iframe','object','embed','link','style','audio','video'].includes(tag))throw new Error(`不支持 ${tag} 标签，请使用传入素材和画面组件`);}
     ts.forEachChild(node,visit);

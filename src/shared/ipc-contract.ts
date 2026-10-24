@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { libraryListSchema, librarySaveSchema, libraryUpdateSchema } from './asset-library';
 import { musicVoiceRequestSchema } from './music-voice';
 import { musicEnhancedRequestSchema } from './music-enhanced';
 import { voxPropsSchema, voxSavedTemplateSchema } from './vox-animation';
@@ -37,9 +38,11 @@ import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
 import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_RATIOS } from './ordinary-task-cover';
 import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
 import { editorialCollageCreateInputSchema, editorialCollageSaveInputSchema } from './editorial-collage';
+import { voxProductionStartSchema, voxProductionControlSchema } from './vox-production';
 import { motionComicCreateInputSchema, motionComicSaveInputSchema } from './motion-comic';
 import { motionComicEpisodePlanInputSchema } from './motion-comic-episode-planning';
 import { motionComicApplyPlanInputSchema, motionComicPlanInputSchema } from './motion-comic-planning';
+import { motionComicScriptEnqueueSchema, motionComicScriptControlSchema, motionComicScriptEditSchema, motionComicScriptApproveSchema, motionComicScriptRevisionSchema, motionComicScriptApplyStoryboardSchema } from './motion-comic-script-batch';
 import { directorGenerateShotVideoRequestSchema } from './director-render';
 import { MAX_DIRECTOR_BATCH_SHOTS, MAX_DIRECTOR_BATCH_NODES, MAX_DIRECTOR_BATCH_DEPENDENCIES } from './director-batch-persistence';
 
@@ -391,6 +394,8 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('foreground'), value: z.boolean() }).strict(),
   z.object({ field: z.literal('maxScenes'), value: nonNegativeInteger.min(1).max(MAX_HTML_VIDEO_SCENES) }).strict(),
   z.object({ field: z.literal('ratio'), value: z.enum(HTML_VIDEO_RATIOS) }).strict(),
+  z.object({ field: z.literal('previewLongEdge'), value: z.union([z.literal(720), z.literal(1080)]) }).strict(),
+  z.object({ field: z.literal('renderLongEdge'), value: z.union([z.literal(1080), z.literal(1920)]) }).strict(),
 ]);
 
 export const htmlVideoConfigUpdateSchema = bounded(z
@@ -853,6 +858,12 @@ const webSearchRequestSchema = z
   .strict();
 
 export const ipcInputSchemas = {
+  'library:list': libraryListSchema.optional(),
+  'library:get': z.uuid(),
+  'library:save': librarySaveSchema,
+  'library:update': libraryUpdateSchema,
+  'library:recycle': z.uuid(),
+  'library:restore': z.uuid(),
   'viral:import-local': z.object({ title: optionalText(MAX_IPC_TEXT), settings: createViralAnalysisSchema.shape.settings }).strict(),
   'viral:analyze-prepared': idSchema,
   'viral:get-reference-index': idSchema,
@@ -917,6 +928,7 @@ export const ipcInputSchemas = {
   'image-lab:delete': governanceIdSchema,
   'image-lab:get-detail': idOnlySchema,
   'image-lab:open-output-directory': idOnlySchema,
+  'image-lab:remove-background': z.object({ id: idSchema, method: z.enum(['native-alpha', 'green-key', 'onnx']).optional() }).strict(),
   'image-lab:add-record': imageLabAddRecordSchema,
   'voice-lab:generate': voiceLabSchema,
   'voice-lab:list': voiceLabHistoryListSchema,
@@ -961,6 +973,14 @@ export const ipcInputSchemas = {
       message: z.string().max(MAX_IPC_TEXT),
     })
     .strict(),
+  'license:status': z.void(),
+  'license:activate': z.string().trim().regex(/^SD-(?:[A-Fa-f0-9]{8}-){3}[A-Fa-f0-9]{8}$/i),
+  'license:refresh': z.void(),
+  'license:release': z.void(),
+  'update:status': z.void(),
+  'update:check': z.void(),
+  'update:download': z.void(),
+  'update:install': z.void(),
   'ui:save-preferences': z.union([
     z.object({ theme: z.enum(['dark', 'light']) }).strict(),
     z.object({
@@ -1001,6 +1021,8 @@ export const ipcInputSchemas = {
   'person-assets:open-directory': nameSchema,
   'editorial-collage:create': editorialCollageCreateInputSchema,
   'editorial-collage:save': editorialCollageSaveInputSchema,
+  'vox-production:start': voxProductionStartSchema,
+  'vox-production:control': voxProductionControlSchema,
   'director:generate-shot-video': directorGenerateShotVideoRequestSchema,
   'director:batch-create': z.object({
     id: idSchema.optional(), workflowKind: z.enum(['director', 'image-lab']), projectId: idSchema,
@@ -1019,8 +1041,23 @@ export const ipcInputSchemas = {
   'motion-comic:plan-episodes': motionComicEpisodePlanInputSchema,
   'motion-comic:plan': motionComicPlanInputSchema,
   'motion-comic:apply-plan': motionComicApplyPlanInputSchema,
+  'motion-comic:scripts-get': z.string().trim().min(1).max(256),
+  'motion-comic:scripts-enqueue': motionComicScriptEnqueueSchema,
+  'motion-comic:scripts-control': motionComicScriptControlSchema,
+  'motion-comic:scripts-edit': motionComicScriptEditSchema,
+  'motion-comic:scripts-approve': motionComicScriptApproveSchema,
+  'motion-comic:scripts-storyboard': motionComicScriptRevisionSchema,
+  'motion-comic:scripts-apply-storyboard': motionComicScriptApplyStoryboardSchema,
   'director:render': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
   'director:cancel-render': idSchema,
+  'director:review-artifact': z.object({
+    id: idSchema,
+    reportId: idSchema,
+    renderFingerprint: z.string().min(1).max(256),
+    episodeId: idSchema.optional(),
+    expectedUpdatedAt: timestampSchema,
+    action: z.enum(['verify', 'confirm']),
+  }).strict(),
   'vox:export-shot': z.object({id:idSchema,shotId:idSchema,expectedUpdatedAt:timestampSchema}).strict(),
   'vox:runtime': z.void(),
   'vox:compile': nonEmptyText(100000),

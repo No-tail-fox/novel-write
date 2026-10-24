@@ -58,8 +58,8 @@ describe('HTML video editorial studio', () => {
     expect(page).toContain('data-html-video-create-field="sceneMotion"');
     expect(page).toContain('data-html-video-edit-field="sceneMotion"');
     expect(panels).toContain('data-html-video-preview-effects="true"');
-    expect(panels).toContain('<span>镜头动效</span>');
-    expect(panels).toContain('<span>场景转场</span>');
+    expect(panels).toContain('<SelectField label="镜头动效"');
+    expect(panels).toContain('<SelectField label="场景转场"');
     expect(panels).toContain("field: 'sceneMotion'");
     expect(panels).toContain("field: 'transitionType'");
     expect(panels).toContain('保存动效');
@@ -137,10 +137,10 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-scene-caption-primary > .hv-caption-editor .hv-caption-layout .field:first-child .segmented');
     expect(styles).toContain('grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));');
     expect(styles).toMatch(/\.hv-preview-inspector-pane \.hv-scene-editor-tabs \[role="tab"\] \{[\s\S]*?white-space: nowrap;/u);
-    expect(styles).toMatch(/\.hv-preview-play-all\.sd-button \{[\s\S]*?background: var\(--shell-accent\) !important;[\s\S]*?color: var\(--shell-accent-contrast\) !important;/u);
-    expect(styles).toMatch(/\.hv-preview-play-all\.sd-button \.sd-button__content \{[\s\S]*?color: var\(--shell-accent-contrast\) !important;/u);
-    expect(styles).toMatch(/\.hv-preview-inspector-pane \.hv-scene-editor-tabs \[role="tab"\] > span \{[\s\S]*?color: var\(--shell-muted\) !important;/u);
-    expect(styles).toMatch(/\.hv-preview-inspector-pane \.hv-scene-editor-tabs \[role="tab"\]\[aria-selected="true"\] > span \{[\s\S]*?color: var\(--shell-text\) !important;/u);
+    expect(panels).toMatch(/<Button[^>]*className="hv-preview-play-all"[^>]*variant="primary"/u);
+    expect(styles).toContain('.hv-preview-play-all:not([class*="fui-"]).sd-button');
+    expect(styles).not.toContain('.hv-preview-play-all.sd-button {');
+    expect(styles).toContain('[role="tab"] > span:not([class*="fui-"])');
     expect(styles).toContain('@keyframes hv-scene-transition-wipe-left-out');
     expect(styles).toContain('.hv-scene-transition-overlay.running');
     expect(styles).toContain('.hv-cover-workspace:has(> .hv-reference-preview),');
@@ -191,6 +191,9 @@ describe('HTML video editorial studio', () => {
     expect(qa).toContain('effects-prompt.png');
     expect(qa).toContain('effects-settings.png');
     expect(qa).toContain('exerciseQueueRoute');
+    expect(qa).toContain('STORYDREAM_QA_RESOLUTION_ONLY');
+    expect(qa).toContain("scope: 'html-video-resolution-controls'");
+    expect(qa).toContain('persisted.preview !== 720 || persisted.render !== 1920');
     expect(qa).toContain("document.querySelector('[data-shell-view=\"queue\"] [data-task-operations=\"queue\"]')");
     expect(qa).toContain("!document.querySelector('.route-error-state')");
     expect(qa).toContain('legacyInspectorPresent');
@@ -224,7 +227,7 @@ describe('HTML video editorial studio', () => {
     expect(page).toContain('data-html-video-create-page="true"');
     expect(page).toContain('输入文案，AI 自动规划分镜 → 出素材 → 配音 → 生成动画分镜');
     expect(page).toContain('<h2>文案</h2>');
-    expect(page).toContain('aria-label="文案来源"');
+    expect(page).toContain('<SegmentedControl label="文案来源"');
     expect(page).toContain('AI 创作');
     expect(page).toContain('粘贴文案');
     expect(page).toContain('searchHtmlVideoResearchSources');
@@ -249,8 +252,8 @@ describe('HTML video editorial studio', () => {
     expect(page).toContain('<h2>封面海报</h2>');
     expect(page).toContain('<h2>配音</h2>');
     expect(page).toContain('<h2>画面预设</h2>');
-    expect(page).toContain('<Field label="画面样式">');
-    expect(page).toContain('<option value="">不套用画面预设</option>');
+    expect(page).toContain('<SelectField label="画面样式"');
+    expect(page).toContain("{ value: '', label: '不套用画面预设' }");
     expect(page).toContain('aria-label="打开已有 HTML 动画视频任务"');
     expect(page).toContain('setPageMode(\'workspace\')');
     expect(page).toContain('onClick={openHtmlVideoCreation}');
@@ -259,7 +262,7 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-create-sheet {');
     expect(qa).toContain('surfaceHorizontalOverflow');
     expect(styles).toContain('.hv-create-section {');
-    expect(styles).toContain('.hv-copy-mode {');
+    expect(styles).toContain('.hv-copy-mode:not([class*="fui-"]) {');
     expect(styles).toContain('.hv-research-provider-grid {');
     expect(styles).toContain('.hv-research-source-list {');
     expect(styles).not.toContain('.hv-create-details');
@@ -280,7 +283,7 @@ describe('HTML video editorial studio', () => {
     expect(qa).toContain('creationCompact.researchProviders?.checked !== 4');
     expect(qa).toContain("'creation-desktop.png'");
     expect(qa).toContain("'creation-compact.png'");
-    expect(qa).toContain("item.textContent?.trim() === 'AI 创作'");
+    expect(qa).toContain("item.querySelector('.fui-Tab__content')?.textContent?.trim() === 'AI 创作'");
     expect(qa).toContain("document.querySelector('.hv-ai-copy-fields input')");
     expect(qa).toContain('workspace rendered before a task was selected');
   });
@@ -329,7 +332,7 @@ describe('HTML video editorial studio', () => {
       source('../src/shared/html-video-control-manifest.ts'),
     ]);
     expect(manifest).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1');
-    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(20);
+    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(22);
     expect(page).toContain('htmlVideoSteps.map');
     expect(page).toContain('taskProgressLabel');
     expect(page).toContain("setTaskStatus('paused')");
@@ -346,8 +349,8 @@ describe('HTML video editorial studio', () => {
     expect(tabPanel).toContain('onCanPlay');
     expect(storyboundPanels).toContain('htmlVideoMediaStatus(asset.src, mediaUrls, failedMediaPaths, isBrowserPreview)');
     expect(storyboundPanels).toContain('htmlVideoMediaStatus(voice.src, mediaUrls, failedMediaPaths, isBrowserPreview)');
-    expect(storyboundPanels).toContain("field: 'foregroundHidden', value: !scene.foregroundHidden");
-    expect(storyboundPanels).toContain("field: 'titleHidden', value: !scene.titleHidden");
+    expect(storyboundPanels).toMatch(/<CheckboxField[^\n]*checked=\{!scene\.foregroundHidden\}[^\n]*field: 'foregroundHidden', value: data\.checked !== true/u);
+    expect(storyboundPanels).toMatch(/<CheckboxField[^\n]*checked=\{!scene\.titleHidden\}[^\n]*field: 'titleHidden', value: data\.checked !== true/u);
     expect(storyboundPanels).toContain('api.updateHtmlVideoScene');
     expect(storyboundPanels).toContain('api.regenerateHtmlVideoAsset');
     expect(storyboundPanels).toContain('api.replaceHtmlVideoAsset');
@@ -363,14 +366,22 @@ describe('HTML video editorial studio', () => {
     expect(storyboundPanels).toContain('resolveCompositionReference(mediaUrl, current)');
   });
 
-  it('uses theme-aware contrast ink on solid studio controls and lifecycle states', async () => {
-    const styles = await source('../src/styles/features/html-video.css');
+  it('keeps Fluent control states shared and lifecycle contrast theme-aware', async () => {
+    const [styles, theme, tabs] = await Promise.all([
+      source('../src/styles/features/html-video.css'),
+      source('../src/ui/theme.ts'),
+      source('../src/ui/Tabs.tsx'),
+    ]);
+    expect(tabs).toContain('selectedValue={value}');
+    expect(theme).toContain('...webDarkTheme');
+    expect(theme).toContain('...webLightTheme');
+    expect(theme).toContain('colorNeutralForegroundOnBrand:');
+    expect(styles).toContain('.segmented button:not([class*="fui-"]).selected');
     const solidForegroundRules = [
       '.hv-studio-panel-heading .primary-action',
-      '.hv-studio-parameters .segmented button.selected',
-      '.hv-studio-run-rail .hv-step.done > span',
-      '.hv-studio-run-rail .hv-step.running > span',
-      '.hv-studio-run-rail .hv-step.failed > span',
+      '.hv-studio-run-rail .hv-step.done > span:not([class*="fui-"]):not(.sd-button__content):not(.sd-field-label-row)',
+      '.hv-studio-run-rail .hv-step.running > span:not([class*="fui-"]):not(.sd-button__content):not(.sd-field-label-row)',
+      '.hv-studio-run-rail .hv-step.failed > span:not([class*="fui-"]):not(.sd-button__content):not(.sd-field-label-row)',
     ];
 
     for (const selector of solidForegroundRules) {
@@ -379,7 +390,7 @@ describe('HTML video editorial studio', () => {
     }
     for (const selector of [
       '.hv-studio .hv-tab.active',
-      '.hv-studio .hv-tab-content .segmented button.selected',
+      '.hv-studio .hv-tab-content .segmented button:not([class*="fui-"]).selected',
     ]) {
       const rule = styles.slice(styles.indexOf(`${selector} {`));
       expect(rule, selector).toMatch(/^.*?\{[\s\S]*?background: var\(--media-accent\);[\s\S]*?color: var\(--media-accent-contrast\);/u);
@@ -393,7 +404,7 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('var(--media-ok) 52%');
     expect(styles).toMatch(/\.hv-studio \.hv-caption-color-item,[\s\S]*?\.hv-studio \.hv-media-loading \{[\s\S]*?color: var\(--media-muted\);/u);
     expect(styles).toMatch(/\.hv-studio \.hv-tab-content \.field > \.form-field-label \{[\s\S]*?color: var\(--media-text\);/u);
-    expect(styles).toMatch(/\.hv-studio \.hv-caption-color-reset \{[\s\S]*?border-color: var\(--media-border\);[\s\S]*?background: #101316;[\s\S]*?color: var\(--media-muted\);/u);
+    expect(styles).toMatch(/\.hv-studio \.hv-caption-color-reset \{[\s\S]*?border-color: var\(--media-border\);[\s\S]*?background: var\(--shell-surface\);[\s\S]*?color: var\(--media-muted\);/u);
 
     const taskCanvas = styles.slice(styles.indexOf('.hv-studio[data-has-task="true"] .hv-studio-media-canvas {'));
     expect(taskCanvas).toMatch(
@@ -410,20 +421,16 @@ describe('HTML video editorial studio', () => {
 
     const activeWorkspace = styles.slice(styles.lastIndexOf('.hv-studio[data-has-task="true"] {'));
     for (const token of [
-      '--shell-surface',
-      '--shell-surface-raised',
-      '--shell-border',
-      '--shell-text',
-      '--shell-muted',
-      '--shell-focus',
-      '--shell-focus-contrast',
       '--text',
       '--muted',
       '--line',
     ]) {
       expect(activeWorkspace, token).toContain(`${token}:`);
     }
-    expect(activeWorkspace).toContain('color-scheme: dark;');
+    expect(activeWorkspace).toContain('--text: var(--shell-text);');
+    expect(activeWorkspace).toContain('--muted: var(--shell-muted);');
+    expect(activeWorkspace).toContain('--line: var(--shell-border);');
+    expect(activeWorkspace).not.toContain('color-scheme: dark;');
     expect(activeWorkspace).toContain('.hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step strong');
     expect(activeWorkspace).not.toContain('.hv-studio[data-has-task="true"] .hv-run-rail .hv-step strong');
   });

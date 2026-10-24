@@ -12,7 +12,7 @@
 
 建议实施顺序：**共用抠图基础 → HTML 构图和字幕 → Vox 语义时间轴 → 漫剧参考素材、对白及制作单元。** 漫剧的参考输入修复可以独立推进，但整体质量验收需要真实视频模型，成本和变量最多。
 
-本轮完成分析与源码核验，没有修改生产代码、调用付费生成或重跑整片。以下“可复用”指源码接口与机制已确认，不代表已经完成接入或证明了最终成片质量。
+实施进度与逐项验收记录见[落地验收报告](./acceptance.md)。本轮已按建议顺序完成 A-D 的基础实现，并为每阶段导出本地可播放样片；逐项限制、未覆盖素材及真实远程模型边界均记录在报告中。没有调用付费生成服务，也没有将本地功能样片作为远程视频质量或整片商业成熟度证明。
 
 ## 1. 证据边界
 
@@ -79,6 +79,42 @@ StoryDream 已装 HyperFrames `0.8.40`；本次源码快照 core 为 `0.8.181`�
 
 先选文字节奏、空间站点、节点聚合三类，与当前离线资源协议、GSAP 时间轴及逐帧 seek 兼容后再接入。部分 registry block 使用 Three、外部字体或不同资源结构，不宜直接批量导入。版本升级应单独验证，不能把“升级依赖”视为效果改进已经完成。
 
+### 2.4 GPT/Claude 动画 Agent 的工作方式
+
+抽查 HyperFrames 固定提交里的 Claude/Codex Agent Skills 后，看到的不是“给模型一个很长的动画提示词”，而是**分层指令 + 结构化制作数据 + 确定性渲染 + 可执行门禁**。这是一个仓库的可核验做法，不代表所有 GPT/Claude 创作者都使用同一流程，也不证明其示例成片都达到专业水准。
+
+| 层 | 源码中的做法 | 对 StoryDream 的启发 |
+| --- | --- | --- |
+| 导演规范 | `motion-doctrine` 规定镜头接缝方向、速度、运动因果、镜头持续动作；要求先写 `ledger.json`，再生成转场并验证 | 把“高级、流畅、不要呆板”改成可检查的镜头约束；明确每个 beat 的视觉目的和前后镜头关系 |
+| 任务 Skill | `changelog-video` 将输入解析、主题取舍、视觉方案映射、口播、字幕、构图、构建、验收分步；要求先使用品牌 scaffold，不让模型每次重造风格 | 各制作类型保留短而明确的 Skill 路由；具体阶段按需加载，不把整套大规范塞进单一系统提示 |
+| 视觉蓝图 | `hyperframes-animation` 区分原子动作规则与多阶段蓝图；22 个蓝图各自描述适用叙事、时长、阶段动作和规则组合 | HTML 先落地少数稳定叙事结构，如文字节拍、空间站点/镜头旅程、证据组装；模板应规定“信息如何出现”，而不只是元素皮肤 |
+| 时间轴 | `changelog-video` 把实际语音词时间作为镜头动作和字幕时钟；读音与显示文本分层，TTS 缺词级时间戳时强制对齐，不允许静默漏字幕 | StoryDream 的 Vox/HTML cue 统一关联原文片段、时间来源和置信度；估算时间必须显式标记 |
+| 工具执行 | Agent 产出 HTML/GSAP 时间线和资产文件，再交给 CLI/浏览器渲染；HyperFrames 要求单一暂停时间线和可重复 seek | 模型负责做计划与编排，生产代码负责确定性渲染；不要把每次都重新生成整段不透明动画代码作为默认工作流 |
+| 自动门禁 | `seam-stamp` 从 ledger 生成接缝；`seam-gate` 在浏览器采样运动方向、速度、重叠、载体连续性；`animation-map.mjs` 检查时间线动作分布 | 自动化可拦截时间轴和渲染正确性错误，但不能替代观看最终 MP4 的审美审查 |
+
+这组源码里最值得借鉴的设计原则：
+
+- **叙事先于动效。** 每个镜头要有被解释的对象、讲述触发点和状态变化。镜头若只是在“呼吸、漂浮”，Skill 认为那是等待画面，应增加信息推进或改成有目的的镜头运动。
+- **统一镜头语法。** 普通转场共享同一方向和动量；反向运动需要明确的叙事原因。每部片只保留少量反复出现的转场语法，避免模板拼盘感。
+- **把品牌/风格作为可复用输入。** 项目 scaffold、字体、颜色、字幕轨和背景是可复现资产；Skill 负责选择和填充，不应每次从空白页“自由发挥”。StoryDream 可以复用用户自己的品牌配置，但不能照搬上游私有品牌资产。
+- **对具体成片做失效管理。** 时间轴、配音或镜头变动后，原有接缝/审查结果应重跑。更完整的产品契约可把审查绑定到最终 MP4 SHA-256；文件变化即撤销旧审查状态。
+
+本次固定提交为 HyperFrames `6d357ff0d8dbb88b8d19fe689c15f0808724e52a`，仓库许可证 Apache-2.0。可直接定位的源码：[`motion-doctrine`](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/.agents/skills/motion-doctrine/SKILL.md)、[`seam-gate` 规则](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/.agents/skills/motion-doctrine/references/seam-gate.md)、[`changelog-video` 工作流](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/.agents/skills/changelog-video/SKILL.md)、[`build-spec`](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/.agents/skills/changelog-video/references/build-spec.md)、[`动画 Skill 路由`](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/skills/hyperframes-animation/SKILL.md)、[`蓝图索引`](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/skills/hyperframes-animation/blueprints-index.md)、[`animation-map.mjs`](https://github.com/heygen-com/hyperframes/blob/6d357ff0d8dbb88b8d19fe689c15f0808724e52a/skills/hyperframes-animation/scripts/animation-map.mjs)。
+
+HyperFrames 的品牌视频 Skill 包含专有品牌字体、音乐、背景和具体成片 scaffold。Apache-2.0 只覆盖仓库中按许可发布的代码，不等于其中所有媒体资产和第三方字体都可直接打包进 StoryDream；复用前需逐项核许可证。建议借鉴流程和重新实现机制，不复制整套私有风格包。
+
+## 2.5 对 StoryDream 的修改建议与顺序
+
+基于当前代码与 [落地验收报告](./acceptance.md)，A-D 的本地实现和离线样片已经完成；下一阶段的瓶颈是远程能力、整片审查和恢复语义，继续加模板数量不会补上这些证据缺口。
+
+1. **先建立成片审查闭环。** 每次正式导出生成绑定 MP4 哈希的 QA 记录：机器检查解码、帧率/分辨率、音轨、黑帧/静帧、音量、缺字幕和渲染采样；独立 reviewer 再按镜头检查叙事、构图、运动、素材瑕疵和音画关系。P0/P1 未解决不得标为通过；MP4 内容变更就让旧报告失效。VLM 结果只能作为审查意见，不能单独证明质量。
+2. **先补 Vox/HTML 的真实语音 cue，再扩动作蓝图。** 目前已实现句级 TTS 边界，但 Vox 不是词级对齐，也没有 VLM 审查；HTML 长片高清内存/吞吐也未测。用小型固定样片建立词/句时间来源、置信度和实际抽检偏差，然后做 30-60 秒真实素材片；性能基准单独记录内存峰值、耗时和失败阈值。
+3. **补足任务状态与断点恢复契约。** 漫剧远程参考图上传、视频生成、轮询、下载应是各自持久化且可重试的阶段；请求快照、幂等键、输入指纹和远端任务 ID 要保证恢复不重复计费。现有本地恢复字段不足以证明完整上传/下载断点恢复已经工作。
+4. **最后用少量真实远程样片验证漫剧模型能力。** 先选支持参考图和音频的模型做同一角色 3-5 镜、15-30 秒测试，逐项检查实际提交的参考媒体、脸/服装/道具连续性、对白音频与口型。把“模型宣称支持”与“本次账号/渠道实际返回”分开记录；口型只对真实通过的模型/模式开放承诺。
+5. **质量稳定后再接 HTML 蓝图。** 从 `kinetic-type-beats`、`spatial-pan-stations`、`camera-journey` 中先挑 2-3 个做 StoryDream 自有 schema 与真实素材片，不直接复制品牌 scaffold。旧项目保留原 compiler 路径，新增版本走显式 schema/migration 与指纹，避免升级造成历史项目重放变化。
+
+因此建议把下一轮目标从“再增加一批动画模板”改为“一个可审、可重放、可恢复的真实短片制作单元”。先建立最终片的可追责审查，再验证远程模型和完整链路；观感蓝图应服务于真实语义 cue，而不是替代它。
+
 ## 3. Storybound 能逆向拆出什么
 
 ### 已确认的本地实现
@@ -135,6 +171,8 @@ HTML 已有 `html-video-background-removal.ts` 与 `remove-background-worker.py`
 普通新任务运行时没有覆盖 fps/maxLongEdge，当前默认 24fps、长边 1280。编辑重建会保留已有画布长边。建议以后明确区分预览和最终导出的清晰度设置；提高分辨率应在构图、素材和对时问题解决后验收，不能单靠输出尺寸改善内容。
 
 ## 5. 落地与验收
+
+2026-10-21 实施记录见 [acceptance.md](./acceptance.md)。A-D 已有本地功能样片与分阶段验收；最新补充完成最终 MP4 的 SHA-256 审片绑定、失效撤销和 P0/P1 质量门。该机制只验证审查对象与报告对应，不改变报告中列出的视觉质量和远程验证边界。下文保留原始调研时点的工程问题与验收目标。
 
 详细工程拆分见 [implementation-plan.md](./implementation-plan.md)。关键交付不是“模板已接入”，而是同一批固定素材可以重放的真实样片：
 

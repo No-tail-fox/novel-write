@@ -1,6 +1,6 @@
 {
   "name": "storydream",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "main": "dist-electron/electron/main.js",
@@ -98,9 +98,17 @@
     ],
     "win": {
       "target": [
-        "dir"
+        "nsis"
       ],
       "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "StoryDream-Setup-${version}.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
     }
   }
 }

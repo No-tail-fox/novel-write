@@ -116,7 +116,7 @@ export function formatTaskOperationTime(value: string, now = Date.now()): string
 
 export function taskHistoryTypeLabel(task: Pick<TaskSummary, 'taskType' | 'track'>): string {
   if (task.taskType === 'html-video') return 'HTML 动画';
-  if (task.taskType === 'editorial-collage') return 'VOX 视觉';
+  if (task.taskType === 'editorial-collage') return '创意动画';
   if (task.taskType === 'motion-comic') return 'AI 漫剧';
   if (task.taskType === 'music-mv') return '音乐 MV';
   return taskTrackLabelById.get(task.track) ?? task.track;

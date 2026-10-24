@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 DEFAULT_INPUT_SIZE = {
@@ -34,16 +34,17 @@ def model_size(shape: list[object], kind: str) -> tuple[int, int]:
     return fallback, fallback
 
 
-def prepare_input(image: Image.Image, height: int, width: int) -> np.ndarray:
-    resized = image.resize((width, height), Image.Resampling.LANCZOS)
+def prepare_input(image: Image.Image, height: int, width: int, kind: str = "birefnet") -> np.ndarray:
+    # The pinned BiRefNet export specifies bilinear + ImageNet normalization.
+    resized = image.resize((width, height), Image.Resampling.BILINEAR)
     array = np.asarray(resized, dtype=np.float32) / 255.0
-    mean = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
+    mean = np.asarray([0.5, 0.5, 0.5] if kind == "isnet" else [0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.asarray([1.0, 1.0, 1.0] if kind == "isnet" else [0.229, 0.224, 0.225], dtype=np.float32)
     array = (array - mean) / std
     return np.transpose(array, (2, 0, 1))[None, ...].astype(np.float32)
 
 
-def output_mask(outputs: list[np.ndarray]) -> np.ndarray:
+def output_mask(outputs: list[np.ndarray], kind: str = "u2net") -> np.ndarray:
     if not outputs:
         raise RuntimeError("The ONNX model returned no outputs.")
     mask = np.asarray(outputs[0], dtype=np.float32).squeeze()
@@ -51,12 +52,12 @@ def output_mask(outputs: list[np.ndarray]) -> np.ndarray:
         mask = mask[0]
     if mask.ndim != 2:
         raise RuntimeError(f"Unsupported model output shape: {outputs[0].shape}")
-    if float(mask.min()) < 0.0 or float(mask.max()) > 1.0:
+    if not np.isfinite(mask).all():
+        raise RuntimeError("The ONNX model returned a non-finite mask.")
+    if kind == "birefnet":
         mask = 1.0 / (1.0 + np.exp(-np.clip(mask, -30.0, 30.0)))
-    low = float(mask.min())
-    high = float(mask.max())
-    if high - low > 1e-6:
-        mask = (mask - low) / (high - low)
+    # Preserve model confidence. Per-image min/max stretching turns an almost
+    # uniform low-confidence response into an apparently full-frame subject.
     return np.clip(mask * 255.0, 0.0, 255.0).astype(np.uint8)
 
 
@@ -68,15 +69,22 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with Image.open(input_path) as opened:
-        image = opened.convert("RGB")
+        oriented = ImageOps.exif_transpose(opened).convert("RGBA")
+        source_alpha = oriented.getchannel("A")
+        image = oriented.convert("RGB")
 
-    session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 4
+    options.inter_op_num_threads = 1
+    session = ort.InferenceSession(str(model_path), sess_options=options, providers=["CPUExecutionProvider"])
     model_input = session.get_inputs()[0]
     height, width = model_size(model_input.shape, args.model_kind)
-    tensor = prepare_input(image, height, width)
-    mask = output_mask(session.run(None, {model_input.name: tensor}))
+    tensor = prepare_input(image, height, width, args.model_kind)
+    mask = output_mask(session.run(None, {model_input.name: tensor}), args.model_kind)
     alpha = Image.fromarray(mask, mode="L").resize(image.size, Image.Resampling.LANCZOS)
     rgba = image.convert("RGBA")
+    # Segmentation must never make already-transparent source pixels opaque.
+    alpha = Image.fromarray((np.asarray(alpha, dtype=np.float32) * np.asarray(source_alpha, dtype=np.float32) / 255.0).astype(np.uint8))
     rgba.putalpha(alpha)
     rgba.save(output_path, format="PNG", optimize=True)
 

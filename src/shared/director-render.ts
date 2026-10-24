@@ -1,9 +1,10 @@
+import { resolveEditorialCuePlan, compileEditorialCueLayers, type ResolvedEditorialBeat } from './editorial-cue-plan';
 import { validateVoxAnimation, voxAnimationAssetIds, type VoxAnimation } from './vox-animation';
 import { z } from 'zod';
 import { editorialShotTitle, isEditorialStructureTitle } from './editorial-storytelling';
 import { rebuildEditorialTimeline, type EditorialCameraKeyframe, type EditorialCollagePipelineData, type EditorialCollageLayer, type EditorialLayerMotionKeyframe } from './editorial-collage';
 import type { MotionComicPipelineData } from './motion-comic';
-import type { ProductionAssetVersion, ProductionProviderJob, ProductionQualityReport, ProductionQualityManualReview, ProductionQualityRecheckScope, ProductionSubtitleCue, ProductionSubtitleToken, ProductionTimeline } from './production-workflow';
+import type { ProductionAssetVersion, ProductionProviderJob, ProductionQualityCheck, ProductionQualityReport, ProductionQualityManualReview, ProductionQualityRecheckScope, ProductionSubtitleCue, ProductionSubtitleToken, ProductionTimeline } from './production-workflow';
 import { isSubtitleAlignmentValid } from './audio-alignment';
 import { productionAudioClipsForShot, resolveProductionAudioClips, validateProductionAudioTimeline, type ResolvedProductionAudioClip } from './production-audio';
 import { evaluateDirectorSubtitleLayout, type ProductionSubtitleLayoutEvidence } from './production-subtitle-layout';
@@ -12,11 +13,32 @@ import { evaluateDirectorVisualContinuity, type ProductionVisualContinuityEviden
 import { measureProductionNarrationAlignment, type ProductionNarrationAlignmentEvidence } from './production-audio-alignment';
 import { resolveDirectorTransition, type DirectorTransition } from './director-transitions';
 import { motionComicVideoInputHash } from './motion-comic-video';
+import { isUsableBackgroundRemoval } from './background-removal';
 
 export interface DirectorRenderRequest {
   id: string;
   /** Optional explicit episode to render; defaults to the document's active episode. */
   episodeId?: string;
+}
+
+/** Paths, hashes and confirmation time are resolved exclusively in the main process. */
+export interface DirectorQualityArtifactRequest {
+  id: string;
+  reportId: string;
+  renderFingerprint: string;
+  episodeId?: string;
+  expectedUpdatedAt: string;
+  action: 'verify' | 'confirm';
+}
+
+export interface DirectorQualityArtifactResult {
+  reportId: string;
+  renderFingerprint: string;
+  status: 'verified' | 'unverified' | 'missing' | 'changed' | 'unavailable';
+  detail: string;
+  artifactSha256?: string;
+  confirmed: boolean;
+  document: DirectorRenderDocument;
 }
 
 export interface DirectorSubtitleRecheckRequest {
@@ -62,11 +84,18 @@ export interface DirectorMediaRecheckResult {
 /** Stable, browser-safe fingerprint of authored inputs used by the final render. */
 export type DirectorRenderDocument = EditorialCollagePipelineData | MotionComicPipelineData;
 
+function editorialRenderTransition(shot: EditorialCollagePipelineData['beats'][number]['shots'][number]): DirectorTransition {
+  // Charts and authored code contain labels: blending two scenes doubles their text.
+  // An explicit author choice still wins; legacy image collages retain their dissolve.
+  return resolveDirectorTransition(shot.transitionIn ?? (shot.animation?.authoring ? { type: 'cut', durationMs: 0 } : undefined));
+}
+
 export function directorDocumentRenderFingerprint(document: DirectorRenderDocument, explicitEpisodeId?: string): string {
   const source = document.workflowKind === 'motion-comic'
     ? motionComicRenderFingerprintSource(document, explicitEpisodeId)
     : {
         workflowKind: document.workflowKind,
+        ...(document.beats.some(beat => beat.shots.some(shot => shot.animation?.authoring)) ? { creativeRenderRevision: 2 } : {}),
         id: document.id,
         ratio: document.ratio,
         title: document.title,
@@ -74,7 +103,7 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
           title: beat.title, narration: beat.narration, startMs: beat.startMs,
           shots: beat.shots.map((shot) => ({
             id: shot.id, title: shot.title, animation: shot.animation, motionStyle: shot.motionStyle, durationMs: shot.durationMs, renderStrategy: shot.renderStrategy,
-            transitionIn: resolveDirectorTransition(shot.transitionIn),
+            transitionIn: editorialRenderTransition(shot),
             scenePrompt: shot.scenePrompt, motionPrompt: shot.motionPrompt,
             layers: shot.layers, camera: shot.camera, subtitleCueIds: shot.subtitleCueIds,
             keyframeAssetVersionId: shot.keyframeAssetVersionId,
@@ -221,10 +250,19 @@ export function directorQualityReview(document: DirectorRenderDocument, episodeI
   return { ...(latest ? { report: latest.report } : {}), freshness: latest?.freshness ?? 'missing', unassignedCount };
 }
 
+export function isDirectorQualityBlocker(check: ProductionQualityCheck): boolean {
+  return check.status !== 'passed' && check.status !== 'waived'
+    && (check.priority === 'P0' || check.priority === 'P1' || (check.severity ?? 'blocking') === 'blocking');
+}
+
+export function directorQualityStatus(checks: readonly ProductionQualityCheck[]): ProductionQualityReport['status'] {
+  const blockers = checks.filter(isDirectorQualityBlocker);
+  return blockers.some((check) => check.status === 'failed') ? 'failed' : blockers.length ? 'pending' : 'passed';
+}
+
 export function canConfirmDirectorQualityReport(report: ProductionQualityReport): boolean {
   return (report.status === 'passed' || report.status === 'waived')
-    && report.checks.every((check) => check.severity === 'warning' || check.severity === 'manual'
-      || check.status === 'passed' || check.status === 'waived');
+    && !report.checks.some(isDirectorQualityBlocker);
 }
 
 export function confirmDirectorQualityReview<T extends DirectorRenderDocument>(
@@ -247,10 +285,14 @@ export function confirmDirectorQualityReview<T extends DirectorRenderDocument>(
   if (!canConfirmDirectorQualityReport(report)) {
     throw new Error('报告仍有未通过的阻断项，修复并重新审片后才能确认。');
   }
+  if (!report.artifactSha256 || !/^[a-f0-9]{64}$/i.test(report.artifactSha256) || input.artifactSha256 !== report.artifactSha256) {
+    throw new Error('成片尚未通过 SHA-256 核验，请重新核验最终 MP4。');
+  }
   if (!Number.isFinite(Date.parse(input.confirmedAt))) throw new Error('人工复核确认时间无效。');
   const manualReview: ProductionQualityManualReview = {
     reportId: report.id,
     renderFingerprint: fingerprint,
+    artifactSha256: report.artifactSha256,
     scope: { kind: 'project' },
     confirmedAt: input.confirmedAt,
   };
@@ -410,6 +452,8 @@ export interface DirectorRenderLayer {
   id: string;
   label: string;
   imagePath?: string;
+  /** Provenance and alpha assessment for a transparent subject/archival layer. */
+  backgroundRemoval?: ProductionAssetVersion['backgroundRemoval'];
   zIndex: number;
   visible?: boolean;
   depth: number;
@@ -436,6 +480,7 @@ export interface DirectorRenderScene {
   renderStrategy: DirectorRenderableStrategy;
   transitionIn?: DirectorTransition;
   animation?: VoxAnimation;
+  semanticBeats?: ResolvedEditorialBeat[];
   animationAssets?: Array<{id:string;kind:'image'|'audio';path:string}>;
   layers: DirectorRenderLayer[];
   camera: EditorialCameraKeyframe[];
@@ -537,7 +582,9 @@ export function buildDirectorRenderScenes(
         .map((cueId) => beat.subtitleCues.find((cue) => cue.id === cueId)?.text)
         .filter((text): text is string => Boolean(text))
         .join(' ') || (beat.subtitleCues.length === 0 ? beat.narration : '');
-      const authoredAudio = productionAudioClipsForShot(document.timeline, shot);
+      const authoredAudio = document.productionRun?.settings.narration === false && !document.productionRun.settings.lockedShotIds.includes(shot.id)
+        ? (productionAudioClipsForShot(document.timeline, shot) ?? []).filter(c => !['narration', 'dialogue'].includes(c.trackType))
+        : productionAudioClipsForShot(document.timeline, shot);
       const audioClips = resolveProductionAudioClips(
         authoredAudio?.map((clip) => ({
           ...clip,
@@ -548,6 +595,9 @@ export function buildDirectorRenderScenes(
       );
       const audioPath = authoredAudio !== undefined ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
 
+      const sourceCues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
+      const semanticBeats = shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined;
+      const compiledLayers = semanticBeats ? compileEditorialCueLayers(shot.layers, semanticBeats, shot.durationMs) : shot.layers;
       if (shot.renderStrategy === 'remotion') {
         if (!shot.animation) { issues.push(`${shotLabel}缺少动画设置`); return; }
         issues.push(...validateVoxAnimation(shot.animation, document.assets).map(x => `${shotLabel}：${x}`));
@@ -555,7 +605,14 @@ export function buildDirectorRenderScenes(
           const asset = assets.get(id); if (!asset || (asset.kind !== 'image' && asset.kind !== 'audio')) return [];
           const path = resolveAssetPath(id, asset.kind, `${shotLabel}动画素材`); return [{id,kind:asset.kind as 'image'|'audio',path}];
         });
-        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',transitionIn:resolveDirectorTransition(shot.transitionIn),animation:shot.animation,animationAssets,layers:[],camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
+        if (semanticBeats) for (const layer of compiledLayers) {
+          if (layer.content || layer.visible === false || !layer.assetVersionId) continue;
+          const asset = assets.get(layer.assetVersionId);
+          if (!asset?.localPath) { issues.push(`${shotLabel}语义图层缺少素材`); continue; }
+          if (['subject','archival'].includes(layer.kind) && !isUsableBackgroundRemoval(asset.backgroundRemoval)) issues.push(`${shotLabel}语义图层需要通过去底质量检查`);
+          if (!animationAssets.some(item => item.id === asset.id)) animationAssets.push({ id: asset.id, kind: 'image', path: asset.localPath });
+        }
+        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',transitionIn:editorialRenderTransition(shot),animation:shot.animation,animationAssets, ...(semanticBeats ? { semanticBeats, layers: compiledLayers.map(layer => ({ ...layer, imagePath: document.assets.find(asset => asset.id === layer.assetVersionId)?.localPath })) } : { layers: [] }),camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
         return;
       }
 
@@ -580,7 +637,7 @@ export function buildDirectorRenderScenes(
           subtitleCues,
           durationMs: shot.durationMs,
           renderStrategy: 'living-poster',
-          transitionIn: resolveDirectorTransition(shot.transitionIn),
+          transitionIn: editorialRenderTransition(shot),
           layers: [],
           camera: [],
           videoPath,
@@ -596,7 +653,7 @@ export function buildDirectorRenderScenes(
       }
 
       const layers: DirectorRenderLayer[] = [];
-      shot.layers.forEach((layer) => {
+      compiledLayers.forEach((layer) => {
         if (layer.visible === false) return;
         if (!layer.assetVersionId && !layer.content?.text.trim()) {
           if (layer.required !== false) issues.push(`${shotLabel}的图层“${layer.label}”缺少图片资产或原生文字，请补齐分层素材后重新渲染`);
@@ -604,10 +661,16 @@ export function buildDirectorRenderScenes(
         }
         const imagePath = layer.content ? undefined : resolveAssetPath(layer.assetVersionId, 'image', `${shotLabel}图层“${layer.label}”`);
         if (!layer.content && !imagePath) return;
+        const imageAsset = layer.assetVersionId ? assets.get(layer.assetVersionId) : undefined;
+        if (!layer.content && (layer.kind === 'subject' || layer.kind === 'archival') && !isUsableBackgroundRemoval(imageAsset?.backgroundRemoval)) {
+          issues.push(`${shotLabel}的图层“${layer.label}”需要质量通过的透明主体素材，请先在图片实验室完成去底并重选该资产`);
+          return;
+        }
         layers.push({
           id: layer.id,
           label: layer.label,
           ...(imagePath ? { imagePath } : {}),
+          ...(imageAsset?.backgroundRemoval ? { backgroundRemoval: imageAsset.backgroundRemoval } : {}),
           zIndex: layer.zIndex,
           depth: layer.depth,
           ...(layer.width !== undefined || layer.height !== undefined || layer.content ? { kind: layer.kind } : {}),
@@ -634,6 +697,7 @@ export function buildDirectorRenderScenes(
         renderStrategy: 'deterministic-layers',
         transitionIn: resolveDirectorTransition(shot.transitionIn),
         layers,
+        ...(semanticBeats ? { semanticBeats } : {}),
         camera: shot.camera.map((frame) => ({ ...frame })),
         audioPath,
         ...(authoredAudio !== undefined ? { audioClips } : {}),
@@ -654,13 +718,14 @@ export function buildDirectorRenderScenes(
       const imagePath = shot.renderStrategy === 'remote-video' ? '' : resolveAssetPath(shot.firstFrameAssetVersionId, 'image', shotLabel);
       const subtitleCues = sceneSubtitleCues(shot.dialogueCueIds.flatMap((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId) ?? []), episode.timeline.clips.find((clip) => clip.shotId === shot.id)?.startMs ?? 0);
       const dialogue = shot.dialogueCueIds.flatMap((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId && cue.text.trim()) ?? []);
-      if (!shot.voiceAssetVersionId) {
+      const nativeAudio = shot.renderStrategy === 'remote-video' && (shot.videoProduction?.audioMode === 'native' || shot.videoProduction?.audioMode === 'audio-driven');
+      if (!nativeAudio && !shot.voiceAssetVersionId) {
         for (const cue of dialogue) {
           if (!cue.voiceAssetVersionId || !episode.timeline.audioClips?.some((clip) => clip.id === `dialogue-clip-${cue.id}` && clip.shotId === shot.id && clip.assetVersionId === cue.voiceAssetVersionId)) issues.push(`${shotLabel}的对白“${cue.text.slice(0, 18)}”尚未生成独立配音`);
         }
       }
-      const authoredAudio = productionAudioClipsForShot(episode.timeline, shot);
-      const silentActionShot = dialogue.length === 0 && !shot.voiceAssetVersionId && authoredAudio === undefined;
+      const authoredAudio = productionAudioClipsForShot(episode.timeline, shot)?.filter(clip=>!nativeAudio||!['dialogue','narration'].includes(clip.trackType));
+      const silentActionShot = nativeAudio || dialogue.length === 0 && !shot.voiceAssetVersionId && authoredAudio === undefined;
       const audioClips = resolveProductionAudioClips(
         (authoredAudio ?? (silentActionShot ? [] : undefined))?.map((clip) => ({
           ...clip,
@@ -670,7 +735,7 @@ export function buildDirectorRenderScenes(
         shot.durationMs,
       );
       const hasExplicitAudioMix = authoredAudio !== undefined || silentActionShot;
-      const audioPath = hasExplicitAudioMix ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
+      const audioPath = nativeAudio ? resolveAssetPath(shot.videoAssetVersionId, 'video', `${shotLabel}原生声音`) : hasExplicitAudioMix ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
       const caption = shot.dialogueCueIds
         .map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text)
         .filter((text): text is string => Boolean(text))
@@ -698,7 +763,7 @@ export function buildDirectorRenderScenes(
           videoAssetVersionId: shot.videoAssetVersionId,
           videoJobId: shot.videoJobId,
           audioPath,
-          ...(hasExplicitAudioMix ? { audioClips } : {}),
+          ...(nativeAudio ? {audioClips:[{id:`native-${shot.id}`,assetVersionId:shot.videoAssetVersionId!,path:audioPath,trackType:'dialogue',startMs:0,durationMs:shot.durationMs},...(audioClips??[]).filter(clip=>!['dialogue','narration'].includes(clip.trackType))]} : hasExplicitAudioMix ? { audioClips } : {}),
           layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先',
           motionPreset: shot.motionPreset,
           subtitleStyle: shot.subtitleStyle,
@@ -1057,7 +1122,7 @@ export function buildDirectorSceneHtml(input: {
     : normalizeCameraFrames(input.camera ?? [], input.durationMs, motionPreset);
   const layerMarkup = layers.map((layer, index) => layer.content?.type === 'text'
     ? `<div class="scene-layer scene-native-text" data-layer-index="${index}" data-layer-id="${escapeHtml(layer.id)}">${buildDirectorTextLayerSvg(layer.content.text)}</div>`
-    : `<img class="scene-layer${layer.kind === 'subject' || layer.kind === 'archival' ? ' scene-cutout' : ''}" data-layer-index="${index}" data-layer-id="${escapeHtml(layer.id)}" src="${escapeHtml(layer.imageUrl ?? '')}" alt="" />`).join('');
+    : `<img class="scene-layer${layer.backgroundRemoval?.quality === 'passed' ? ' scene-cutout' : ''}" data-layer-index="${index}" data-layer-id="${escapeHtml(layer.id)}" src="${escapeHtml(layer.imageUrl ?? '')}" alt="" />`).join('');
   const mediaMarkup = renderStrategy === 'living-poster'
     ? `<video id="scene-video" src="${escapeHtml(input.videoUrl ?? '')}" muted playsinline preload="auto"></video>`
     : layerMarkup;
@@ -1073,7 +1138,7 @@ export function buildDirectorSceneHtml(input: {
     .frame.comic{inset:2%;width:96%;height:96%;border:8px solid #fff;box-sizing:border-box}
     .scene-stage{position:absolute;inset:-2%;overflow:hidden;transform-origin:center center}
     .scene-layer,#scene-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:center center;will-change:transform,opacity}
-    .scene-cutout{filter:drop-shadow(3px 0 0 #fffaf0) drop-shadow(-3px 0 0 #fffaf0) drop-shadow(0 3px 0 #fffaf0) drop-shadow(0 -3px 0 #fffaf0) drop-shadow(0 10px 12px rgba(0,0,0,.3))}
+    .scene-cutout{filter:drop-shadow(0 8px 6px rgba(0,0,0,.22))}
     .scene-native-text{box-sizing:border-box;display:grid;place-items:center;filter:drop-shadow(0 9px 0 rgba(0,0,0,.17))}
     .scene-native-text svg{width:100%;height:100%;min-width:0;min-height:0;display:block}
     #scene-video{background:#090b0c}

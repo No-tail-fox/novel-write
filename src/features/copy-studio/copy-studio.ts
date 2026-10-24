@@ -23,6 +23,7 @@ export interface CopyStudioDocument {
   sources: AiSourceSection[];
   revisions: CopyRevision[];
   activeRevisionId: string;
+  editorText?: string;
   updatedAt: string;
 }
 
@@ -43,6 +44,7 @@ export function readCopyStudioDocument(storage: Pick<Storage, 'getItem'>): CopyS
       sources: Array.isArray(value.sources) ? value.sources : [],
       revisions: value.revisions.filter((item): item is CopyRevision => Boolean(item && typeof item.id === 'string' && typeof item.text === 'string')),
       activeRevisionId: typeof value.activeRevisionId === 'string' ? value.activeRevisionId : '',
+      editorText: typeof value.editorText === 'string' ? value.editorText : undefined,
       updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date(0).toISOString(),
     };
   } catch {

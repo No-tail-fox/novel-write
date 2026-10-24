@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { AppConfig, ImageGenerationQuality, ImagePrompt, StoryboardScene, Task, VoiceLabGenerateInput, VoiceLabRecord } from './types';
@@ -23,12 +23,13 @@ interface TtsTurn {
   turnIndex?: number;
 }
 
-export function createConfiguredImageGenerator(config: AppConfig, workDir: string): ImageGenerator {
+export function createConfiguredImageGenerator(config: AppConfig, workDir: string, options: { recoveryOnly?: boolean } = {}): ImageGenerator {
   return async (scenes, prompts, task, signal) => {
     if (config.imageProvider === 'mock') {
       throw new Error('Image provider is set to mock; real image assets are required.');
     }
     if (config.imageProvider === 'jimeng') {
+      if (options.recoveryOnly) throw new Error('IMAGE_RECOVERY_UNAVAILABLE: 此渠道没有可恢复的本地图片响应。');
       return generateJimengImages({
         scenes,
         prompts,
@@ -63,6 +64,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         asyncMode: config.customImage.asyncMode,
         pollIntervalMs: config.customImage.pollIntervalMs ?? 2000,
         signal,
+        recoveryOnly: options.recoveryOnly,
       });
     }
     return generateOpenAiCompatibleImages({
@@ -81,6 +83,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
       asyncMode: false,
       pollIntervalMs: 2000,
       signal,
+      recoveryOnly: options.recoveryOnly,
     });
   };
 }
@@ -331,6 +334,7 @@ async function generateOpenAiCompatibleImages(input: {
   asyncMode: boolean;
   pollIntervalMs: number;
   signal?: AbortSignal;
+  recoveryOnly?: boolean;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
     throw new Error('Image provider API key is missing; cannot generate real image assets.');
@@ -344,17 +348,50 @@ async function generateOpenAiCompatibleImages(input: {
     const promptItem = input.prompts.find((item) => item.sceneId === scene.id);
     const prompt = promptItem?.prompt ?? scene.descPrompt;
     const referenceImagePaths = promptItem?.referenceImagePaths ?? [];
-    const body = referenceImagePaths.length
-      ? await generateOpenAiCompatibleImageEdit({ ...input, baseUrl, prompt, referenceImagePaths })
-      : input.asyncMode
-      ? await generateOpenAiCompatibleImageAsync({ ...input, baseUrl, prompt })
-      : await generateOpenAiCompatibleImageSync({ ...input, baseUrl, prompt });
+    const fingerprint = createHash('sha256').update(JSON.stringify({ baseUrl, model: input.model, prompt,
+      ratio: input.ratio, resolution: input.resolution, quality: input.quality,
+      ratioMappingJson: input.ratioMappingJson ?? '', asyncMode: input.asyncMode,
+      references: await Promise.all(referenceImagePaths.map(async path => createHash('sha256').update(await readFile(path)).digest('hex'))),
+    })).digest('hex');
+    const receiptPath = join(outputDir, `${String(scene.id).padStart(3, '0')}.response.json`);
+    let receipt: ImageResponseReceipt | undefined;
+    if (input.recoveryOnly) try {
+      receipt = JSON.parse(await readFile(receiptPath, 'utf8')) as ImageResponseReceipt;
+      if (receipt.version !== 1 || receipt.fingerprint !== fingerprint) throw new Error('IMAGE_RECOVERY_MISMATCH: 已保存响应的模型、提示词或参考图与当前输入不一致。');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (input.recoveryOnly && !receipt) throw new Error('IMAGE_RECOVERY_UNAVAILABLE: 本地没有已保存的图片响应，不能重新提交生成。');
+    const saveReceipt = async (value: Omit<ImageResponseReceipt, 'version' | 'fingerprint'>) => {
+      const temp = `${receiptPath}.${randomUUID()}.tmp`;
+      await writeFile(temp, JSON.stringify({ version: 1, fingerprint, ...value }), 'utf8');
+      await rename(temp, receiptPath);
+    };
+    const body = receipt?.image ? { data: [receipt.image] }
+      : receipt?.taskId ? await pollOpenAiCompatibleImageTask({ ...input, baseUrl, taskId: receipt.taskId })
+      : referenceImagePaths.length
+        ? await generateOpenAiCompatibleImageEdit({ ...input, baseUrl, prompt, referenceImagePaths })
+        : input.asyncMode
+          ? await generateOpenAiCompatibleImageAsync({ ...input, baseUrl, prompt, onSubmitted: taskId => saveReceipt({ taskId }) })
+          : await generateOpenAiCompatibleImageSync({ ...input, baseUrl, prompt });
+    const image = body.data?.[0];
+    if (!image?.b64_json && !image?.url) throw new Error('Image provider response did not include image data.');
+    // Persist only the usable result, never provider metadata or authorization headers.
+    // A later recovery downloads this result or polls the saved task; it cannot POST.
+    await saveReceipt({ image: { ...(image.b64_json ? { b64_json: image.b64_json } : {}), ...(image.url ? { url: image.url } : {}) } });
     const bytes = await extractImageBytes(body, input.signal);
     const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
     await writeFile(path, bytes);
     assets.push({ sceneId: scene.id, path });
   }
   return assets;
+}
+
+interface ImageResponseReceipt {
+  version: 1;
+  fingerprint: string;
+  image?: { b64_json?: string; url?: string };
+  taskId?: string;
 }
 
 async function generateOpenAiCompatibleImageSync(input: {
@@ -370,6 +407,7 @@ async function generateOpenAiCompatibleImageSync(input: {
   signal?: AbortSignal;
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const response = await fetchWithTimeout(`${input.baseUrl}/images/generations`, {
+    generation: true,
     method: 'POST',
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider request',
@@ -419,6 +457,7 @@ async function generateOpenAiCompatibleImageEdit(input: {
     referenceImagePaths: input.referenceImagePaths,
   });
   const response = await fetchWithTimeout(`${input.baseUrl}/images/edits`, {
+    generation: true,
     method: 'POST',
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider edit request',
@@ -451,8 +490,10 @@ async function generateOpenAiCompatibleImageAsync(input: {
   timeoutMs: number;
   pollIntervalMs: number;
   signal?: AbortSignal;
+  onSubmitted?(taskId: string): Promise<void>;
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const response = await fetchWithTimeout(`${input.baseUrl}/images/generations?async=true`, {
+    generation: true,
     method: 'POST',
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider async submit',
@@ -483,6 +524,7 @@ async function generateOpenAiCompatibleImageAsync(input: {
   if (!taskId) {
     throw new Error('Image provider async submit response did not include a task id.');
   }
+  await input.onSubmitted?.(taskId);
   return pollOpenAiCompatibleImageTask({ ...input, taskId });
 }
 
@@ -569,6 +611,7 @@ async function synthesizeMiniMaxNarration(input: {
     const turns = narrationTurnsForScene(scene, input.task, input.voiceId, 'minimax');
     for (const turn of turns) {
     const response = await fetchWithTimeout('https://api.minimaxi.com/v1/t2a_v2', {
+      generation: true,
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'MiniMax TTS request',
@@ -648,6 +691,7 @@ async function synthesizeVolcengineNarration(input: {
     const turns = narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine');
     for (const turn of turns) {
     const response = await fetchWithTimeout(endpoint, {
+      generation: true,
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS request',
@@ -712,6 +756,7 @@ async function synthesizeVolcengineV3Narration(input: {
     const requestId = randomUUID();
       const speaker = normalizeVolcengineV3Speaker(turn.voiceId);
     const response = await fetchWithTimeout(input.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', {
+      generation: true,
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS V3 request',
@@ -899,6 +944,7 @@ async function signedVolcenginePost<T>(input: {
     service: input.service,
   });
   const response = await fetchWithTimeout(url.toString(), {
+    generation: input.action === 'CVSync2AsyncSubmitTask',
     method: 'POST',
     timeoutMs: 180_000,
     timeoutLabel: `Volcengine ${input.action} request`,

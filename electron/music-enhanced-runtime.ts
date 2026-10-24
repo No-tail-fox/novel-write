@@ -19,7 +19,7 @@ export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirect
     const key=(await options.resolveApiKey()).trim();if(!key)throw new Error('尚未配置音乐服务。');
     const redact=(value:string)=>value.split(key).join('[已隐藏]').slice(0,2000);
     async function request(path:string,body?:BodyInit,post=false) {
-      try { const response=await fetchWithTimeout(`${baseUrl}${path}`,{method:post?'POST':'GET',headers:{Authorization:`Bearer ${key}`},body,timeoutMs:180000,maxBytes:4*1024*1024,maxRedirects:0,fetchImpl:options.fetchImpl});
+      try { const response=await fetchWithTimeout(`${baseUrl}${path}`,{generation:post,method:post?'POST':'GET',headers:{Authorization:`Bearer ${key}`},body,timeoutMs:180000,maxBytes:4*1024*1024,maxRedirects:0,fetchImpl:options.fetchImpl});
         const value=object(await response.json());if(!response.ok||value.success===false||value.error||(value.code!==undefined&&![0,200,'0','200','success'].includes(value.code as number|string)))throw new Error(text(value.message??value.error)||`服务请求失败（${response.status}）`); return object(value.data??value);
       }catch(error){throw new Error(redact(error instanceof Error?error.message:String(error)));}
     }

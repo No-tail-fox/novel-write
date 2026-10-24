@@ -1,4 +1,5 @@
 import type { VoxAnimationPayload, VoxGenerateRequest, VoxCompileResult, VoxSavedTemplate } from './vox-animation';
+import type { VoxProductionStart, VoxProductionControl, VoxProductionRun } from './vox-production';
 import type {
   AccountProfile,
   ActivationState,
@@ -48,6 +49,7 @@ import type {
   HtmlVideoSceneChange,
   HtmlVideoSceneStructureChange,
   HistoryListInput,
+  ImageLabBackgroundRemovalInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -102,13 +104,17 @@ import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './e
 import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
 import type { MotionComicEpisodePlanInput, MotionComicEpisodePlanResult } from './motion-comic-episode-planning';
 import type { MotionComicApplyPlanInput, MotionComicPlanInput, MotionComicPlanResponse } from './motion-comic-planning';
+import type { MotionComicScriptSnapshot, MotionComicScriptEnqueueInput, MotionComicScriptControlInput, MotionComicScriptEditInput, MotionComicScriptApproveInput, MotionComicScriptRevisionInput, MotionComicScriptApplyStoryboardInput } from './motion-comic-script-batch';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
+import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from './director-render';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from './director-batch-persistence';
 import type { VideoLabGenerateInput, VideoLabRecord } from './video-lab';
 import type { MusicBalance, MusicBoostStyleInput, MusicBoostStyleResult, MusicDownloadInput, MusicLabGenerateInput, MusicLabRecord, MusicLyricsInput, MusicLyricsResult, MusicServiceStatus, MusicTrackInput } from './music-lab';
 import type { MusicHistorySyncResult, MusicOperationInput, MusicUploadSourceInput } from './music-operations';
 import type { MusicVoiceRequest, MusicVoiceState } from './music-voice';
 import type { MusicEnhancedRequest, MusicEnhancedJob } from './music-enhanced';
+import type { LicenseStatus, UpdateStatus } from './licensing';
+import type { LibraryAsset, LibraryPage, LibraryListInput, LibrarySaveInput, LibraryUpdateInput } from './asset-library';
 
 export interface LocalSubtitleTimestampFile {
   path: string;
@@ -146,6 +152,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'image-lab:delete',
   'image-lab:get-detail',
   'image-lab:open-output-directory',
+  'image-lab:remove-background',
   'voice-lab:list',
   'voice-lab:archive',
   'voice-lab:restore',
@@ -204,6 +211,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'voice-lab:generate',
   'account:save',
   'activation:save',
+  'license:status', 'license:activate', 'license:refresh', 'license:release',
+  'update:status', 'update:check', 'update:download', 'update:install',
   'ui:save-preferences',
   'book-selection:list',
   'book-selection:discover',
@@ -217,6 +226,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'benchmark:delete-post',
   'benchmark:sync-group',
   'benchmark:open-login',
+  'library:list', 'library:get', 'library:save', 'library:update', 'library:recycle', 'library:restore',
   'person-assets:list',
   'person-assets:create',
   'person-assets:rename',
@@ -228,15 +238,25 @@ export const INVOKE_CHANNELS = Object.freeze([
   'person-assets:open-directory',
   'editorial-collage:create',
   'editorial-collage:save',
+  'vox-production:start',
+  'vox-production:control',
   'director:generate-shot-video',
   'motion-comic:create',
   'motion-comic:save',
   'motion-comic:plan-episodes',
   'motion-comic:plan',
   'motion-comic:apply-plan',
+  'motion-comic:scripts-get',
+  'motion-comic:scripts-enqueue',
+  'motion-comic:scripts-control',
+  'motion-comic:scripts-edit',
+  'motion-comic:scripts-approve',
+  'motion-comic:scripts-storyboard',
+  'motion-comic:scripts-apply-storyboard',
   'director:render',
   'director:recheck-subtitles',
   'director:recheck-media',
+  'director:review-artifact',
   'director:batch-create',
   'director:batch-get',
   'director:batch-list',
@@ -344,6 +364,12 @@ export interface PersonAssetReference {
 }
 
 export type StoryDreamApi = {
+  listLibraryAssets: (input?: LibraryListInput) => Promise<LibraryPage>;
+  getLibraryAsset: (id: string) => Promise<LibraryAsset>;
+  saveLibraryAsset: (input: LibrarySaveInput) => Promise<LibraryAsset>;
+  updateLibraryAsset: (input: LibraryUpdateInput) => Promise<LibraryAsset>;
+  recycleLibraryAsset: (id: string) => Promise<LibraryAsset>;
+  restoreLibraryAsset: (id: string) => Promise<LibraryAsset>;
   getState: () => Promise<AppState>;
   getBootstrap: () => Promise<BootstrapState>;
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;
@@ -368,6 +394,7 @@ export type StoryDreamApi = {
   deleteImageLabRecordPermanently: (id: string) => Promise<AppMutationResult>;
   getImageLabRecordDetail: (id: string) => Promise<ImageLabRecord | null>;
   openImageLabOutputDirectory: (id: string) => Promise<void>;
+  removeImageLabBackground: (input: ImageLabBackgroundRemovalInput) => Promise<AppMutationResult | null>;
   listVoiceLabRecords: (request?: HistoryListInput<'voice-lab'>) => Promise<HistoryPage<'voice-lab', VoiceLabSummary>>;
   archiveVoiceLabRecord: (id: string) => Promise<AppMutationResult>;
   restoreVoiceLabRecord: (id: string) => Promise<AppMutationResult>;
@@ -434,18 +461,36 @@ export type StoryDreamApi = {
   generateVoiceLabPreview: (input: VoiceLabGenerateInput) => Promise<AppMutationResult | null>;
   saveAccount: (account: AccountProfile) => Promise<AppMutationResult | null>;
   saveActivation: (activation: ActivationState) => Promise<AppMutationResult | null>;
+  getLicenseStatus: () => Promise<LicenseStatus>;
+  activateLicense: (code: string) => Promise<LicenseStatus>;
+  refreshLicense: () => Promise<LicenseStatus>;
+  releaseLicense: () => Promise<LicenseStatus>;
+  getUpdateStatus: () => Promise<UpdateStatus>;
+  checkForUpdate: () => Promise<UpdateStatus>;
+  downloadUpdate: () => Promise<UpdateStatus>;
+  installUpdate: () => Promise<UpdateStatus>;
   saveUiPreferences: (update: UiPreferencesUpdate) => Promise<AppMutationResult | null>;
   createEditorialCollage: (input: EditorialCollageCreateInput) => Promise<AppMutationResult | null>;
   saveEditorialCollage: (input: EditorialCollageSaveInput) => Promise<AppMutationResult | null>;
+  startVoxProduction: (input: VoxProductionStart) => Promise<VoxProductionRun>;
+  controlVoxProduction: (input: VoxProductionControl) => Promise<VoxProductionRun>;
   generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest) => Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }>;
   createMotionComic: (input: MotionComicCreateInput) => Promise<AppMutationResult | null>;
   saveMotionComic: (input: MotionComicSaveInput) => Promise<AppMutationResult | null>;
   planMotionComicEpisodes: (input: MotionComicEpisodePlanInput) => Promise<MotionComicEpisodePlanResult>;
   planMotionComic: (input: MotionComicPlanInput) => Promise<MotionComicPlanResponse>;
   applyMotionComicPlan: (input: MotionComicApplyPlanInput) => Promise<AppMutationResult | null>;
+  getMotionComicScripts: (id: string) => Promise<MotionComicScriptSnapshot>;
+  enqueueMotionComicScripts: (input: MotionComicScriptEnqueueInput) => Promise<MotionComicScriptSnapshot>;
+  controlMotionComicScripts: (input: MotionComicScriptControlInput) => Promise<MotionComicScriptSnapshot>;
+  editMotionComicScript: (input: MotionComicScriptEditInput) => Promise<MotionComicScriptSnapshot>;
+  approveMotionComicScripts: (input: MotionComicScriptApproveInput) => Promise<MotionComicScriptSnapshot>;
+  storyboardMotionComicScript: (input: MotionComicScriptRevisionInput) => Promise<MotionComicScriptSnapshot>;
+  applyMotionComicScriptStoryboard: (input: MotionComicScriptApplyStoryboardInput) => Promise<AppMutationResult | null>;
   renderDirectorProject: (input: DirectorRenderRequest) => Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }>;
   recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest) => Promise<DirectorSubtitleRecheckResult>;
   recheckDirectorMedia: (input: DirectorMediaRecheckRequest) => Promise<DirectorMediaRecheckResult>;
+  reviewDirectorArtifact: (input: DirectorQualityArtifactRequest) => Promise<DirectorQualityArtifactResult>;
   createDirectorBatch: (input: CreateDirectorBatchInput) => Promise<DirectorBatchRecord>;
   getDirectorBatch: (id: string) => Promise<DirectorBatchRecord | null>;
   listDirectorBatches: (options?: { projectId?: string; episodeId?: string | null; statuses?: readonly DirectorBatchStatus[] }) => Promise<DirectorBatchRecord[]>;

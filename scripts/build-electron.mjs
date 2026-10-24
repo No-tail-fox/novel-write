@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 await mkdir('dist-electron/electron', { recursive: true });
@@ -83,6 +83,8 @@ await build({entryPoints: ['src/features/vox-animation/runtime.tsx'], outfile: '
 await copyFile('src/features/vox-animation/THIRD_PARTY_NOTICES.md', 'dist-electron/electron/VOX_THIRD_PARTY_NOTICES.md');
 await mkdir('dist-electron/electron/shotcraft', { recursive: true });
 await copyFile('src/features/vox-animation/shotcraft/LICENSE', 'dist-electron/electron/shotcraft/LICENSE');
+// Text references and their original MIT notice ship with the runtime; no demo media.
+await cp('vendor/lemo-opuscar', 'dist-electron/electron/lemo-opuscar', { recursive: true });
 
 async function writeAgentSearchThirdPartyNotices(inputs) {
   const packageRoots = new Set();

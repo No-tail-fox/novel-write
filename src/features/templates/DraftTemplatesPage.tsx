@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, type SetStateAction } from 'react';
-import { Copy, FolderOpen, LayoutTemplate, Plus, Save, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Copy, FolderOpen, LayoutTemplate, Plus, Save, Trash2, Upload, X } from 'lucide-react';
 import type { AppMutationResult, DraftFontFamily, DraftTemplate, DraftTextBorder, JianyingEffectCatalog } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { draftFontCssFamily, draftFontGroups, draftFontOptions, draftImageFitLabel, draftImageFitOptions, draftImageMotions, draftTemplateGuides, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
+import { draftFontCssFamily, draftFontOptions, draftImageFitLabel, draftImageFitOptions, draftImageMotions, draftTemplateGuides, draftTemplates as builtinDraftTemplates, imageAnimations } from '../../shared/templates';
 import { convertCozeWorkflowToDraftTemplate, convertManyCozeWorkflowsToDraftTemplates, type CozeWorkflowTemplateConversionResult } from '../../shared/coze-workflow-converter';
 import { useAsyncAction } from '../../ui/async-action';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
-import { Button, SegmentedControl } from '../../ui';
-import { FormField as Field } from '../../components/FormField';
+import { Button, ColorField, Dialog, IconButton, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { ToggleField } from '../../components/ToggleField';
 import { RangeField } from '../../components/RangeField';
@@ -16,9 +15,11 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { fallbackEffectCatalog } from '../../shared/editorial-options';
-import { DRAFT_IMAGE_SCALE_MIN, DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, draftCanvasSelectionLayer, draftImageFrameRect, draftImageMediaRect, firstVisibleDraftCanvasSelection, isDraftCanvasSelectionVisible, normalizeColorInput, updateDraftImageFrameRect, updateDraftImageMediaScale, type DraftCanvasLayer, type DraftCanvasSelection } from './DraftCanvas';
+import { DRAFT_IMAGE_SCALE_MIN, DRAFT_TEXT_WIDTH_MAX, DRAFT_TEXT_WIDTH_MIN, DraftTemplatePreview, EditableDraftCanvas, applyDraftCanvasRatio, applyDraftImageRatio, clamp, cloneDraftTemplate, draftCanvasSelectionLayer, draftImageFrameRect, draftImageMediaRect, firstVisibleDraftCanvasSelection, isDraftCanvasSelectionVisible, updateDraftImageFrameRect, updateDraftImageMediaScale, type DraftCanvasLayer, type DraftCanvasSelection } from './DraftCanvas';
 
 const guidedTemplateIds = Object.keys(draftTemplateGuides);
+const textAlignmentOptions = [{ value: '0', label: '左对齐' }, { value: '1', label: '居中' }, { value: '2', label: '右对齐' }];
+const effectOptions = (names: readonly string[]) => [{ value: '', label: '关闭' }, ...names.map((name) => ({ value: name, label: name }))];
 function templateGalleryOrder(id: string): number {
   const index = guidedTemplateIds.indexOf(id);
   return index < 0 ? guidedTemplateIds.length : index;
@@ -257,7 +258,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       const saved = applyDraftTemplateMutation(await api.saveDraftTemplate(template));
       setCozeImportResult({ ...result, template });
       setCozeImportError('');
-      if (saved) acceptTemplate(saved);
+      if (saved) {
+        setCozeImportOpen(false);
+        acceptTemplate(saved);
+      }
     }, { onError: (error) => setCozeImportError(error.message) });
   }
 
@@ -280,7 +284,10 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
       const first = results.find((result): result is Extract<CozeWorkflowTemplateConversionResult, { ok: true }> => result.ok) ?? null;
       setCozeImportResult(first);
       setCozeImportError('');
-      if (first) acceptTemplate(first.template);
+      if (first) {
+        setCozeImportOpen(false);
+        acceptTemplate(first.template);
+      }
     }, { onError: (error) => setCozeImportError(error.message) });
   }
 
@@ -358,11 +365,11 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
     return (
       <div className="draft-template-page">
         <div className="editor-topbar">
-          <Button className="ghost-action" variant="subtle" onClick={() => void requestLeave(() => { draftDetailGeneration.current += 1; setEditingId(null); setDraft(null); setSavedDraft(null); })}>返回模板列表</Button>
-          <input className="template-name-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+          <Button variant="subtle" icon={<ArrowLeft size={15} />} onClick={() => void requestLeave(() => { draftDetailGeneration.current += 1; setEditingId(null); setDraft(null); setSavedDraft(null); })}>返回模板列表</Button>
+          <TextField label="模板名称" fieldClassName="template-name-input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           <div className="button-row">
-            <Button className="ghost-action" variant="subtle" disabled={draftTemplateAction.busy || !dirty} onClick={() => void requestLeave(() => undefined)}>取消</Button>
-            <Button className="primary-action slim" variant="primary" disabled={draftTemplateAction.busy || !dirty} onClick={() => void save()} icon={<Save size={15} />}>保存</Button>
+            <Button disabled={draftTemplateAction.busy || !dirty} onClick={() => void requestLeave(() => undefined)}>取消</Button>
+            <Button variant="primary" disabled={draftTemplateAction.busy || !dirty} onClick={() => void save()} icon={<Save size={15} />}>保存</Button>
           </div>
         </div>
         <InlineActionFeedback feedback={draftTemplateAction.feedback} />
@@ -374,7 +381,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 <h2>{draft.name}</h2>
                 <span className="hint-text">{draft.canvas.ratio} · {draft.canvas.width}x{draft.canvas.height} · {draft.image.animation}</span>
               </div>
-              <button className="ghost-action" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(draft)}><Copy size={15} />复制</button>
+              <Button icon={<Copy size={15} />} disabled={draftTemplateAction.busy} onClick={() => copyTemplate(draft)}>复制</Button>
             </div>
             <EditableDraftCanvas template={draft} selectedLayer={selectedLayer} animationPreview={animationPreview} onSelectLayer={handleDraftLayerSelection} onChange={setDraft} />
           </section>
@@ -382,20 +389,14 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
           <section ref={draftControlsRef} className="panel draft-controls">
             <Accordion title="画布设置" open>
               <Segmented label="比例" value={draft.canvas.ratio} options={['9:16', '4:3', '1:1', '16:9']} onChange={(value) => setDraft(applyDraftCanvasRatio(draft, value))} />
-              <Field label="尺寸"><input value={`${draft.canvas.width}x${draft.canvas.height}`} readOnly /></Field>
-              <Field label="底色">
-                <div className="draft-background-field with-swatch">
-                  <input className="draft-background-swatch" type="color" value={normalizeColorInput(draft.canvas.backgroundColor)} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} />
-                  <input value={draft.canvas.backgroundColor} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor: event.target.value } })} />
-                </div>
-              </Field>
-              <Field label="背景图">
+              <TextField label="尺寸" value={`${draft.canvas.width}x${draft.canvas.height}`} readOnly />
+              <ColorField label="底色" value={draft.canvas.backgroundColor} onChange={(backgroundColor) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundColor } })} />
+              <TextField label="背景图" value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} placeholder="留空 = 无背景图" contentAfter={
                 <div className="draft-background-field">
-                  <input value={draft.canvas.backgroundImage} onChange={(event) => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: event.target.value } })} placeholder="留空 = 无背景图" />
-                  <button className="ghost-action" type="button" disabled={draftTemplateAction.busy} onClick={selectDraftBackgroundImage}><FolderOpen size={14} />浏览</button>
-                  <button className="ghost-action" type="button" onClick={() => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: '' } })}>清空</button>
+                  <IconButton label="浏览背景图" icon={<FolderOpen size={14} />} disabled={draftTemplateAction.busy} onClick={selectDraftBackgroundImage} />
+                  <IconButton label="清空背景图" icon={<X size={14} />} disabled={!draft.canvas.backgroundImage} onClick={() => setDraft({ ...draft, canvas: { ...draft.canvas, backgroundImage: '' } })} />
                 </div>
-              </Field>
+              } />
             </Accordion>
             <div data-draft-layer-panel="image">
               <Accordion title="图片区域" expanded={expandedLayerPanels.image} onExpandedChange={(expanded) => handleLayerPanelExpanded('image', expanded)}>
@@ -417,14 +418,14 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 />
                 {selectedLayer === 'image-media' && draft.image.fit === 'cover' ? (
                   <>
-                    <Field label="图片坐标"><input value={`x ${draftImageMediaRect(draft).left.toFixed(2)}, y ${draftImageMediaRect(draft).top.toFixed(2)}`} readOnly /></Field>
+                    <TextField label="图片坐标" value={`x ${draftImageMediaRect(draft).left.toFixed(2)}, y ${draftImageMediaRect(draft).top.toFixed(2)}`} readOnly />
                     <RangeField label="图片缩放" min={DRAFT_IMAGE_SCALE_MIN} max={8} step={0.01} value={draft.image.mediaScale} onChange={(value) => setDraft(updateDraftImageMediaScale(draft, value))} />
                     <RangeField label="水平取景" min={0} max={1} step={0.01} value={draft.image.focusX} onChange={(focusX) => updateDraftImage({ focusX })} />
                     <RangeField label="垂直取景" min={0} max={1} step={0.01} value={draft.image.focusY} onChange={(focusY) => updateDraftImage({ focusY })} />
                   </>
                 ) : (
                   <>
-                    <Field label="展示框坐标"><input value={`x ${draftImageFrameRect(draft).left.toFixed(2)}, y ${draftImageFrameRect(draft).top.toFixed(2)}`} readOnly /></Field>
+                    <TextField label="展示框坐标" value={`x ${draftImageFrameRect(draft).left.toFixed(2)}, y ${draftImageFrameRect(draft).top.toFixed(2)}`} readOnly />
                     <RangeField label="水平位置" min={0} max={Math.max(0, 1 - draftImageFrameRect(draft).width)} step={0.01} value={draftImageFrameRect(draft).left} onChange={(left) => setDraft(updateDraftImageFrameRect(draft, { left }))} />
                     <RangeField label="垂直位置" min={0} max={Math.max(0, 1 - draftImageFrameRect(draft).height)} step={0.01} value={draftImageFrameRect(draft).top} onChange={(top) => setDraft(updateDraftImageFrameRect(draft, { top }))} />
                     <RangeField label="展示框宽度" min={0.08} max={1} step={0.01} value={draftImageFrameRect(draft).width} onChange={(width) => setDraft(updateDraftImageFrameRect(draft, { width }))} />
@@ -435,11 +436,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               </Accordion>
             </div>
             <Accordion title="运镜">
-              <Field label="运镜方式">
-                <select value={draft.image.motion} onChange={(event) => updateDraftImage({ motion: event.target.value as DraftTemplate['image']['motion'] })}>
-                  {draftImageMotions.map((option) => <option key={option.value || 'none'} value={option.value}>{option.label}</option>)}
-                </select>
-              </Field>
+              <SelectField label="运镜方式" value={draft.image.motion} onChange={(event) => updateDraftImage({ motion: event.target.value as DraftTemplate['image']['motion'] })} options={draftImageMotions} />
               <RangeField label="运镜强度" min={0} max={2} step={0.1} value={draft.image.motionStrength} onChange={(value) => updateDraftImage({ motionStrength: value })} />
             </Accordion>
             <Accordion title="分栏画框">
@@ -452,19 +449,13 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               </div>
               <ColorField label="图片边框色" value={draft.frame.imageBorderColor} onChange={(imageBorderColor) => updateDraftFrame({ imageBorderColor })} />
               <RangeField label="图片边框宽度" min={0} max={120} step={1} value={draft.frame.imageBorderWidth} onChange={(imageBorderWidth) => updateDraftFrame({ imageBorderWidth })} />
-              <Field label="边框方向">
-                <select value={draft.frame.imageBorderSides} onChange={(event) => updateDraftFrame({ imageBorderSides: event.target.value as DraftTemplate['frame']['imageBorderSides'] })}>
-                  <option value="all">四边</option>
-                  <option value="horizontal">上下</option>
-                  <option value="vertical">左右</option>
-                </select>
-              </Field>
+              <SelectField label="边框方向" value={draft.frame.imageBorderSides} onChange={(event) => updateDraftFrame({ imageBorderSides: event.target.value as DraftTemplate['frame']['imageBorderSides'] })} options={[{ value: 'all', label: '四边' }, { value: 'horizontal', label: '上下' }, { value: 'vertical', label: '左右' }]} />
             </Accordion>
             <div data-draft-layer-panel="title">
             <Accordion title="主标题" expanded={expandedLayerPanels.title} onExpandedChange={(expanded) => handleLayerPanelExpanded('title', expanded)}>
               <ToggleField label="显示" checked={draft.title.visible} onChange={(checked) => updateDraftTitle({ visible: checked })} />
-              <Field label="文字"><input value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} /></Field>
-              <Field label="坐标"><input value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly /></Field>
+              <TextField label="文字" value={draft.title.text} onChange={(event) => updateDraftTitle({ text: event.target.value })} />
+              <TextField label="坐标" value={`${draft.title.x.toFixed(2)}, ${draft.title.y.toFixed(2)}`} readOnly />
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.title.width} onChange={(value) => updateDraftTitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
               <DraftFontFamilyField layerLabel="主标题" value={draft.title.fontFamily} onChange={(fontFamily) => updateDraftTitle({ fontFamily })} />
               <RangeField label="字号" min={1} max={120} step={1} value={draft.title.fontSize} onChange={(value) => updateDraftTitle({ fontSize: value })} />
@@ -472,13 +463,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.title.alpha} onChange={(value) => updateDraftTitle({ alpha: value })} />
               <ToggleField label="加粗" checked={draft.title.bold} onChange={(checked) => updateDraftTitle({ bold: checked })} />
               <ToggleField label="下划线" checked={draft.title.underline} onChange={(checked) => updateDraftTitle({ underline: checked })} />
-              <Field label="对齐">
-                <select value={String(draft.title.align)} onChange={(event) => updateDraftTitle({ align: Number(event.target.value) })}>
-                  <option value="0">左对齐</option>
-                  <option value="1">居中</option>
-                  <option value="2">右对齐</option>
-                </select>
-              </Field>
+              <SelectField label="对齐" value={String(draft.title.align)} onChange={(event) => updateDraftTitle({ align: Number(event.target.value) })} options={textAlignmentOptions} />
               <RangeField label="字间距" min={0} max={20} step={1} value={draft.title.letterSpacing} onChange={(value) => updateDraftTitle({ letterSpacing: value })} />
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.title.lineSpacing} onChange={(value) => updateDraftTitle({ lineSpacing: value })} />
               <TextBorderControls border={draft.title.border} onChange={updateDraftTitleBorder} />
@@ -487,8 +472,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
             <div data-draft-layer-panel="subtitle">
             <Accordion title="副标题" expanded={expandedLayerPanels.subtitle} onExpandedChange={(expanded) => handleLayerPanelExpanded('subtitle', expanded)}>
               <ToggleField label="显示" checked={draft.subtitle.visible} onChange={(checked) => updateDraftSubtitle({ visible: checked })} />
-              <Field label="文字"><input value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} /></Field>
-              <Field label="坐标"><input value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly /></Field>
+              <TextField label="文字" value={draft.subtitle.text} onChange={(event) => updateDraftSubtitle({ text: event.target.value })} />
+              <TextField label="坐标" value={`${draft.subtitle.x.toFixed(2)}, ${draft.subtitle.y.toFixed(2)}`} readOnly />
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.subtitle.width} onChange={(value) => updateDraftSubtitle({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
               <DraftFontFamilyField layerLabel="副标题" value={draft.subtitle.fontFamily} onChange={(fontFamily) => updateDraftSubtitle({ fontFamily })} />
               <RangeField label="字号" min={1} max={72} step={1} value={draft.subtitle.fontSize} onChange={(value) => updateDraftSubtitle({ fontSize: value })} />
@@ -496,13 +481,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.subtitle.alpha} onChange={(value) => updateDraftSubtitle({ alpha: value })} />
               <ToggleField label="加粗" checked={draft.subtitle.bold} onChange={(checked) => updateDraftSubtitle({ bold: checked })} />
               <ToggleField label="下划线" checked={draft.subtitle.underline} onChange={(checked) => updateDraftSubtitle({ underline: checked })} />
-              <Field label="对齐">
-                <select value={String(draft.subtitle.align)} onChange={(event) => updateDraftSubtitle({ align: Number(event.target.value) })}>
-                  <option value="0">左对齐</option>
-                  <option value="1">居中</option>
-                  <option value="2">右对齐</option>
-                </select>
-              </Field>
+              <SelectField label="对齐" value={String(draft.subtitle.align)} onChange={(event) => updateDraftSubtitle({ align: Number(event.target.value) })} options={textAlignmentOptions} />
               <RangeField label="字间距" min={0} max={20} step={1} value={draft.subtitle.letterSpacing} onChange={(value) => updateDraftSubtitle({ letterSpacing: value })} />
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.subtitle.lineSpacing} onChange={(value) => updateDraftSubtitle({ lineSpacing: value })} />
               <TextBorderControls border={draft.subtitle.border} onChange={updateDraftSubtitleBorder} />
@@ -511,7 +490,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
             <div data-draft-layer-panel="caption">
             <Accordion title="字幕" expanded={expandedLayerPanels.caption} onExpandedChange={(expanded) => handleLayerPanelExpanded('caption', expanded)}>
               <ToggleField label="显示" checked={draft.caption.visible} onChange={(checked) => updateDraftCaption({ visible: checked })} />
-              <Field label="坐标"><input value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly /></Field>
+              <TextField label="坐标" value={`${draft.caption.x.toFixed(2)}, ${draft.caption.y.toFixed(2)}`} readOnly />
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.caption.width} onChange={updateDraftCaptionWidth} />
               <DraftFontFamilyField layerLabel="字幕" value={draft.caption.fontFamily} onChange={(fontFamily) => updateDraftCaption({ fontFamily })} />
               <RangeField label="字号" min={1} max={48} step={1} value={draft.caption.fontSize} onChange={(value) => updateDraftCaption({ fontSize: value })} />
@@ -519,13 +498,7 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.caption.alpha} onChange={(value) => updateDraftCaption({ alpha: value })} />
               <ToggleField label="加粗" checked={draft.caption.bold} onChange={(checked) => updateDraftCaption({ bold: checked })} />
               <ToggleField label="下划线" checked={draft.caption.underline} onChange={(checked) => updateDraftCaption({ underline: checked })} />
-              <Field label="对齐">
-                <select value={String(draft.caption.align)} onChange={(event) => updateDraftCaption({ align: Number(event.target.value) })}>
-                  <option value="0">左对齐</option>
-                  <option value="1">居中</option>
-                  <option value="2">右对齐</option>
-                </select>
-              </Field>
+              <SelectField label="对齐" value={String(draft.caption.align)} onChange={(event) => updateDraftCaption({ align: Number(event.target.value) })} options={textAlignmentOptions} />
               <RangeField label="字间距" min={0} max={20} step={1} value={draft.caption.letterSpacing} onChange={(value) => updateDraftCaption({ letterSpacing: value })} />
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.caption.lineSpacing} onChange={(value) => updateDraftCaption({ lineSpacing: value })} />
               <RangeField label="每行字数" min={1} max={80} step={1} value={draft.caption.maxCharsPerLine} onChange={(value) => updateDraftCaption({ maxCharsPerLine: value })} />
@@ -538,8 +511,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
             <div data-draft-layer-panel="disclaimer">
             <Accordion title="免责声明" expanded={expandedLayerPanels.disclaimer} onExpandedChange={(expanded) => handleLayerPanelExpanded('disclaimer', expanded)}>
               <ToggleField label="显示" checked={draft.disclaimer.visible} onChange={(checked) => updateDraftDisclaimer({ visible: checked })} />
-              <Field label="坐标"><input value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly /></Field>
-              <Field label="文字"><input value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} /></Field>
+              <TextField label="坐标" value={`${draft.disclaimer.x.toFixed(2)}, ${draft.disclaimer.y.toFixed(2)}`} readOnly />
+              <TextField label="文字" value={draft.disclaimer.text} onChange={(event) => updateDraftDisclaimer({ text: event.target.value })} />
               <RangeField label="文本框宽度" min={DRAFT_TEXT_WIDTH_MIN} max={DRAFT_TEXT_WIDTH_MAX} step={0.01} value={draft.disclaimer.width} onChange={(value) => updateDraftDisclaimer({ width: clamp(value, DRAFT_TEXT_WIDTH_MIN, DRAFT_TEXT_WIDTH_MAX) })} />
               <DraftFontFamilyField layerLabel="免责声明" value={draft.disclaimer.fontFamily} onChange={(fontFamily) => updateDraftDisclaimer({ fontFamily })} />
               <RangeField label="字号" min={1} max={40} step={1} value={draft.disclaimer.fontSize} onChange={(value) => updateDraftDisclaimer({ fontSize: value })} />
@@ -547,50 +520,24 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <RangeField label="透明度" min={0} max={1} step={0.05} value={draft.disclaimer.alpha} onChange={(value) => updateDraftDisclaimer({ alpha: value })} />
               <ToggleField label="加粗" checked={draft.disclaimer.bold} onChange={(checked) => updateDraftDisclaimer({ bold: checked })} />
               <ToggleField label="下划线" checked={draft.disclaimer.underline} onChange={(checked) => updateDraftDisclaimer({ underline: checked })} />
-              <Field label="对齐">
-                <select value={String(draft.disclaimer.align)} onChange={(event) => updateDraftDisclaimer({ align: Number(event.target.value) })}>
-                  <option value="0">左对齐</option>
-                  <option value="1">居中</option>
-                  <option value="2">右对齐</option>
-                </select>
-              </Field>
+              <SelectField label="对齐" value={String(draft.disclaimer.align)} onChange={(event) => updateDraftDisclaimer({ align: Number(event.target.value) })} options={textAlignmentOptions} />
               <RangeField label="字间距" min={0} max={20} step={1} value={draft.disclaimer.letterSpacing} onChange={(value) => updateDraftDisclaimer({ letterSpacing: value })} />
               <RangeField label="行间距" min={0} max={20} step={1} value={draft.disclaimer.lineSpacing} onChange={(value) => updateDraftDisclaimer({ lineSpacing: value })} />
               <TextBorderControls border={draft.disclaimer.border} onChange={updateDraftDisclaimerBorder} />
             </Accordion>
             </div>
             <Accordion title="音频设置">
-              <Field label="旁白音量"><input type="number" value={draft.audio.narrationVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} /></Field>
-              <Field label="BGM 音量"><input type="number" value={draft.audio.bgmVolume} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} /></Field>
-              <Field label="转场">
-                <select value={draft.audio.transitionType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionType: event.target.value } })}>
-                  <option value="">关闭</option>
-                  {effectCatalog.transitions.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </Field>
-              <Field label="转场时长(ms)"><input type="number" value={draft.audio.transitionDurationMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionDurationMs: Number(event.target.value) } })} /></Field>
-              <Field label="旁白淡入(ms)"><input type="number" value={draft.audio.narrationFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeInMs: Number(event.target.value) } })} /></Field>
-              <Field label="旁白淡出(ms)"><input type="number" value={draft.audio.narrationFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeOutMs: Number(event.target.value) } })} /></Field>
-              <Field label="BGM 淡入(ms)"><input type="number" value={draft.audio.bgmFadeInMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeInMs: Number(event.target.value) } })} /></Field>
-              <Field label="BGM 淡出(ms)"><input type="number" value={draft.audio.bgmFadeOutMs} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeOutMs: Number(event.target.value) } })} /></Field>
-              <Field label="滤镜">
-                <select value={draft.audio.filterType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, filterType: event.target.value } })}>
-                  <option value="">关闭</option>
-                  {effectCatalog.filters.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </Field>
-              <Field label="视频特效">
-                <select value={draft.audio.videoEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, videoEffectType: event.target.value } })}>
-                  <option value="">关闭</option>
-                  {effectCatalog.videoEffects.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </Field>
-              <Field label="音频特效">
-                <select value={draft.audio.audioEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, audioEffectType: event.target.value } })}>
-                  <option value="">关闭</option>
-                  {effectCatalog.audioEffects.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
-              </Field>
+              <TextField label="旁白音量" type="number" value={String(draft.audio.narrationVolume)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationVolume: Number(event.target.value) } })} />
+              <TextField label="BGM 音量" type="number" value={String(draft.audio.bgmVolume)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmVolume: Number(event.target.value) } })} />
+              <SelectField label="转场" value={draft.audio.transitionType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionType: event.target.value } })} options={effectOptions(effectCatalog.transitions)} />
+              <TextField label="转场时长(ms)" type="number" value={String(draft.audio.transitionDurationMs)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, transitionDurationMs: Number(event.target.value) } })} />
+              <TextField label="旁白淡入(ms)" type="number" value={String(draft.audio.narrationFadeInMs)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeInMs: Number(event.target.value) } })} />
+              <TextField label="旁白淡出(ms)" type="number" value={String(draft.audio.narrationFadeOutMs)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, narrationFadeOutMs: Number(event.target.value) } })} />
+              <TextField label="BGM 淡入(ms)" type="number" value={String(draft.audio.bgmFadeInMs)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeInMs: Number(event.target.value) } })} />
+              <TextField label="BGM 淡出(ms)" type="number" value={String(draft.audio.bgmFadeOutMs)} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, bgmFadeOutMs: Number(event.target.value) } })} />
+              <SelectField label="滤镜" value={draft.audio.filterType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, filterType: event.target.value } })} options={effectOptions(effectCatalog.filters)} />
+              <SelectField label="视频特效" value={draft.audio.videoEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, videoEffectType: event.target.value } })} options={effectOptions(effectCatalog.videoEffects)} />
+              <SelectField label="音频特效" value={draft.audio.audioEffectType} onChange={(event) => setDraft({ ...draft, audio: { ...draft.audio, audioEffectType: event.target.value } })} options={effectOptions(effectCatalog.audioEffects)} />
             </Accordion>
           </section>
         </div>
@@ -606,8 +553,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
           <span className="hint-text">横屏与竖屏均有口播、科普、故事和图文版式，另有金句与教程模板；复制后可自由调整。</span>
         </div>
         <div className="button-row">
-          <button className="ghost-action" type="button" onClick={() => setCozeImportOpen(true)}><Upload size={15} />导入 Coze 模板</button>
-          <button className="primary-action slim" aria-label="新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate}><Plus size={15} />新模板</button>
+          <Button icon={<Upload size={15} />} onClick={() => setCozeImportOpen(true)}>导入 Coze 模板</Button>
+          <Button variant="primary" icon={<Plus size={15} />} aria-label="新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate}>新模板</Button>
         </div>
       </div>
       <InlineActionFeedback feedback={draftTemplateAction.feedback} />
@@ -623,28 +570,18 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
         ]}
       />
 
-      {cozeImportOpen ? (
-        <div className="coze-template-import-backdrop" onClick={() => setCozeImportOpen(false)}>
-          <section className="panel coze-template-import-panel coze-template-import-dialog" role="dialog" aria-modal="true" aria-label="导入 Coze 模板" onClick={(event) => event.stopPropagation()}>
-            <div className="panel-title-row">
-              <div>
-                <h3>导入 Coze 模板</h3>
-                <span className="hint-text">粘贴每个视频下复制出的 Coze 工作流源码，转换成可编辑的草稿模板预设。</span>
-              </div>
-              <div className="button-row">
-                <button className="ghost-action" type="button" onClick={previewCozeWorkflowTemplate}>预览转换</button>
-                <button className="primary-action slim" type="button" disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}><Upload size={15} />导入 Coze 模板</button>
-                <button className="ghost-action" type="button" disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</button>
-                <button className="mini-button" type="button" onClick={() => setCozeImportOpen(false)}>关闭</button>
-              </div>
-            </div>
+      <Dialog open={cozeImportOpen} title="导入 Coze 模板" surfaceClassName="coze-template-import-dialog" onOpenChange={(open) => { if (!draftTemplateAction.busy) setCozeImportOpen(open); }} actions={
+        <>
+          <Button disabled={draftTemplateAction.busy} onClick={() => setCozeImportOpen(false)}>关闭</Button>
+          <Button disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={previewCozeWorkflowTemplate}>预览转换</Button>
+          <Button disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={saveAllCozeWorkflowTemplates}>全部导入</Button>
+          <Button variant="primary" icon={<Upload size={15} />} disabled={draftTemplateAction.busy || !cozeWorkflowSource.trim()} onClick={saveCozeWorkflowTemplate}>导入 Coze 模板</Button>
+        </>
+      }>
+          <div className="coze-template-import-panel">
             <div className="coze-template-import-grid">
-              <Field label="模板名称">
-                <input value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="留空则使用 Coze workflowId" />
-              </Field>
-              <Field label="Coze 工作流源码">
-                <textarea className="small-textarea coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='粘贴 {"type":"coze-workflow-clipboard-data", ...}' />
-              </Field>
+              <TextField label="模板名称" disabled={draftTemplateAction.busy} value={cozeImportName} onChange={(event) => setCozeImportName(event.target.value)} placeholder="留空则使用 Coze workflowId" />
+              <TextAreaField label="Coze 工作流源码" disabled={draftTemplateAction.busy} className="coze-workflow-source" value={cozeWorkflowSource} onChange={(event) => setCozeWorkflowSource(event.target.value)} placeholder='粘贴 {"type":"coze-workflow-clipboard-data", ...}' />
             </div>
             {cozeImportError ? <p className="form-error">{cozeImportError}</p> : null}
             {cozeImportResults.length > 1 ? <span className="hint-text">已识别 {cozeImportResults.length} 个 Coze 工作流源码。</span> : null}
@@ -665,9 +602,8 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
                 </div>
               </div>
             ) : null}
-          </section>
-        </div>
-      ) : null}
+          </div>
+      </Dialog>
 
       <section className="draft-template-gallery">
         {galleryTemplates.map((template) => (
@@ -685,17 +621,17 @@ export function DraftTemplatesPage({ api, state, applyState }: { api: StoryDream
               <span>图片 {template.image.ratio} · {draftImageFitLabel(template.image.fit)} · {draftImageMotions.find((option) => option.value === template.image.motion)?.label ?? template.image.animation}</span>
             </div>
             <div className={`draft-template-actions${template.isDefault ? '' : ' has-delete'}`}>
-              <button className="ghost-action" type="button" onClick={() => openEditor(template)}><LayoutTemplate size={15} />编辑</button>
-              <button className="ghost-action" type="button" disabled={draftTemplateAction.busy} onClick={() => copyTemplate(template)}><Copy size={15} />复制</button>
-              {!template.isDefault ? <button className="danger-action" type="button" aria-label={`删除自定义模板 ${template.name}`} disabled={draftTemplateAction.busy} onClick={() => setPendingDeleteTemplate(template)}><Trash2 size={15} />删除</button> : null}
+              <Button icon={<LayoutTemplate size={15} />} disabled={draftTemplateAction.busy} onClick={() => openEditor(template)}>编辑</Button>
+              <Button icon={<Copy size={15} />} disabled={draftTemplateAction.busy} onClick={() => copyTemplate(template)}>复制</Button>
+              {!template.isDefault ? <Button variant="danger" className="draft-template-delete" icon={<Trash2 size={15} />} aria-label={`删除自定义模板 ${template.name}`} disabled={draftTemplateAction.busy} onClick={() => setPendingDeleteTemplate(template)}>删除</Button> : null}
             </div>
           </article>
         ))}
-        <button className="draft-template-card new-template-card" aria-label="从默认模板新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate} type="button">
+        <Button className="new-template-card" aria-label="从默认模板新建草稿模板" disabled={draftTemplateAction.busy} onClick={createTemplate}>
           <Plus size={24} />
           <strong>新模板</strong>
           <span>{orientation === 'landscape' ? '从横屏口播复制一份本地配置' : '从默认竖屏复制一份本地配置'}</span>
-        </button>
+        </Button>
       </section>
       <ConfirmDialog
         open={Boolean(pendingDeleteTemplate)}
@@ -731,60 +667,22 @@ function AnimationPresetPicker({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="field draft-animation-picker">
+    <div className="field draft-animation-picker" data-preview-value={previewValue ?? ''}>
       <span>{label}</span>
-      <div className="segmented" role="group" aria-label={label} onMouseLeave={() => onPreview(null)}>
-        {options.map((option) => {
-          const className = [option === value ? 'selected' : '', option === previewValue ? 'previewing' : ''].filter(Boolean).join(' ');
-          return (
-            <button
-              key={option}
-              className={className}
-              aria-pressed={option === value}
-              onMouseEnter={() => onPreview(option)}
-              onFocus={() => onPreview(option)}
-              onBlur={() => onPreview(null)}
-              onClick={() => onChange(option)}
-              type="button"
-            >
-              {option}
-            </button>
-          );
-        })}
-      </div>
+      <SegmentedControl label={label} value={value} options={options.map((option) => ({ value: option, label: option }))} onChange={onChange} onPreview={onPreview} />
     </div>
   );
 }
 
 function DraftFontFamilyField({ layerLabel, value, onChange }: { layerLabel: string; value: DraftFontFamily; onChange: (value: DraftFontFamily) => void }) {
   return (
-    <Field label="字体">
-      <select
+    <SelectField label="字体"
         aria-label={`${layerLabel}字体`}
         value={value}
         style={{ fontFamily: draftFontCssFamily(value) }}
         onChange={(event) => onChange(event.target.value as DraftFontFamily)}
-      >
-        {draftFontGroups.map((group) => (
-          <optgroup key={group} label={group}>
-            {draftFontOptions.filter((option) => option.group === group).map((option) => (
-              <option key={option.value} value={option.value} style={{ fontFamily: option.cssFamily }}>{option.label}</option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </Field>
-  );
-}
-
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <Field label={label}>
-      <div className="draft-color-field">
-        <input type="color" value={normalizeColorInput(value)} onChange={(event) => onChange(event.target.value)} />
-        <input value={value} onChange={(event) => onChange(event.target.value)} />
-      </div>
-    </Field>
+        options={draftFontOptions.map((option) => ({ value: option.value, label: option.label, group: option.group, style: { fontFamily: option.cssFamily } }))}
+    />
   );
 }
 

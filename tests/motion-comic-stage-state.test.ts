@@ -72,6 +72,15 @@ function twoEpisodeFixture(): MotionComicPipelineData {
 }
 
 describe('motion comic active-episode stage state', () => {
+  it('keeps the project library accessible before scenes and shares its counts across episodes', () => {
+    const document = twoEpisodeFixture();
+    const first = resolveMotionComicStageState(document, new Set(), false).assets;
+    document.activeEpisodeId = document.episodes[1].id;
+    expect(resolveMotionComicStageState(document, new Set(), false).assets.detail).toBe(first.detail);
+    document.episodes.forEach((episode) => { episode.scenes = []; });
+    expect(resolveMotionComicStageState(document, new Set(), false).assets.ready).toBe(true);
+    expect(resolveMotionComicStageState(document, new Set(), false).storyboard.ready).toBe(false);
+  });
   it('does not let an unfinished sibling episode block the current episode', () => {
     const document = twoEpisodeFixture();
     const current = resolveMotionComicActiveEpisodeReadiness(document);

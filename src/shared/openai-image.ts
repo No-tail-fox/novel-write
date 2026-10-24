@@ -128,6 +128,7 @@ export async function testOpenAiCompatibleImageModel(input: OpenAiImageProbeInpu
 
   try {
     const response = await fetchWithTimeout(endpoint, {
+      generation: true,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

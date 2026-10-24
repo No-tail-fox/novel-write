@@ -5,10 +5,10 @@ import { Button } from '../../ui';
 export type TaskCreationType = 'smart-video' | 'vox' | 'motion-comic' | 'html-video' | 'music-mv';
 
 const taskCreationTypes = [
-  { id: 'smart-video', label: '智能成片', description: '文案 · 分镜 · 配音', icon: WandSparkles },
-  { id: 'vox', label: 'VOX 视频', description: '节拍 · 拼贴 · 运镜', icon: Clapperboard },
+  { id: 'smart-video', label: '短片生成', description: '图文素材 · 配音 · 剪辑', icon: WandSparkles },
+  { id: 'html-video', label: 'HTML 动画', description: 'HyperFrames · 场景编辑', icon: Code2 },
+  { id: 'vox', label: '创意动画', description: '风格 · 模板 · AI 代码', icon: Clapperboard },
   { id: 'motion-comic', label: 'AI 漫剧', description: '系列 · 角色 · 分集', icon: Images },
-  { id: 'html-video', label: 'HTML 动画', description: '场景 · 动画 · 代码', icon: Code2 },
   { id: 'music-mv', label: '音乐 MV', description: '歌曲 · 歌词 · 节奏', icon: Music },
 ] as const satisfies readonly { id: TaskCreationType; label: string; description: string; icon: typeof WandSparkles }[];
 
@@ -38,7 +38,7 @@ export function TaskCreationTypePicker({
           return (
             <Button
               key={type.id}
-              variant={type.id === activeType ? 'primary' : 'subtle'}
+              variant={type.id === activeType ? 'primary' : 'secondary'}
               density="compact"
               aria-pressed={type.id === activeType}
               data-task-creation-type={type.id}

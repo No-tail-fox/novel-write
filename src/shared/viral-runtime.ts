@@ -216,6 +216,7 @@ async function transcribeViralAudioWithOpenAiApi(audioPath: string, config: AppC
   }
 
   const response = await fetchWithRequestTimeout(request.endpoint, {
+    generation: true,
     method: 'POST',
     headers: {
       Authorization: `Bearer ${request.apiKey}`,
@@ -593,6 +594,7 @@ async function fetchVisionWithRetries(endpoint: string, init: RequestInit, confi
     try {
       return await fetchWithRequestTimeout(endpoint, {
         ...init,
+        generation: true,
         timeoutMs: config.timeoutMs ?? 120_000,
         timeoutLabel: `Viral frame analysis attempt ${attempt}/${maxAttempts}`,
         maxBytes: VISION_RESPONSE_MAX_BYTES,

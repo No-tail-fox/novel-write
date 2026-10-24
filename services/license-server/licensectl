@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${EUID} -eq 0 ]]; then
+  exec runuser -u storydream-license -- /opt/storydream-license/venv/bin/python /opt/storydream-license/server.py --data /var/lib/storydream-license "$@"
+fi
+[[ $(id -un) == storydream-license ]] || { echo 'Use sudo storydream-license.' >&2; exit 1; }
+exec /opt/storydream-license/venv/bin/python /opt/storydream-license/server.py --data /var/lib/storydream-license "$@"

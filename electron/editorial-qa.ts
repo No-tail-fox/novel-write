@@ -170,6 +170,9 @@ export async function captureEditorialQa(
       captureCase.view === 'book-selection' ? editorialQaBookSelectionTimeoutMs : editorialQaOperationTimeoutMs,
       `${captureCase.id} scenario`,
     );
+    if (captureCase.id === 'history-operations-desktop') {
+      Object.assign(state, await exerciseHistoryDeleteDialog(window));
+    }
     if (config.scope === 'theme-smoke') {
       state.themeHover = await withEditorialQaTimeout(
         exerciseThemeButtonHover(window, captureCase.theme),
@@ -231,7 +234,7 @@ export async function captureEditorialQa(
       throw new Error(`Editorial QA draft-template layer panel did not follow the canvas selection in ${captureCase.id}.`);
     }
     if (captureCase.view === 'draft-templates' && !state.draftUnderlineToggleReady) {
-      throw new Error(`Editorial QA draft-template underline toggle blanked or corrupted the renderer in ${captureCase.id}.`);
+      throw new Error(`Editorial QA draft-template underline editing or persistence failed in ${captureCase.id}: ${JSON.stringify(state.draftControlDiagnostics)}.`);
     }
     if (captureCase.view === 'draft-templates' && !state.draftRangeZeroReady) {
       throw new Error(`Editorial QA draft-template zero range values did not stay synchronized in ${captureCase.id}: ${JSON.stringify(state.draftRangeDiagnostics)}.`);
@@ -384,6 +387,70 @@ export async function captureEditorialQa(
     await writeEditorialQaReport(config, captures, getMetrics);
   }
   await writeEditorialQaReport(config, captures, getMetrics);
+}
+
+async function exerciseHistoryDeleteDialog(window: BrowserWindow): Promise<{ deleteDialogFocusWrapped: boolean; deleteDialogEscapeRestored: boolean }> {
+  const evaluate = (script: string) => window.webContents.executeJavaScript(script, true);
+  const settle = () => evaluate(qaCompositorSettlingScript());
+  const selectRange = async (label: string) => evaluate(`(async () => {
+    const until = Date.now() + 5000;
+    while (Date.now() < until) {
+      const button = [...document.querySelectorAll('[role="tablist"][aria-label="记录范围"] button')]
+        .find(button => (button.querySelector('.fui-Tab__content') ?? button).textContent?.trim() === ${JSON.stringify(label)});
+      if (button instanceof HTMLButtonElement && !button.disabled) { button.click(); return true; }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    return false;
+  })()`);
+  await selectRange('已归档');
+  await settle();
+  const opened = await evaluate(`(async () => {
+    const until = Date.now() + 5000;
+    while (Date.now() < until) {
+      const button = document.querySelector('button[aria-label="永久删除记录"]');
+      if (button instanceof HTMLButtonElement && !button.disabled) { button.focus(); button.click(); return true; }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    return false;
+  })()`);
+  await settle();
+  if (!opened) return { deleteDialogFocusWrapped: false, deleteDialogEscapeRestored: false };
+  const focusAction = async (last: boolean) => evaluate(`(() => {
+    const buttons = [...document.querySelectorAll('[role="dialog"] .fui-DialogActions button:not(:disabled)')];
+    buttons[${last ? 'buttons.length - 1' : '0'}]?.focus();
+  })()`);
+  const key = async (keyCode: string, shift = false) => {
+    window.focus();
+    window.webContents.focus();
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers: shift ? ['shift'] : [] });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers: shift ? ['shift'] : [] });
+    await settle();
+  };
+  await focusAction(true);
+  await key('Tab');
+  const forward = await evaluate(`document.activeElement === document.querySelector('[role="dialog"] .fui-DialogActions button:not(:disabled)')`);
+  await focusAction(false);
+  await key('Tab', true);
+  const backward = await evaluate(`(() => {
+    const buttons = [...document.querySelectorAll('[role="dialog"] .fui-DialogActions button:not(:disabled)')];
+    return document.activeElement === buttons.at(-1);
+  })()`);
+  await key('Escape');
+  const restored = await evaluate(`(async () => {
+    const until = Date.now() + 3000;
+    while (Date.now() < until) {
+      if (!document.querySelector('[role="dialog"]') && document.activeElement?.getAttribute('aria-label') === '永久删除记录') return true;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    return false;
+  })()`);
+  if (!forward || !backward || !restored) {
+    const activeElement = await evaluate(`document.activeElement?.outerHTML.slice(0, 500)`);
+    throw new Error(`History dialog keyboard state: ${JSON.stringify({ forward, backward, restored, activeElement })}`);
+  }
+  await selectRange('活跃任务');
+  await settle();
+  return { deleteDialogFocusWrapped: forward && backward, deleteDialogEscapeRestored: restored };
 }
 
 async function writeEditorialQaReport(
@@ -722,6 +789,7 @@ interface QaScenarioState {
   draftUnderlineToggleReady: boolean;
   draftRangeZeroReady: boolean;
   draftRangeDiagnostics: Array<Record<string, unknown>>;
+  draftControlDiagnostics: Array<Record<string, unknown>>;
   draftAnimationPreviewReady: boolean;
   draftFontSelectionReady: boolean;
   draftImageFitReady: boolean;
@@ -952,6 +1020,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       while (!await check()) { if (Date.now() >= until) return false; await new Promise((resolve) => setTimeout(resolve, 25)); }
       return true;
     };
+    const controlText = (element) => (element?.querySelector('.fui-Tab__content, .sd-button__content') ?? element)?.textContent?.trim() ?? '';
     const withTimeout = async (operation, timeout, message) => {
       let timer;
       try {
@@ -1042,8 +1111,19 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const subtitleDiagnosticsScenario = scenarioId === 'task-detail-subtitle-diagnostics-light-desktop';
     const sceneVideoScenario = scenarioId.startsWith('task-detail-scene-video-');
     const navView = targetView === 'task-detail' ? 'queue' : targetView;
+    const navigateToView = async (view) => {
+      const selector = '[data-nav-view="' + view + '"]';
+      if (!document.querySelector(selector)) {
+        const parent = view === 'history' ? 'queue' : view === 'draft-templates' ? 'prompt-templates' : '';
+        const group = document.querySelector('[data-nav-view="' + parent + '"]');
+        if (group instanceof HTMLButtonElement) group.click();
+        await waitFor(() => document.querySelector(selector));
+      }
+      const button = document.querySelector(selector);
+      if (button instanceof HTMLButtonElement) button.click();
+    };
+    await navigateToView(navView);
     const nav = document.querySelector('[data-nav-view="' + navView + '"]');
-    if (nav instanceof HTMLElement) nav.click();
     if (targetView === 'html-video' && scenarioId.startsWith('html-video-studio')) {
       await waitFor(() => document.querySelector('.hv-create-history select') || document.querySelector('[data-html-video-studio="html-video"]'));
       const taskSelect = document.querySelector('.hv-create-history select');
@@ -1070,7 +1150,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     let ready = initialShellReady && themeReady && await waitFor(() => document.querySelector('.app-shell')
       && document.documentElement.dataset.themeReady === 'true'
-      && document.querySelector('[data-shell-view="' + targetView + '"]'));
+      && document.querySelector('[data-shell-view="' + targetView + '"]')
+      && !document.querySelector('.route-loading-state'));
     ready = ready
       && themeTransition.forwardStable
       && themeTransition.backwardStable
@@ -1142,11 +1223,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         && errorSummary.textContent?.includes('HTML video planning step failed') === true;
       if (errorSummary instanceof HTMLButtonElement) {
         errorSummary.click();
-        ready = ready && await waitFor(() => document.querySelector('.error-dialog')?.textContent?.includes('HTML video planning step failed'));
-        const closeButton = [...(document.querySelector('.error-dialog')?.querySelectorAll('button') ?? [])]
+        ready = ready && await waitFor(() => document.querySelector('[role="dialog"] .sd-error-details')?.textContent?.includes('HTML video planning step failed'));
+        const closeButton = [...(document.querySelector('[role="dialog"]')?.querySelectorAll('button') ?? [])]
           .find((button) => button.textContent?.trim() === '关闭');
         if (closeButton instanceof HTMLButtonElement) closeButton.click();
-        ready = ready && await waitFor(() => !document.querySelector('.error-dialog'));
+        ready = ready && await waitFor(() => !document.querySelector('[role="dialog"]'));
       }
     }
     if (scenarioId === 'task-detail-error-summary-desktop') {
@@ -1154,8 +1235,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const step = document.querySelector('.task-stage-track .pipeline-step.failed');
         const errorSummary = step?.querySelector('.error-summary-button.compact');
         const errorMark = errorSummary?.querySelector('.error-mark');
-        const errorLabel = errorSummary?.querySelector('span:last-child');
-        if (!(step instanceof HTMLElement) || !(errorSummary instanceof HTMLButtonElement) || !(errorMark instanceof HTMLElement) || !(errorLabel instanceof HTMLElement)) return false;
+        const errorLabel = errorSummary?.querySelector('.sd-button__content');
+        if (!(step instanceof HTMLElement) || !(errorSummary instanceof HTMLButtonElement) || !(errorMark instanceof SVGElement) || !(errorLabel instanceof HTMLElement)) return false;
         const stepRect = step.getBoundingClientRect();
         const summaryRect = errorSummary.getBoundingClientRect();
         const markRect = errorMark.getBoundingClientRect();
@@ -1166,7 +1247,6 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && summaryRect.right <= stepRect.right + 0.5
           && summaryRect.width <= stepRect.width
           && Math.abs((markRect.top + markRect.height / 2) - (summaryRect.top + summaryRect.height / 2)) <= 0.5
-          && markStyle.display === 'grid'
           && markStyle.marginTop === '0px'
           && labelStyle.display === 'block'
           && labelStyle.overflow === 'hidden'
@@ -1185,9 +1265,9 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       ready = ready && errorSummaryReady;
       if (errorSummary instanceof HTMLButtonElement) errorSummary.click();
       const errorDialogReady = await waitFor(() => {
-        const dialog = document.querySelector('.error-dialog');
-        const title = dialog?.querySelector('.error-dialog-head strong');
-        const closeButton = dialog?.querySelector('.error-dialog-head .mini-button');
+        const dialog = document.querySelector('[role="dialog"]');
+        const title = dialog?.querySelector('.fui-DialogTitle');
+        const closeButton = dialog?.querySelector('.fui-DialogActions button');
         if (!(dialog instanceof HTMLElement) || !(title instanceof HTMLElement) || !(closeButton instanceof HTMLButtonElement)) return false;
         const rect = dialog.getBoundingClientRect();
         return dialog.textContent?.includes('HTML video planning step failed') === true
@@ -1198,49 +1278,36 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && rect.bottom <= window.innerHeight;
       });
       ready = ready && errorDialogReady;
-      errorDialogOpen = errorDialogReady && Boolean(document.querySelector('.error-dialog'));
+      errorDialogOpen = errorDialogReady && Boolean(document.querySelector('[role="dialog"] .sd-error-details'));
     }
     if (scenarioId === 'history-operations-desktop') {
-      const archiveGroup = document.querySelector('[role="group"][aria-label="记录范围"]');
+      if (!ready) throw new Error('History scenario failed before archive interaction.');
+      const requireHistoryState = async (check, step) => {
+        if (!await waitFor(check)) throw new Error('History scenario failed: ' + step);
+      };
+      const archiveGroup = document.querySelector('[role="tablist"][aria-label="记录范围"]');
       const archivedButton = [...(archiveGroup?.querySelectorAll('button') ?? [])]
-        .find((button) => button.textContent?.trim() === '已归档');
-      ready = ready && await waitFor(() => archivedButton instanceof HTMLButtonElement && !archivedButton.disabled);
+        .find((button) => controlText(button) === '已归档');
+      await requireHistoryState(() => archivedButton instanceof HTMLButtonElement && !archivedButton.disabled, 'archive tab enabled');
       if (archivedButton instanceof HTMLButtonElement && !archivedButton.disabled) archivedButton.click();
-      ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
-        .some((row) => row.textContent?.includes('QA 永久删除验证记录')));
+      await requireHistoryState(() => [...document.querySelectorAll('.history-page .table-row')]
+        .some((row) => row.textContent?.includes('QA 永久删除验证记录')), 'archived fixture loaded');
       const deleteButton = [...document.querySelectorAll('.history-page .row-actions button')]
         .find((button) => button.getAttribute('aria-label') === '永久删除记录');
       if (deleteButton instanceof HTMLButtonElement) {
         deleteButton.focus();
         deleteButton.click();
-        ready = ready && await waitFor(() => document.querySelector('.confirm-dialog'));
-        await new Promise((resolve) => queueMicrotask(resolve));
-        const dialog = document.querySelector('.confirm-dialog');
-        const focusable = [...(dialog?.querySelectorAll('[data-dialog-focus]:not([disabled])') ?? [])];
-        const first = focusable[0];
-        const last = focusable.at(-1);
-        let forwardWrapped = false;
-        let backwardWrapped = false;
-        if (dialog instanceof HTMLElement && first instanceof HTMLElement && last instanceof HTMLElement) {
-          last.focus();
-          dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
-          forwardWrapped = document.activeElement === first;
-          first.focus();
-          dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
-          backwardWrapped = document.activeElement === last;
-          dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-          await waitFor(() => !document.querySelector('.confirm-dialog'));
-          await new Promise((resolve) => queueMicrotask(resolve));
-          deleteDialogFocusWrapped = forwardWrapped && backwardWrapped;
-          deleteDialogEscapeRestored = document.activeElement === deleteButton;
-        }
+        await requireHistoryState(() => document.querySelector('[role="dialog"] .sd-confirm-description'), 'delete dialog opened');
+        const cancel = document.querySelector('[role="dialog"] .fui-DialogActions button');
+        if (cancel instanceof HTMLButtonElement) cancel.click();
+        await requireHistoryState(() => !document.querySelector('[role="dialog"]'), 'delete dialog cancelled');
       }
       const activeButton = [...(archiveGroup?.querySelectorAll('button') ?? [])]
-        .find((button) => button.textContent?.trim() === '活跃任务');
-      ready = ready && await waitFor(() => activeButton instanceof HTMLButtonElement && !activeButton.disabled);
+        .find((button) => controlText(button) === '活跃任务');
+      await requireHistoryState(() => activeButton instanceof HTMLButtonElement && !activeButton.disabled, 'active tab enabled');
       if (activeButton instanceof HTMLButtonElement && !activeButton.disabled) activeButton.click();
-      ready = ready && await waitFor(() => [...document.querySelectorAll('.history-page .table-row')]
-        .some((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇')));
+      await requireHistoryState(() => [...document.querySelectorAll('.history-page .table-row')]
+        .some((row) => row.textContent?.includes('武则天：从深宫才人到一代女皇')), 'active fixtures loaded');
       const htmlHistoryRow = [...document.querySelectorAll('.history-page .table-row')]
         .find((row) => row.textContent?.includes('武则天：权力之路 HTML 动画'));
       const htmlHistoryButton = htmlHistoryRow?.querySelector('.table-row-primary-action');
@@ -1254,16 +1321,15 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && taskTitle === '武则天：权力之路 HTML 动画';
       });
       ready = ready && historyHtmlRouteReady;
-      const historyNav = document.querySelector('[data-nav-view="history"]');
-      if (historyNav instanceof HTMLButtonElement) historyNav.click();
-      ready = ready && await waitFor(() => document.querySelector('[data-shell-view="history"]')
+      await navigateToView('history');
+      await requireHistoryState(() => document.querySelector('[data-shell-view="history"]')
         && [...document.querySelectorAll('.history-page .table-row')]
-          .some((row) => row.textContent?.includes('武则天：权力之路 HTML 动画')));
+          .some((row) => row.textContent?.includes('武则天：权力之路 HTML 动画')), 'returned from HTML workspace');
     }
     if (targetView === 'voice-lab') {
-      const providerGroup = document.querySelector('[role="group"][aria-label="配音模型"]');
+      const providerGroup = document.querySelector('[role="tablist"][aria-label="配音模型"]');
       const minimaxButton = [...(providerGroup?.querySelectorAll('button') ?? [])]
-        .find((button) => button.textContent?.trim() === 'MiniMax');
+        .find((button) => controlText(button) === 'MiniMax');
       ready = ready && minimaxButton instanceof HTMLButtonElement;
       if (minimaxButton instanceof HTMLButtonElement) minimaxButton.click();
       ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 18);
@@ -1294,6 +1360,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     let draftUnderlineToggleReady = targetView !== 'draft-templates';
     let draftRangeZeroReady = targetView !== 'draft-templates';
     const draftRangeDiagnostics = [];
+    const draftControlDiagnostics = [];
     let draftAnimationPreviewReady = targetView !== 'draft-templates';
     let draftFontSelectionReady = targetView !== 'draft-templates';
     let draftImageFitReady = targetView !== 'draft-templates';
@@ -1305,20 +1372,20 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const actionRow = document.querySelector('.draft-template-actions.has-delete');
         const buttons = [...(actionRow?.querySelectorAll(':scope > button') ?? [])];
         if (!(actionRow instanceof HTMLElement) || buttons.length !== 3 || buttons.some((button) => !(button instanceof HTMLButtonElement))) return false;
-        const labels = buttons.map((button) => button.textContent?.trim() ?? '');
+        const labels = buttons.map(controlText);
         const rects = buttons.map((button) => button.getBoundingClientRect());
         const topSpread = Math.max(...rects.map((rect) => rect.top)) - Math.min(...rects.map((rect) => rect.top));
         const bottomSpread = Math.max(...rects.map((rect) => rect.bottom)) - Math.min(...rects.map((rect) => rect.bottom));
         const widthSpread = Math.max(...rects.map((rect) => rect.width)) - Math.min(...rects.map((rect) => rect.width));
         return labels.join('|') === '编辑|复制|删除'
-          && rects.every((rect) => rect.width >= 56 && rect.height >= 34)
+          && rects.every((rect) => rect.width >= 56 && rect.height >= 32)
           && topSpread <= 1
           && bottomSpread <= 1
           && widthSpread <= 1;
       });
       ready = ready && templateActionsReady;
       const editButton = [...document.querySelectorAll('.draft-template-actions.has-delete button')]
-        .find((button) => button.textContent?.trim() === '编辑');
+        .find((button) => controlText(button) === '编辑');
       if (editButton instanceof HTMLButtonElement) editButton.click();
       const editorOpened = await waitFor(() => document.querySelector('.draft-editor-shell.focused .editable-draft-canvas'));
       ready = ready && editorOpened;
@@ -1354,7 +1421,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
                 const currentRange = controls.querySelector('input[aria-label="' + snapshot.label + '滑块"]');
                 const number = controls.querySelector('input[aria-label="' + snapshot.label + '数值"]');
                 const progress = currentRange instanceof HTMLInputElement
-                  ? Number.parseFloat(getComputedStyle(currentRange).getPropertyValue('--range-progress'))
+                  ? Number.parseFloat(getComputedStyle(currentRange).getPropertyValue('--fui-Slider--progress'))
                   : Number.NaN;
                 return currentRange instanceof HTMLInputElement
                   && number instanceof HTMLInputElement
@@ -1373,7 +1440,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
                 range: currentRange instanceof HTMLInputElement ? currentRange.value : '',
                 number: number instanceof HTMLInputElement ? number.value : '',
                 progress: currentRange instanceof HTMLInputElement
-                  ? getComputedStyle(currentRange).getPropertyValue('--range-progress').trim()
+                  ? getComputedStyle(currentRange).getPropertyValue('--fui-Slider--progress').trim()
                   : '',
               });
             }
@@ -1397,7 +1464,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           let animationCasesReady = true;
           for (const [label, previewKind] of animationCases) {
             const button = [...controls.querySelectorAll('.draft-animation-picker button')]
-              .find((candidate) => candidate.textContent?.trim() === label);
+              .find((candidate) => controlText(candidate) === label);
             if (!(button instanceof HTMLButtonElement)) {
               animationCasesReady = false;
               continue;
@@ -1457,8 +1524,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             const panelButton = panel?.querySelector(':scope .accordion > button');
             if (panelButton instanceof HTMLButtonElement && panelButton.getAttribute('aria-expanded') !== 'true') panelButton.click();
             const panelOpened = await waitFor(() => panelButton?.getAttribute('aria-expanded') === 'true');
-            const underlineToggle = panel?.querySelector('input[aria-label="下划线"]');
+            const underlineLabel = [...(panel?.querySelectorAll('label') ?? [])]
+              .find((label) => label.textContent?.trim() === '下划线');
+            const underlineToggle = underlineLabel instanceof HTMLLabelElement ? underlineLabel.control : null;
             if (!panelOpened || !(underlineToggle instanceof HTMLInputElement)) {
+              draftControlDiagnostics.push({ layer: definition.layer, panelOpened, toggleFound: underlineToggle instanceof HTMLInputElement });
               layerTogglesReady = false;
               continue;
             }
@@ -1485,6 +1555,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
                 && getComputedStyle(text).textDecorationLine === 'none';
             });
             layerTogglesReady = layerTogglesReady && enabledReady && disabledReady;
+            draftControlDiagnostics.push({ layer: definition.layer, enabledReady, disabledReady });
           }
 
           const fontSelections = [
@@ -1517,18 +1588,18 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             fontSelectionsLiveReady = fontSelectionsLiveReady && applied;
           }
 
-          const imageFitGroup = controls.querySelector('[role="group"][aria-label="图片显示"]');
+          const imageFitGroup = controls.querySelector('[role="tablist"][aria-label="图片显示"]');
           const imageFitButtons = [...(imageFitGroup?.querySelectorAll('button') ?? [])];
-          const cropFillButton = imageFitButtons.find((button) => button.textContent?.trim() === '裁切填满');
-          const fullImageButton = imageFitButtons.find((button) => button.textContent?.trim() === '完整缩放');
-          let imageFitLiveReady = imageFitButtons.map((button) => button.textContent?.trim()).join('|') === '裁切填满|完整缩放';
+          const cropFillButton = imageFitButtons.find((button) => controlText(button) === '裁切填满');
+          const fullImageButton = imageFitButtons.find((button) => controlText(button) === '完整缩放');
+          let imageFitLiveReady = imageFitButtons.map(controlText).join('|') === '裁切填满|完整缩放';
           if (cropFillButton instanceof HTMLButtonElement) cropFillButton.click();
           const objectButtonsReady = await waitFor(() => {
-            const group = controls.querySelector('[role="group"][aria-label="编辑对象"]');
-            return [...(group?.querySelectorAll('button') ?? [])].map((button) => button.textContent?.trim()).join('|') === '展示框|实际图片';
+            const group = controls.querySelector('[role="tablist"][aria-label="编辑对象"]');
+            return [...(group?.querySelectorAll('button') ?? [])].map(controlText).join('|') === '展示框|实际图片';
           });
-          const findObjectButton = (label) => [...controls.querySelectorAll('[role="group"][aria-label="编辑对象"] button')]
-            .find((button) => button.textContent?.trim() === label);
+          const findObjectButton = (label) => [...controls.querySelectorAll('[role="tablist"][aria-label="编辑对象"] button')]
+            .find((button) => controlText(button) === label);
           const findRange = (label) => controls.querySelector('input[aria-label="' + label + '滑块"]');
           const frameObjectButton = findObjectButton('展示框');
           if (frameObjectButton instanceof HTMLButtonElement) frameObjectButton.click();
@@ -1536,7 +1607,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             const frameBox = document.querySelector('.editable-draft-canvas [data-layer="image-frame"]');
             return frameBox instanceof HTMLElement
               && frameBox.dataset.selected === 'true'
-              && frameBox.querySelectorAll('.draft-transform-handle').length === 8;
+              && document.querySelectorAll('.draft-image-transform-handles[data-transform-target="image-frame"] .draft-transform-handle').length === 8;
           });
           for (const [label, value] of [['展示框宽度', 0.72], ['展示框高度', 0.62], ['水平位置', 0.12], ['垂直位置', 0.18]]) {
             const range = findRange(label);
@@ -1549,7 +1620,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             const mediaBox = document.querySelector('.editable-draft-canvas [data-layer="image-media"]');
             return mediaBox instanceof HTMLElement
               && mediaBox.dataset.selected === 'true'
-              && mediaBox.querySelectorAll('.draft-transform-handle').length === 8;
+              && document.querySelectorAll('.draft-image-transform-handles[data-transform-target="image-media"] .draft-transform-handle').length === 8;
           });
           for (const [label, value] of [['图片缩放', 1.4], ['水平取景', 0.25], ['垂直取景', 0.75]]) {
             const range = findRange(label);
@@ -1578,7 +1649,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           imageFitLiveReady = imageFitLiveReady && await waitFor(() => {
             const media = document.querySelector('.editable-draft-canvas .draft-image-media');
             return fullImageButton instanceof HTMLButtonElement
-              && fullImageButton.getAttribute('aria-pressed') === 'true'
+              && fullImageButton.getAttribute('aria-selected') === 'true'
               && !document.querySelector('.editable-draft-canvas [data-layer="image-media"]')
               && media instanceof HTMLElement
               && media.style.objectFit === 'contain';
@@ -1597,7 +1668,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
               && document.documentElement.dataset.themeReady === 'true';
           });
           const saveButton = [...document.querySelectorAll('.editor-topbar button')]
-            .find((button) => button.textContent?.trim() === '保存');
+            .find((button) => controlText(button) === '保存');
           if (saveButton instanceof HTMLButtonElement) saveButton.click();
           const persistenceReady = api && saveButton instanceof HTMLButtonElement
             ? await withTimeout((async () => {
@@ -1623,22 +1694,30 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
                 return false;
               })(), 12000, 'draft underline persistence timed out')
             : false;
+          const saveSettled = await waitFor(() => {
+            const save = [...document.querySelectorAll('.editor-topbar button')]
+              .find((button) => controlText(button) === '保存');
+            const copy = [...document.querySelectorAll('.draft-stage button')]
+              .find((button) => controlText(button) === '复制');
+            return save instanceof HTMLButtonElement && save.disabled
+              && copy instanceof HTMLButtonElement && !copy.disabled;
+          });
           const returnButton = [...document.querySelectorAll('.editor-topbar button')]
-            .find((button) => button.textContent?.trim() === '返回模板列表');
+            .find((button) => controlText(button) === '返回模板列表');
           if (returnButton instanceof HTMLButtonElement) returnButton.click();
           const returnedToGallery = await waitFor(() => document.querySelector('.draft-template-actions.has-delete'));
           const savedCard = [...document.querySelectorAll('.draft-template-card')]
             .find((card) => card.textContent?.includes('QA 已选草稿模板'));
           const galleryImageFitReady = savedCard?.textContent?.includes('裁切填满') === true;
           const reopenButton = [...(savedCard?.querySelectorAll('.draft-template-actions button') ?? [])]
-            .find((button) => button.textContent?.trim() === '编辑');
+            .find((button) => controlText(button) === '编辑');
           if (reopenButton instanceof HTMLButtonElement) reopenButton.click();
           const reopened = returnedToGallery && await waitFor(() => {
             const canvas = document.querySelector('.editable-draft-canvas');
             const title = canvas?.querySelector('.draft-title');
             const caption = canvas?.querySelector('.draft-caption');
-            const imageFitButton = [...document.querySelectorAll('[role="group"][aria-label="图片显示"] button')]
-              .find((button) => button.textContent?.trim() === '裁切填满');
+            const imageFitButton = [...document.querySelectorAll('[role="tablist"][aria-label="图片显示"] button')]
+              .find((button) => controlText(button) === '裁切填满');
             const frameBox = canvas?.querySelector('[data-layer="image-frame"]');
             const mediaBox = canvas?.querySelector('[data-layer="image-media"]');
             return canvas instanceof HTMLElement
@@ -1647,7 +1726,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
               && getComputedStyle(title).fontFamily.includes('SimHei')
               && getComputedStyle(caption).fontFamily.includes('SimSun')
               && imageFitButton instanceof HTMLButtonElement
-              && imageFitButton.getAttribute('aria-pressed') === 'true'
+              && imageFitButton.getAttribute('aria-selected') === 'true'
               && frameBox instanceof HTMLElement
               && mediaBox instanceof HTMLElement
               && frameBox.style.left === '12%'
@@ -1665,6 +1744,11 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           draftFontSelectionReady = fontSelectionsLiveReady && shellStayedVisible && persistenceReady && reopened;
           draftImageFitReady = imageFitLiveReady && shellStayedVisible && persistenceReady && galleryImageFitReady && reopened;
           draftImageTransformReady = imageTransformLiveReady && shellStayedVisible && persistenceReady && reopened;
+          draftControlDiagnostics.push({ layerTogglesReady, shellStayedVisible, persistenceReady, saveSettled, returnedToGallery, reopened, fontSelectionsLiveReady, imageFitLiveReady, imageTransformLiveReady, galleryImageFitReady, dialog: document.querySelector('[role="dialog"]')?.textContent });
+          if (!persistenceReady && api) {
+            const persisted = await api.getDraftTemplateDetail('qa-selected-draft-template');
+            draftControlDiagnostics.push({ persisted });
+          }
         }
       }
     }
@@ -1722,13 +1806,12 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           && previewImage.naturalWidth > 0
           && !state.assetState;
       });
-      const templateSelect = document.querySelector('button.task-template-select-trigger[aria-label="选择任务草稿模板"]');
+      const templateSelect = document.querySelector('.task-template-select select[aria-label="选择任务草稿模板"]');
       const templateApply = document.querySelector('.task-template-apply');
       const templateManager = document.querySelector('button[aria-label="管理草稿模板"]');
       const templateSwitcher = document.querySelector('.task-template-switcher');
-      taskTemplateControlsReady = templateSelect instanceof HTMLButtonElement
-        && templateSelect.textContent?.includes('QA 已选草稿模板') === true
-        && templateSelect.getAttribute('aria-haspopup') === 'listbox'
+      taskTemplateControlsReady = templateSelect instanceof HTMLSelectElement
+        && templateSelect.selectedOptions[0]?.textContent?.includes('QA 已选草稿模板') === true
         && templateApply instanceof HTMLButtonElement
         && templateApply.disabled
         && templateApply.textContent?.trim() === '已应用'
@@ -1738,37 +1821,24 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         && templateSwitcher.dataset.templateState === 'applied'
         && templateManager instanceof HTMLButtonElement
         && !templateManager.disabled;
-      if (scenarioId === 'task-detail-template-menu-dark-desktop' && templateSelect instanceof HTMLButtonElement) {
+      if (scenarioId === 'task-detail-template-menu-dark-desktop' && templateSelect instanceof HTMLSelectElement) {
         templateSelect.scrollIntoView({ block: 'center' });
         await waitFor(() => {
           const triggerRect = templateSelect.getBoundingClientRect();
           return triggerRect.top >= 0 && triggerRect.bottom <= window.innerHeight;
         });
-        templateSelect.click();
-        const menuReady = await waitFor(() => {
-          const menu = document.querySelector('.task-template-select-menu[role="listbox"]');
-          const field = document.querySelector('.task-template-field');
-          const options = [...(menu?.querySelectorAll('[role="option"]') ?? [])];
-          if (!(menu instanceof HTMLElement) || !(field instanceof HTMLElement) || options.length < 2) return false;
-          const menuRect = menu.getBoundingClientRect();
-          const menuBackground = getComputedStyle(menu).backgroundColor;
-          const fieldBackground = getComputedStyle(field).backgroundColor;
-          return templateSelect.getAttribute('aria-expanded') === 'true'
-            && options.some((option) => option.getAttribute('aria-selected') === 'true' && option.textContent?.includes('QA 已选草稿模板'))
-            && menuBackground === fieldBackground
-            && menuBackground !== 'rgb(255, 255, 255)'
-            && menuRect.left >= 0
-            && menuRect.right <= window.innerWidth
-            && menuRect.bottom <= window.innerHeight;
-        });
-        const alternativeOption = document.querySelector('[role="option"][data-template-id="builtin-portrait-4-3"]');
-        if (alternativeOption instanceof HTMLElement) alternativeOption.click();
+        const selectReady = templateSelect.classList.contains('fui-Select__select')
+          && templateSelect.options.length >= 2
+          && templateSelect.value === 'qa-selected-draft-template';
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+        setter?.call(templateSelect, 'builtin-portrait-4-3');
+        templateSelect.dispatchEvent(new Event('change', { bubbles: true }));
         const pendingReady = await waitFor(() => templateApply instanceof HTMLButtonElement
           && templateSwitcher instanceof HTMLElement
-          && templateSelect.textContent?.includes('竖屏4:3') === true
+          && templateSelect.value === 'builtin-portrait-4-3'
           && !templateApply.disabled
           && templateApply.textContent?.trim() === '应用模板'
-          && getComputedStyle(templateApply).color === 'rgb(16, 18, 20)'
+          && templateApply.classList.contains('fui-Button')
           && templateSwitcher.dataset.appliedTemplateId === 'qa-selected-draft-template'
           && templateSwitcher.dataset.candidateTemplateId === 'builtin-portrait-4-3'
           && templateSwitcher.dataset.templateState === 'pending');
@@ -1778,18 +1848,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           ? await withTimeout(api.getTaskDetail(taskId), 10000, 'task template persistence read timed out')
           : null;
         const appliedStayedFixed = persistedTask?.templateId === 'qa-selected-draft-template';
-        if (pendingReady) templateSelect.click();
-        const pendingMenuReady = await waitFor(() => {
-          const menu = document.querySelector('.task-template-select-menu[role="listbox"]');
-          const selectedOption = menu?.querySelector('[role="option"][aria-selected="true"]');
-          return templateSelect.getAttribute('aria-expanded') === 'true'
-            && selectedOption?.getAttribute('data-template-id') === 'builtin-portrait-4-3';
-        });
         taskTemplateControlsReady = taskTemplateControlsReady
-          && menuReady
+          && selectReady
           && pendingReady
-          && appliedStayedFixed
-          && pendingMenuReady;
+          && appliedStayedFixed;
       }
       ready = ready && taskTemplateControlsReady;
       taskDetailReadiness = collectTaskDetailReadiness();
@@ -1801,13 +1863,13 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       const pausedReady = await waitFor(() => [...document.querySelectorAll('.task-detail-run-control')]
         .some((button) => button.textContent?.trim() === '继续任务'));
       const imageTab = [...document.querySelectorAll('.artifact-tab-list button')]
-        .find((button) => button.textContent?.trim() === '图片');
+        .find((button) => controlText(button) === '图片');
       if (imageTab instanceof HTMLButtonElement) imageTab.click();
       const galleryReady = await waitFor(() => {
         const borrowedCard = document.querySelector('.image-preview-card.borrowed');
         const borrowedImage = borrowedCard?.querySelector('img');
         return imageTab instanceof HTMLButtonElement
-          && imageTab.classList.contains('active')
+          && imageTab.getAttribute('aria-selected') === 'true'
           && borrowedCard instanceof HTMLElement
           && borrowedCard.offsetParent !== null
           && borrowedImage instanceof HTMLImageElement
@@ -1880,9 +1942,9 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             && !addButton.disabled;
         });
       }
-      const closeEditorButton = document.querySelector('.image-gallery-editor-dialog button[aria-label="关闭"]');
+      const closeEditorButton = document.querySelector('[role="dialog"] .fui-DialogActions button');
       if (closeEditorButton instanceof HTMLButtonElement) closeEditorButton.click();
-      const referenceEditorClosed = await waitFor(() => !document.querySelector('.image-gallery-editor-dialog'));
+      const referenceEditorClosed = await waitFor(() => !document.querySelector('[role="dialog"]'));
 
       taskImageWorkflowReady = pausedReady
         && galleryReady
@@ -1914,15 +1976,15 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     if (sceneVideoScenario) {
       const pauseButton = [...document.querySelectorAll('.task-detail-run-control')]
-        .find((button) => button.textContent?.trim() === '暂停任务');
+        .find((button) => controlText(button) === '暂停任务');
       if (pauseButton instanceof HTMLButtonElement) pauseButton.click();
       const pausedReady = await waitFor(() => [...document.querySelectorAll('.task-detail-run-control')]
-        .some((button) => button.textContent?.trim() === '继续任务'));
+        .some((button) => controlText(button) === '继续任务'));
       const imageTab = [...document.querySelectorAll('.artifact-tab-list button')]
-        .find((button) => button.textContent?.trim() === '图片');
+        .find((button) => controlText(button) === '图片');
       if (imageTab instanceof HTMLButtonElement) imageTab.click();
       const galleryReady = await waitFor(() => imageTab instanceof HTMLButtonElement
-        && imageTab.classList.contains('active')
+        && imageTab.getAttribute('aria-selected') === 'true'
         && document.querySelector('.image-preview-card[data-scene-id="1"]'));
       const taskShell = document.querySelector('.task-detail-shell[data-task-id]');
       const taskId = taskShell instanceof HTMLElement ? taskShell.dataset.taskId ?? '' : '';
@@ -1932,7 +1994,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         if (existingCard instanceof HTMLElement) {
           existingCard.dataset.qaActionsOpen = 'true';
           const restore = [...existingCard.querySelectorAll('.image-card-action-panel button')]
-            .find((button) => button.textContent?.trim() === '恢复图片');
+            .find((button) => controlText(button) === '恢复图片');
           if (restore instanceof HTMLButtonElement) restore.click();
           await waitFor(() => !document.querySelector('.image-preview-card.video[data-scene-id="1"]'));
         }
@@ -1943,10 +2005,10 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           card.scrollIntoView({ block: 'center' });
           card.dataset.qaActionsOpen = 'true';
           const replace = [...card.querySelectorAll('.image-card-action-panel button')]
-            .find((button) => ['替换画面', '更换画面'].includes(button.textContent?.trim() ?? ''));
+            .find((button) => ['替换画面', '更换画面'].includes(controlText(button)));
           if (replace instanceof HTMLButtonElement) replace.click();
-          const opened = await waitFor(() => card.querySelector('.scene-media-menu[role="menu"]'));
-          return opened ? card.querySelector('.scene-media-menu[role="menu"]') : null;
+          const opened = await waitFor(() => document.querySelector('.fui-MenuList[role="menu"]'));
+          return opened ? document.querySelector('.fui-MenuList[role="menu"]') : null;
         };
 
         const firstMenu = await openSceneMenu();
@@ -1956,25 +2018,21 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
             .some((button) => button.textContent?.includes(label)));
         const aiVideoButton = [...(firstMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
           .find((button) => button.textContent?.includes('AI 生成视频'));
-        const aiVideoConfigGuardReady = aiVideoButton instanceof HTMLButtonElement
-          && aiVideoButton.disabled
-          && aiVideoButton.textContent?.includes('请先配置云端视频 API') === true;
-        const closeAiMenu = firstMenu?.querySelector('[aria-label="关闭替换画面菜单"]');
-        if (closeAiMenu instanceof HTMLButtonElement) closeAiMenu.click();
-        await waitFor(() => !document.querySelector('.scene-media-menu[role="menu"]'));
-
-        const libraryMenu = await openSceneMenu();
+        const aiVideoConfigGuardReady = aiVideoButton instanceof HTMLElement
+          && aiVideoButton.getAttribute('aria-disabled') === 'true'
+          && aiVideoButton.textContent?.includes('请先配置 API') === true;
+        const libraryMenu = firstMenu;
         const libraryButton = [...(libraryMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
           .find((button) => button.textContent?.includes('视频素材库'));
-        if (libraryButton instanceof HTMLButtonElement) libraryButton.click();
+        if (libraryButton instanceof HTMLElement) libraryButton.click();
         const libraryReady = await waitFor(() => {
-          const dialog = document.querySelector('.video-library-dialog[aria-modal="true"]');
-          const item = [...(dialog?.querySelectorAll('.video-library-item') ?? [])]
-            .find((button) => button.textContent?.includes('qa-scene-source.mp4'));
+          const dialog = document.querySelector('[role="dialog"].task-library-surface');
+          const item = [...(dialog?.querySelectorAll('.task-library-video') ?? [])]
+            .find((row) => row.textContent?.includes('qa-scene-source.mp4'))?.querySelector('button');
           return dialog instanceof HTMLElement && item instanceof HTMLButtonElement && !item.disabled;
         });
-        const libraryItem = [...document.querySelectorAll('.video-library-dialog .video-library-item')]
-          .find((button) => button.textContent?.includes('qa-scene-source.mp4'));
+        const libraryItem = [...document.querySelectorAll('.task-library-surface .task-library-video')]
+          .find((row) => row.textContent?.includes('qa-scene-source.mp4'))?.querySelector('button');
         if (libraryItem instanceof HTMLButtonElement) libraryItem.click();
         const adoptedReady = await waitFor(() => {
           const card = document.querySelector('.image-preview-card.video[data-scene-id="1"]');
@@ -1994,7 +2052,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const trimRange = adoptedCard?.querySelector('.scene-video-details input[type="range"]');
         if (trimRange instanceof HTMLInputElement) setRangeInputValue(trimRange, '900');
         const applyTrim = [...(adoptedCard?.querySelectorAll('.scene-video-details button') ?? [])]
-          .find((button) => button.textContent?.trim() === '应用');
+          .find((button) => controlText(button) === '应用');
         const trimControlReady = await waitFor(() => applyTrim instanceof HTMLButtonElement && !applyTrim.disabled);
         if (applyTrim instanceof HTMLButtonElement) applyTrim.click();
         const trimPersisted = trimControlReady && taskId && api
@@ -2008,7 +2066,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         if (restoredCard instanceof HTMLElement) {
           restoredCard.dataset.qaActionsOpen = 'true';
           const restore = [...restoredCard.querySelectorAll('.image-card-action-panel button')]
-            .find((button) => button.textContent?.trim() === '恢复图片');
+            .find((button) => controlText(button) === '恢复图片');
           if (restore instanceof HTMLButtonElement) restore.click();
         }
         const restoredReady = await waitFor(() => {
@@ -2025,7 +2083,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const randomMenu = await openSceneMenu();
         const randomButton = [...(randomMenu?.querySelectorAll('[role="menuitem"]') ?? [])]
           .find((button) => button.textContent?.includes('随机匹配视频'));
-        if (randomButton instanceof HTMLButtonElement) randomButton.click();
+        if (randomButton instanceof HTMLElement) randomButton.click();
         const randomReady = await waitFor(() => document.querySelector('.image-preview-card.video[data-scene-id="1"] video')
           && document.querySelector('.image-gallery-notice')?.textContent?.includes('随机匹配视频') === true, 15000);
         const randomPersisted = randomReady && taskId && api
@@ -2066,17 +2124,17 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           card.scrollIntoView({ block: 'center' });
           card.dataset.qaActionsOpen = 'true';
           const replace = [...card.querySelectorAll('.image-card-action-panel button')]
-            .find((button) => button.textContent?.trim() === '更换画面');
+            .find((button) => controlText(button) === '更换画面');
           if (replace instanceof HTMLButtonElement) replace.click();
         }
-        const menuReady = await waitFor(() => document.querySelector('.scene-media-menu[role="menu"]'));
-        const libraryButton = [...document.querySelectorAll('.scene-media-menu [role="menuitem"]')]
+        const menuReady = await waitFor(() => document.querySelector('.fui-MenuList[role="menu"]'));
+        const libraryButton = [...document.querySelectorAll('.fui-MenuList [role="menuitem"]')]
           .find((button) => button.textContent?.includes('视频素材库'));
-        if (libraryButton instanceof HTMLButtonElement) libraryButton.click();
+        if (libraryButton instanceof HTMLElement) libraryButton.click();
         const compactLibraryReady = await waitFor(() => {
-          const dialog = document.querySelector('.video-library-dialog[aria-modal="true"]');
-          const item = [...(dialog?.querySelectorAll('.video-library-item') ?? [])]
-            .find((button) => button.textContent?.includes('qa-scene-source.mp4'));
+          const dialog = document.querySelector('[role="dialog"].task-library-surface');
+          const item = [...(dialog?.querySelectorAll('.task-library-video') ?? [])]
+            .find((row) => row.textContent?.includes('qa-scene-source.mp4'))?.querySelector('button');
           if (!(dialog instanceof HTMLElement) || !(item instanceof HTMLButtonElement) || item.disabled) return false;
           const rect = dialog.getBoundingClientRect();
           return rect.left >= 0
@@ -2093,12 +2151,12 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     }
     if (subtitleDiagnosticsScenario) {
       const pauseButton = [...document.querySelectorAll('.task-detail-run-control')]
-        .find((button) => button.textContent?.trim() === '暂停任务');
+        .find((button) => controlText(button) === '暂停任务');
       if (pauseButton instanceof HTMLButtonElement) pauseButton.click();
       ready = ready && await waitFor(() => [...document.querySelectorAll('.task-detail-run-control')]
-        .some((button) => button.textContent?.trim() === '继续任务'));
+        .some((button) => controlText(button) === '继续任务'));
       const storyboardTab = [...document.querySelectorAll('.artifact-tab-list button')]
-        .find((button) => button.textContent?.trim() === '分镜');
+        .find((button) => controlText(button) === '分镜');
       if (storyboardTab instanceof HTMLButtonElement) storyboardTab.click();
       let firstCaption = null;
       ready = ready && await waitFor(() => {
@@ -2117,12 +2175,12 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const warning = editor?.querySelector('.storyboard-editor-warning');
         const issueIndex = editor?.querySelector('.storyboard-caption-numbers .issue.over-limit[data-line-status="over-limit"]');
         const repairButtons = [...(editor?.querySelectorAll('button') ?? [])]
-          .filter((button) => button.textContent?.trim() === '修复问题行');
+          .filter((button) => controlText(button) === '修复问题行');
         if (!(editor instanceof HTMLElement) || !(warning instanceof HTMLElement) || !(issueIndex instanceof HTMLElement)) return false;
         const editorRect = editor.getBoundingClientRect();
         const warningRect = warning.getBoundingClientRect();
         return storyboardTab instanceof HTMLButtonElement
-          && storyboardTab.classList.contains('active')
+          && storyboardTab.getAttribute('aria-selected') === 'true'
           && warning.textContent?.includes('行超过模板上限') === true
           && warning.textContent?.includes('行号已标红') === true
           && repairButtons.length === 1
@@ -2143,9 +2201,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const candidate = document.querySelector('.task-draft-delivery[data-draft-status="ready"]');
         if (!(candidate instanceof HTMLElement)) return false;
         delivery = candidate;
-        const style = getComputedStyle(candidate);
-        const gradientLayers = style.backgroundImage.match(/linear-gradient/g) ?? [];
-        return gradientLayers.length === 2
+        return candidate.querySelector('.fui-Button') instanceof HTMLButtonElement
           && candidate.textContent?.includes('剪映草稿已生成') === true
           && candidate.textContent?.includes('重新打包') === true
           && candidate.textContent?.includes('打开剪映') === true;
@@ -2166,7 +2222,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     if (coverPageScenario) {
       ready = ready && await waitFor(() => {
         const frame = document.querySelector('[data-preview-kind="cover"]');
-        const railItem = document.querySelector('[data-scene-kind="cover"]');
+        const railItem = document.querySelector('.task-scene-list [role="tab"][data-tab-value="0"]');
         const image = frame?.querySelector('.draft-image-asset');
         const canvas = frame?.querySelector('[data-media-canvas="draft-canvas"]');
         const title = frame?.querySelector('.draft-title');
@@ -2174,7 +2230,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
         const titleRect = title?.getBoundingClientRect();
         coverPagePreviewReady = frame instanceof HTMLElement
           && railItem instanceof HTMLButtonElement
-          && railItem.classList.contains('selected')
+          && railItem.getAttribute('aria-selected') === 'true'
           && railItem.textContent?.includes('00') === true
           && railItem.textContent?.includes('封面页') === true
           && frame.textContent?.includes('丝路文明，从长安启程') === true
@@ -2215,6 +2271,9 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       });
     }
     let promptTemplateEditorOpen = false;
+    if (targetView === 'prompt-templates') {
+      ready = ready && await waitFor(() => document.querySelector('.prompt-template-gallery .prompt-template-row'));
+    }
     if (targetView === 'prompt-templates'
       && document.documentElement.dataset.theme === 'light'
       && window.innerWidth === 1440) {
@@ -2578,8 +2637,8 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     document.activeElement instanceof HTMLElement && document.activeElement.blur();
     const computed = getComputedStyle(document.documentElement);
     const tokens = Object.fromEntries(${JSON.stringify(qaComputedTokenNames)}.map((name) => [name, computed.getPropertyValue(name).trim()]));
-    const promptTemplateOperationalSelector = '.prompt-template-row, .prompt-template-gallery .ghost-action, .prompt-template-gallery .chip';
-    const draftTemplateOperationalSelector = '.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .draft-template-card .danger-action, .new-template-card';
+    const promptTemplateOperationalSelector = '.prompt-template-row, .prompt-template-gallery button';
+    const draftTemplateOperationalSelector = '.draft-template-toolbar button, .draft-template-card button, .new-template-card';
     const templateOperationalSelector = targetView === 'prompt-templates'
       ? promptTemplateOperationalSelector
       : targetView === 'draft-templates'
@@ -2615,22 +2674,32 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       const alpha = Math.max(0, Math.min(1, foreground[3] ?? 1));
       return foreground.slice(0, 3).map((channel, index) => (channel * alpha) + (background[index] * (1 - alpha)));
     };
+    const renderedBackground = (element) => {
+      const layers = [];
+      for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+        const color = parseCssColor(getComputedStyle(ancestor).backgroundColor);
+        layers.push(color);
+        if (color[3] >= 1) break;
+      }
+      return layers.reverse().reduce((background, layer) => compositeColor(layer, background), [255, 255, 255]);
+    };
     const templateOperationalSamples = templateOperationalSelector
       ? [...document.querySelectorAll(templateOperationalSelector)]
         .filter((element) => {
           const style = getComputedStyle(element);
           const rect = element.getBoundingClientRect();
-          return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+          return !element.matches(':disabled') && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
         })
         .map((element, index) => {
-          const style = getComputedStyle(element);
+          const textElement = element.querySelector('.fui-Tab__content, .sd-button__content') ?? element;
+          const style = getComputedStyle(textElement);
           const foreground = relativeLuminance(parseRgb(style.color));
-          const background = relativeLuminance(parseRgb(style.backgroundColor));
+          const background = relativeLuminance(renderedBackground(element));
           const contrastRatio = (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
           return {
-            label: element.getAttribute('aria-label') || element.textContent?.trim().replace(/\\s+/g, ' ').slice(0, 48) || targetView + '-' + (index + 1),
+            label: element.getAttribute('aria-label') || controlText(element).replace(/\\s+/g, ' ').slice(0, 48) || targetView + '-' + (index + 1),
             color: style.color,
-            backgroundColor: style.backgroundColor,
+            backgroundColor: getComputedStyle(element).backgroundColor,
             contrastRatio: Number(contrastRatio.toFixed(2)),
           };
         })
@@ -2714,7 +2783,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
     const evidenceRoot = activeModal ?? document;
     const textContrastSamples = [...evidenceRoot.querySelectorAll('h1, h2, h3, h4, p, span, small, strong, label, button, a, input, select, textarea, summary, td, th, li')]
       .filter((element) => {
-        if (!visibleElement(element) || element.matches(':disabled, [aria-disabled="true"]')) return false;
+        if (!visibleElement(element) || element.closest(':disabled, [aria-disabled="true"]')) return false;
         const directText = [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
         const textualFormControl = element.matches([
           'input:not([type])',
@@ -3004,6 +3073,7 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
       draftUnderlineToggleReady,
       draftRangeZeroReady,
       draftRangeDiagnostics,
+      draftControlDiagnostics,
       draftAnimationPreviewReady,
       draftFontSelectionReady,
       draftImageFitReady,

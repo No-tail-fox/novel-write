@@ -6,8 +6,10 @@ import { toAppErrorPayload } from '../src/shared/app-error';
 import type { ConfiguredJsonLlm } from '../src/shared/llm-provider';
 import type { MotionComicPipelineData } from '../src/shared/motion-comic';
 import { generateMotionComicPlan, generateMotionComicScript } from '../src/shared/motion-comic-planner';
+import { confirmMotionComicScriptAssets } from '../src/shared/motion-comic-script-assets';
 import {
   motionComicPlanInputSchema, motionComicPlanRecoverySchema, motionComicScriptCheckpointSchema, motionComicScriptFailureSchema,
+  splitMotionComicSource, validateMotionComicScriptDraft,
   type MotionComicPlanInput, type MotionComicPlanResponse, type MotionComicPlanRecovery, type MotionComicScriptFailure,
 } from '../src/shared/motion-comic-planning';
 
@@ -26,17 +28,19 @@ export class MotionComicPlanningService {
   constructor(private readonly directory: () => string) {}
 
   async plan(rawInput: MotionComicPlanInput, document: MotionComicPipelineData, llm: ConfiguredJsonLlm,
-    options: { model: string; providerScope: string; protocol: string }): Promise<MotionComicPlanResponse> {
+    options: { model: string; providerScope: string; protocol: string },
+    saveConfirmedAssets?: (document: MotionComicPipelineData) => Promise<MotionComicPipelineData>): Promise<MotionComicPlanResponse> {
     const input = motionComicPlanInputSchema.parse(rawInput);
     if (this.running.has(input.id)) throw new Error('MOTION_COMIC_PLAN_BUSY: 当前项目正在规划，请等待完成。');
     this.running.add(input.id);
     try {
-      return await this.run(input, document, llm, options);
+      return await this.run(input, document, llm, options, saveConfirmedAssets);
     } finally { this.running.delete(input.id); }
   }
 
   private async run(input: MotionComicPlanInput, document: MotionComicPipelineData, llm: ConfiguredJsonLlm,
-    options: { model: string; providerScope: string; protocol: string }): Promise<MotionComicPlanResponse> {
+    options: { model: string; providerScope: string; protocol: string },
+    saveConfirmedAssets?: (document: MotionComicPipelineData) => Promise<MotionComicPipelineData>): Promise<MotionComicPlanResponse> {
     const { resumeToken, restart, expectedUpdatedAt, scriptDraft, stage, scriptRevisionToken, ...request } = input;
     if ((resumeToken && (restart || scriptDraft)) || (restart && scriptDraft)) throw new Error('MOTION_COMIC_PLAN_RECOVERY_INVALID: 恢复、人工修正与重新规划不能同时提交。');
     if (scriptRevisionToken && !scriptDraft) throw new Error('MOTION_COMIC_PLAN_RECOVERY_INVALID: 剧本修订令牌必须与修改后的剧本一起提交。');
@@ -46,8 +50,11 @@ export class MotionComicPlanningService {
     }
     // The timestamp alone can change on a no-op save. Bind every material project field instead.
     // scriptDraft is a stage payload, not source identity: retries send only the checkpoint token.
-    const { updatedAt: _updatedAt, ...project } = document;
-    const binding = hash(JSON.stringify({ request, project, ...options }));
+    const projectBinding = (value: MotionComicPipelineData) => {
+      const { updatedAt: _updatedAt, ...project } = value;
+      return hash(JSON.stringify({ request, project, ...options }));
+    };
+    let binding = projectBinding(document);
     const path = join(this.directory(), `${hash(input.id)}.json`);
     if (restart) {
       await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; });
@@ -87,6 +94,20 @@ export class MotionComicPlanningService {
         error: toAppErrorPayload(new Error('MOTION_COMIC_PLAN_RECOVERY_AVAILABLE: 发现已保存的剧本，可继续生成分镜。')),
         recovery: saved.recovery,
       };
+    }
+    if (stage === 'storyboard' && saved && saveConfirmedAssets) {
+      const confirmed = confirmMotionComicScriptAssets(document, saved.checkpoint.script, randomUUID);
+      if (validateMotionComicScriptDraft(confirmed.script, splitMotionComicSource(input.sourceText), confirmed.document).length) {
+        throw new Error('MOTION_COMIC_ASSET_BINDING: 请核对本集人物、地点、道具及造型的归属。');
+      }
+      // Persist identities before the first storyboard call, including failed/retried runs.
+      document = await saveConfirmedAssets(confirmed.document);
+      input = { ...input, expectedUpdatedAt: document.updatedAt };
+      binding = projectBinding(document);
+      saved = { ...saved, binding, checkpoint: { ...saved.checkpoint, script: confirmed.script }, recovery: { ...saved.recovery, script: confirmed.script } };
+      const temporaryPath = `${path}.tmp`;
+      await writeFile(temporaryPath, JSON.stringify(saved), 'utf8');
+      await rename(temporaryPath, path);
     }
     let recovery: MotionComicPlanRecovery | undefined;
     let scriptFailure: MotionComicScriptFailure | undefined;

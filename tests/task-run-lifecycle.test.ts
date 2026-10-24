@@ -1949,6 +1949,10 @@ async function loadShutdownApplication(
     'dbInitializationPromise',
     'db',
     'configService',
+    'musicProfileService',
+    'activeMusicSubmissions',
+    'musicBgmImportQueue',
+    'agentSearchService',
     `${compiledSource}\nreturn shutdownApplication;`,
   );
   return factory(
@@ -1961,6 +1965,10 @@ async function loadShutdownApplication(
     dbInitializationPromise,
     { close },
     null,
+    undefined,
+    new Set(),
+    Promise.resolve(),
+    { close: async () => undefined },
   ) as () => Promise<void>;
 }
 
@@ -2027,6 +2035,7 @@ function viralRecord(id: string) {
     currentStage: 'queued',
     progress: 0,
     runGeneration: 1,
+    settings: { analysisMode: 'standard' },
     checkpoint: null,
   };
 }
@@ -2091,6 +2100,7 @@ function labDatabase(
 ) {
   let record: Record<string, unknown> = {};
   return {
+    async getCustomStyleDetail() { return undefined; },
     async addImageLabRecord(input: Record<string, unknown>) {
       record = { ...input, managedStorageKey: 'managed-key' };
       return record;

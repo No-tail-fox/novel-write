@@ -1,5 +1,5 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { Check, CheckCircle2, ChevronDown, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Check, CheckCircle2, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { ErrorDetails as ErrorSummaryButton } from '../../components/ErrorDetails';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
@@ -8,7 +8,7 @@ import type { ApplyMutationResult, RendererAppState as AppState } from '../../ap
 import { taskProgressSnapshot, taskProgressStages } from '../../shared/task-progress';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { BgmItem, DraftTemplate, Task, TaskArtifactSnapshot } from '../../shared/types';
-import { Button } from '../../ui';
+import { Button, IconButton, SelectField, Tabs } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { ArtifactPreviewContent, type TaskArtifactTab } from './TaskArtifactPreview';
 import { formatDate, formatDuration } from './task-formatters';
@@ -27,122 +27,20 @@ function TaskTemplateSelect({
   disabled: boolean;
   onChange: (templateId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const listboxId = useId();
-  const selectedIndex = templates.findIndex((template) => template.id === value);
-  const defaultActiveIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const selectedTemplate = selectedIndex >= 0 ? templates[selectedIndex] : null;
-
-  useEffect(() => {
-    if (!open) return undefined;
-    setActiveIndex(defaultActiveIndex);
-    const frame = window.requestAnimationFrame(() => menuRef.current?.focus());
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener('pointerdown', closeOnOutsidePointer);
-    };
-  }, [defaultActiveIndex, open]);
-
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  function chooseTemplate(index: number) {
-    const template = templates[index];
-    if (!template) return;
-    onChange(template.id);
-    setOpen(false);
-    window.requestAnimationFrame(() => triggerRef.current?.focus());
-  }
-
-  function moveActive(delta: number) {
-    if (templates.length === 0) return;
-    setActiveIndex((current) => (current + delta + templates.length) % templates.length);
-  }
-
+  const missing = !templates.some((template) => template.id === value);
   return (
-    <div ref={rootRef} className={open ? 'task-template-select open' : 'task-template-select'}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="task-template-select-trigger"
-        aria-label="选择任务草稿模板"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            setActiveIndex(event.key === 'ArrowDown'
-              ? defaultActiveIndex
-              : selectedIndex >= 0 ? selectedIndex : Math.max(0, templates.length - 1));
-            setOpen(true);
-          }
-        }}
-      >
-        <span>{selectedTemplate
-          ? `${selectedTemplate.name} · ${selectedTemplate.canvas.ratio}`
-          : value ? '已应用模板不可用，请重新选择' : '选择模板'}</span>
-        <ChevronDown size={14} aria-hidden="true" />
-      </button>
-      {open ? (
-        <div
-          ref={menuRef}
-          id={listboxId}
-          className="task-template-select-menu"
-          role="listbox"
-          tabIndex={-1}
-          aria-label="草稿模板"
-          aria-activedescendant={`${listboxId}-option-${activeIndex}`}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              moveActive(event.key === 'ArrowDown' ? 1 : -1);
-            } else if (event.key === 'Home' || event.key === 'End') {
-              event.preventDefault();
-              setActiveIndex(event.key === 'Home' ? 0 : Math.max(0, templates.length - 1));
-            } else if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              chooseTemplate(activeIndex);
-            } else if (event.key === 'Escape') {
-              event.preventDefault();
-              setOpen(false);
-              triggerRef.current?.focus();
-            } else if (event.key === 'Tab') {
-              setOpen(false);
-            }
-          }}
-        >
-          {templates.map((template, index) => (
-            <div
-              id={`${listboxId}-option-${index}`}
-              key={template.id}
-              className={index === activeIndex ? 'task-template-select-option active' : 'task-template-select-option'}
-              role="option"
-              aria-selected={template.id === value}
-              data-template-id={template.id}
-              onPointerMove={() => setActiveIndex(index)}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => chooseTemplate(index)}
-            >
-              <span>{template.name}</span>
-              <small>{template.canvas.ratio}</small>
-              {template.id === value ? <Check size={14} aria-hidden="true" /> : <i aria-hidden="true" />}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <SelectField
+      label="草稿模板"
+      aria-label="选择任务草稿模板"
+      fieldClassName="task-template-select"
+      disabled={disabled}
+      value={value}
+      options={[
+        ...(missing ? [{ value, label: value ? '已应用模板不可用，请重新选择' : '选择模板', disabled: true }] : []),
+        ...templates.map((template) => ({ value: template.id, label: `${template.name} · ${template.canvas.ratio}` })),
+      ]}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }
 
@@ -194,7 +92,7 @@ function TaskDraftDelivery({
   onLaunchJianying: () => void;
 }) {
   const templateFieldRef = useRef<HTMLDivElement>(null);
-  const bgmFieldRef = useRef<HTMLSelectElement>(null);
+  const bgmFieldRef = useRef<HTMLDivElement>(null);
   const draftStepStatus = snapshotStepStatus(snapshot, 6);
   const hasDraft = Boolean(snapshot?.draft);
   const packaging = draftStepStatus === 'running' || (task.status === 'running' && task.currentStep === 6);
@@ -219,8 +117,8 @@ function TaskDraftDelivery({
   function revealSettings(target: 'all' | 'template' | 'bgm') {
     onSettingsOpenChange(true);
     window.requestAnimationFrame(() => {
-      if (target === 'template') templateFieldRef.current?.querySelector<HTMLButtonElement>('.task-template-select-trigger')?.focus();
-      if (target === 'bgm') bgmFieldRef.current?.focus();
+      if (target === 'template') templateFieldRef.current?.querySelector('select')?.focus();
+      if (target === 'bgm') bgmFieldRef.current?.querySelector('select')?.focus();
     });
   }
 
@@ -235,47 +133,37 @@ function TaskDraftDelivery({
           data-candidate-template-id={selectedTemplateId}
           data-template-state={templateChanged ? 'pending' : templateSelection.appliedTemplateMissing ? 'missing' : 'applied'}
         >
-          <div className="task-template-field">
-            <LayoutTemplate size={14} />
-            <span>草稿模板</span>
             <TaskTemplateSelect
               templates={templates}
               value={selectedTemplateId}
               disabled={settingsLocked || templateBusy}
               onChange={onTemplateChange}
             />
-          </div>
-          <button
+          <Button
             type="button"
-            className={templateChanged ? 'task-template-apply active' : 'task-template-apply'}
+            className="task-template-apply"
+            variant={templateChanged ? 'primary' : 'secondary'}
+            icon={templateBusy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
             disabled={!templateChanged || settingsLocked || templateBusy}
             onClick={onApplyTemplate}
           >
-            {templateBusy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
             {templateBusy ? '应用中' : templateChanged ? '应用模板' : templateSelection.appliedTemplateMissing ? '请选择模板' : '已应用'}
-          </button>
-          <button className="icon-button" type="button" title="管理草稿模板" aria-label="管理草稿模板" disabled={templateBusy} onClick={onManageTemplates}><Settings2 size={14} /></button>
+          </Button>
+          <IconButton label="管理草稿模板" icon={<Settings2 size={14} />} disabled={templateBusy} onClick={onManageTemplates} />
         </div>
-        <div className="task-bgm-switcher">
-          <div className="task-bgm-field">
-            <Music2 size={14} />
-            <label htmlFor="task-draft-bgm">背景音乐</label>
-            <select
-              ref={bgmFieldRef}
-              id="task-draft-bgm"
+        <div ref={bgmFieldRef} className="task-bgm-switcher">
+            <SelectField
+              label="背景音乐"
+              fieldClassName="task-bgm-select"
               aria-label="选择任务背景音乐"
               disabled={settingsLocked || bgmBusy}
               value={selectedBgmId}
               onChange={(event) => onBgmChange(event.target.value)}
-            >
-              <option value="">不使用背景音乐</option>
-              {bgmLibrary.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}
-            </select>
-          </div>
-          <button type="button" className={bgmChanged ? 'task-bgm-apply active' : 'task-bgm-apply'} disabled={!bgmChanged || settingsLocked || bgmBusy} onClick={onApplyBgm}>
-            {bgmBusy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
+              options={[{ value: '', label: '不使用背景音乐' }, ...bgmLibrary.map((item) => ({ value: item.id, label: item.title }))]}
+            />
+          <Button type="button" className="task-bgm-apply" variant={bgmChanged ? 'primary' : 'secondary'} icon={bgmBusy ? <Loader2 className="spin" size={14} /> : <Check size={14} />} disabled={!bgmChanged || settingsLocked || bgmBusy} onClick={onApplyBgm}>
             {bgmBusy ? '保存中' : bgmChanged ? '应用音乐' : '已应用'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -289,12 +177,12 @@ function TaskDraftDelivery({
           <span><Music2 size={13} />{appliedBgm?.title ?? '无背景音乐'}</span>
         </div>
         <div className="task-draft-commands">
-          <button type="button" aria-pressed={settingsOpen} onClick={() => onSettingsOpenChange(!settingsOpen)}><SlidersHorizontal size={14} />调整</button>
-          <button type="button" onClick={() => revealSettings('template')}><LayoutTemplate size={14} />模板</button>
-          <button type="button" onClick={() => revealSettings('bgm')}><Music2 size={14} />音乐</button>
-          <button type="button" disabled={repackDisabled} title={unsavedSettings ? '请先应用模板或音乐调整' : '仅重新执行剪映草稿导出'} onClick={onRepack}><PackageCheck size={14} />重新打包</button>
-          <button type="button" disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onOpenDirectory}><FolderOpen size={14} />草稿目录</button>
-          <button type="button" className="launch-jianying" disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onLaunchJianying}><Clapperboard size={14} />打开剪映</button>
+          <Button type="button" aria-expanded={settingsOpen} icon={<SlidersHorizontal size={14} />} onClick={() => onSettingsOpenChange(!settingsOpen)}>调整</Button>
+          <Button type="button" icon={<LayoutTemplate size={14} />} onClick={() => revealSettings('template')}>模板</Button>
+          <Button type="button" icon={<Music2 size={14} />} onClick={() => revealSettings('bgm')}>音乐</Button>
+          <Button type="button" icon={<PackageCheck size={14} />} disabled={repackDisabled} title={unsavedSettings ? '请先应用模板或音乐调整' : '仅重新执行剪映草稿导出'} onClick={onRepack}>重新打包</Button>
+          <Button type="button" icon={<FolderOpen size={14} />} disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onOpenDirectory}>草稿目录</Button>
+          <Button type="button" variant="primary" icon={<Clapperboard size={14} />} disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onLaunchJianying}>打开剪映</Button>
         </div>
       </div>
     </section>
@@ -521,14 +409,13 @@ export function TaskDetailPage({
             <span><strong>{progress.position}/{progress.total}</strong> 当前步骤</span>
             <span><strong>{events.length || '-'}</strong> 事件</span>
           </div>
-          <button className="icon-button" title="复制任务 ID" aria-label="复制任务 ID" onClick={() => navigator.clipboard?.writeText(activeTask.id)}><Copy size={14} /></button>
-          {activeTask.status === 'running' ? <button className="task-detail-run-control" disabled={taskDetailAction.busy || isBrowserPreview} onClick={() => setTaskStatus('paused')}><Pause size={14} />暂停任务</button> : null}
-          {activeTask.status === 'paused' ? <button className="task-detail-run-control" disabled={taskDetailAction.busy || isBrowserPreview} onClick={() => setTaskStatus('running')}><Play size={14} />继续任务</button> : null}
-          {activeTask.status === 'running' || activeTask.status === 'paused' || activeTask.status === 'failed' || activeTask.status === 'cancelled' ? <button className="task-detail-run-control accent" disabled={taskDetailAction.busy || isBrowserPreview} onClick={retryTask}><RotateCcw size={14} />重试当前步骤</button> : null}
-          <button className="cancel-task-button" disabled={taskDetailAction.busy || isBrowserPreview || activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={() => setTaskStatus('cancelled')}>
-            <XCircle size={14} />
+          <IconButton label="复制任务 ID" icon={<Copy size={14} />} onClick={() => navigator.clipboard?.writeText(activeTask.id)} />
+          {activeTask.status === 'running' ? <Button className="task-detail-run-control" icon={<Pause size={14} />} disabled={taskDetailAction.busy || isBrowserPreview} onClick={() => setTaskStatus('paused')}>暂停任务</Button> : null}
+          {activeTask.status === 'paused' ? <Button className="task-detail-run-control" icon={<Play size={14} />} disabled={taskDetailAction.busy || isBrowserPreview} onClick={() => setTaskStatus('running')}>继续任务</Button> : null}
+          {activeTask.status === 'running' || activeTask.status === 'paused' || activeTask.status === 'failed' || activeTask.status === 'cancelled' ? <Button variant="primary" icon={<RotateCcw size={14} />} disabled={taskDetailAction.busy || isBrowserPreview} onClick={retryTask}>重试当前步骤</Button> : null}
+          <Button variant="danger" icon={<XCircle size={14} />} disabled={taskDetailAction.busy || isBrowserPreview || activeTask.status === 'completed' || activeTask.status === 'cancelled'} onClick={() => setTaskStatus('cancelled')}>
             取消任务
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -554,13 +441,10 @@ export function TaskDetailPage({
       <section ref={taskDetailMainRef} className="task-detail-main" data-media-owner="task-artifact">
         <InlineActionFeedback feedback={taskDetailAction.feedback} />
         <div className="artifact-tabs">
-          <div className="artifact-tab-list">
-            <button className={tab === 'preview' ? 'active' : ''} onClick={() => setTab('preview')}>结果</button>
-            <button className={tab === 'storyboard' ? 'active' : ''} onClick={() => setTab('storyboard')}>分镜</button>
-            <button className={tab === 'images' ? 'active' : ''} onClick={() => setTab('images')}>图片</button>
-            <button className={tab === 'audio' ? 'active' : ''} onClick={() => setTab('audio')}>配音</button>
-            <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>事件</button>
-          </div>
+          <Tabs className="artifact-tab-list" label="任务产物" value={tab} onChange={(value) => setTab(value as TaskArtifactTab)} items={[
+            { value: 'preview', label: '结果' }, { value: 'storyboard', label: '分镜' },
+            { value: 'images', label: '图片' }, { value: 'audio', label: '配音' }, { value: 'events', label: '事件' },
+          ]} />
           <div
             className="task-template-switcher"
             data-template-location="toolbar"
@@ -568,9 +452,6 @@ export function TaskDetailPage({
             data-candidate-template-id={selectedDraftTemplateId}
             data-template-state={draftTemplateChanged ? 'pending' : templateSelection.appliedTemplateMissing ? 'missing' : 'applied'}
           >
-            <div className="task-template-field">
-              <LayoutTemplate size={14} />
-              <span>草稿模板</span>
               <TaskTemplateSelect
                 templates={state.draftTemplates}
                 value={selectedDraftTemplateId}
@@ -580,21 +461,21 @@ export function TaskDetailPage({
                   setTemplateSelectionId(templateId);
                 }}
               />
-            </div>
-            <button
+            <Button
               type="button"
-              className={draftTemplateChanged ? 'task-template-apply active' : 'task-template-apply'}
+              className="task-template-apply"
+              variant={draftTemplateChanged ? 'primary' : 'secondary'}
+              icon={taskTemplateAction.busy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
               disabled={!draftTemplateChanged || draftTemplateLocked || taskTemplateAction.busy}
               onClick={applyDraftTemplate}
             >
-              {taskTemplateAction.busy ? <Loader2 className="spin" size={14} /> : <Check size={14} />}
               {taskTemplateAction.busy
                 ? '应用中'
                 : draftTemplateChanged
                   ? '应用模板'
                   : templateSelection.appliedTemplateMissing ? '请选择模板' : '已应用'}
-            </button>
-            <button className="icon-button" type="button" title="管理草稿模板" aria-label="管理草稿模板" disabled={taskTemplateAction.busy} onClick={openTemplateManager}><Settings2 size={14} /></button>
+            </Button>
+            <IconButton label="管理草稿模板" icon={<Settings2 size={14} />} disabled={taskTemplateAction.busy} onClick={openTemplateManager} />
           </div>
         </div>
         {activeDraftTemplate

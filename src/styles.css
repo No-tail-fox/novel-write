@@ -1,29 +1,12 @@
-@import './styles/features/motion-comic.css';
+/* Import order: tokens → base → shell → components → features */
 @import './styles/tokens.css';
 @import './styles/base.css';
+@import './styles/shell.css';
 @import './styles/components.css';
 @import './styles/storydream-ui.css';
 @import './styles/media-canvas.css';
-@import './styles/shell.css';
 @import './styles/redesign.css';
-
-:root[data-theme='light'] .app-shell {
-  background: var(--bg);
-}
-
-:root[data-theme='light'] .window-line {
-  border-bottom-color: var(--line);
-  background: #ffffff;
-}
-
-:root[data-theme='light'] .sidebar {
-  border-right-color: var(--line);
-  background: linear-gradient(180deg, #ffffff 0%, #eef1f4 100%);
-}
-
-:root[data-theme='light'] .window-control-button:hover {
-  background: #e9edf1;
-}
+@import './styles/features/motion-comic.css';
 
 .app-shell {
   position: relative;
@@ -221,8 +204,8 @@
   margin-left: auto;
 }
 
-.new-task-button,
-.primary-action {
+.new-task-button:not(.fui-Button),
+.primary-action:not(.fui-Button) {
   min-height: 38px;
   border-radius: 7px;
   padding: 0 14px;
@@ -232,8 +215,8 @@
   font-weight: 700;
 }
 
-.primary-action:hover,
-.new-task-button:hover {
+.primary-action:not(.fui-Button):hover,
+.new-task-button:not(.fui-Button):hover {
   filter: brightness(1.04);
   transform: translateY(-1px);
 }
@@ -1303,17 +1286,19 @@ h2 {
 }
 
 .prompt-template-variable-chip {
-  display: grid;
-  align-items: center;
-  justify-items: start;
-  gap: 3px;
   min-height: 46px;
   max-width: 220px;
-  padding: 7px 11px;
   text-align: left;
 }
 
-.prompt-template-variable-chip span,
+.prompt-template-variable-chip .sd-button__content,
+.prompt-variable-suggest .sd-button__content {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prompt-template-variable-chip .sd-button__content > span,
 .prompt-template-variable-chip small {
   max-width: 100%;
   overflow: hidden;
@@ -1356,23 +1341,10 @@ h2 {
   box-shadow: var(--shadow);
 }
 
-.prompt-variable-suggest button {
-  display: grid;
-  gap: 3px;
+.prompt-variable-suggest .sd-button {
   min-height: 54px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel-2);
-  color: var(--text);
+  justify-content: flex-start;
   text-align: left;
-  cursor: pointer;
-}
-
-.prompt-variable-suggest button:hover,
-.prompt-variable-suggest button:focus-visible {
-  border-color: var(--accent);
-  outline: none;
 }
 
 .prompt-variable-suggest code {
@@ -1464,7 +1436,7 @@ em {
 }
 
 .field,
-.config-input {
+.config-input:not(.sd-field) {
   display: grid;
   gap: 8px;
   margin-bottom: 14px;
@@ -1556,9 +1528,9 @@ em {
   font-size: 10px;
 }
 
-.field > span,
+.field > span:not([class*='fui-']),
 .field > .form-field-label,
-.config-input > span,
+.config-input > span:not([class*='fui-']),
 .field-title {
   display: block;
   margin-bottom: 8px;
@@ -1597,9 +1569,7 @@ em {
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
 }
 
-input,
-select,
-textarea {
+:where(input, select, textarea):not([class*='fui-']):not(.sd-color-swatch) {
   width: 100%;
   min-height: 36px;
   border: 1px solid var(--line);
@@ -1611,19 +1581,16 @@ textarea {
   transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-input::placeholder,
-textarea::placeholder {
+:where(input, textarea):not([class*='fui-'])::placeholder {
   color: var(--shell-muted);
   opacity: 0.78;
 }
 
-input:hover:not(:disabled),
-select:hover:not(:disabled),
-textarea:hover:not(:disabled) {
+:where(input, select, textarea):not([class*='fui-']):not(.sd-color-swatch):hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--shell-muted) 54%, var(--shell-border));
 }
 
-input[type='checkbox'] {
+input[type='checkbox']:not([class*='fui-']) {
   width: 16px;
   min-height: 16px;
   height: 16px;
@@ -1649,7 +1616,7 @@ input[type='checkbox'] {
   line-height: 1.35;
 }
 
-textarea {
+textarea:not([class*='fui-']) {
   resize: vertical;
 }
 
@@ -2253,18 +2220,9 @@ textarea {
 }
 
 .error-summary-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
   max-width: 100%;
   min-width: 0;
-  min-height: 28px;
   margin-top: 6px;
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, var(--danger) 36%, var(--shell-border));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--danger) 8%, var(--shell-surface-raised));
-  color: var(--danger);
   text-align: left;
 }
 
@@ -2276,10 +2234,7 @@ textarea {
 }
 
 .error-summary-button.compact {
-  min-height: 24px;
   margin-top: 5px;
-  padding: 3px 7px;
-  font-size: 12px;
 }
 
 .error-mark {
@@ -2424,13 +2379,6 @@ section.error-dialog .error-dialog-head > div > strong {
   gap: 8px;
 }
 
-.cursor-pagination .mini-button {
-  width: 32px;
-  height: 32px;
-  justify-content: center;
-  padding: 0;
-}
-
 .data-table-body {
   display: grid;
 }
@@ -2479,7 +2427,7 @@ section.error-dialog .error-dialog-head > div > strong {
   background: color-mix(in srgb, var(--shell-focus) 6%, var(--shell-surface-raised));
 }
 
-.table-row-primary-action {
+.table-row-primary-action:not(.fui-Button) {
   max-width: 100%;
   padding: 0;
   overflow: hidden;
@@ -2709,7 +2657,7 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .pipeline-step strong,
-.pipeline-step span,
+.pipeline-step > div > span,
 .pipeline-step small {
   display: block;
 }
@@ -2718,7 +2666,7 @@ section.error-dialog .error-dialog-head > div > strong {
   color: var(--text);
 }
 
-.pipeline-step span {
+.pipeline-step > div > span {
   margin-top: 4px;
 }
 
@@ -2766,7 +2714,7 @@ section.error-dialog .error-dialog-head > div > strong {
   background: #0b1016;
 }
 
-.artifact-tabs button {
+.artifact-tabs button:not(.fui-Button):not(.fui-Tab) {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
@@ -2778,7 +2726,7 @@ section.error-dialog .error-dialog-head > div > strong {
   white-space: nowrap;
 }
 
-.artifact-tabs button.active {
+.artifact-tabs button.active:not(.fui-Button):not(.fui-Tab) {
   background: #111922;
   color: var(--text);
 }
@@ -3297,7 +3245,7 @@ section.error-dialog .error-dialog-head > div > strong {
   transform: translateY(0);
 }
 
-.image-card-action-panel > button {
+.image-card-action-panel > button:not(.fui-Button) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3318,12 +3266,12 @@ section.error-dialog .error-dialog-head > div > strong {
   cursor: pointer;
 }
 
-.image-card-action-panel > button:hover:not(:disabled) {
+.image-card-action-panel > button:not(.fui-Button):hover:not(:disabled) {
   border-color: #fff;
   background: #fff;
 }
 
-.image-card-action-panel > button:disabled {
+.image-card-action-panel > button:not(.fui-Button):disabled {
   opacity: 0.48;
   cursor: not-allowed;
 }
@@ -3454,7 +3402,7 @@ section.error-dialog .error-dialog-head > div > strong {
   display: -webkit-box;
   overflow: hidden;
   margin: 0;
-  color: #c9d5e4;
+  color: var(--text);
   font-size: 12px;
   line-height: 1.55;
   -webkit-box-orient: vertical;
@@ -3476,12 +3424,12 @@ section.error-dialog .error-dialog-head > div > strong {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #9aabae;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.4;
 }
 
-.scene-video-details label {
+.scene-video-details label:not(.fui-Label) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -3499,7 +3447,7 @@ section.error-dialog .error-dialog-head > div > strong {
   accent-color: var(--accent);
 }
 
-.scene-video-details button {
+.scene-video-details button:not(.fui-Button) {
   min-height: 24px;
   border: 1px solid #34454d;
   border-radius: 5px;
@@ -3510,7 +3458,7 @@ section.error-dialog .error-dialog-head > div > strong {
   font-size: 9px;
 }
 
-.scene-video-details button:disabled {
+.scene-video-details button:not(.fui-Button):disabled {
   opacity: 0.42;
 }
 
@@ -3605,7 +3553,7 @@ section.error-dialog .error-dialog-head > div > strong {
 .image-gallery-reference-editor {
   display: grid;
   gap: 10px;
-  margin: 16px 16px 0;
+  margin-bottom: 16px;
 }
 
 .image-gallery-reference-head {
@@ -3620,7 +3568,7 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .image-gallery-reference-head small {
-  color: #84919a;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -3635,18 +3583,18 @@ section.error-dialog .error-dialog-head > div > strong {
   position: relative;
   min-width: 0;
   min-height: 104px;
-  border: 1px solid #34414a;
+  border: 1px solid var(--shell-border);
   border-radius: 7px;
   overflow: hidden;
-  background: #090e12;
+  background: var(--shell-surface);
 }
 
 .image-gallery-reference-item > span {
   display: grid;
   place-items: center;
   height: 76px;
-  color: #84919a;
-  background: #0d1419;
+  color: var(--muted);
+  background: var(--shell-surface);
 }
 
 .image-gallery-reference-item img {
@@ -3659,7 +3607,7 @@ section.error-dialog .error-dialog-head > div > strong {
   display: block;
   overflow: hidden;
   padding: 6px 8px;
-  color: #b8c3c7;
+  color: var(--muted);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3673,6 +3621,9 @@ section.error-dialog .error-dialog-head > div > strong {
   position: absolute;
   top: 5px;
   right: 5px;
+}
+
+.image-gallery-reference-item > button:not(.fui-Button) {
   display: grid;
   place-items: center;
   width: 24px;
@@ -3700,7 +3651,7 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .image-gallery-editor-dialog > textarea:focus,
-.image-library-toolbar input:focus {
+.image-library-toolbar input:not(.fui-Input__input):focus {
   border-color: var(--accent);
   outline: none;
 }
@@ -3734,12 +3685,19 @@ section.error-dialog .error-dialog-head > div > strong {
 
 .image-library-toolbar {
   display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
   gap: 9px;
-  border-bottom: 1px solid #2d3841;
-  padding: 11px 16px;
+  border-bottom: 1px solid var(--shell-border);
+  padding-bottom: 12px;
 }
 
-.image-library-toolbar input {
+.image-library-toolbar > .sd-field {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.image-library-toolbar input:not(.fui-Input__input) {
   min-width: 0;
   flex: 1 1 auto;
   border: 1px solid #34414a;
@@ -3826,12 +3784,12 @@ section.error-dialog .error-dialog-head > div > strong {
   grid-column: 1 / -1;
   gap: 8px;
   min-height: 230px;
-  color: #88959d;
+  color: var(--muted);
   font-size: 12px;
 }
 
 .image-library-state.danger {
-  color: #ffaaa9;
+  color: var(--danger);
 }
 
 .video-library-list {
@@ -4500,19 +4458,6 @@ section.error-dialog .error-dialog-head > div > strong {
   border-radius: 8px;
   background: var(--panel);
   color: var(--text);
-  cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease;
-}
-
-.prompt-template-row:hover,
-.prompt-template-row:focus-visible {
-  border-color: var(--accent);
-  background: var(--panel-2);
-}
-
-.prompt-template-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .prompt-template-row > svg {
@@ -4576,17 +4521,18 @@ section.error-dialog .error-dialog-head > div > strong {
 .image-template-quick-card {
   display: grid;
   gap: 16px;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
+  min-width: 0;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--line);
 }
 
-.image-template-quick-card {
-  background: var(--panel-2);
+.prompt-template-skeleton-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
-.prompt-template-seed-pools {
+.prompt-template-seed-pools .fui-Textarea__textarea {
   min-height: 110px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
@@ -4706,7 +4652,7 @@ section.error-dialog .error-dialog-head > div > strong {
   font-size: 12px;
 }
 
-.prompt-step-editor-textarea {
+.prompt-step-editor-textarea .fui-Textarea__textarea {
   min-height: 180px;
 }
 
@@ -4731,7 +4677,7 @@ section.error-dialog .error-dialog-head > div > strong {
   margin-bottom: 0;
 }
 
-.draft-template-toolbar > div {
+.draft-template-toolbar > div:not(.button-row) {
   display: grid;
   gap: 5px;
 }
@@ -4741,21 +4687,9 @@ section.error-dialog .error-dialog-head > div > strong {
   gap: 12px;
 }
 
-.coze-template-import-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 45;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(2, 5, 8, 0.72);
-}
-
 .coze-template-import-dialog {
   width: min(960px, calc(100vw - 36px));
   max-height: calc(100vh - 64px);
-  overflow: auto;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
 }
 
 .coze-template-import-grid {
@@ -4765,7 +4699,7 @@ section.error-dialog .error-dialog-head > div > strong {
   align-items: start;
 }
 
-.coze-workflow-source {
+.coze-workflow-source .fui-Textarea__textarea {
   min-height: 132px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -4773,10 +4707,8 @@ section.error-dialog .error-dialog-head > div > strong {
 .coze-import-preview {
   display: grid;
   gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  background: var(--panel-2);
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
 }
 
 .coze-import-preview > span,
@@ -4884,8 +4816,7 @@ section.error-dialog .error-dialog-head > div > strong {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.draft-template-actions .ghost-action,
-.draft-template-actions .danger-action {
+.draft-template-actions .sd-button {
   width: 100%;
   min-width: 0;
   min-height: 34px;
@@ -4896,29 +4827,30 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .new-template-card {
+  min-width: 0;
+  min-height: 340px;
+}
+
+.new-template-card .sd-button__content {
   display: grid;
-  place-items: center;
-  align-content: center;
+  justify-items: center;
   gap: 10px;
-  border-style: dashed;
-  color: var(--accent);
+  white-space: normal;
   text-align: center;
 }
 
-.new-template-card span {
+.new-template-card .sd-button__content > span {
   color: var(--muted);
 }
 
 .editor-topbar {
   display: grid;
-  grid-template-columns: auto minmax(220px, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-height: 54px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
 }
 
 .template-name-input {
@@ -4933,7 +4865,7 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .draft-editor-shell.focused {
-  grid-template-columns: minmax(320px, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   align-items: start;
 }
 
@@ -5200,12 +5132,6 @@ section.error-dialog .error-dialog-head > div > strong {
 .image-layer[data-animation-preview='wave'] { animation-name: draft-effect-wave; }
 .image-layer[data-animation-preview='stretch'] { animation-name: draft-effect-stretch; }
 
-.draft-animation-picker .segmented button.previewing:not(.selected) {
-  border-color: color-mix(in srgb, var(--shell-accent) 62%, var(--shell-border));
-  background: color-mix(in srgb, var(--shell-accent) 10%, var(--shell-surface-raised));
-  color: var(--shell-accent-strong);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .draft-image-media[data-motion]:not([data-motion='none']),
   .image-layer[data-animation-preview]:not([data-animation-preview='none']) {
@@ -5310,6 +5236,17 @@ section.error-dialog .error-dialog-head > div > strong {
   display: block;
 }
 
+.draft-image-transform-handles {
+  --draft-transform-color: color-mix(in srgb, var(--shell-accent) 82%, white);
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.draft-image-transform-handles[data-transform-target='image-media'] {
+  --draft-transform-color: rgba(255, 255, 255, 0.94);
+}
+
 .draft-transform-handle {
   position: absolute;
   width: 11px;
@@ -5321,6 +5258,7 @@ section.error-dialog .error-dialog-head > div > strong {
   padding: 0;
   background: var(--draft-transform-color);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  pointer-events: auto;
   touch-action: none;
 }
 
@@ -5411,7 +5349,7 @@ section.error-dialog .error-dialog-head > div > strong {
   overflow: hidden;
 }
 
-.accordion > button {
+.accordion > button:not(.fui-Button) {
   width: 100%;
   min-height: 42px;
   padding: 0 12px;
@@ -5425,10 +5363,26 @@ section.error-dialog .error-dialog-head > div > strong {
 }
 
 .draft-background-field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
+  display: flex;
+  gap: 4px;
   align-items: center;
+}
+
+.accordion > .sd-button {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 42px;
+}
+
+@media (max-width: 1120px) {
+  .draft-editor-shell.focused { grid-template-columns: minmax(0, 1fr); }
+  .draft-stage { position: static; max-height: none; }
+  .draft-controls { max-height: 70vh; }
+}
+
+@media (max-width: 760px) {
+  .editor-topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .editor-topbar .template-name-input { grid-column: 1 / -1; grid-row: 2; }
 }
 
 .draft-background-field.with-swatch {
@@ -5991,6 +5945,7 @@ section.error-dialog .error-dialog-head > div > strong {
 .profile-editor-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 12px;
   border-top: 1px solid var(--line);
   padding-top: 14px;
@@ -6014,18 +5969,7 @@ section.error-dialog .error-dialog-head > div > strong {
 .provider-portal-item > span, .provider-portal-empty { color: var(--shell-muted); font-size: 12px; overflow-wrap: anywhere; }
 
 .profile-editor-grid > .sd-field {
-  display: grid;
-  gap: 8px;
   margin-bottom: 14px;
-}
-
-.profile-editor-grid > .sd-field > label {
-  padding: 0;
-  margin-bottom: 8px;
-  color: var(--text);
-  font-size: inherit;
-  line-height: inherit;
-  font-weight: 700;
 }
 
 .minimax-clone-voice-manager {
@@ -6068,7 +6012,7 @@ section.error-dialog .error-dialog-head > div > strong {
   border-bottom: 1px solid var(--shell-border);
 }
 
-.minimax-clone-voice-editor > .field:nth-child(3),
+.minimax-clone-voice-editor > .sd-field:nth-child(3),
 .minimax-clone-voice-editor-actions {
   grid-column: 1 / -1;
 }
@@ -7013,7 +6957,7 @@ section.error-dialog .error-dialog-head > div > strong {
     grid-template-columns: 1fr;
   }
 
-  .minimax-clone-voice-editor > .field:nth-child(3),
+  .minimax-clone-voice-editor > .sd-field:nth-child(3),
   .minimax-clone-voice-editor-actions {
     grid-column: 1;
   }

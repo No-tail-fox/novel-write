@@ -34,6 +34,10 @@ export function splitEditorialScriptText(text: string, maxCharacters = 18): stri
   while (start < characters.length) {
     let end = Math.min(characters.length, start + maxCharacters);
     if (end < characters.length) {
+      // Keep the final subtitle from becoming an isolated word or punctuation.
+      const remainder = characters.length - end;
+      const minimumTail = Math.min(6, Math.ceil(maxCharacters / 3));
+      if (remainder < minimumTail) end -= minimumTail - remainder;
       for (let index = end - 1; index > start; index -= 1) {
         if (/\s/u.test(characters[index]) || (index >= start + Math.floor(maxCharacters / 2) && /[。！？!?；;，,、:：]/u.test(characters[index]))) { end = index + 1; break; }
       }

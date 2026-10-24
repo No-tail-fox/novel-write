@@ -199,7 +199,18 @@ export function saveImageProfile(config: AppConfig, profile: ImageProviderProfil
   const nextProfiles = profiles.some((item) => item.id === nextProfile.id)
     ? profiles.map((item) => (item.id === nextProfile.id ? { ...nextProfile, enabled: item.id === activeId } : item))
     : [{ ...nextProfile, enabled: false }, ...profiles];
-  const next = normalizeAppConfig({ ...normalized, imageProfiles: nextProfiles, activeImageProfileId: activeId });
+  // Keep legacy fields in sync before normalization can reapply their fallback.
+  const next = normalizeAppConfig({
+    ...normalized,
+    ...(nextProfile.id === activeId ? {
+      imageProvider: nextProfile.provider,
+      gptImage: nextProfile.gptImage,
+      jimeng: nextProfile.jimeng,
+      customImage: nextProfile.customImage,
+    } : {}),
+    imageProfiles: nextProfiles,
+    activeImageProfileId: activeId,
+  });
   return nextProfile.id === activeId ? enableImageProfile(next, nextProfile.id) : next;
 }
 

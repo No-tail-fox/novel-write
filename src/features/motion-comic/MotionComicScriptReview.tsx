@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { splitMotionComicSource, type MotionComicPlanRecovery, type MotionComicScriptDraft } from '../../shared/motion-comic-planning';
-import { Button, CheckboxField, SelectField, TextAreaField } from '../../ui';
+import { Button, CheckboxField, SelectField, Tabs, TextAreaField } from '../../ui';
+import { MotionComicScriptAssets } from './MotionComicScriptAssets';
 import { beatSelection, speakerOptions, updateFailedBeat } from './motion-comic-script-repair';
+import type { MotionComicPipelineData } from '../../shared/motion-comic';
+import { motionComicScriptAssetSummary } from '../../shared/motion-comic-script-assets';
 
 interface Props {
   recovery: MotionComicPlanRecovery;
@@ -10,30 +13,47 @@ interface Props {
   reviewed: boolean;
   onReviewed: (value: boolean) => void;
   onChange?: (script: MotionComicScriptDraft) => void;
+  approvalLabel?: string;
+  statusLabel?: string;
+  workflowNote?: string;
+  project?: MotionComicPipelineData;
+  onOpenProjectAssets?: () => void;
 }
 
 /** The retained token identifies the server revision; edits must be revalidated before confirmation. */
-export function MotionComicScriptReview({ recovery, episodeNumber, locked, reviewed, onReviewed, onChange }: Props) {
+export function MotionComicScriptReview({ recovery, project, onOpenProjectAssets, episodeNumber, locked, reviewed, onReviewed, onChange, approvalLabel = '我已核对本集剧情、角色及修改记录，确认后生成分镜', statusLabel, workflowNote = '确认前不会生成分镜，也不会写入正式分集。' }: Props) {
   const script = recovery.script;
   const [sceneKey, setSceneKey] = useState(script.scenes[0]?.key ?? '');
-  useEffect(() => { setSceneKey(script.scenes[0]?.key ?? ''); }, [recovery.token]);
+  const [view, setView] = useState('scenes');
+  useEffect(() => { setSceneKey(script.scenes[0]?.key ?? ''); setView('scenes'); }, [recovery.token]);
   const scene = script.scenes.find((item) => item.key === sceneKey) ?? script.scenes[0];
+  const acts = new Set(script.scenes.map((item) => item.actIndex)).size;
   const units = useMemo(() => new Map(splitMotionComicSource(recovery.sourceText).map((unit) => [unit.id, unit.text])), [recovery.sourceText]);
   const adjustments = recovery.adjustments ?? [];
+  const assets = project && motionComicScriptAssetSummary(project, script);
   return <section className="motion-comic-script-review" aria-label="当前集剧本审核">
-    <div className="motion-comic-plan-safety" role="status"><span>
-      <strong>第 {episodeNumber} 集 · {script.title} · {recovery.needsValidation ? '修改待校验' : '等待确认剧本'}</strong>
-      <small>{script.logline} · {script.scenes.length} 场 · {script.characters.length} 角色。确认前不会生成分镜，也不会写入正式分集。</small>
-    </span></div>
-    <div className="motion-comic-plan-review">
+    <div className="motion-comic-script-overview">
+      <div role="status" title={workflowNote}><strong>{recovery.needsValidation ? '修改待校验' : statusLabel ?? '等待确认剧本'}</strong><small>第 {episodeNumber} 集 · {acts} 幕 · {script.scenes.length} 场</small></div>
+      <details><summary>本集梗概</summary><div><strong>{script.title}</strong><p>{script.logline}</p><small>{workflowNote}</small></div></details>
+    </div>
+    <Tabs label="剧本拆解内容" value={view} onChange={setView} items={[
+      { value: 'scenes', label: '分幕分场' },
+      { value: 'characters', label: `人物 (${script.characters.length})` },
+      { value: 'locations', label: `场景 (${script.sceneAssets.length})` },
+      { value: 'props', label: `道具 (${script.props.length})` },
+    ]} />
+    {assets ? <div className="comic-script-asset-summary" data-unresolved={assets.unresolved > 0} role="status"><small>项目资产 · {assets.reused} 项复用 · {assets.created} 项新建 · {assets.unresolved} 项待选择</small></div> : null}
+    {view === 'scenes' ? <div className="motion-comic-plan-review motion-comic-script-scenes">
       <aside className="motion-comic-plan-scenes" aria-label="本集分幕与场次">
-        <div className="motion-comic-plan-pane-heading"><strong>第 {episodeNumber} 集 · 分幕 / 分场</strong></div>
+        <div className="motion-comic-plan-pane-heading"><strong>{acts} 幕 / {script.scenes.length} 场</strong></div>
         <div className="motion-comic-plan-scene-list">
-          {script.scenes.map((item, index) => <Button key={item.key} variant="subtle" className="motion-comic-plan-scene" aria-pressed={item.key === scene?.key} onClick={() => setSceneKey(item.key)}>
-            <span>{String(index + 1).padStart(2, '0')}</span><span><strong>{item.title}</strong><small>第 {item.actIndex} 幕 · {item.actTitle} · {item.beats.length} 条</small></span>
-          </Button>)}
+          {script.scenes.map((item, index) => <div className="motion-comic-script-scene-entry" key={item.key}>
+            {index === 0 || script.scenes[index - 1].actIndex !== item.actIndex ? <h3>第 {item.actIndex} 幕 · {item.actTitle}</h3> : null}
+            <Button variant="subtle" className="motion-comic-plan-scene" title={item.title} aria-pressed={item.key === scene?.key} onClick={() => setSceneKey(item.key)}>
+              <span>{String(index + 1).padStart(2, '0')}</span><span><strong>{item.title}</strong><small>{script.sceneAssets.find((location) => location.key === item.locationKey)?.label ?? '场景待核对'} · {item.beats.length} 条</small></span>
+            </Button>
+          </div>)}
         </div>
-        <div className="motion-comic-plan-entities"><strong>本集实体</strong><small>角色：{script.characters.map((c) => c.name).join('、') || '无'}</small><small>场景：{script.sceneAssets.map((c) => c.label).join('、') || '无'}</small><small>道具：{script.props.map((c) => c.label).join('、') || '无'}</small></div>
       </aside>
       <section className="motion-comic-script-beats" aria-label="剧情节拍与原文证据" key={scene?.key}>
         {scene ? <>
@@ -46,8 +66,8 @@ export function MotionComicScriptReview({ recovery, episodeNumber, locked, revie
           </article>)}
         </> : null}
       </section>
-    </div>
+    </div> : <MotionComicScriptAssets script={script} project={project} disabled={locked} onChange={onChange} onOpenProjectAssets={onOpenProjectAssets} kind={view === 'characters' ? 'characters' : view === 'locations' ? 'locations' : 'props'} onOpenScene={(key) => { setSceneKey(key); setView('scenes'); }} />}
     {adjustments.length ? <details className="motion-comic-script-adjustments"><summary>整理与修改记录 · {adjustments.length} 项</summary><ol>{adjustments.map((item, index) => <li key={index}><strong>{item.path}</strong><p>修改前：{item.before}</p><p>修改后：{item.after}</p></li>)}</ol></details> : null}
-    <CheckboxField label="我已核对本集剧情、角色及修改记录，确认后生成分镜" checked={reviewed} disabled={locked || recovery.needsValidation} onChange={(_, data) => onReviewed(data.checked === true)} />
+    <CheckboxField label={approvalLabel} checked={reviewed} disabled={locked || recovery.needsValidation || Boolean(assets?.unresolved)} onChange={(_, data) => onReviewed(data.checked === true)} />
   </section>;
 }

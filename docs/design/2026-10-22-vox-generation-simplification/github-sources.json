@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-22",
+  "githubApi": "HTTP 403",
+  "githubCli": "not installed",
+  "method": "read-only git + raw.githubusercontent.com",
+  "sources": [
+    {
+      "repository": "pbakaus/impeccable",
+      "commit": "8644175285360c166e57b1e35ecadfbc85ff5209",
+      "path": "skill/reference/distill.md",
+      "license": "Apache-2.0",
+      "verification": "git clone + git show, LICENSE inspected"
+    },
+    {
+      "repository": "anthropics/skills",
+      "commit": "dbd4588f9e1033efb41dad4bef2f7947c8993d44",
+      "path": "skills/frontend-design/SKILL.md",
+      "license": "Apache-2.0 (skill-level LICENSE.txt inspected)",
+      "verification": "git ls-remote + raw at commit"
+    },
+    {
+      "repository": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "623a9a9037d006ea727f8213f084d02a6b6f11b5",
+      "path": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "license": "MIT",
+      "verification": "git ls-remote + raw source and LICENSE"
+    },
+    {
+      "repository": "vercel-labs/agent-skills",
+      "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
+      "path": "skills/web-design-guidelines/SKILL.md",
+      "license": "Not verified: no root or skill-level license located in git tree",
+      "verification": "git clone + raw source"
+    },
+    {
+      "repository": "vercel-labs/web-interface-guidelines",
+      "commit": "434b7f91364665f2f733b310ec54809bf8f37937",
+      "path": "command.md",
+      "license": "Not checked; research reference only",
+      "verification": "git ls-remote + raw source at commit"
+    }
+  ]
+}

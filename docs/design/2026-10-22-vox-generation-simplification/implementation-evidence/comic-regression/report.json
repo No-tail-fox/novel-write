@@ -1,0 +1,103 @@
+{
+  "surface": "production Electron, isolated profile, offline comic fixture",
+  "checks": [
+    {
+      "name": "comic retains preview-first composition",
+      "passed": true
+    },
+    {
+      "name": "Vox outline not injected into comic",
+      "passed": true
+    },
+    {
+      "name": "comic retains shot filmstrip",
+      "passed": true
+    },
+    {
+      "name": "Vox project footer not injected into comic",
+      "passed": true
+    },
+    {
+      "name": "dark-1536 no page horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "dark-1040 no page horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "light-1536 no page horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "light-1040 no page horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "comic dialog focus remains trapped",
+      "passed": true
+    },
+    {
+      "name": "controlled comic dialog restores external opener",
+      "passed": true
+    },
+    {
+      "name": "closing preview dialog preserves comic inspector",
+      "passed": true
+    },
+    {
+      "name": "comic batch dialog opens and cancels",
+      "passed": true
+    },
+    {
+      "name": "no new provider jobs",
+      "passed": true
+    },
+    {
+      "name": "no page errors",
+      "passed": true
+    },
+    {
+      "name": "no external provider requests",
+      "passed": true
+    }
+  ],
+  "screenshots": [
+    "dark-1536.png",
+    "dark-1040.png",
+    "light-1536.png",
+    "light-1040.png"
+  ],
+  "errors": [],
+  "paidCalls": 0,
+  "networkAudit": [],
+  "status": "passed"
+}

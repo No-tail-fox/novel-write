@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech } from '../src/shared/director-subtitle-structure';
+import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech, setDirectorShotNarration } from '../src/shared/director-subtitle-structure';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, parseEditorialCollagePipelineData, rebuildEditorialTimeline } from '../src/shared/editorial-collage';
 import { createMotionComicDraft, createMotionComicStarterProject, parseMotionComicPipelineData } from '../src/shared/motion-comic';
 import type { DirectorSubtitleDocument } from '../src/shared/director-subtitles';
@@ -23,6 +23,44 @@ function reopen(document: DirectorSubtitleDocument) {
 }
 
 describe('VOX explicit speech structure edits', () => {
+  it('preserves existing speech when inline narration has not changed', () => {
+    const document = fixture('vox');
+    const target = view(document);
+    target.shot.voiceAssetVersionId = 'retained-voice';
+    const text = target.cues.filter(cue => target.ids.includes(cue.id)).sort((a, b) => a.startMs - b.startMs).map(cue => cue.text).join('\n');
+    expect(setDirectorShotNarration(document, target.shot.id, text)).toBe(document);
+    expect(target.shot.voiceAssetVersionId).toBe('retained-voice');
+  });
+  it('persists inline narration, retains cue IDs/timing and invalidates obsolete speech', () => {
+    const document = fixture('vox');
+    if (document.workflowKind !== 'editorial-collage') throw new Error('Expected VOX fixture.');
+    const shot = document.beats[0].shots[0];
+    const old = document.beats[0].subtitleCues.filter(cue => shot.subtitleCueIds.includes(cue.id));
+    shot.voiceAssetVersionId = 'old-voice';
+    old[0].audioAssetVersionId = 'old-voice';
+    const next = setDirectorShotNarration(document, shot.id, old.map((_, i) => `修改后的旁白 ${i}`).join('\n'));
+    const cues = next.beats[0].subtitleCues.filter(cue => shot.subtitleCueIds.includes(cue.id));
+    expect(cues.map(({ id, startMs, endMs }) => ({ id, startMs, endMs }))).toEqual(old.map(({ id, startMs, endMs }) => ({ id, startMs, endMs })));
+    expect(cues.map(cue => cue.text)).toEqual(old.map((_, i) => `修改后的旁白 ${i}`));
+    expect(cues.every(cue => !cue.audioAssetVersionId && !cue.tokens?.length)).toBe(true);
+    expect(next.beats[0].shots[0].voiceAssetVersionId).toBeUndefined();
+    expect(next.beats[1]).toEqual(document.beats[1]);
+    expect(reopen(next)).toEqual(next);
+  });
+  it('reconciles line insertion/removal within the shot and preserves blank editing lines', () => {
+    const document = fixture('vox');
+    const target = view(document);
+    const next = setDirectorShotNarration(document, target.shot.id, '第一行\n\n第三行');
+    expect(view(next).cues.map(cue => cue.text)).toEqual(['第一行', '', '第三行']);
+    expect(view(next).cues[0].startMs).toBe(0);
+    expect(view(next).cues.at(-1)?.endMs).toBe(target.shot.durationMs);
+    expect(new Set(view(next).ids).size).toBe(3);
+    expect(reopen(next)).toEqual(next);
+    const removed = setDirectorShotNarration(next, target.shot.id, '合为一句');
+    expect(view(removed).cues).toHaveLength(1);
+    expect(view(removed).timeline.clips[0].subtitleCueIds).toEqual(view(removed).ids);
+    expect(reopen(removed)).toEqual(removed);
+  });
   it.each(['add', 'remove', 'voice'] as const)('%s invalidates all shot speech while preserving other shots and authored music/effects', (operation) => {
     const initial = fixture('vox');
     if (initial.workflowKind !== 'editorial-collage') throw new Error('Expected VOX fixture.');

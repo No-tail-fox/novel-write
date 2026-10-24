@@ -117,6 +117,8 @@ export interface StoryboundComposeRenderInput {
   cover_duration_s?: number;
   canvas_w?: number;
   canvas_h?: number;
+  /** Opt-in two-pass EBU normalization after the final mix. */
+  normalize_audio?: boolean;
 }
 
 export interface StoryboundRemixBgmInput {
@@ -149,6 +151,7 @@ export interface StoryboundProbeMediaInput {
 
 export interface StoryboundNormalizeSceneVideoInput {
   mode: 'normalize_scene_video';
+  preserve_audio?: boolean;
   work_dir: string;
   video_path: string;
   output_path: string;
@@ -1076,7 +1079,7 @@ def normalize_scene_video(payload):
     run_ffmpeg([
         "-i", source_path,
         "-map", "0:v:0",
-        "-an",
+        *(["-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k"] if payload.get("preserve_audio") else ["-an"]),
         "-c:v", "libx264",
         "-preset", "medium",
         "-crf", "18",
@@ -1253,13 +1256,15 @@ def run_composition_ffmpeg(args):
         if value == "-i" and cwd:
             rewritten[index + 1] = os.path.relpath(os.path.abspath(args[index + 1]), cwd)
     rewritten[-1] = os.path.abspath(args[-1])
-    if len(paths) > 8:
-        bounded_inputs = []
-        for value in rewritten:
-            if value == "-i":
-                bounded_inputs.extend(["-threads", "1"])
-            bounded_inputs.append(value)
-        rewritten = bounded_inputs
+    # FFmpeg otherwise allocates a decoder pool per input and CPU-sized filter
+    # pools. Even six HD inputs exceeded 2 GiB in the process-tree benchmark.
+    # Bound every graph, including recursive groups of eight and 4K exports.
+    bounded_inputs = ["-filter_complex_threads", "1"]
+    for index, value in enumerate(rewritten):
+        if value == "-i" and not (index >= 2 and rewritten[index - 2] == "-threads"):
+            bounded_inputs.extend(["-threads", "1"])
+        bounded_inputs.append(value)
+    rewritten = [*bounded_inputs[:-1], "-threads", "2", bounded_inputs[-1]]
     filter_index = rewritten.index("-filter_complex")
     script_path = ""
     try:
@@ -1591,6 +1596,7 @@ def encode_render_scene(scene, work_dir, segment_path, index=0):
         "-t", str(scene_duration),
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
+        "-threads", "2",
         "-c:a", "aac",
         segment_path,
     ])
@@ -1603,6 +1609,38 @@ def generate_encode_render_scene(payload):
     output_path = norm(payload["output_path"])
     duration = encode_render_scene(payload["scene"], work_dir, output_path)
     return {"success": True, "output_path": output_path, "duration": duration}
+
+
+def normalize_composed_audio(source_path, output_path, target_duration=0):
+    if not math.isfinite(target_duration) or target_duration <= 0:
+        target_duration = media_duration_s(source_path)
+    if not math.isfinite(target_duration) or target_duration <= 0:
+        raise ValueError("Audio normalization requires a valid composition duration")
+    analysis = run_bounded_subprocess([
+        ffmpeg_exe(), "-hide_banner", "-i", source_path, "-map", "0:a:0", "-vn",
+        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", os.devnull,
+    ], timeout_seconds=SIDECAR_SUBPROCESS_TIMEOUT_SECONDS)
+    if analysis.returncode != 0:
+        raise RuntimeError(analysis.stderr[-2000:] or "Audio normalization analysis failed")
+    blocks = re.findall(r'\{[^{}]*"input_i"[^{}]*\}', analysis.stderr)
+    if not blocks:
+        raise ValueError("Audio normalization did not return measurements")
+    measured = json.loads(blocks[-1])
+    if str(measured.get("input_i")).lower() == "-inf":
+        shutil.copy2(source_path, output_path)
+        return
+    fields = {key: float(measured[key]) for key in ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"]}
+    if not all(math.isfinite(value) for value in fields.values()):
+        raise ValueError("Audio normalization measurements are invalid")
+    audio_filter = "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" + ":" + ":".join([
+        "measured_I=" + str(fields["input_i"]), "measured_TP=" + str(fields["input_tp"]),
+        "measured_LRA=" + str(fields["input_lra"]), "measured_thresh=" + str(fields["input_thresh"]),
+        "offset=" + str(fields["target_offset"]),
+    ])
+    audio_filter += ",apad,atrim=duration=" + str(target_duration)
+    run_ffmpeg(["-i", source_path, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+                "-af", audio_filter, "-ar", "48000", "-c:a", "aac", "-b:a", "192k",
+                "-t", str(target_duration), output_path])
 
 
 def generate_compose_render(payload):
@@ -1685,20 +1723,29 @@ def generate_compose_render(payload):
             "-t", str(target_duration),
             "-pix_fmt", "yuv420p",
             "-c:v", "libx264",
+            "-threads", "2",
             "-c:a", "aac",
             duration_path,
         ])
         os.replace(duration_path, source_path)
+    output_path = norm(payload["output_path"])
+    ensure_parent(output_path)
     if payload.get("bgm_path"):
-        return generate_remix_bgm({
+        mixed_path = os.path.join(work_dir, "_mixed.mp4") if payload.get("normalize_audio") else output_path
+        result = generate_remix_bgm({
             "source_path": source_path,
             "bgm_path": payload.get("bgm_path"),
             "bgm_target_db": payload.get("bgm_target_db", -18),
-            "output_path": payload["output_path"],
+            "output_path": mixed_path,
         })
-    output_path = norm(payload["output_path"])
-    ensure_parent(output_path)
-    shutil.copy2(source_path, output_path)
+        if payload.get("normalize_audio"):
+            normalize_composed_audio(mixed_path, output_path, target_duration)
+            result["output_path"] = output_path
+        return result
+    if payload.get("normalize_audio"):
+        normalize_composed_audio(source_path, output_path, target_duration)
+    else:
+        shutil.copy2(source_path, output_path)
     return {"success": True, "source_path": source_path, "output_path": output_path}
 
 

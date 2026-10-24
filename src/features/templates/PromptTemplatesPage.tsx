@@ -1,15 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, Plus, RotateCcw, Sparkles } from 'lucide-react';
+import { Copy, Eye, Plus, RotateCcw, Sparkles } from 'lucide-react';
 import type { CustomStyle, PromptTemplate, PromptStepTemplateType, PromptTemplateType } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { defaultCustomStyles } from '../../shared/config';
 import { buildStoryTemplateTrackOptions } from '../../shared/prompt-templates';
 import { useAsyncAction } from '../../ui/async-action';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
-import { FormField as Field } from '../../components/FormField';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EmptyState } from '../../components/EmptyState';
-import { Button, HoverPreview } from '../../ui';
+import { Button, HoverPreview, SelectField, Tabs } from '../../ui';
 import { ImageStyleSample } from '../image-style-preview/ImageStylePreview';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { promptTemplateTypeOptions } from '../../shared/editorial-options';
@@ -116,12 +115,6 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
       setBaseImageTemplateId(style.id);
       setImageTemplateAiStatus('');
     });
-  }
-
-  function handlePromptTemplateRowKeyDown(event: React.KeyboardEvent<HTMLElement>, template: PromptTemplate) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    openPromptTemplateDetail(template);
   }
 
   async function savePromptTemplateDraft(): Promise<boolean> {
@@ -410,35 +403,25 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
             <p>故事模板决定 AI 怎么写，图像模板决定画面怎么长。先浏览模板，点开后查看和编辑细节。</p>
           </div>
           <div className="button-row">
-            <button className="ghost-action" disabled={promptTemplateAction.busy} onClick={resetPromptTemplateLibrary}>
-              <RotateCcw size={14} />
+            <Button icon={<RotateCcw size={14} />} disabled={promptTemplateAction.busy} onClick={resetPromptTemplateLibrary}>
               重置
-            </button>
-            <button className="primary-action slim" disabled={promptTemplateAction.busy} onClick={promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate}>
-              <Plus size={14} />
+            </Button>
+            <Button variant="primary" icon={<Plus size={14} />} disabled={promptTemplateAction.busy} onClick={promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate}>
               新建模板
-            </button>
+            </Button>
           </div>
         </div>
         <InlineActionFeedback feedback={promptTemplateAction.feedback} />
-        <div className="prompt-template-tabs" role="tablist" aria-label="提示词模板类型">
-          <button className={promptTemplateLibraryTab === 'story' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('story')}>故事模板</button>
-          <button className={promptTemplateLibraryTab === 'image' ? 'chip active' : 'chip'} type="button" onClick={() => setPromptTemplateLibraryTab('image')}>图像模板</button>
-        </div>
+        <Tabs className="prompt-template-tabs" label="提示词模板类型" value={promptTemplateLibraryTab}
+          onChange={(value) => setPromptTemplateLibraryTab(value as 'story' | 'image')}
+          items={[{ value: 'story', label: '故事模板' }, { value: 'image', label: '图像模板' }]} />
         {promptTemplateLibraryTab === 'story' ? (
           <>
             <div className="template-filter-row">
-              <Field label="类型筛选">
-                <select value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}>
-                  {promptTemplateTypeOptions.map((type) => <option key={type} value={type}>{promptTemplateTypeLabel(type)}</option>)}
-                </select>
-              </Field>
-              <Field label="赛道筛选">
-                <select value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}>
-                  <option value="all">全部赛道</option>
-                  {promptTemplateTrackOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-                </select>
-              </Field>
+              <SelectField label="类型筛选" value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}
+                options={promptTemplateTypeOptions.map((type) => ({ value: type, label: promptTemplateTypeLabel(type) }))} />
+              <SelectField label="赛道筛选" value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}
+                options={[{ value: 'all', label: '全部赛道' }, ...promptTemplateTrackOptions.map(([id, label]) => ({ value: id, label }))]} />
             </div>
             <section className="prompt-template-list story-template-gallery">
               <div className="prompt-template-list-title">
@@ -449,10 +432,6 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                 <article
                   className="prompt-template-row"
                   key={template.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openPromptTemplateDetail(template)}
-                  onKeyDown={(event) => handlePromptTemplateRowKeyDown(event, template)}
                 >
                   <Sparkles size={18} />
                   <div className="prompt-template-row-main">
@@ -461,13 +440,12 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                     <small>默认图像模板：{promptTemplateStyleLabelList(template, state.customStyles).join('、') || '未设置'} · id: {template.id}</small>
                   </div>
                   <div className="prompt-template-row-actions">
-                    <button className="ghost-action compact-action" onClick={(event) => { event.stopPropagation(); openPromptTemplateDetail(template); }}>
+                    <Button density="compact" icon={<Eye size={14} />} disabled={promptTemplateAction.busy} onClick={() => openPromptTemplateDetail(template)}>
                       查看
-                    </button>
-                    <button className="ghost-action compact-action" disabled={promptTemplateAction.busy} onClick={(event) => { event.stopPropagation(); void duplicateTemplate(template); }}>
-                      <Copy size={14} />
+                    </Button>
+                    <Button density="compact" icon={<Copy size={14} />} disabled={promptTemplateAction.busy} onClick={() => void duplicateTemplate(template)}>
                       克隆
-                    </button>
+                    </Button>
                   </div>
                 </article>
               )) : <EmptyState title="暂无匹配模板" />}
@@ -484,16 +462,6 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
               <article
                 className="prompt-template-row"
                 key={style.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => openImageTemplateDetail(style)}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) return;
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    openImageTemplateDetail(style);
-                  }
-                }}
               >
                 <ImageStyleSample style={style} thumbnail />
                 <div className="prompt-template-row-main">
@@ -502,11 +470,10 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                   <small>{style.tag} · {style.allowColor ? '彩色' : '黑白 / 单色'} · id: {style.id}</small>
                 </div>
                 <div className="prompt-template-row-actions">
-                  <Button variant="subtle" density="compact" onClick={(event) => { event.stopPropagation(); openImageTemplateDetail(style); }}>
+                  <Button density="compact" icon={<Eye size={14} />} disabled={promptTemplateAction.busy} onClick={() => openImageTemplateDetail(style)}>
                     查看
                   </Button>
-                  <Button variant="subtle" density="compact" disabled={promptTemplateAction.busy} onClick={(event) => { event.stopPropagation(); void duplicateImageTemplate(style); }}>
-                    <Copy size={14} />
+                  <Button density="compact" icon={<Copy size={14} />} disabled={promptTemplateAction.busy} onClick={() => void duplicateImageTemplate(style)}>
                     克隆
                   </Button>
                 </div>

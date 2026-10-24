@@ -71,7 +71,11 @@ Use a narrow navigation column and one unframed form region. Group related field
 
 ## Tokens
 
-Source of truth: `src/styles/tokens.css`.
+Fluent control themes and interaction states are owned by `src/ui/theme.ts`.
+Choose control appearance and size through `src/ui` props. Keep borders, focus,
+hover, selected, and disabled visuals inside the shared component layer.
+
+Shell, pane, and media layout tokens are owned by `src/styles/tokens.css`.
 
 - Shell surfaces: `--shell-bg`, `--shell-surface`, `--shell-surface-raised`.
 - Text and boundaries: `--shell-text`, `--shell-muted`, `--shell-border`.
@@ -79,7 +83,10 @@ Source of truth: `src/styles/tokens.css`.
 - Status: `--danger`, `--warn`, `--ok`.
 - Media workspaces may use the corresponding `--media-*` tokens.
 
-If a reusable semantic value is missing, add it to both dark and light token sets before using it. Do not encode a new theme in a feature stylesheet.
+If a reusable semantic value is missing, add it to both dark and light sets in
+the appropriate theme source before using it. Feature CSS owns layout, including
+spacing, alignment, grid tracks, and responsive pane sizing; it must not recreate
+standard control appearance.
 
 ## Migration
 

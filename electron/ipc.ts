@@ -28,6 +28,8 @@ export interface TrustedIpcDependencies {
   register: (channel: string, handler: RegisteredHandler) => void;
   getWindow: () => IpcWindowLike | null;
   getPolicy: () => RendererPolicy | null;
+  authorize?: (channel: IpcChannel, input: unknown) => Promise<void> | void;
+  beginInvocation?: (channel: IpcChannel) => (() => void);
 }
 
 export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) {
@@ -40,6 +42,7 @@ export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) 
     // behind this boundary so individual handlers retain their input type.
     const schema = (ipcInputSchemas as Record<IpcChannel, ZodType<unknown>>)[channel] as ZodType<IpcInput<C>>;
     dependencies.register(channel, async (event, raw) => {
+      let finish: (() => void) | undefined;
       try {
         const win = dependencies.getWindow();
         const policy = dependencies.getPolicy();
@@ -50,6 +53,8 @@ export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) 
         if (!parsed.success) {
           throw new AppError('IPC_INVALID_INPUT', '请求参数无效。');
         }
+        finish = dependencies.beginInvocation?.(channel);
+        await dependencies.authorize?.(channel, parsed.data);
         return { ok: true, value: await handler(event as IpcMainInvokeEvent, parsed.data) };
       } catch (error) {
         return {
@@ -60,7 +65,7 @@ export function createTrustedIpcRegistrar(dependencies: TrustedIpcDependencies) 
             retryable: true,
           }),
         };
-      }
+      } finally { finish?.(); }
     });
   };
 }

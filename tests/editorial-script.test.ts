@@ -6,6 +6,14 @@ const now = '2026-09-08T00:00:00.000Z';
 const graphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' });
 
 describe('editorial full-text planning', () => {
+  it('balances a short final subtitle without leaving punctuation as a spoken shot', () => {
+    const text = '这些热量缓慢释放，街道就不容易凉下来。';
+    const cues = splitEditorialScriptText(text);
+    expect(cues.join('')).toBe(text);
+    expect(cues.every(cue => /[\p{L}\p{N}]/u.test(cue))).toBe(true);
+    expect(cues.every(cue => [...graphemes.segment(cue)].length <= 18)).toBe(true);
+    expect([...graphemes.segment(cues.at(-1)!)].length).toBeGreaterThanOrEqual(6);
+  });
   it.each([4000, 8000, 12000])('keeps all %s Chinese characters readable, owned and persistable', (length) => {
     const source = '完整事实需要保留上下文。'.repeat(Math.ceil(length / 12)).slice(0, length);
     const draft = createEditorialCollageDraft({ id: `long-${length}`, title: '全文', now });

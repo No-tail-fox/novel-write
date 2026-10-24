@@ -535,6 +535,9 @@ export interface HtmlVideoStepState {
 }
 
 export interface HtmlVideoScenePlan {
+  /** Missing means legacy composition and keeps its original CSS/motion. */
+  compositionVersion?: 2;
+  beats?: HtmlVideoSemanticBeat[];
   index: number;
   narration: string;
   title: string;
@@ -553,7 +556,44 @@ export interface HtmlVideoScenePlan {
   elements: Array<{
     slot: number;
     prompt: string;
+    layout?: {
+      role: HtmlVideoElementRole;
+      landscape: HtmlVideoElementGeometry;
+      portrait: HtmlVideoElementGeometry;
+    };
   }>;
+}
+
+export interface HtmlVideoSemanticBeat {
+  id: string;
+  purpose: 'reveal' | 'evidence' | 'compare' | 'path' | 'focus';
+  cueIndex: number;
+  targetSlots: number[];
+  action: 'reveal' | 'emphasize' | 'dim' | 'exit';
+  durationSec: number;
+}
+
+export type HtmlVideoElementRole = 'subject' | 'supporting' | 'annotation' | 'decoration';
+export type HtmlVideoElementFit = 'contain' | 'cover';
+export type HtmlVideoElementAnchor = 'left top' | 'center top' | 'right top' | 'left center' | 'center center' | 'right center' | 'left bottom' | 'center bottom' | 'right bottom';
+
+export interface HtmlVideoElementGeometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fit: HtmlVideoElementFit;
+  anchor: HtmlVideoElementAnchor;
+  zIndex: number;
+}
+
+export interface HtmlVideoTimedCaptionCue {
+  text: string;
+  startSec: number;
+  endSec: number;
+  source: 'tts' | 'asr' | 'estimated';
+  confidence: number;
+  words?: Array<{ text: string; startSec: number; endSec: number }>;
 }
 
 export type HtmlVideoSceneChange =
@@ -604,6 +644,9 @@ export interface HtmlVideoCompositionSnapshot {
     text: string;
     startSec: number;
     durationSec: number;
+    /** Absent in legacy snapshots; migrate to estimated on read. */
+    source?: HtmlVideoTimedCaptionCue['source'];
+    confidence?: number;
   }>;
   htmlPath?: string;
   thumbnailPath?: string;
@@ -662,6 +705,24 @@ export interface HtmlVideoLintFinding {
   snippet?: string;
 }
 
+export type BackgroundRemovalMethod = 'native-alpha' | 'green-key' | 'onnx';
+export type BackgroundRemovalQuality = 'passed' | 'warning' | 'failed';
+
+export interface BackgroundRemovalMetadata {
+  method: BackgroundRemovalMethod;
+  model?: string;
+  modelVersion?: string;
+  modelSha256?: string;
+  sourceSha256?: string;
+  outputSha256?: string;
+  transparentFraction: number;
+  foregroundFraction: number;
+  edgeFraction: number;
+  quality: BackgroundRemovalQuality;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface HtmlVideoAsset {
   sceneIndex: number;
   kind: 'bg' | 'fg';
@@ -669,6 +730,7 @@ export interface HtmlVideoAsset {
   src: string;
   prompt?: string;
   transparency?: 'transparent' | 'opaque';
+  backgroundRemoval?: BackgroundRemovalMetadata;
   sizeBytes?: number;
 }
 
@@ -677,6 +739,7 @@ export interface HtmlVideoVoiceClip {
   src: string;
   durationSec: number;
   text?: string;
+  captionCues?: HtmlVideoTimedCaptionCue[];
   sizeBytes?: number;
 }
 
@@ -756,6 +819,8 @@ export interface HtmlVideoJobConfig {
   foreground?: boolean;
   maxScenes?: number;
   ratio?: string;
+  previewLongEdge?: 720 | 1080;
+  renderLongEdge?: 1080 | 1920;
 }
 
 export type HtmlVideoEditableConfigField =
@@ -778,6 +843,8 @@ export type HtmlVideoEditableConfigField =
   | 'draftTemplate'
   | 'foreground'
   | 'maxScenes'
+  | 'previewLongEdge'
+  | 'renderLongEdge'
   | 'ratio';
 
 export type HtmlVideoConfigChange =
@@ -800,6 +867,8 @@ export type HtmlVideoConfigChange =
   | { field: 'draftTemplate'; value: string }
   | { field: 'foreground'; value: boolean }
   | { field: 'maxScenes'; value: number }
+  | { field: 'previewLongEdge'; value: 720 | 1080 }
+  | { field: 'renderLongEdge'; value: 1080 | 1920 }
   | { field: 'ratio'; value: '9:16' | '16:9' | '1:1' | '4:3' };
 
 export interface HtmlVideoPipelineDataV2 {
@@ -1265,6 +1334,12 @@ export interface CountedCursorPage<T> extends CursorPage<T> {
   totalCount: number;
 }
 
+export interface ProjectActivity {
+  status: TaskStatus;
+  label: string;
+  detail: string;
+}
+
 export type TaskSummary = Omit<
   Task,
   | 'inputText'
@@ -1284,6 +1359,7 @@ export type TaskSummary = Omit<
 > & {
   inputPreview: string;
   projectCover?: { path: string; revision: string } | null;
+  projectActivity?: ProjectActivity;
 };
 
 export interface PromptTemplate {
@@ -1358,6 +1434,22 @@ export interface ImageLabRecord {
   style: string;
   provider: ImageProvider | string;
   imagePath: string;
+  /** Original provider output; imagePath points to the preferred renderable output. */
+  originalImagePath?: string;
+  originalImageSha256?: string;
+  cutoutImagePath?: string;
+  cutoutMethod?: BackgroundRemovalMethod | null;
+  cutoutModel?: string;
+  cutoutModelVersion?: string;
+  cutoutModelSha256?: string;
+  cutoutSourceSha256?: string;
+  cutoutOutputSha256?: string;
+  cutoutTransparentFraction?: number | null;
+  cutoutForegroundFraction?: number | null;
+  cutoutEdgeFraction?: number | null;
+  cutoutQuality?: BackgroundRemovalQuality | null;
+  cutoutErrorCode?: string;
+  cutoutErrorMessage?: string;
   status: 'mock' | 'generated' | 'failed';
   errorMessage: string;
   resolution: '1K' | '2K' | '4K';
@@ -1375,6 +1467,11 @@ export type ImageLabSummary = Omit<ImageLabRecord, 'prompt' | 'referenceImagePat
 };
 
 export type ImageLabSmartMode = 'text-to-image' | 'cover' | 'blog-cover' | 'podcast-cover' | 'video-narration' | 'two-host-podcast' | 'reference-edit';
+
+export interface ImageLabBackgroundRemovalInput {
+  id: string;
+  method?: BackgroundRemovalMethod;
+}
 
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
   Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>> & {

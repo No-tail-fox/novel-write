@@ -20,7 +20,7 @@ function appendReport(document: DirectorRenderDocument, id: string, episodeId?: 
     providerId: 'local', model: 'ffmpeg', capability: 'deterministic-render', status: 'completed', inputHash: renderFingerprint,
     idempotencyKey: id, attempt: document.providerJobs.length + 1, estimatedCost: 0, createdAt: requestedAt, updatedAt: createdAt, episodeId, renderFingerprint });
   document.qualityReports.push({ id: `director-quality-${id}`, workflowKind: document.workflowKind, stage: 'export', status: 'passed', checks: [],
-    providerJobId, ...(episodeId ? { episodeId } : {}), renderFingerprint, createdAt });
+    providerJobId, ...(episodeId ? { episodeId } : {}), renderFingerprint, artifactSha256: 'a'.repeat(64), createdAt });
   return document.qualityReports.at(-1)!;
 }
 
@@ -80,6 +80,7 @@ describe('director quality report ownership', () => {
     const confirmed = confirmDirectorQualityReview(document, {
       reportId: report.id,
       renderFingerprint: fingerprint,
+      artifactSha256: report.artifactSha256,
       scope: { kind: 'project' },
       confirmedAt: '2026-09-09T00:10:00.000Z',
     });
@@ -116,7 +117,7 @@ describe('director quality report ownership', () => {
       { id: 'audio', label: 'Audio', status: 'failed', severity: 'warning', recheckScope: { kind: 'audio', shotIds: ['first'] } },
       { id: 'subtitle', label: 'Subtitle', status: 'pending', severity: 'manual', recheckScope: { kind: 'subtitle', cueIds: ['last'] } },
     ];
-    const confirmed = confirmDirectorQualityReview(document, { reportId: report.id, renderFingerprint: report.renderFingerprint!, scope: { kind: 'audio', shotIds: ['first'] }, confirmedAt: now });
+    const confirmed = confirmDirectorQualityReview(document, { reportId: report.id, renderFingerprint: report.renderFingerprint!, artifactSha256: report.artifactSha256, scope: { kind: 'audio', shotIds: ['first'] }, confirmedAt: now });
     expect(confirmed.qualityReports[0].manualReview?.scope).toEqual({ kind: 'project' });
     expect(confirmed.qualityReports[0].checks).toEqual(report.checks);
     expect(report.manualReview).toBeUndefined();

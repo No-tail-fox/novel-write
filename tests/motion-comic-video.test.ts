@@ -68,6 +68,28 @@ describe('motion comic remote video', () => {
     }
   });
 
+  it('uses native video audio once while retaining authored ambience', () => {
+    const {document,episode,shot}=fixture();shot.videoProduction={version:1,referenceMode:'frames',audioMode:'native'};
+    shot.videoJobId='native-job';shot.videoAssetVersionId='native-video';
+    const hash=motionComicVideoInputHash(document,shot,'local','native-test');
+    document.providerJobs.push({id:'native-job',workflowKind:'motion-comic',nodeId:shot.id,episodeId:episode.id,providerId:'local',model:'native-test',capability:'image-to-video',status:'completed',inputHash:hash,idempotencyKey:'native',estimatedCost:0,attempt:1,createdAt:now,updatedAt:now});
+    document.assets.push({id:'native-video',assetId:`shot-video-${shot.id}`,kind:'video',localPath:'C:/native.mp4',providerJobId:'native-job',durationMs:shot.durationMs,createdAt:now,selected:true},{id:'ambience',assetId:'ambience',kind:'audio',localPath:'C:/ambient.wav',durationMs:shot.durationMs,createdAt:now});
+    const start=episode.timeline.clips.find(c=>c.shotId===shot.id)!.startMs;
+    episode.timeline.audioClips=[{id:'ambient',shotId:shot.id,assetVersionId:'ambience',trackType:'ambience',startMs:start,durationMs:shot.durationMs}];
+    const scene=buildDirectorRenderScenes(document,episode.id,{shotIds:[shot.id]})[0];
+    expect(scene.audioClips?.filter(c=>c.trackType==='dialogue')).toEqual([expect.objectContaining({path:'C:/native.mp4'})]);
+    expect(scene.audioClips?.filter(c=>c.trackType==='ambience')).toHaveLength(1);
+  });
+
+  it('ignores stale reference-audio selections outside audio-driven mode', () => {
+    const {document,shot}=fixture();
+    shot.videoProduction={version:1,referenceMode:'frames',audioMode:'native',referenceAudioAssetVersionIds:['deleted-audio']};
+
+    const fingerprint=motionComicVideoInputFingerprintSource(document,shot,'remote-a','model-a');
+    expect(fingerprint.production?.referenceAudioAssetVersionIds).toEqual([]);
+    expect(fingerprint.referenceAudio).toEqual([]);
+  });
+
   it('renders the selected completed remote video and rejects an incomplete job', () => {
     const { document, episode, shot } = fixture();
     shot.dialogueCueIds = [];

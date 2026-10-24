@@ -9,7 +9,7 @@ import { VoxComposition, voxAudioCache } from './VoxComposition';
 import type { VoxAnimationPayload } from '../../shared/vox-animation';
 
 const runtimeWindow = window as unknown as Window & { VoxRuntime: { require: (id:string)=>unknown; mount:(payload:VoxAnimationPayload,component?:React.ComponentType<any>)=>void }; __ready:boolean; __htmlVideoMediaError?:string };
-const fail = (error:unknown) => { const message=error instanceof Error?error.message:String(error); runtimeWindow.__htmlVideoMediaError=message; parent.postMessage({type:'vox-error',message},'*'); };
+const fail = (error:unknown) => { const message='CREATIVE_CODE_RUNTIME: '+(error instanceof Error?error.message:String(error)); runtimeWindow.__htmlVideoMediaError=message; parent.postMessage({type:'vox-error',message},'*'); };
 const runtimeRequire=(id:string)=>{if(id==='react')return ReactModule;if(id==='remotion')return Remotion;throw new Error(`不支持的依赖：${id}`);};
 class Boundary extends React.Component<{children:React.ReactNode},{error:string}>{
   state={error:''};

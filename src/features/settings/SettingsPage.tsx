@@ -15,7 +15,7 @@ import { useAsyncAction } from "../../ui/async-action";
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import { ToggleField } from "../../components/ToggleField";
-import { Button, SelectField, SwitchField, TextField } from '../../ui';
+import { Button, SelectField, SwitchField, Tabs, TextField } from '../../ui';
 import { RangeField } from "../../components/RangeField";
 import { AsyncActionFeedback as InlineActionFeedback } from "../../components/AsyncActionFeedback";
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
@@ -477,7 +477,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['webSearch', Globe2, '联网搜索', 'Agent Search · SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
-  const returnLabel = returnView === 'video-lab' ? '返回视频生成' : returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 VOX 视频' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
+  const returnLabel = returnView === 'video-lab' ? '返回视频生成' : returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 创意动画' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
   return (
     <div className="settings-layout">
       <section className="settings-menu">
@@ -489,14 +489,8 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           options={sections.map(([value, , label]) => ({ value, label }))}
           onChange={(event) => setSection(event.target.value as SettingsSection)}
         />
-        {sections.map(([id, Icon, label, hint, status]) => (
-          <button key={id} className={section === id ? 'settings-tab active' : 'settings-tab'} onClick={() => setSection(id)}>
-            <Icon size={16} />
-            <strong>{label}</strong>
-            <span>{hint}</span>
-            <small>{status}</small>
-          </button>
-        ))}
+        <Tabs className="settings-navigation" vertical label="设置分类" value={section} onChange={(value) => setSection(value as SettingsSection)}
+          items={sections.map(([id, Icon, label, hint, status]) => ({ value: id, icon: <Icon size={16} />, label: <span className="settings-navigation-label"><strong>{label}</strong><small>{hint} · {status}</small></span> }))} />
       </section>
       <section className="settings-content panel">
         <div className="panel-title-row">
@@ -506,19 +500,16 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           </div>
           <div className="button-row">
             {section === 'llm' ? (
-              <button className="ghost-action" type="button" title={selectedLlmTestBlocked ? '请先保存当前 LLM 配置档案或密钥变更' : '仅测试当前 LLM'} disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked} onClick={testSelectedLlmConfig}>
-                {testingConfig ? <Loader2 className="spin" size={15} /> : <FlaskConical size={15} />}
+              <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <FlaskConical size={15} />} title={selectedLlmTestBlocked ? '请先保存当前 LLM 配置档案或密钥变更' : '仅测试当前 LLM'} disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked} onClick={testSelectedLlmConfig}>
                 仅测试当前 LLM
-              </button>
+              </Button>
             ) : null}
-            <button className="ghost-action" disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
-              {testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />}
+            <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
               保存并测试
-            </button>
-            <button className="primary-action slim" disabled={savingConfig || saveAction.busy} onClick={save}>
-              {savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+            </Button>
+            <Button variant="primary" icon={savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />} disabled={savingConfig || saveAction.busy} onClick={save}>
               保存配置
-            </button>
+            </Button>
           </div>
         </div>
         {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
@@ -785,8 +776,8 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           <SettingsCard title="剪映草稿与 BGM" status={draft.jianying.draftPath ? '已配置' : '待配置'}>
             <ConfigInput label="草稿目录" value={draft.jianying.draftPath} onChange={(value) => { setJianyingDetection(null); setSettingsDraft({ ...draft, jianying: { ...draft.jianying, draftPath: value } }); }} />
             <div className="settings-inline-actions">
-              <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={autoDetectJianyingDraftPath}><Search size={15} />自动检测</button>
-              <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={pickJianyingDraftPath}><FolderOpen size={15} />选择目录</button>
+              <Button icon={<Search size={15} />} disabled={settingsAction.busy} onClick={autoDetectJianyingDraftPath}>自动检测</Button>
+              <Button icon={<FolderOpen size={15} />} disabled={settingsAction.busy} onClick={pickJianyingDraftPath}>选择目录</Button>
             </div>
             {jianyingDetection ? (
               <div className="jianying-detection-result" data-status={jianyingDetection.status}>
@@ -805,7 +796,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               </div>
             ) : null}
             <LocalInfo title="BGM 库" value={settingsBgms.length ? settingsBgms.map((bgm) => bgm.title).join('、') : 'BGM 库为空'} />
-            <button className="ghost-action" type="button" disabled={settingsAction.busy} onClick={uploadBgmFromSettings}><Upload size={15} />+ 添加 BGM 文件</button>
+            <Button icon={<Upload size={15} />} disabled={settingsAction.busy} onClick={uploadBgmFromSettings}>添加 BGM 文件</Button>
             <div className="bgm-library-list">
               {settingsBgms.length === 0 ? <div className="bgm-library-empty">BGM 库为空</div> : null}
               {settingsBgms.map((bgm) => (
@@ -814,14 +805,11 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                     <strong>{bgm.title}</strong>
                     <span>{bgm.path}</span>
                   </div>
-                  <label>
-                    音量
-                    <input type="number" min="0" max="1" step="0.05" value={bgm.volume} onChange={(event) => updateBgmVolume(bgm.id, Number(event.target.value))} />
-                  </label>
-                  <button className={draft.jianying.defaultBgmId === bgm.id ? 'mini-button active' : 'mini-button'} type="button" onClick={() => setDefaultBgm(bgm.id)}>
+                  <TextField label="音量" type="number" min={0} max={1} step={0.05} value={String(bgm.volume)} onChange={(_, data) => updateBgmVolume(bgm.id, Number(data.value))} />
+                  <Button density="compact" aria-pressed={draft.jianying.defaultBgmId === bgm.id} onClick={() => setDefaultBgm(bgm.id)}>
                     {draft.jianying.defaultBgmId === bgm.id ? '默认' : '设为默认'}
-                  </button>
-                  <button className="mini-button" type="button" onClick={() => removeBgm(bgm.id)}>移除</button>
+                  </Button>
+                  <Button density="compact" onClick={() => removeBgm(bgm.id)}>移除</Button>
                 </div>
               ))}
             </div>
@@ -840,10 +828,9 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             />
             <ConfigInput label="知识库 ID" value={draft.ima.kbId} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbId: value } })} />
             <ConfigInput label="知识库名称" value={draft.ima.kbName} onChange={(value) => setSettingsDraft({ ...draft, ima: { ...draft.ima, kbName: value } })} />
-            <button className="ghost-action" disabled={settingsAction.busy || savingConfig} onClick={fetchImaKnowledgeFromSettings}>
-              {settingsAction.busy ? <Loader2 className="spin" size={15} /> : <Database size={15} />}
+            <Button icon={settingsAction.busy ? <Loader2 className="spin" size={15} /> : <Database size={15} />} disabled={settingsAction.busy || savingConfig} onClick={fetchImaKnowledgeFromSettings}>
               测试并拉取知识库
-            </button>
+            </Button>
             {imaKnowledgeResult ? (
               <div className="test-result">
                 <strong>{imaKnowledgeResult.knowledgeBaseId || 'IMA'}</strong>
@@ -886,12 +873,11 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           <div className="diagnostics-card">
             <LocalInfo title="视频故事创作助手" value="V1.0.0 · Windows · 本地数据目录" />
             <div className="button-row">
-              <button className="ghost-action" disabled={settingsAction.busy} onClick={runDiagnostics}>检查诊断</button>
-              <button className="ghost-action" onClick={() => navigator.clipboard?.writeText(diagnostics)}>
-                <Copy size={15} />
+              <Button disabled={settingsAction.busy} onClick={runDiagnostics}>检查诊断</Button>
+              <Button icon={<Copy size={15} />} onClick={() => navigator.clipboard?.writeText(diagnostics)}>
                 复制诊断报告
-              </button>
-              <button className="danger-action" onClick={() => navigate('history')}><XCircle size={15} />清理历史</button>
+              </Button>
+              <Button variant="danger" icon={<XCircle size={15} />} onClick={() => navigate('history')}>清理历史</Button>
             </div>
             <pre>{diagnostics || '点击检查诊断后显示 LLM、TTS、BGM、剪映目录、账户状态等检查结果。'}</pre>
           </div>

@@ -18,7 +18,7 @@ const loadMusicMvPage = () => import('../features/music-mv/MusicMvPage').then((m
 const loadMusicLabPage = () => import('../features/labs/MusicLabPage').then((module) => ({ default: module.MusicLabPage }));
 const loadBookSelectionPage = () => import('../features/labs/BookSelectionPage').then((module) => ({ default: module.BookSelectionPage }));
 const loadBenchmarkImportPage = () => import('../features/labs/BenchmarkImportPage').then((module) => ({ default: module.BenchmarkImportPage }));
-const loadPersonAssetsPage = () => import('../features/labs/PersonAssetsPage').then((module) => ({ default: module.PersonAssetsPage }));
+const loadPersonAssetsPage = () => import('../features/asset-library/AssetLibraryPage').then((module) => ({ default: module.AssetLibraryPage }));
 const loadCopyStudioPage = () => import('../features/copy-studio/CopyStudioPage').then((module) => ({ default: module.CopyStudioPage }));
 const loadViralAnalyzerPage = () => import('../features/viral/ViralAnalyzerPage').then((module) => ({ default: module.ViralAnalyzerPage }));
 const loadPromptTemplatesPage = () => import('../features/templates/PromptTemplatesPage').then((module) => ({ default: module.PromptTemplatesPage }));

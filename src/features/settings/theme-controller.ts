@@ -1,4 +1,5 @@
 import type { AppConfig, AppMutationResult, ThemeName, UiPreferences } from '../../shared/types';
+import { AppError, normalizeAppError } from '../../shared/app-error';
 
 export interface ThemeRoot {
   dataset: Record<string, string | undefined>;
@@ -35,13 +36,18 @@ export function transitionRendererTheme<T extends RendererThemeState>(
   nextTheme: ThemeName,
 ): T {
   if (state.ui.theme !== expectedTheme || expectedTheme === nextTheme) return state;
+  return withRuntimeTheme(state, nextTheme);
+}
+
+export function withRuntimeTheme<T extends RendererThemeState>(state: T, theme: ThemeName | null): T {
+  if (theme === null || (state.ui.theme === theme && state.config.ui.theme === theme)) return state;
   return {
     ...state,
     config: {
       ...state.config,
-      ui: { ...state.config.ui, theme: nextTheme },
+      ui: { ...state.config.ui, theme },
     },
-    ui: { ...state.ui, theme: nextTheme },
+    ui: { ...state.ui, theme },
   };
 }
 
@@ -69,8 +75,12 @@ export async function changeRuntimeTheme(input: {
     if (persistedAccepted) applyStoredTheme(theme, root);
     return { theme, mutation: mutation! };
   } catch (error) {
-    const rollbackAccepted = input.synchronizeState?.(input.nextTheme, input.currentTheme) ?? true;
-    if (rollbackAccepted) applyStoredTheme(input.currentTheme, root);
-    throw error;
+    const failure = normalizeAppError(error);
+    throw new AppError(
+      'THEME_SAVE_FAILED',
+      `主题已应用，但未能保存，重新打开后可能恢复原主题。${failure.message}`,
+      true,
+      failure.diagnosticId,
+    );
   }
 }

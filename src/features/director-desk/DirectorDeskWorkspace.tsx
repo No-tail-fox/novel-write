@@ -48,9 +48,11 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { directorPhases, directorPhaseForStage, directorPhaseComplete } from './director-workspace-navigation';
-import { Button, CheckboxField, Dialog, IconButton, Menu, Pane, SegmentedControl, SelectField, SliderField, Tabs, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, CheckboxField, Dialog, Drawer, IconButton, Menu, Pane, SegmentedControl, SelectField, SliderField, Tabs, TextAreaField, TextField, Toolbar } from '../../ui';
+import { VoxProcessOutline } from './VoxProcessOutline';
+import { voxProjectAction } from './vox-project-action';
 import { clampPlaybackTime, formatPlaybackTime, playbackShotAt, playbackShotOffset } from './director-playback';
-import { buildDirectorTextLayerSvg, canConfirmDirectorQualityReport, directorCanvasForRatio } from '../../shared/director-render';
+import { buildDirectorTextLayerSvg, canConfirmDirectorQualityReport, directorCanvasForRatio, isDirectorQualityBlocker } from '../../shared/director-render';
 import { DirectorSubtitleInspector, DirectorSubtitlePreview, type DirectorSubtitleCue, type DirectorSubtitlePatch } from './DirectorSubtitleInspector';
 import { DirectorAudioPreview, type DirectorPreviewAudioClip } from './DirectorAudioPreview';
 import { DirectorSoundInspector } from './DirectorSoundInspector';
@@ -66,6 +68,7 @@ import {
   directorBatchCapabilityLabel,
   directorBatchHistoryDemand,
   directorBatchStatusLabel,
+  directorBatchUnavailableReasons,
   runDirectorBatchPlan,
   type DirectorBatchCapability,
   type DirectorBatchController,
@@ -73,9 +76,11 @@ import {
   type DirectorBatchScope,
 } from './director-batch';
 import '../../styles/features/director-desk.css';
+import '../../styles/features/vox-process-workspace.css';
 import { createDirectorRequestGate } from './director-request-gate';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, UpdateDirectorBatchInput } from '../../shared/director-batch-persistence';
-import type { ProductionQualityManualReview, ProductionQualityRecheckScope } from '../../shared/production-workflow';
+import type { ProductionQualityRecheckScope } from '../../shared/production-workflow';
+import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from '../../shared/director-render';
 import type { DirectorSubtitleRecheckRequest, DirectorMediaRecheckRequest } from '../../shared/director-render';
 import type { DirectorQualityReview } from '../../shared/director-render';
 import { resolveProductionQualityRecheckScope } from '../../shared/production-quality-recheck';
@@ -168,6 +173,8 @@ export interface DirectorShot {
   assetVersionIds?: readonly string[];
   renderStrategy?: DirectorRenderStrategy;
   animation?: VoxAnimation;
+  semanticLayers?: import('../../shared/vox-animation').VoxAnimationPayload['semanticLayers'];
+  semanticBeats?: import('../../shared/vox-animation').VoxAnimationPayload['semanticBeats'];
   previewLayers?: readonly DirectorPreviewLayer[];
   cameraKeyframes?: readonly DirectorCameraKeyframe[];
   videoInputReady?: boolean;
@@ -338,9 +345,10 @@ export interface DirectorDeskWorkspaceProps {
   onImportAnimationAsset?: (shotId:string, kind:'image'|'audio') => Promise<void>;
   renderShotWorkflow?: (shotId: string, busy: boolean) => ReactNode;
   onRender?: () => Promise<void>;
+  production?: { running: boolean; summary: string; label: string; disabled: boolean; onAction(): void; onPause(): void; onCancel(): void; onSettings(): void; onDetails?(): void };
   onRecheckSubtitles?: (input: DirectorSubtitleRecheckRequest) => Promise<void>;
   onRecheckMedia?: (input: DirectorMediaRecheckRequest) => Promise<void>;
-  onConfirmQualityReview?: (input: ProductionQualityManualReview) => Promise<void> | void;
+  onReviewQualityArtifact?: (input: DirectorQualityArtifactRequest) => Promise<DirectorQualityArtifactResult>;
   onOpenOutput?: () => Promise<void>;
   onOpenSettings?: () => void;
   onConfigureProvider?: () => void;
@@ -494,16 +502,18 @@ export function DirectorDeskWorkspace({
   onExportAnimationShot,
   renderShotWorkflow,
   onRender,
+  production,
   projectId,
   expectedUpdatedAt,
   onRecheckSubtitles,
   onRecheckMedia,
-  onConfirmQualityReview,
+  onReviewQualityArtifact,
   onOpenOutput,
   onOpenSettings,
   onConfigureProvider,
   onConfigureVideoProvider,
 }: DirectorDeskWorkspaceProps) {
+  const processOutline = mode === 'vox';
   const [inspectorTab, setInspectorTab] = useState<DirectorInspectorTab>('generate');
   const [animationPreviewReady,setAnimationPreviewReady]=useState(false);
   const [assetTab, setAssetTab] = useState<DirectorAssetTab>('narrator');
@@ -512,6 +522,7 @@ export function DirectorDeskWorkspace({
   const [activeStage, setActiveStage] = useState<string>(() => outputUrl ? '导出' : stageLabel);
   const motionComicProductionStage = mode === 'motion-comic' && ['分镜图', '视频生成', '配音字幕', '导出'].includes(stageLabel) ? stageLabel : undefined;
   useEffect(() => {
+    if (processOutline) return;
     if (!motionComicProductionStage) return;
     setActiveStage(motionComicProductionStage);
     setInspectorTab(motionComicProductionStage === '配音字幕' ? 'subtitle' : motionComicProductionStage === '导出' ? 'quality' : 'generate');
@@ -537,9 +548,10 @@ export function DirectorDeskWorkspace({
     }
   }
   useEffect(() => {
+    if (processOutline) return;
     const pane = leftPaneOpen ? '.director-left-pane' : inspectorOpen ? '.director-inspector-pane' : null;
     if (pane) workspaceRef.current?.querySelector<HTMLElement>(pane)?.focus({ preventScroll: true });
-  }, [leftPaneOpen, inspectorOpen]);
+  }, [leftPaneOpen, inspectorOpen, processOutline]);
   const [statusDetailOpen, setStatusDetailOpen] = useState(false);
   const [removingBeatOpen, setRemovingBeatOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -562,6 +574,12 @@ export function DirectorDeskWorkspace({
   const [focusedCueId, setFocusedCueId] = useState('');
   const [recheckNotice, setRecheckNotice] = useState('');
   const [qualityConfirmBusy, setQualityConfirmBusy] = useState(false);
+  const [artifactReview, setArtifactReview] = useState<DirectorQualityArtifactResult | null>(null);
+  const [artifactBusy, setArtifactBusy] = useState(false);
+  const [artifactError, setArtifactError] = useState('');
+  const artifactRequestRef = useRef(0);
+  const reviewArtifactRef = useRef(onReviewQualityArtifact);
+  reviewArtifactRef.current = onReviewQualityArtifact;
   const [qualityRecheckBusy, setQualityRecheckBusy] = useState(false);
   const [batchScope, setBatchScope] = useState<DirectorBatchScope>('missing');
   const [batchCapabilities, setBatchCapabilities] = useState<Record<DirectorBatchCapability, boolean>>({ image: true, video: true, voice: true, render: true });
@@ -620,20 +638,44 @@ export function DirectorDeskWorkspace({
   }, [selectedShot?.id, selectedShot?.index, shotSearch, leftPaneOpen]);
   const latestQualityReport = qualityReview?.report;
   const qualityFreshness = qualityReview?.freshness ?? 'missing';
-  const qualityFailedCount = latestQualityReport?.checks.filter((check) => check.status === 'failed' && (check.severity ?? 'blocking') === 'blocking').length ?? 0;
+  const qualityFailedCount = latestQualityReport?.checks.filter(isDirectorQualityBlocker).length ?? 0;
   const qualityWarningCount = latestQualityReport?.checks.filter((check) => check.status === 'failed' && check.severity === 'warning').length ?? 0;
   const qualityPassedCount = latestQualityReport?.checks.filter((check) => check.status === 'passed').length ?? 0;
   const qualityAttentionCount = latestQualityReport?.checks.filter((check) => check.status === 'pending' || (check.status === 'failed' && check.severity === 'manual')).length ?? 0;
-  const qualityBadgeStatus = qualityFreshness === 'stale' || qualityFreshness === 'unverified' ? 'warning'
+  const artifactVerified = !artifactBusy && artifactReview?.document.id === projectId && artifactReview?.reportId === latestQualityReport?.id
+    && artifactReview?.renderFingerprint === latestQualityReport?.renderFingerprint && artifactReview?.document.updatedAt === expectedUpdatedAt
+    && artifactReview?.status === 'verified' && artifactReview.artifactSha256 === latestQualityReport?.artifactSha256;
+  const qualityBadgeStatus = qualityFailedCount ? 'failed' : qualityFreshness === 'stale' || qualityFreshness === 'unverified' ? 'warning'
+    : latestQualityReport?.status === 'passed' && !artifactVerified ? 'warning'
     : latestQualityReport?.status === 'passed' && (qualityWarningCount || qualityAttentionCount) ? 'warning' : latestQualityReport?.status ?? 'pending';
   const qualityBadgeLabel = qualityFreshness === 'stale' ? '报告已过期' : qualityFreshness === 'unverified' ? '版本待核对'
-    : qualityBadgeStatus === 'warning' ? '可导出 · 待复核' : latestQualityReport?.status === 'passed' ? '已通过' : latestQualityReport?.status === 'failed' ? '已阻断' : '待审片';
-  const qualityCanConfirm = qualityFreshness === 'current' && Boolean(latestQualityReport?.renderFingerprint)
+    : qualityBadgeStatus === 'failed' ? '已阻断'
+    : latestQualityReport?.status === 'passed' && !artifactVerified ? artifactBusy ? '成片核验中'
+      : artifactReview?.status === 'changed' ? '成片已变化' : artifactReview?.status === 'missing' ? '成片已丢失'
+        : artifactReview?.status === 'unavailable' ? '成片不可读' : '成片待核验'
+    : qualityBadgeStatus === 'warning' ? '可导出 · 待复核' : latestQualityReport?.status === 'passed' ? '已通过' : '待审片';
+  const qualityCanConfirm = !dirty && artifactVerified && qualityFreshness === 'current' && Boolean(latestQualityReport?.renderFingerprint)
     && Boolean(latestQualityReport && canConfirmDirectorQualityReport(latestQualityReport));
   const qualityConfirmed = Boolean(!qualityConfirmBusy && qualityCanConfirm && latestQualityReport && latestQualityReport.manualReview
     && latestQualityReport.manualReview.scope.kind === 'project'
     && latestQualityReport.manualReview.reportId === latestQualityReport.id
-    && latestQualityReport.manualReview.renderFingerprint === latestQualityReport.renderFingerprint);
+    && latestQualityReport.manualReview.renderFingerprint === latestQualityReport.renderFingerprint
+    && latestQualityReport.manualReview.artifactSha256 === artifactReview?.artifactSha256);
+  const reviewedCompletedStages = completedStages.filter((stage) => stage !== '审片' || qualityConfirmed);
+
+  useEffect(() => {
+    const verify = () => { void reviewQualityArtifact('verify'); };
+    const invalidate = () => { artifactRequestRef.current += 1; setArtifactReview(null); setArtifactBusy(false); };
+    invalidate();
+    setArtifactError('');
+    if (inspectorTab !== 'quality' || qualityFreshness !== 'current' || !latestQualityReport?.renderFingerprint) return;
+    verify();
+    window.addEventListener('focus', verify);
+    window.addEventListener('blur', invalidate);
+    const visibility = () => { if (window.document.visibilityState === 'visible') verify(); else invalidate(); };
+    window.document.addEventListener('visibilitychange', visibility);
+    return () => { invalidate(); window.removeEventListener('focus', verify); window.removeEventListener('blur', invalidate); window.document.removeEventListener('visibilitychange', visibility); };
+  }, [projectId, activeEpisodeId, latestQualityReport?.id, latestQualityReport?.renderFingerprint, latestQualityReport?.artifactSha256, expectedUpdatedAt, inspectorTab, qualityFreshness]);
   const subtitleGlyphCues = latestQualityReport?.evidence?.subtitleLayout?.scenes.flatMap((scene) => scene.status === 'ok' ? scene.cues : []) ?? [];
   const verifiedSubtitleGlyphCues = subtitleGlyphCues.filter((cue) => cue.glyphCoverage?.verification === 'font-engine'
     && cue.glyphCoverage.status === 'ok'
@@ -713,13 +755,13 @@ export function DirectorDeskWorkspace({
   const batchHistoryDemand = useMemo(() => directorBatchHistoryDemand(batchPlan.nodes, shots), [batchPlan.nodes, shots]);
   const batchImageAssetCount = useMemo(() => directorBatchHistoryDemand(batchPlan.nodes.filter((node) => node.capability === 'image'), shots).assets, [batchPlan.nodes, shots]);
   const batchHistoryError = historyUsage ? productionHistoryCapacityError(historyUsage, batchHistoryDemand) : undefined;
-  const batchUnavailableReasons = useMemo(() => [
-    batchCapabilities.image && !providerConnected ? (providerUnavailableReason ?? '图片服务未连接。') : '',
-    batchPlan.videoCount > 0 && !videoProviderConnected ? (videoProviderUnavailableReason ?? '视频服务未连接。') : '',
-    batchPlan.videoCount > 0 && !onGenerateVideo ? '图生视频生成尚未接入。' : '',
-    batchCapabilities.voice && !voiceConnected ? (voiceUnavailableReason ?? '旁白服务未连接。') : '',
-    batchCapabilities.render && !onRender ? '成片渲染尚未接入。' : '',
-  ].filter(Boolean), [batchCapabilities, batchPlan.videoCount, onGenerateVideo, onRender, providerConnected, providerUnavailableReason, videoProviderConnected, videoProviderUnavailableReason, voiceConnected, voiceUnavailableReason]);
+  const batchCapabilityReasons = {
+    image: !onGenerateShot ? '画面生成尚未接入。' : !providerConnected ? (providerUnavailableReason ?? '图片服务未连接。') : '',
+    video: !onGenerateVideo ? '图生视频生成尚未接入。' : !videoProviderConnected ? (videoProviderUnavailableReason ?? '视频服务未连接。') : '',
+    voice: !onGenerateVoice ? '旁白生成尚未接入。' : !voiceConnected ? (voiceUnavailableReason ?? '旁白服务未连接。') : '',
+    render: !onRender ? '成片渲染尚未接入。' : '',
+  };
+  const batchUnavailableReasons = directorBatchUnavailableReasons(batchPlan.nodes, batchCapabilityReasons);
   const batchActive = batchRunState === 'starting' || batchRunState === 'running' || batchRunState === 'paused' || batchRunState === 'cancelling';
   const structureBusy = Boolean(busy || batchActive || renderBusy || voiceBusyShotId || videoBusyShotId || styleBusyId || Object.values(localGeneration).includes('running'));
   const selectedShotIndex = shots.findIndex((shot) => shot.id === selectedShot?.id);
@@ -732,6 +774,7 @@ export function DirectorDeskWorkspace({
   const selectedShotOffset = useMemo(() => playbackShotOffset(shots, selectedShot?.id ?? ''), [selectedShot?.id, shots]);
   const selectedQueueItem = selectedShot ? queue.find((item) => item.shotId === selectedShot.id) : undefined;
   const showingRenderedVideo = Boolean(outputUrl && activeStage === '导出');
+  const projectAction = voxProjectAction({ shotCount: shots.length, busy: structureBusy, rendering: renderBusy, batchActive, canRender: Boolean(onRender), outputReady: Boolean(outputUrl) });
 
   useEffect(() => () => {
     generationPendingRef.current.clear();
@@ -946,6 +989,7 @@ export function DirectorDeskWorkspace({
   }
 
   function selectShotAndSeek(shotId: string) {
+    if (processOutline) { setActiveStage('镜头生成'); setLeftPaneOpen(false); }
     setIsPlaying(false);
     activePlaybackShotRef.current = shotId;
     seekPlayback(playbackShotOffset(shots, shotId));
@@ -1016,21 +1060,22 @@ export function DirectorDeskWorkspace({
     }
   }
 
-  async function confirmQualityReview() {
-    if (!onConfirmQualityReview || !latestQualityReport?.renderFingerprint || !qualityCanConfirm) return;
-    setQualityConfirmBusy(true);
-    setActionError('');
+  async function reviewQualityArtifact(action: 'verify' | 'confirm') {
+    if (!reviewArtifactRef.current || !projectId || !latestQualityReport?.renderFingerprint || (action === 'confirm' && !qualityCanConfirm)) return;
+    const request = ++artifactRequestRef.current;
+    setArtifactBusy(true);
+    setArtifactReview(null);
+    setArtifactError('');
+    if (action === 'confirm') setQualityConfirmBusy(true);
     try {
-      await onConfirmQualityReview({
-        reportId: latestQualityReport.id,
-        renderFingerprint: latestQualityReport.renderFingerprint,
-        scope: { kind: 'project' },
-        confirmedAt: new Date().toISOString(),
-      });
-      setRecheckNotice('已记录当前版本的人工复核。');
+      const result = await reviewArtifactRef.current({ id: projectId, reportId: latestQualityReport.id,
+        renderFingerprint: latestQualityReport.renderFingerprint, episodeId: activeEpisodeId,
+        expectedUpdatedAt: expectedUpdatedAt ?? '', action });
+      if (request === artifactRequestRef.current) setArtifactReview(result);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      if (request === artifactRequestRef.current) setArtifactError(error instanceof Error ? error.message : String(error));
     } finally {
+      if (request === artifactRequestRef.current) setArtifactBusy(false);
       setQualityConfirmBusy(false);
     }
   }
@@ -1126,7 +1171,10 @@ export function DirectorDeskWorkspace({
 
   function activateStage(stage: string) {
     setActiveStage(stage);
-    if (stage !== '剧本' && window.matchMedia('(max-width: 900px)').matches) {
+    if (processOutline) {
+      setLeftPaneOpen(false);
+      setInspectorOpen(stage === '配音字幕' || stage === '审片');
+    } else if (stage !== '剧本' && window.matchMedia('(max-width: 900px)').matches) {
       setLeftPaneOpen(false);
       setInspectorOpen(true);
     }
@@ -1135,7 +1183,7 @@ export function DirectorDeskWorkspace({
     if (stage === '画面拆解' || stage === '素材一致性' || stage === '镜头生成' || stage === '导出') setInspectorTab('generate');
     if (stage === '素材一致性') setAssetTab('consistency');
     if (stage === '剧本') setInspectorTab('subtitle');
-    if (stage === '导出' && !outputUrl) setActionError('请先完成镜头画面与旁白，再点击“生成成片”。');
+    if (stage === '导出' && !outputUrl && !processOutline) setActionError('请先完成镜头画面与旁白，再点击“生成成片”。');
     onStageChange?.(stage);
   }
 
@@ -1188,8 +1236,10 @@ export function DirectorDeskWorkspace({
   }
 
   async function runBatch(nodes: readonly DirectorBatchNode[], recoveredRecord?: DirectorBatchRecord) {
-    if (batchControllerRef.current || (batchActive && !recoveredRecord) || nodes.length === 0 || batchUnavailableReasons.length > 0) return;
+    if (batchControllerRef.current || (batchActive && !recoveredRecord) || nodes.length === 0) return;
     const remaining = recoveredRecord ? nodes.filter((node) => !['completed', 'failed', 'cancelled', 'skipped'].includes(node.status)) : nodes;
+    const unavailable = directorBatchUnavailableReasons(remaining, batchCapabilityReasons);
+    if (unavailable.length) { setActionError(unavailable.join(' ')); return; }
     const capacityError = historyUsage ? productionHistoryCapacityError(historyUsage, directorBatchHistoryDemand(remaining, shots)) : undefined;
     if (capacityError) { setActionError(capacityError); return; }
     const controller = createDirectorBatchController();
@@ -1330,8 +1380,8 @@ export function DirectorDeskWorkspace({
   }
 
   return (
-    <div ref={workspaceRef} className="director-desk" data-workspace-layout="preview-first" data-director-desk-mode={mode} data-left-pane-open={leftPaneOpen} data-inspector-open={inspectorOpen} onKeyDown={(event) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) {
+    <div ref={workspaceRef} className="director-desk" data-workspace-layout={processOutline ? 'process-outline' : 'preview-first'} data-director-desk-mode={mode} data-left-pane-open={leftPaneOpen} data-inspector-open={inspectorOpen} onKeyDown={(event) => {
+      if (!processOutline && event.key === 'Escape' && !event.defaultPrevented) {
         if (leftPaneOpen) closePane('left');
         else if (inspectorOpen) closePane('inspector');
       }
@@ -1352,15 +1402,15 @@ export function DirectorDeskWorkspace({
           <span className="director-header-message" role={statusError ? 'alert' : undefined} title={statusError ?? feedback ?? providerLabel}>{statusError ?? feedback ?? (providerConnected ? `${providerLabel} 已连接` : '等待图片服务')}</span>
           {statusError ? <Dialog title="操作未完成" trigger={<IconButton label="查看错误详情" icon={<CircleAlert size={15} />} variant="subtle" density="compact" />} actions={<Button onClick={() => setStatusDetailOpen(false)}>关闭</Button>} open={statusDetailOpen} onOpenChange={setStatusDetailOpen}><p className="director-error-detail">{statusError}</p></Dialog> : null}
           {!providerConnected && onConfigureProvider ? <Button className="director-provider-action" density="compact" variant="secondary" icon={<Settings2 size={13} />} onClick={onConfigureProvider}>配置图片服务</Button> : null}
-          {onNewProject ? <IconButton label={mode === 'vox' ? '新建 VOX 项目' : '新建 AI 漫剧项目'} icon={<Plus size={15} />} variant="subtle" density="compact" disabled={batchActive} onClick={onNewProject} /> : null}
+          {onNewProject ? <IconButton label={mode === 'vox' ? '新建 创意动画项目' : '新建 AI 漫剧项目'} icon={<Plus size={15} />} variant="subtle" density="compact" disabled={batchActive} onClick={onNewProject} /> : null}
           <IconButton className="director-pane-toggle director-pane-toggle--left" label="显示项目与镜头" aria-controls="director-objects" aria-expanded={leftPaneOpen} icon={<PanelLeft size={15} />} variant={leftPaneOpen ? 'secondary' : 'subtle'} density="compact" onClick={() => togglePane('left')} />
-          <IconButton className="director-pane-toggle director-pane-toggle--inspector" label="显示镜头检查器" aria-controls="director-inspector" aria-expanded={inspectorOpen} icon={<PanelRight size={15} />} variant={inspectorOpen ? 'secondary' : 'subtle'} density="compact" onClick={() => togglePane('inspector')} />
+          {!processOutline ? <IconButton className="director-pane-toggle director-pane-toggle--inspector" label="显示镜头检查器" aria-controls="director-inspector" aria-expanded={inspectorOpen} icon={<PanelRight size={15} />} variant={inspectorOpen ? 'secondary' : 'subtle'} density="compact" onClick={() => togglePane('inspector')} /> : null}
           <IconButton label="项目设置" icon={<Settings2 size={15} />} variant="subtle" density="compact" disabled={!onOpenSettings} onClick={onOpenSettings} />
           <IconButton label="保存版本" icon={busy ? <RefreshCw className="director-spin" size={15} /> : <Save size={15} />} variant={dirty ? 'primary' : 'subtle'} density="compact" disabled={!dirty || busy || batchActive} onClick={onSave} />
           <Menu
             trigger={<IconButton label="更多操作" icon={<MoreHorizontal size={16} />} variant="subtle" density="compact" />}
             options={[
-              ...(onNewProject ? [{ id: 'new-project', label: mode === 'vox' ? '新建 VOX 项目' : '新建 AI 漫剧项目', icon: <Plus size={14} />, disabled: batchActive, onSelect: onNewProject }] : []),
+              ...(onNewProject ? [{ id: 'new-project', label: mode === 'vox' ? '新建 创意动画项目' : '新建 AI 漫剧项目', icon: <Plus size={14} />, disabled: batchActive, onSelect: onNewProject }] : []),
               { id: 'save', label: dirty ? '保存当前版本' : '当前版本已保存', icon: <Save size={14} />, disabled: !dirty || batchActive, onSelect: onSave },
               ...(onOpenOutput && outputUrl ? [{ id: 'output', label: '打开导出目录', icon: <Download size={14} />, disabled: outputBusy, onSelect: () => void openOutput() }] : []),
             ]}
@@ -1368,21 +1418,24 @@ export function DirectorDeskWorkspace({
         </div>
       </header>
 
-      {!motionComicProductionStage ? <div className="director-phase-bar">
+      {!motionComicProductionStage && !processOutline ? <div className="director-phase-bar">
         <nav className="director-stage-rail" aria-label="制作流程">
           {directorPhases.map((phase, index) => (
-            <Button density="compact" variant="subtle" key={phase.id} aria-current={activePhase.id === phase.id ? 'step' : undefined} className={`director-stage-step ${activePhase.id === phase.id ? 'is-active' : ''}`} title={`${phase.label} · ${directorPhaseComplete(phase, completedStages) ? '已完成' : '待完成'}`} onClick={() => activateStage(phase.entry)}>
+            <Button density="compact" variant="subtle" key={phase.id} aria-current={activePhase.id === phase.id ? 'step' : undefined} className={`director-stage-step ${activePhase.id === phase.id ? 'is-active' : ''}`} title={`${phase.label} · ${directorPhaseComplete(phase, reviewedCompletedStages) ? '已完成' : '待完成'}`} onClick={() => activateStage(phase.entry)}>
               {index === 0 ? <BookOpenText size={16} /> : index === 1 ? <Film size={16} /> : index === 2 ? <Volume2 size={16} /> : <Send size={16} />}
               <span>{phase.label}</span>
-              {directorPhaseComplete(phase, completedStages) ? <Check size={12} /> : null}
+              {directorPhaseComplete(phase, reviewedCompletedStages) ? <Check size={12} /> : null}
             </Button>
           ))}
         </nav>
-        <Menu trigger={<Button className="director-stage-menu" density="compact" variant="subtle" aria-label="制作步骤">{activeStage}<ChevronDown size={13} /></Button>} options={activePhase.stages.map((stage) => ({ id: stage, label: stage, icon: completedStages.includes(stage) ? <Check size={13} /> : undefined, onSelect: () => activateStage(stage) }))} />
+        <Menu trigger={<Button className="director-stage-menu" density="compact" variant="subtle" aria-label="制作步骤">{activeStage}<ChevronDown size={13} /></Button>} options={activePhase.stages.map((stage) => ({ id: stage, label: stage, icon: reviewedCompletedStages.includes(stage) ? <Check size={13} /> : undefined, onSelect: () => activateStage(stage) }))} />
       </div> : null}
 
       <div className="director-desk-grid">
-          <Pane as="aside" tone="subtle" className="director-left-pane" id="director-objects" tabIndex={-1} aria-label="项目与镜头">
+        {processOutline ? <>
+          <aside className="vox-process-pane" aria-label="制作大纲"><VoxProcessOutline shots={shots} selectedId={selectedShot?.id ?? ''} phase={activePhase.id} onStage={activateStage} onSelect={selectShotAndSeek} /></aside>
+          <Drawer id="director-objects" title="制作大纲" open={leftPaneOpen} onOpenChange={setLeftPaneOpen} position="start" mountNode={workspaceRef.current} className="vox-outline-drawer"><VoxProcessOutline shots={shots} selectedId={selectedShot?.id ?? ''} phase={activePhase.id} onStage={activateStage} onSelect={selectShotAndSeek} reveal={leftPaneOpen} /></Drawer>
+        </> : <Pane as="aside" tone="subtle" className="director-left-pane" id="director-objects" tabIndex={-1} aria-label="项目与镜头">
           <div className="director-pane-heading"><strong>项目与镜头</strong><IconButton className="director-pane-close director-pane-close--left" label="关闭项目与镜头" icon={<X size={16} />} density="compact" variant="subtle" onClick={() => closePane('left')} /></div>
           <div className="director-project-summary">
             {projectCover ? <DirectorMediaImage src={projectCover} alt="项目封面" className="director-project-cover" /> : <div className="director-project-cover director-project-cover--empty" role="img" aria-label="尚未生成项目封面"><ImageOff size={15} aria-hidden="true" /><span>未生成</span></div>}
@@ -1423,7 +1476,7 @@ export function DirectorDeskWorkspace({
             ))}
           </div>
           <div className="director-left-footer"><span><ShieldCheck size={13} />一致性规则已启用</span><small>角色、场景、光线跨镜头锁定</small>{onAddScene ? <Button density="compact" variant="subtle" disabled={structureBusy} onClick={onAddScene}><Plus size={12} />新增场景</Button> : null}</div>
-        </Pane>
+        </Pane>}
 
         <main className="director-center-pane">
           {selectedShot ? (
@@ -1453,7 +1506,7 @@ export function DirectorDeskWorkspace({
                 {showingRenderedVideo ? <video key={outputUrl} controls playsInline preload="metadata" src={outputUrl} aria-label={`${projectTitle}成片预览`} onError={() => setActionError('成片无法播放，请重新生成或检查导出文件。')} /> : (
                   <>
                     <div className="director-preview-frame">
-                    {selectedRenderStrategy === 'remotion' && animationApi && selectedShot.animation ? <VoxAnimationPreview animation={selectedShot.animation} onReady={setAnimationPreviewReady} api={animationApi} assets={animationAssets} ratio={ratio} durationMs={selectedShot.durationMs} timeMs={selectedShotPlaybackMs} audioClips={selectedShot.audioClips?.map(clip=>({...clip,startMs:clip.startMs-selectedShotOffset}))} subtitleStyle={selectedShot.subtitleStyle} cues={(selectedShot.subtitleCues??[]).map(c=>({...c,startMs:c.startMs-selectedShotOffset,endMs:c.endMs-selectedShotOffset,tokens:c.tokens?.map(t=>({...t,startMs:t.startMs-selectedShotOffset,endMs:t.endMs-selectedShotOffset}))}))}/> : selectedRenderStrategy === 'living-poster' ? (
+                    {selectedRenderStrategy === 'remotion' && animationApi && selectedShot.animation ? <VoxAnimationPreview semanticLayers={selectedShot.semanticLayers} semanticBeats={selectedShot.semanticBeats} animation={selectedShot.animation} onReady={setAnimationPreviewReady} api={animationApi} assets={animationAssets} ratio={ratio} durationMs={selectedShot.durationMs} timeMs={selectedShotPlaybackMs} audioClips={selectedShot.audioClips?.map(clip=>({...clip,startMs:clip.startMs-selectedShotOffset}))} subtitleStyle={selectedShot.subtitleStyle} cues={(selectedShot.subtitleCues??[]).map(c=>({...c,startMs:c.startMs-selectedShotOffset,endMs:c.endMs-selectedShotOffset,tokens:c.tokens?.map(t=>({...t,startMs:t.startMs-selectedShotOffset,endMs:t.endMs-selectedShotOffset}))}))}/> : selectedRenderStrategy === 'living-poster' ? (
                       selectedShot.videoUrl ? (
                         <div className="director-deterministic-stage">
                           <video
@@ -1520,6 +1573,14 @@ export function DirectorDeskWorkspace({
               </section>
               {!showingRenderedVideo ? <div className="director-preview-transport"><IconButton label={isPlaying ? '暂停' : '播放'} icon={isPlaying ? <Pause size={15} /> : <Play size={15} />} density="compact" variant="subtle" onClick={togglePreview} /><span className="director-timecode">{formatPlaybackTime(playbackMs)} / {formatPlaybackTime(totalDuration)}</span><SliderField fieldClassName="director-scrub-field" label="播放进度" min={0} max={Math.max(1, totalDuration)} step={100} value={Math.min(playbackMs, Math.max(1, totalDuration))} onChange={(_, data) => seekPlayback(Number(data.value))} /><IconButton label={muted ? '打开声音' : '静音'} aria-pressed={muted} icon={<Volume2 size={14} />} density="compact" variant="subtle" onClick={() => setMuted((value) => !value)} /><IconButton label="全屏" icon={<Maximize2 size={14} />} density="compact" variant="subtle" onClick={() => void previewRef.current?.requestFullscreen?.()} /></div> : null}
               </div>
+              {processOutline ? <section className="vox-shot-content" aria-label="当前镜头内容">
+                <div className="vox-shot-content-fields">
+                  <TextAreaField label="旁白" value={selectedShot.subtitleCues?.map(cue => cue.text).join('\n') ?? selectedShot.subtitle} rows={4} resize="vertical" disabled={structureBusy} hint="每行一句；修改后需重新生成配音。" onChange={(_, data) => onUpdateShot(selectedShot.id, { subtitle: data.value })} />
+                  <TextAreaField label="画面描述" value={selectedShot.prompt} rows={4} resize="vertical" disabled={structureBusy} hint="描述主体、场景与希望传达的信息。" onChange={(_, data) => onUpdateShot(selectedShot.id, { prompt: data.value })} />
+                </div>
+                <div className="vox-shot-advanced-bar"><Button className="vox-advanced-trigger" variant="subtle" icon={<Settings2 size={14} />} aria-expanded={inspectorOpen} onClick={() => { setInspectorTab('generate'); togglePane('inspector'); }}>高级设置</Button><span>模板、动效、素材与音效</span><Button variant="secondary" density="compact" disabled={structureBusy} onClick={() => { setInspectorTab('generate'); togglePane('inspector'); }}>调整此镜头</Button></div>
+                {activeStage === '导出' && !outputUrl ? <p className="vox-delivery-note" role="status">尚无当前版本成片。完成镜头内容后，使用底部“生成现有镜头成片”。</p> : null}
+              </section> : <>
               <section className="director-filmstrip-section" aria-label="分镜胶片条">
                 <div className="director-section-bar"><strong>分镜胶片</strong><span>{shots.length} 个镜头 · {formatDuration(totalDuration)}</span>{shotSearch ? <IconButton label="清除镜头搜索" icon={<Search size={14} />} density="compact" variant="subtle" onClick={() => setShotSearch('')} /> : null}</div>
                 <div ref={filmstripRef} className="director-filmstrip">
@@ -1531,7 +1592,8 @@ export function DirectorDeskWorkspace({
                   ))}
                 </div>
               </section>
-              <section className="director-assets-section" aria-label="素材架">
+              </>}
+              <details className="director-assets-disclosure" open={processOutline ? undefined : true}><summary>项目素材 · {assets.length} 项</summary><section className="director-assets-section" aria-label="素材架">
                   <div className="director-assets-heading">
                     <Tabs label="素材分类" items={assetTabItems} value={assetTab} onChange={(value) => setAssetTab(value as DirectorAssetTab)} className="director-asset-tabs" />
                     <div className="director-asset-search"><TextField label="搜索素材" value={assetSearch} onChange={(_, data) => setAssetSearch(data.value)} placeholder="名称或类型" /></div>
@@ -1578,17 +1640,28 @@ export function DirectorDeskWorkspace({
                   ) : null}
                 </div>
                 <div className="director-source-warning"><CircleAlert size={14} /><span>部分素材来源版权未确认，请在发布前完成版权核查。</span><Button density="compact" variant="subtle" onClick={() => setAssetTab('consistency')}>查看详情</Button></div>
-              </section>
+              </section></details>
             </>
           ) : <div className="director-empty-state"><Film size={32} /><strong>还没有镜头</strong><span>先从剧本或分集结构生成镜头板。</span></div>}
         </main>
 
-        <Pane as="aside" tone="base" className="director-inspector-pane" id="director-inspector" tabIndex={-1} aria-label="镜头检查器">
+        <DirectorInspectorPanel outlined={processOutline} open={inspectorOpen} onOpenChange={setInspectorOpen} mountNode={workspaceRef.current}>
           <div className="director-inspector-heading"><strong>{selectedShot ? `镜头 ${String(selectedShot.index).padStart(2, '0')}` : '镜头属性'}</strong><Toolbar aria-label="镜头记录"><IconButton label="版本记录" icon={<History size={15} />} variant={inspectorTab === 'version' ? 'secondary' : 'subtle'} density="compact" onClick={() => setInspectorTab('version')} /><IconButton label="审片报告" icon={<ShieldCheck size={15} />} variant={inspectorTab === 'quality' ? 'secondary' : 'subtle'} density="compact" onClick={() => activateStage('审片')} /><IconButton className="director-pane-close director-pane-close--inspector" label="关闭镜头检查器" icon={<X size={16} />} variant="subtle" density="compact" onClick={() => closePane('inspector')} /></Toolbar></div>
           {selectedShot ? (
             <>
               <Tabs label="镜头设置" items={tabItems.filter((item) => (item.value !== 'sound' || onImportSound) && (!['version', 'quality'].includes(item.value) || item.value === inspectorTab))} value={inspectorTab} onChange={(value) => { const next = value as DirectorInspectorTab; setInspectorTab(next); if (next === 'quality') setActiveStage('审片'); else if (next === 'generate' || next === 'mode') setActiveStage('镜头生成'); else if (next === 'sound' || next === 'subtitle') setActiveStage('配音字幕'); }} />
               <div className="director-inspector-scroll">
+              {processOutline ? <details className="vox-structure-settings"><summary>镜头与节拍结构</summary><Toolbar aria-label="镜头结构操作">
+                {onAddShot ? <Button density="compact" disabled={structureBusy} onClick={onAddShot}>新增镜头</Button> : null}
+                {onMoveShot ? <><IconButton label="上移当前镜头" icon={<ArrowUp size={14} />} disabled={structureBusy || selectedShotIndex <= 0} onClick={() => onMoveShot('up')} /><IconButton label="下移当前镜头" icon={<ArrowDown size={14} />} disabled={structureBusy || selectedShotIndex >= shots.length - 1} onClick={() => onMoveShot('down')} /></> : null}
+                {onRemoveShot ? <IconButton label="删除当前镜头" icon={<Trash2 size={14} />} disabled={structureBusy || shots.length <= 1} onClick={() => setRemovingShotId(selectedShot.id)} /> : null}
+                {onSplitShot ? <Button density="compact" disabled={structureBusy || selectedShot.renderStrategy === 'remotion' || selectedShot.durationMs <= 2} onClick={onSplitShot}>拆分</Button> : null}
+                {onMergeShot ? <Button density="compact" disabled={structureBusy || selectedShot.renderStrategy === 'remotion'} onClick={onMergeShot}>合并</Button> : null}
+              </Toolbar><Toolbar aria-label="节拍结构操作">
+                {onAddBeat ? <Button density="compact" disabled={structureBusy} onClick={onAddBeat}>新增节拍</Button> : null}
+                {onMoveBeat ? <><Button density="compact" disabled={structureBusy || selectedBeatIndex <= 1} onClick={() => onMoveBeat('up')}>上移节拍</Button><Button density="compact" disabled={structureBusy || selectedBeatIndex >= beatTotal} onClick={() => onMoveBeat('down')}>下移节拍</Button></> : null}
+                {onRemoveBeat ? <Button density="compact" disabled={structureBusy || beatTotal <= 1} onClick={() => setRemovingBeatOpen(true)}>删除节拍</Button> : null}
+              </Toolbar></details> : null}
               {actionError ? <div className="director-inspector-note is-warning" role="alert"><CircleAlert size={14} /><span>{statusError}</span></div> : null}
               {recheckNotice ? <p className="director-quality-context" role="status" data-quality-recheck-notice>{recheckNotice}</p> : null}
               {inspectorTab === 'quality' ? <section className="director-quality-review" aria-label="审片质量报告" data-quality-freshness={qualityFreshness} data-quality-report-id={latestQualityReport?.id} data-quality-confirmed={qualityConfirmed ? 'true' : 'false'}>
@@ -1597,7 +1670,11 @@ export function DirectorDeskWorkspace({
                 {qualityReview?.unassignedCount ? <p className="director-quality-context">{qualityReview.unassignedCount} 份历史报告的分集或版本归属无法核对</p> : null}
                 {latestQualityReport ? <>
                   <div className="director-quality-summary" role="status"><span>{qualityFreshness !== 'current' ? '历史报告：' : ''}{qualityPassedCount}/{latestQualityReport.checks.length} 项通过</span><span>{[qualityFailedCount ? `${qualityFailedCount} 项阻断` : '', qualityWarningCount ? `${qualityWarningCount} 项警告` : '', qualityAttentionCount ? `${qualityAttentionCount} 项待处理` : ''].filter(Boolean).join('、') || '未发现阻断项'}</span></div>
-                  {qualityConfirmed ? <p className="director-quality-context" role="status">已确认当前版本人工复核 · {new Date(latestQualityReport.manualReview!.confirmedAt).toLocaleString('zh-CN')}</p> : onConfirmQualityReview ? <Button density="compact" variant="secondary" disabled={!qualityCanConfirm || qualityConfirmBusy} onClick={() => void confirmQualityReview()}>{qualityConfirmBusy ? <RefreshCw className="director-spin" size={13} /> : <ShieldCheck size={13} />}{qualityCanConfirm ? '确认已复核当前版本' : '修复阻断项后再确认'}</Button> : null}
+                  {latestQualityReport.checks.some((check) => check.priority) ? <p className="director-quality-context">{latestQualityReport.checks.filter((check) => check.priority).map((check) => `${check.priority} · ${check.label}${isDirectorQualityBlocker(check) ? '（未解决）' : check.status === 'waived' ? '（已豁免）' : '（已通过）'}`).join('；')}</p> : null}
+                  <p className="director-quality-context" role="status" data-artifact-status={artifactBusy ? 'checking' : artifactVerified ? 'verified' : artifactReview?.status ?? 'unverified'}>{artifactBusy ? '正在核验最终 MP4…' : artifactError || artifactReview?.detail || '最终 MP4 尚未核验，人工确认暂不可用。'}{artifactVerified ? ` · SHA-256 ${artifactReview!.artifactSha256!.slice(0, 12)}…` : ''}</p>
+                  {onReviewQualityArtifact ? <Button density="compact" variant="secondary" disabled={artifactBusy || qualityConfirmBusy || qualityFreshness !== 'current'} onClick={() => void reviewQualityArtifact('verify')}><RefreshCw size={13} className={artifactBusy ? 'director-spin' : undefined} />重新核验成片</Button> : null}
+                  {dirty ? <p className="director-quality-context">有未保存修改，请保存并重新核验当前版本。</p> : null}
+                  {qualityConfirmed ? <p className="director-quality-context" role="status">已确认当前版本人工复核 · {new Date(latestQualityReport.manualReview!.confirmedAt).toLocaleString('zh-CN')}</p> : onReviewQualityArtifact ? <Button density="compact" variant="secondary" disabled={!qualityCanConfirm || qualityConfirmBusy} onClick={() => void reviewQualityArtifact('confirm')}>{qualityConfirmBusy ? <RefreshCw className="director-spin" size={13} /> : <ShieldCheck size={13} />}{qualityCanConfirm ? '确认已复核当前版本' : qualityFailedCount ? '修复阻断项后再确认' : '核验当前成片后再确认'}</Button> : null}
                   {latestQualityReport.evidence ? <dl className="director-quality-evidence" aria-label="成片媒体证据">
                     <div><dt>字幕排版测量</dt><dd>{latestQualityReport.evidence.subtitleLayout ? `${latestQualityReport.evidence.subtitleLayout.scenes.filter(scene => scene.status === 'ok').length}/${latestQualityReport.evidence.subtitleLayout.scenes.length} 镜头` : '未取得'}</dd></div>
                     {latestQualityReport.evidence.subtitleLayout ? <div><dt>字幕最多行数</dt><dd>{latestQualityReport.evidence.subtitleLayout.scenes.reduce((maximum, scene) => scene.status === 'ok' ? scene.cues.reduce((value, cue) => Math.max(value, cue.lineCount), maximum) : maximum, 0)} 行</dd></div> : null}
@@ -1616,19 +1693,6 @@ export function DirectorDeskWorkspace({
                 <Button density="compact" variant="secondary" disabled={renderBusy || batchActive || !onRender} onClick={() => void renderProject()}>{renderBusy ? <RefreshCw className="director-spin" size={13} /> : <RefreshCw size={13} />}重新生成并审片</Button>
               </section> : null}
                 {inspectorTab === 'mode' ? <>
-                  {mode === 'vox' ? <RenderStrategyInspector
-                    shot={selectedShot}
-                    providerConnected={videoProviderConnected}
-                    providerLabel={videoProviderLabel}
-                    providerModel={videoProviderModel}
-                    providerId={videoProviderId}
-                    providerOptions={videoProviderOptions}
-                    unavailableReason={videoGenerationDisabledReason}
-                    busy={videoBusyShotId === selectedShot.id}
-                    onProviderChange={onVideoProviderChange}
-                    onConfigureProvider={onConfigureVideoProvider}
-                    onUpdate={onUpdateShot}
-                  /> : null}
                   <DirectorMotionInspector key={selectedShot.id} mode={mode} shot={selectedShot} onUpdate={onUpdateShot} onEdit={onUpdateShotMotion} busy={structureBusy} timeMs={selectedShotPlaybackMs} playing={isPlaying} onSeek={seekMotionPreview} onPreview={playMotionPreview} />
                   {mode === 'vox' && styleCandidates.length > 0 ? <section className="director-style-candidates" aria-label="风格试片"><div className="director-style-candidates__heading"><strong>风格试片</strong><small>选择后会作为后续镜头生成的风格基准；样片会保留在项目资产历史中</small></div><div className="director-style-candidates__list">{styleCandidates.map((style) => { const selected = style.id === selectedStyleId || style.selected; const generating = styleBusyId === style.id; return <div className={`director-style-candidate-row ${selected ? 'is-selected' : ''}`} key={style.id}><Button density="compact" variant={selected ? 'secondary' : 'subtle'} disabled={structureBusy} aria-pressed={selected} className="director-style-candidate-select" onClick={() => onSelectStyle?.(style.id)}>{style.thumbnail ? <img className="director-style-candidate-thumb" src={style.thumbnail} alt="" /> : <span className="director-style-candidate-placeholder" aria-hidden="true"><ImageIcon size={14} /></span>}<span className="director-style-candidate-copy"><strong>{style.label}</strong><small>{style.prompt}</small></span><span className="director-style-candidates__asset">{style.assetVersionId ? '已有样片' : '待试片'}</span></Button>{onGenerateStyleCandidate ? <IconButton label={`${generating ? '正在生成' : '生成'}${style.label}试片`} icon={generating ? <RefreshCw className="director-spin" size={13} /> : <WandSparkles size={13} />} density="compact" variant="subtle" disabled={structureBusy || generating} onClick={() => void generateStyleCandidate(style.id)} /> : null}</div>; })}</div></section> : null}
                 </> : null}
@@ -1676,9 +1740,9 @@ export function DirectorDeskWorkspace({
                   {motionComicProductionStage !== '视频生成' ? <Button variant="secondary" density="compact" title={!providerConnected ? providerUnavailableReason || '图片生成服务未配置' : undefined} onClick={() => void startGeneration(selectedShot.id)} disabled={busy || batchActive || !providerConnected || selectedQueueItem?.status === 'running'}><ImageIcon size={14} />{(selectedShot.videoFirstFrameReady ?? selectedShot.videoInputReady) ? '更新关键帧' : '生成关键帧'}</Button> : null}
                   {motionComicProductionStage !== '分镜图' ? <Button className="director-primary-action" variant="primary" density="comfortable" title={videoGenerationDisabledReason || undefined} onClick={() => void generateVideo(selectedShot.id, selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled')} disabled={busy || batchActive || Boolean(videoGenerationDisabledReason) || selectedVideoStatus === 'running' || selectedVideoStatus === 'queued'}>{videoBusyShotId === selectedShot.id || selectedVideoStatus === 'running' ? <RefreshCw className="director-spin" size={15} /> : selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled' ? <RotateCcw size={15} /> : <Video size={15} />}{selectedVideoStatus === 'failed' || selectedVideoStatus === 'cancelled' ? '重试视频生成' : selectedShot.videoUrl ? '重新生成视频' : '生成视频'}</Button> : null}
                 </div> : <Button className="director-primary-action" variant="primary" density="comfortable" onClick={() => void startGeneration(selectedShot.id)} disabled={busy || batchActive || !providerConnected || selectedQueueItem?.status === 'running'}><WandSparkles size={15} />{mode === 'vox' ? selectedShot.thumbnail && !selectedShot.imageReady ? '补齐分层素材' : '生成分层素材' : '生成当前镜头'}</Button>}
-                <div className="director-secondary-actions"><Button density="compact" variant="subtle" onClick={togglePreview}>{isPlaying ? <Pause size={13} /> : <Play size={13} />}{isPlaying ? '暂停' : '预览'}</Button><Button density="compact" variant="subtle" disabled={batchActive} onClick={() => onSave()}><Save size={13} />保存版本</Button><Button density="compact" variant="secondary" disabled={renderBusy || batchActive} onClick={() => void renderProject()}>{renderBusy ? <RefreshCw className="director-spin" size={13} /> : <Film size={13} />}生成成片</Button>{renderBusy && onCancelRender ? <Button density="compact" onClick={()=>void onCancelRender()}>取消渲染</Button> : null}{onOpenOutput ? <IconButton label="打开导出目录" icon={outputBusy ? <RefreshCw className="director-spin" size={14} /> : <Download size={14} />} density="compact" variant="subtle" disabled={!outputUrl || outputBusy} onClick={() => void openOutput()} /> : null}</div>
+                {!processOutline ? <div className="director-secondary-actions"><Button density="compact" variant="subtle" onClick={togglePreview}>{isPlaying ? <Pause size={13} /> : <Play size={13} />}{isPlaying ? '暂停' : '预览'}</Button><Button density="compact" variant="subtle" disabled={batchActive} onClick={() => onSave()}><Save size={13} />保存版本</Button><Button density="compact" variant="secondary" disabled={renderBusy || batchActive} onClick={() => void renderProject()}>{renderBusy ? <RefreshCw className="director-spin" size={13} /> : <Film size={13} />}生成成片</Button>{renderBusy && onCancelRender ? <Button density="compact" onClick={()=>void onCancelRender()}>取消渲染</Button> : null}{onOpenOutput ? <IconButton label="打开导出目录" icon={outputBusy ? <RefreshCw className="director-spin" size={14} /> : <Download size={14} />} density="compact" variant="subtle" disabled={!outputUrl || outputBusy} onClick={() => void openOutput()} /> : null}</div> : null}
               </div> : null}
-              {selectedRenderStrategy !== 'remotion' || queue.length > 0 || batchActive ? <QueuePanel
+              {(!processOutline && selectedRenderStrategy !== 'remotion') || queue.length > 0 || batchActive ? <QueuePanel
                 queue={queue}
                 batchNodes={batchNodes}
                 batchRunState={batchRunState}
@@ -1692,8 +1756,23 @@ export function DirectorDeskWorkspace({
               /> : null}
             </>
           ) : <div className="director-empty-state"><ImageIcon size={28} /><strong>选择一个镜头</strong><span>右侧会显示画面、动效、旁白和字幕参数。</span></div>}
-        </Pane>
+        </DirectorInspectorPanel>
       </div>
+      {processOutline ? <footer className="vox-project-action-bar" aria-label="整片制作操作">
+        <div className="vox-project-action-summary">{projectCover ? <img src={projectCover} alt="" /> : <Film size={24} />}<div><strong>{shots.length} 个镜头 · {ratio} · {formatDuration(totalDuration)}</strong><small role="status" title={production?.summary}>{production?.summary ?? (batchActive ? `批量制作 · ${batchNodes.filter(node => node.status === 'completed').length}/${batchNodes.length} 项完成 · ${batchRunState === 'paused' ? '已暂停' : '执行中'}` : dirty ? '有未保存改动 · 生成时使用当前内容' : '现有镜头将按顺序合成为视频')}</small></div></div>
+        <div className="vox-project-actions">
+          {production?.onDetails ? <Button variant="subtle" onClick={production.onDetails}>制作进度</Button> : null}
+          {production ? <Menu trigger={<Button variant="subtle" aria-label="更多制作操作">更多<ChevronDown size={13} /></Button>} options={[
+            { id: 'settings', label: '制作设置', disabled: production.running || structureBusy, onSelect: production.onSettings },
+            ...(production.running
+              ? [{ id: 'cancel-production', label: '取消自动制作', onSelect: production.onCancel }]
+              : [{ id: 'render-existing', label: '生成现有镜头成片', disabled: structureBusy || projectAction.disabled, onSelect: () => void renderProject() }]),
+            ...(outputUrl && onOpenOutput ? [{ id: 'open-output', label: '打开导出目录', disabled: outputBusy, onSelect: () => void openOutput() }] : []),
+            ...(renderBusy && onCancelRender ? [{ id: 'cancel-render', label: '取消渲染', onSelect: () => void onCancelRender() }] : []),
+          ]} /> : <Button variant="subtle" disabled={structureBusy && !batchActive} onClick={() => setBatchPlanOpen(true)}>{batchActive ? '查看制作任务' : '批量制作…'}</Button>}
+          <Button className="vox-project-primary" variant="primary" disabled={renderBusy || (production ? production.disabled : projectAction.disabled)} onClick={() => production ? production.running ? production.onPause() : production.onAction() : void renderProject()} icon={renderBusy ? <RefreshCw size={15} className="director-spin" /> : <Film size={15} />}>{renderBusy ? '正在生成成片…' : production?.label ?? projectAction.label}</Button>
+        </div>
+      </footer> : null}
       <footer className="director-status-footer" aria-label="项目状态">
         <span><span className={`director-status-dot is-${systemStatusTone}`} />{systemStatus}</span>
         <span><HardDrive size={12} />本地项目 · {dirty ? '有未保存改动' : '已保存'}</span>
@@ -1779,6 +1858,11 @@ export function DirectorDeskWorkspace({
       </Dialog>
     </div>
   );
+}
+
+function DirectorInspectorPanel({ outlined, open, onOpenChange, mountNode, children }: { outlined: boolean; open: boolean; onOpenChange: (open: boolean) => void; mountNode: HTMLElement | null; children: ReactNode }) {
+  const content = <Pane as="aside" tone="base" className="director-inspector-pane" id="director-inspector" tabIndex={-1} aria-label="镜头检查器">{children}</Pane>;
+  return outlined ? <Drawer title="镜头高级设置" open={open} onOpenChange={onOpenChange} mountNode={mountNode} className="vox-advanced-drawer">{content}</Drawer> : content;
 }
 
 function DirectorMediaImage({ src, alt, className, showStatus = true, loadingLabel = '正在加载素材', errorLabel = '素材加载失败', onStatusChange }: { src: string; alt: string; className?: string; showStatus?: boolean; loadingLabel?: string; errorLabel?: string; onStatusChange?: (status: 'loading' | 'ready' | 'error') => void }) {

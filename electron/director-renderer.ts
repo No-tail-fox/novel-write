@@ -70,7 +70,7 @@ export async function renderDirectorVideo(input: {
       if (!scene.animation) throw new Error('镜头缺少动画设置');
       const assets = [];
       for (const asset of scene.animationAssets ?? []) assets.push({ id: asset.id, label: asset.id, kind: asset.kind, url: await readVoxAsset(asset.path) });
-      html = await prepareVoxHtml(input.animationRuntimePath ?? join(dirname(fileURLToPath(import.meta.url)), 'vox-animation-runtime.js'), {animation:scene.animation,assets,audioClips:scene.audioClips,cues:scene.subtitleCues ?? (scene.caption ? [{text:scene.caption,startMs:0,endMs:scene.durationMs}] : []),width:canvas.width,height:canvas.height,fps,durationMs:scene.durationMs,subtitleStyle:scene.subtitleStyle});
+      html = await prepareVoxHtml(input.animationRuntimePath ?? join(dirname(fileURLToPath(import.meta.url)), 'vox-animation-runtime.js'), {animation:scene.animation,assets,...(scene.semanticBeats ? {semanticBeats:scene.semanticBeats,semanticLayers:scene.layers.map(layer=>({...layer,assetId:scene.animationAssets?.find(asset=>asset.path===layer.imagePath)?.id}))} : {}),audioClips:scene.audioClips,cues:scene.subtitleCues ?? (scene.caption ? [{text:scene.caption,startMs:0,endMs:scene.durationMs}] : []),width:canvas.width,height:canvas.height,fps,durationMs:scene.durationMs,subtitleStyle:scene.subtitleStyle});
     } else if (scene.renderStrategy === 'living-poster') {
       if (!scene.videoPath) throw new Error(`DIRECTOR_RENDER_VIDEO_MISSING: 镜头 ${scene.index} 缺少 AI 动态海报视频。`);
       await assertFile(scene.videoPath, `镜头 ${scene.index} AI 动态海报`);
@@ -166,6 +166,7 @@ export async function renderDirectorVideo(input: {
     canvas_w: canvas.width,
     canvas_h: canvas.height,
     totalDurationS,
+    normalizeAudio: input.scenes.some(scene => scene.animation?.authoring?.owner === 'creative-production'),
     // Per-scene incoming dissolves are visual-only. The compositor concatenates
     // narration on the original scene clock; ordinary A/V crossfades are disabled.
     transition: { type: 'cut', duration: 0 },

@@ -220,21 +220,26 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('draftImageTransformReady');
     expect(source).toContain('[data-layer="image-frame"]');
     expect(source).toContain('[data-layer="image-media"]');
-    expect(source).toContain("querySelectorAll('.draft-transform-handle').length === 8");
+    for (const target of ['image-frame', 'image-media']) {
+      expect(source).toContain(`querySelectorAll('.draft-image-transform-handles[data-transform-target="${target}"] .draft-transform-handle').length === 8`);
+    }
     expect(source).toContain('persisted.image?.mediaScale === 1.4');
     expect(source).toContain('persisted.image?.focusX === 0.25');
     expect(source).toContain('persisted.image?.focusY === 0.75');
-    expect(source).toContain('input[aria-label="下划线"]');
+    expect(source).toContain("label.textContent?.trim() === '下划线'");
+    expect(source).toContain('underlineLabel instanceof HTMLLabelElement ? underlineLabel.control : null');
     expect(source).toContain("{ layer: 'title', textSelector: '.draft-title' }");
     expect(source).toContain("{ layer: 'subtitle', textSelector: '.draft-subtitle' }");
     expect(source).toContain("{ layer: 'caption', textSelector: '.draft-caption' }");
     expect(source).toContain("{ layer: 'disclaimer', textSelector: '.draft-disclaimer' }");
     expect(source).toContain("text.dataset.draftUnderline === 'off'");
     expect(source).toContain("api.getDraftTemplateDetail('qa-selected-draft-template')");
-    expect(source).toContain("button.textContent?.trim() === '保存'");
-    expect(source).toContain("button.textContent?.trim() === '返回模板列表'");
+    expect(source).toContain("controlText(button) === '保存'");
+    expect(source).toContain("controlText(button) === '返回模板列表'");
+    expect(source).toContain('const saveSettled = await waitFor');
+    expect(source).toContain('const returnedToGallery = await waitFor');
     expect(source).toContain("document.querySelector('.app-shell')");
-    expect(source).toContain('underline toggle blanked or corrupted the renderer');
+    expect(source).toContain('underline editing or persistence failed');
   });
 
   it('runs the native task image clipboard, paste, scroll, and reference-editor workflow', async () => {
@@ -292,20 +297,19 @@ describe('editorial Electron QA configuration', () => {
     const iconButton = await (await import('node:fs/promises')).readFile(new URL('../src/ui/IconButton.tsx', import.meta.url), 'utf8');
     const shellStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
     const newTaskStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
+    const theme = await (await import('node:fs/promises')).readFile(new URL('../src/ui/theme.ts', import.meta.url), 'utf8');
 
     for (const label of ['最小化', '最大化', '关闭']) {
       expect(shell).toContain(`label="${label}"`);
     }
     expect(iconButton).toContain('title = label');
     expect(iconButton).toContain('aria-label={label} title={title}');
-    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button,[\s\S]*?\.primary-action \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button:not\(\.fui-Button\),[\s\S]*?\.primary-action:not\(\.fui-Button\) \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.trial-activation-bar strong \{[\s\S]*?color: var\(--shell-text\);/u);
-    expect(newTaskStyles).toMatch(/\.new-task-stage-tabs button\.active \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
-    expect(newTaskStyles).toMatch(/\.new-task-stage-tabs button\.active span \{[\s\S]*?background: var\(--shell-focus-contrast\);/u);
-    expect(newTaskStyles).toMatch(/\.new-task-source-actions button\.active \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
-    expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.option-pill\.active,[\s\S]*?\.video-form-option\.active \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
-    expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.segmented button\.selected \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
-    expect(newTaskStyles).toMatch(/\.new-task-stage-panel \.chip\.active \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
+    expect(theme).toContain("colorNeutralForegroundOnBrand: '#101214'");
+    expect(theme).toContain("colorNeutralForegroundOnBrand: '#ffffff'");
+    expect(theme).toContain('colorCompoundBrandForeground1:');
+    expect(newTaskStyles).not.toMatch(/\.new-task-stage-tabs button\.active|\.new-task-source-actions button\.active|\.new-task-stage-panel \.segmented button\.selected/u);
     expect(newTaskStyles).toMatch(/\.new-task-summary-title small \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
   });
 
@@ -414,7 +418,7 @@ describe('editorial Electron QA configuration', () => {
     expect(main).toContain("errorMessage: 'HTML video planning step failed'");
     expect(queueScenario).toContain("row.textContent?.includes('QA 浅色错误提示')");
     expect(queueScenario).toContain("querySelector('.error-summary-button')");
-    expect(queueScenario).toContain("document.querySelector('.error-dialog')");
+    expect(queueScenario).toContain("document.querySelector('[role=\"dialog\"] .sd-error-details')");
     expect(queueScenario).toContain("button.textContent?.trim() === '关闭'");
     expect(editorialQaCaptureIds('task-operations')).toContain('task-detail-error-dialog-compact');
     expect(source).toContain("scenarioId === 'task-detail-error-dialog-compact'");
@@ -441,12 +445,12 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("document.querySelector('[data-shell-view=\"html-video\"]')");
     expect(source).toContain("document.querySelector('[data-html-video-studio=\"html-video\"]')");
     expect(source).toContain("taskTitle === '武则天：权力之路 HTML 动画'");
-    expect(source).toContain("document.querySelector('[data-nav-view=\"history\"]')");
+    expect(source).toContain("await navigateToView('history')");
     expect(source).not.toContain("document.querySelector('[data-contextual-tools-trigger]')");
     expect(source).toContain('!state.historyHtmlRouteReady');
     expect(source).toContain('historyHtmlRouteReady: state.historyHtmlRouteReady');
     expect(source).toContain("scenarioId.startsWith('task-detail-scene-video-')");
-    expect(source).toContain("button.textContent?.includes('qa-scene-source.mp4')");
+    expect(source).toContain("row.textContent?.includes('qa-scene-source.mp4'))?.querySelector('button')");
     expect(source).toContain("video.source === 'local-random'");
     expect(source).toContain('!state.sceneVideoWorkflowReady');
     expect(source).toContain('sceneVideoWorkflowReady: state.sceneVideoWorkflowReady');
@@ -468,8 +472,8 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain('focusableAction.focus({ preventScroll: true })');
     expect(source).toContain("document.querySelectorAll('.image-preview-card')");
     expect(source).toContain('element.offsetParent !== null');
-    expect(source).toContain("button.textContent?.trim() === '图片'");
-    expect(source).toContain("imageTab.classList.contains('active')");
+    expect(source).toContain("controlText(button) === '图片'");
+    expect(source).toContain("imageTab.getAttribute('aria-selected') === 'true'");
     expect(source).toContain('imagePreviewMeasuredRowCount < 1');
     expect(source).toContain('imagePreviewRowHeightSpread > 1');
     expect(source).toContain('Editorial QA found uneven or unmeasured image preview cards');
@@ -484,9 +488,9 @@ describe('editorial Electron QA configuration', () => {
     expect(source).toContain("scenarioId === 'task-detail-subtitle-diagnostics-light-desktop'");
     expect(source).toContain("button.textContent?.trim() === '暂停任务'");
     expect(source).toContain("button.textContent?.trim() === '继续任务'");
-    expect(source).toContain("button.textContent?.trim() === '分镜'");
+    expect(source).toContain("controlText(button) === '分镜'");
     expect(source).toContain(".storyboard-caption-numbers .issue.over-limit[data-line-status=\"over-limit\"]");
-    expect(source).toContain("button.textContent?.trim() === '修复问题行'");
+    expect(source).toContain("controlText(button) === '修复问题行'");
     expect(source).toContain('repairButtons.length === 1');
   });
 
@@ -589,8 +593,12 @@ describe('editorial Electron QA configuration', () => {
     const styles = await (await import('node:fs/promises')).readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(source).toContain('templateOperationalContrast');
-    expect(source).toContain("'.prompt-template-row, .prompt-template-gallery .ghost-action, .prompt-template-gallery .chip'");
-    expect(source).toContain("'.draft-template-toolbar .ghost-action, .draft-template-card .ghost-action, .draft-template-card .danger-action, .new-template-card'");
+    expect(source).toContain("!document.querySelector('.route-loading-state')");
+    expect(source).toContain("await waitFor(() => document.querySelector('.prompt-template-gallery .prompt-template-row'))");
+    expect(source).toContain("'.prompt-template-row, .prompt-template-gallery button'");
+    expect(source).toContain("'.draft-template-toolbar button, .draft-template-card button, .new-template-card'");
+    expect(source).toContain('relativeLuminance(renderedBackground(element))');
+    expect(source).toContain("element.querySelector('.fui-Tab__content, .sd-button__content') ?? element");
     expect(source).toContain('contrastRatio < 4.5');
     expect(source).toContain("value.startsWith('color(srgb')");
     expect(source).toContain('channels.slice(0, 3).map((channel) => channel * 255)');

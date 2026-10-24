@@ -55,36 +55,40 @@ describe('renderer shared control architecture', () => {
     expect(css).toContain('.form-field-label {\n  padding: 0;\n}');
   });
 
-  it('provides a typed, labelled segmented group with native focus and disabled behavior', async () => {
-    const segmented = await source('src/components/SegmentedControl.tsx');
+  it('delegates segmented keyboard, selection and disabled behavior to Fluent tabs', async () => {
+    const [segmented, control] = await Promise.all([
+      source('src/components/SegmentedControl.tsx'),
+      source('src/ui/SegmentedControl.tsx'),
+    ]);
     expect(segmented).toContain('SegmentedControl<T extends string>');
-    expect(segmented).toContain('role="group"');
-    expect(segmented).toContain('aria-label={label}');
-    expect(segmented).toContain('aria-pressed={option === value}');
-    expect(segmented).toContain('disabled={disabled}');
-    expect(segmented).toContain('className="segmented"');
-    expect(segmented).toContain('type="button"');
+    expect(segmented).toContain('<FluentSegmentedControl');
+    expect(segmented).toContain('label={label}');
+    expect(segmented).toContain('label: labels?.[index] ?? option, disabled');
+    expect(segmented).not.toContain('<button');
+    expect(control).toContain('<TabList');
+    expect(control).toContain('aria-label={label}');
+    expect(control).toContain('selectedValue={value}');
+    expect(control).toContain('disabled={option.disabled}');
   });
 
-  it('keeps toggle and range hooks while labelling every native input', async () => {
+  it('uses labelled standard checkbox, slider and number controls', async () => {
     const [toggle, range] = await Promise.all([
       source('src/components/ToggleField.tsx'),
       source('src/components/RangeField.tsx'),
     ]);
-    for (const hook of ['draft-toggle-row', 'draft-toggle-field draft-toggle-control', 'draft-toggle-box']) {
-      expect(toggle).toContain(hook);
-    }
-    expect(toggle).toContain('type="checkbox"');
-    expect(toggle).toContain('aria-label={label}');
+    expect(toggle).toContain('<CheckboxField label={label} checked={checked}');
     expect(toggle).toContain('disabled={disabled}');
-    expect(range).toContain('className="draft-range-field"');
-    expect(range).toContain('type="range"');
+    expect(toggle).not.toContain('<input');
+    expect(toggle).not.toContain('draft-toggle-box');
+    expect(range).toContain('<SliderField');
+    expect(range).toContain('<TextField');
     expect(range).toContain('type="number"');
     expect(range).toContain('aria-label={`${label}滑块`}');
     expect(range).toContain('aria-label={`${label}数值`}');
-    const nativeInputs = range.match(/<input[\s\S]*?\/>/gu) ?? [];
-    expect(nativeInputs).toHaveLength(2);
-    nativeInputs.forEach((input) => expect(input).toContain('disabled={disabled}'));
+    const controls = range.match(/<(?:SliderField|TextField)[\s\S]*?\/>/gu) ?? [];
+    expect(controls).toHaveLength(2);
+    controls.forEach((control) => expect(control).toContain('disabled={disabled}'));
+    expect(range).not.toContain('<input');
   });
 
   it('provides a typed option group with explicit selection and disabled semantics', async () => {
@@ -141,10 +145,12 @@ describe('renderer shared feedback and data architecture', () => {
       source('src/components/EmptyState.tsx'),
     ]);
     expect(feedback).toContain("feedback.tone === 'error' ? 'alert' : 'status'");
-    expect(errors).toContain('aria-modal="true"');
-    expect(errors).toContain('aria-labelledby={titleId}');
-    expect(errors).toContain('aria-describedby={descriptionId}');
-    expect(errors).toContain('type="button"');
+    expect(errors).toContain("import { Button, Dialog } from '../ui'");
+    expect(errors).toContain('open={open}');
+    expect(errors).toContain('onOpenChange={setOpen}');
+    expect(errors).toContain('title={title}');
+    expect(errors).toContain('trigger={<Button');
+    expect(errors).not.toMatch(/<(?:button|dialog)\b/);
     expect(status).toContain('status-pill ${status}');
     for (const variant of ['completed', 'running', 'failed', 'cancelled', 'paused', 'draft']) {
       expect(status).toContain(`${variant}:`);
@@ -172,20 +178,17 @@ describe('renderer shared feedback and data architecture', () => {
     expect(css).toContain('min-height: 120px');
   });
 
-  it('owns labelled confirmation dialog focus and submission contracts', async () => {
+  it('delegates confirmation focus to Fluent while guarding submission and busy dismissal', async () => {
     const dialog = await source('src/components/ConfirmDialog.tsx');
-    expect(dialog).toContain('nextDialogFocusIndex');
+    const shared = await source('src/ui/Dialog.tsx');
+    expect(dialog).toContain("import { Button, Dialog } from '../ui'");
     expect(dialog).toContain('createConfirmSubmissionGuard');
-    expect(dialog).toContain('aria-labelledby={titleId}');
-    expect(dialog).toContain('aria-describedby={descriptionId}');
-    expect(dialog).toContain("event.key === 'Escape'");
-    expect(dialog).toContain("event.key !== 'Tab'");
-    expect(dialog).toContain('previouslyFocused?.focus()');
+    expect(dialog).toContain('!nextOpen && !busy && !submitting');
     expect(dialog).toContain('disabled={busy || submitting}');
-    expect(dialog).toContain('tabIndex={-1}');
-    expect(dialog).toContain('focusable.length === 0');
-    expect(dialog).toContain('dialogRef.current?.focus()');
-    expect(dialog).toContain('if (open && (busy || submitting)) dialogRef.current?.focus();');
+    expect(dialog).not.toContain('onKeyDown');
+    expect(shared).toContain('<DialogSurface');
+    expect(shared).toContain('aria-describedby={contentId}');
+    expect(shared).toContain('opener.focus({ preventScroll: true })');
   });
 });
 

@@ -5,7 +5,7 @@ import { createConfiguredImageGenerator } from './media-providers';
 import { enableImageProfile, normalizedImageProfiles } from './provider-profile-utils';
 import type { AppConfig, CustomStyle, ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
 
-export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal, customStyle?: CustomStyle | null): Promise<ImageLabRecord> {
+export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal, customStyle?: CustomStyle | null, options: { recoveryOnly?: boolean } = {}): Promise<ImageLabRecord> {
   const providerConfig = selectImageLabProviderConfig(config, input.provider);
   const id = input.id ?? randomUUID();
   const createdAt = input.createdAt ?? new Date().toISOString();
@@ -13,7 +13,7 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
   const referenceImagePaths = normalizeReferenceImagePaths(input);
   const style = customStyle?.id === input.style ? customStyle : defaultCustomStyles.find(item => item.id === input.style);
   const prompt = buildImageLabPrompt(input.prompt, style, input.smartMode ?? 'text-to-image', referenceImagePaths.length > 0);
-  const generator = createConfiguredImageGenerator(applyImageLabRequestSize(providerConfig, input), workDir);
+  const generator = createConfiguredImageGenerator(applyImageLabRequestSize(providerConfig, input), workDir, options);
   const scene: StoryboardScene = {
     id: 1,
     cap: input.prompt,

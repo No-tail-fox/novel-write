@@ -1,0 +1,66 @@
+[
+  {
+    "full_name": "HBAI-Ltd/Toonflow-app",
+    "stargazers_count": 18642,
+    "pushed_at": "2026-10-20T04:03:46Z",
+    "description": "短剧、漫剧制作工具 Toonflow：开源 AI 视频创作平台，集成剧本创作、智能分镜、角色与场景资产管理、图像生成和视频生成。融合无限画布、AI Agent 与可视化工作流，支持本地部署、自选模型、跨平台客户端、MCP 与插件扩展。Open-source AI short drama and motion comic creation tool with an infinite canvas, AI agents, storyboarding, image and video generation. Self-hosted and extensible, with a canvas-based approach similar to LibTV and TapNow.",
+    "html_url": "https://github.com/HBAI-Ltd/Toonflow-app",
+    "license": "MIT"
+  },
+  {
+    "full_name": "Forget-C/Jellyfish",
+    "stargazers_count": 6791,
+    "pushed_at": "2026-07-30T02:19:18Z",
+    "description": "An end-to-end production workspace for AI-generated short dramas. From script input to structured storyboarding, consistency management, shot preparation, video generation, and export.",
+    "html_url": "https://github.com/Forget-C/Jellyfish",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "eternityspring/shuohao-skills",
+    "stargazers_count": 4875,
+    "pushed_at": "2026-10-15T02:36:58Z",
+    "description": "AI 短剧制作的 skill 集合：拆角色、排大纲、出场景与道具设定、写剧本、切分镜 | Agent skills for AI short-drama production — character bibles, adaptation outlines, art bibles, screenplays, storyboards. Runs in Claude Code & codex.",
+    "html_url": "https://github.com/eternityspring/shuohao-skills",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "zenstory-ai/drama-skills",
+    "stargazers_count": 3121,
+    "pushed_at": "2026-10-20T13:13:42Z",
+    "description": "开源 AI 短剧/漫剧创作 skill 合集：剧本、角色资产、分镜 storyboard、图片/视频提示词、审查，适配 Claude Code 与 Codex | Open-source AI short drama / micro-drama skills for Claude Code & Codex: script, assets, storyboard, image & video prompts, review. MIT.",
+    "html_url": "https://github.com/zenstory-ai/drama-skills",
+    "license": "MIT"
+  },
+  {
+    "full_name": "xuanyustudio/LocalMiniDrama",
+    "stargazers_count": 2155,
+    "pushed_at": "2026-10-16T11:08:23Z",
+    "description": "🎬 seedance2接入  开源本地 AI 短剧 & 漫剧生成工具 —— 从故事到成片一站式完成，数据不出本机，短剧工作流管理平台，高灵活度，AI真人剧，AI漫剧本地搞定。 Open-source local AI short drama maker: story → storyboard → video, fully offline, your data stays yours. 纳米流水线",
+    "html_url": "https://github.com/xuanyustudio/LocalMiniDrama",
+    "license": "MIT"
+  },
+  {
+    "full_name": "ChrisChen667788/wind-comic",
+    "stargazers_count": 716,
+    "pushed_at": "2026-10-20T08:39:45Z",
+    "description": "Multi-agent AI pipeline that turns one line of text into a finished short-form drama: script, cinematic storyboards, character-consistent video. Provider-agnostic (OpenAI/Claude, MJ, Minimax, Veo/Sora, fal, ComfyUI). MIT.",
+    "html_url": "https://github.com/ChrisChen667788/wind-comic",
+    "license": "MIT"
+  },
+  {
+    "full_name": "UllrAI/CineGen-ShortDrama",
+    "stargazers_count": 555,
+    "pushed_at": "2026-09-25T12:53:16Z",
+    "description": "AI Director - AI Manga, Anime, Animation, storyboard, Generation System. 开源 AI 漫剧、动漫、短剧，解说漫、动态漫，生成系统。",
+    "html_url": "https://github.com/UllrAI/CineGen-ShortDrama",
+    "license": "NOASSERTION"
+  },
+  {
+    "full_name": "Anil-matcha/Open-AI-Micro-Drama-Generator",
+    "stargazers_count": 538,
+    "pushed_at": "2026-08-02T09:36:28Z",
+    "description": "AI short drama & micro-drama video generator — turns any idea into a complete short-form drama using multi-agent AI pipeline (screenwriter → storyboard → frames → video). Seedance 2 VIP, Kling 3.0 Pro, Veo 3.1, Sora 2.",
+    "html_url": "https://github.com/Anil-matcha/Open-AI-Micro-Drama-Generator",
+    "license": null
+  }
+]

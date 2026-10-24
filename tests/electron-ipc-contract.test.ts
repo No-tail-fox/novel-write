@@ -42,6 +42,16 @@ describe('electron ipc contract', () => {
     expect(() => ipcInputSchemas['director:render'].parse({ id: 'project', episodeId: '' })).toThrow();
     expect(() => ipcInputSchemas['director:render'].parse({ id: 'project', episodeId: 'episode-two', bypassQuality: true })).toThrow();
   });
+  it('accepts only supported HTML preview and render resolutions', () => {
+    expect(ipcInputSchemas['html-video:update-config'].parse({ id: 'task', changes: [
+      { field: 'previewLongEdge', value: 720 },
+      { field: 'renderLongEdge', value: 1920 },
+    ] })).toEqual({ id: 'task', changes: [
+      { field: 'previewLongEdge', value: 720 },
+      { field: 'renderLongEdge', value: 1920 },
+    ] });
+    expect(() => ipcInputSchemas['html-video:update-config'].parse({ id: 'task', changes: [{ field: 'renderLongEdge', value: 2048 }] })).toThrow();
+  });
   it('keeps hot board fetching and external navigation in the trusted main process', async () => {
     const [main, preload, apiContract] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),

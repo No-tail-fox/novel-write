@@ -1,4 +1,5 @@
 import { cloneState, hydrateState, initialState } from './app-state';
+import { browserAssetLibrary } from './browser-asset-library';
 import { withoutStaleCustomStylePreview } from '../shared/custom-style-preview';
 import { stripConfigSecrets, type PublicAppState } from '../shared/config-secrets';
 import { HOT_BOARD_SOURCE_ASSESSMENTS } from '../shared/hotboard-catalog';
@@ -65,6 +66,7 @@ import type {
   HtmlVideoSceneChange,
   HtmlVideoCompositionSourceSaveInput,
   HotBoardArchiveResult,
+  ImageLabBackgroundRemovalInput,
   ImageLabGenerateInput,
   ImageLabImportInput,
   ImageLabRecord,
@@ -708,6 +710,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async openImageLabOutputDirectory() {
       throw new Error('浏览器预览不能打开本地图片任务目录，请在 Electron 桌面端操作。');
     },
+    async removeImageLabBackground() {
+      throw new Error('IMAGE_LAB_BACKGROUND_REMOVAL_REQUIRES_ELECTRON: 图片去底需要 Electron 桌面端的本地处理能力。');
+    },
     async listVideoLabRecords() {
       return [];
     },
@@ -1056,9 +1061,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async saveAccount(account: AccountProfile) {
       return persist({ ...read(), account });
     },
-    async saveActivation(activation: ActivationState) {
-      return persist({ ...read(), activation });
-    },
+    async saveActivation(_activation: ActivationState) { throw new Error('请在桌面端使用真实激活码。'); },
+    async getLicenseStatus() { return { configured: false, status: 'unconfigured' as const, deviceId: '', deviceLabel: '浏览器预览', expiresAt: null, validUntil: null, devices: [], message: '请在桌面端管理授权。' }; },
+    async activateLicense() { throw new Error('请在桌面端激活。'); },
+    async refreshLicense() { throw new Error('请在桌面端验证授权。'); },
+    async releaseLicense() { throw new Error('请在桌面端解绑。'); },
+    async getUpdateStatus() { return { currentVersion: '1.0.0', phase: 'idle' as const, release: null, downloaded: 0, required: false, message: '请在桌面端管理更新。' }; },
+    async checkForUpdate() { throw new Error('请在桌面端检查更新。'); },
+    async downloadUpdate() { throw new Error('请在桌面端下载更新。'); },
+    async installUpdate() { throw new Error('请在桌面端安装更新。'); },
     async saveUiPreferences(update: UiPreferencesUpdate) {
       const current = read();
       const ui = {
@@ -1130,6 +1141,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async openBenchmarkLogin() {
       throw new Error('BENCHMARK_LOGIN_REQUIRES_ELECTRON: 浏览器预览不能保存平台登录会话。');
     },
+    ...browserAssetLibrary(localStorage),
     async listPersonAssets() {
       return [];
     },
@@ -1157,6 +1169,8 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async openPersonAssetDirectory() {
       throw new Error('浏览器预览不能打开本地人物素材目录，请在 Electron 桌面端操作。');
     },
+    async startVoxProduction() { throw new Error('自动制作由桌面端后台执行，请在 Electron 中使用。'); },
+    async controlVoxProduction() { throw new Error('后台制作任务只能在桌面端控制。'); },
     async createEditorialCollage(input) {
       const validated = editorialCollageCreateInputSchema.parse(input);
       const state = read();
@@ -1223,6 +1237,8 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
       if (task.status === 'pending' || task.status === 'running') throw new Error('EDITORIAL_COLLAGE_ACTIVE: 运行中的项目不能编辑。');
       const current = parseEditorialCollagePipelineData(task.pipelineData);
+      if (current.productionRun?.status === 'running') throw new Error('VOX_PRODUCTION_ACTIVE: 自动制作正在后台执行。');
+      if (JSON.stringify(current.productionRun) !== JSON.stringify(validated.document.productionRun)) throw new Error('VOX_PRODUCTION_JOURNAL: 制作记录只能由后台服务更新。');
       if (current.updatedAt !== validated.expectedUpdatedAt) throw new Error('EDITORIAL_COLLAGE_STALE_WRITE: The project changed after it was loaded.');
       if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) throw new Error('EDITORIAL_COLLAGE_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
       if (validated.document.updatedAt !== validated.expectedUpdatedAt) throw new Error('EDITORIAL_COLLAGE_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
@@ -1337,6 +1353,13 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       motionComicEpisodePlanInputSchema.parse(input);
       throw new Error('MOTION_COMIC_EPISODE_PLAN_DESKTOP_ONLY: AI 分集需要 Electron 桌面端读取已配置的模型服务。');
     },
+    async getMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台剧本队列需要桌面端。'); },
+    async enqueueMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台剧本队列需要桌面端。'); },
+    async controlMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台剧本队列需要桌面端。'); },
+    async editMotionComicScript() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 剧本审核需要桌面端。'); },
+    async approveMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 剧本批准需要桌面端。'); },
+    async storyboardMotionComicScript() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台分镜需要桌面端。'); },
+    async applyMotionComicScriptStoryboard() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 分镜审核需要桌面端。'); },
     async planMotionComic(input) {
       motionComicPlanInputSchema.parse(input);
       throw new Error('MOTION_COMIC_PLAN_DESKTOP_ONLY: AI 编剧需要 Electron 桌面端读取已配置的模型服务。');
@@ -1379,6 +1402,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async recheckDirectorMedia(_input: DirectorMediaRecheckRequest): Promise<DirectorMediaRecheckResult> {
       throw new Error('DIRECTOR_RECHECK_DESKTOP_ONLY: 媒体局部复检需要 Electron 桌面端的本地渲染器。');
+    },
+    async reviewDirectorArtifact() {
+      throw new Error('DIRECTOR_REVIEW_DESKTOP_ONLY: 最终 MP4 核验与人工确认仅支持桌面端。');
     },
     async createDirectorBatch(input: CreateDirectorBatchInput) {
       const now = new Date().toISOString();

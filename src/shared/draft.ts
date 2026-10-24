@@ -15,6 +15,7 @@ export interface SceneAsset {
   speaker?: 'A' | 'B';
   turnIndex?: number;
   text?: string;
+  captionCues?: import('./types').HtmlVideoTimedCaptionCue[];
 }
 
 export interface WriteJianyingDraftInput {

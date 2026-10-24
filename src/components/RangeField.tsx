@@ -1,5 +1,4 @@
-import type { CSSProperties } from 'react';
-import { FormField } from './FormField';
+import { SliderField, TextField } from '../ui';
 
 export interface RangeFieldProps {
   label: string;
@@ -13,7 +12,6 @@ export interface RangeFieldProps {
 
 export function RangeField({ label, min, max, step, value, onChange, disabled = false }: RangeFieldProps) {
   const normalizedValue = normalizeRangeValue(value, min, max);
-  const rangeStyle = { '--range-progress': `${rangeProgressPercent(normalizedValue, min, max)}%` } as CSSProperties;
 
   function commitValue(nextValue: number) {
     if (!Number.isFinite(nextValue)) return;
@@ -21,31 +19,30 @@ export function RangeField({ label, min, max, step, value, onChange, disabled = 
   }
 
   return (
-    <FormField label={label} disabled={disabled}>
-      <div className="draft-range-field">
-        <input
-          type="range"
-          aria-label={`${label}滑块`}
-          min={min}
-          max={max}
-          step={step}
-          value={normalizedValue}
-          style={rangeStyle}
-          disabled={disabled}
-          onChange={(event) => commitValue(event.currentTarget.valueAsNumber)}
-        />
-        <input
-          type="number"
-          aria-label={`${label}数值`}
-          min={min}
-          max={max}
-          step={step}
-          value={normalizedValue}
-          disabled={disabled}
-          onChange={(event) => commitValue(event.currentTarget.valueAsNumber)}
-        />
-      </div>
-    </FormField>
+    <div className="sd-range-field">
+      <SliderField
+        label={label}
+        aria-label={`${label}滑块`}
+        min={min}
+        max={max}
+        step={step}
+        value={normalizedValue}
+        disabled={disabled}
+        onChange={(_, data) => commitValue(data.value)}
+      />
+      <TextField
+        label={`${label}数值`}
+        fieldClassName="sd-range-number"
+        type="number"
+        aria-label={`${label}数值`}
+        min={min}
+        max={max}
+        step={step}
+        value={String(normalizedValue)}
+        disabled={disabled}
+        onChange={(event) => commitValue(event.currentTarget.valueAsNumber)}
+      />
+    </div>
   );
 }
 

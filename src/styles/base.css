@@ -1,10 +1,12 @@
+/* Base Styles - Typography & Reset */
 :root {
   color: var(--shell-text);
   background: var(--shell-bg);
-  font-family: var(--sd-font-ui);
-  font-size: 14px;
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-base);
   font-weight: 400;
-  letter-spacing: 0;
+  letter-spacing: var(--tracking-normal);
+  line-height: var(--line-height-base);
 }
 
 :root:not([data-theme-ready='true']) #root {
@@ -25,18 +27,96 @@ body,
   background: var(--shell-bg);
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+:where(button, input, select, textarea):not([class*='fui-']):not([class*='sd-']) {
+  font-family: inherit;
+  font-size: inherit;
   font-weight: 400;
-  letter-spacing: 0;
+  letter-spacing: inherit;
+  line-height: inherit;
 }
 
-button {
+:where(button):not([class*='fui-']):not([class*='sd-']) {
   color: inherit;
   border: 0;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+:where(button):not([class*='fui-']):not([class*='sd-']):disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Typography Utilities */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--line-height-tight);
+}
+
+h1 { font-size: var(--font-size-2xl); }
+h2 { font-size: var(--font-size-xl); }
+h3 { font-size: var(--font-size-lg); }
+h4 { font-size: var(--font-size-md); }
+
+p {
+  margin: 0;
+  line-height: var(--line-height-relaxed);
+}
+
+/* Scrollbar Styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--radius-full);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.20);
+  background-clip: padding-box;
+}
+
+:root[data-theme='light'] * {
+  scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+}
+
+:root[data-theme='light'] *::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  background-clip: padding-box;
+}
+
+:root[data-theme='light'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.20);
+  background-clip: padding-box;
+}
+
+/* Selection */
+::selection {
+  background: var(--shell-selected);
+  color: var(--shell-text);
+}
+
+/* Focus Visible */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }

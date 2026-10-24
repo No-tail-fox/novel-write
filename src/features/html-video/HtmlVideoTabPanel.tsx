@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Copy, FolderOpen, Image as ImageIcon, Loader2, Music2, Play, RefreshCw, RotateCcw, Save, Upload, WandSparkles } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
-import { FormField as Field } from '../../components/FormField';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import type { ApplyMutationResult } from '../../app/route-types';
@@ -30,7 +29,8 @@ import { HTML_VIDEO_COVER_MODES, HTML_VIDEO_COVER_RATIOS, buildHtmlVideoCoverPro
 import { HTML_VIDEO_BGM_VOLUMES, HTML_VIDEO_JOB_DEFAULTS, HTML_VIDEO_TRANSITION_LABELS, HTML_VIDEO_TRANSITIONS } from '../../shared/html-video-config';
 import { htmlVideoMediaElementKey, htmlVideoMediaStatus } from '../../shared/html-video-media';
 import { fitHtmlVideoOutputSize, htmlVideoUserFacingError, safeParseHtmlVideoPipelineData } from '../../shared/html-video-workflow';
-import { draftFontGroups, draftFontOptions } from '../../shared/templates';
+import { draftFontOptions } from '../../shared/templates';
+import { Button, ColorField, IconButton, SelectField, SliderField, TextAreaField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import {
   HtmlVideoStoryboundAssetsPanel,
@@ -155,24 +155,14 @@ function HtmlVideoCaptionEditor({
     <section className="hv-caption-editor" aria-label="字幕样式参数">
       <div className="panel-title-row">
         <h4>字幕样式</h4>
-        <button className="mini-button" type="button" disabled={disabled} onClick={saveCaptionConfig}>
-          {captionAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}保存字幕
-        </button>
+        <Button disabled={disabled} onClick={saveCaptionConfig} icon={captionAction.busy ? <Loader2 className="spin" size={14} /> : <Save size={14} />}>保存字幕</Button>
       </div>
       <fieldset className="hv-caption-editor-grid" disabled={disabled}>
         <div data-html-video-edit-field="captionPreset">
-          <Field label="字幕预设">
-            <select value={preset} onChange={(event) => changePreset(event.target.value as HtmlVideoCaptionPreset)} disabled={disabled}>
-              {HTML_VIDEO_CAPTION_PRESETS.map((value) => <option key={value} value={value}>{htmlVideoCaptionPresetLabels[value]}</option>)}
-            </select>
-          </Field>
+          <SelectField label="字幕预设" value={preset} onChange={(event) => changePreset(event.target.value as HtmlVideoCaptionPreset)} disabled={disabled} options={HTML_VIDEO_CAPTION_PRESETS.map((value) => ({ value, label: htmlVideoCaptionPresetLabels[value] }))} />
         </div>
         <div data-html-video-edit-field="captionAnim">
-          <Field label="字幕动画">
-            <select value={animation} onChange={(event) => setAnimation(event.target.value as HtmlVideoCaptionAnimation)} disabled={disabled}>
-              {HTML_VIDEO_CAPTION_ANIMATIONS.map((value) => <option key={value} value={value}>{htmlVideoCaptionAnimationLabels[value]}</option>)}
-            </select>
-          </Field>
+          <SelectField label="字幕动画" value={animation} onChange={(event) => setAnimation(event.target.value as HtmlVideoCaptionAnimation)} disabled={disabled} options={HTML_VIDEO_CAPTION_ANIMATIONS.map((value) => ({ value, label: htmlVideoCaptionAnimationLabels[value] }))} />
         </div>
         <div className="hv-caption-layout" data-html-video-edit-field="captionLayout">
           <Segmented
@@ -183,35 +173,11 @@ function HtmlVideoCaptionEditor({
             onChange={(region) => setLayout((current) => ({ ...current, region }))}
             disabled={disabled}
           />
-          <Field label="字体">
-            <select
-              value={layout.fontFamily}
-              onChange={(event) => setLayout((current) => ({ ...current, fontFamily: event.target.value as HtmlVideoCaptionLayout['fontFamily'] }))}
-              disabled={disabled}
-            >
-              {draftFontGroups.map((group) => (
-                <optgroup key={group} label={group}>
-                  {draftFontOptions.filter((option) => option.group === group).map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
-          <Field label={`字号 ${layout.fontSize}`}>
-            <input type="range" min={24} max={96} step={1} value={layout.fontSize} onChange={(event) => setLayout((current) => ({ ...current, fontSize: Number(event.target.value) }))} />
-          </Field>
-          <Field label={`行高 ${layout.lineHeight.toFixed(2)}`}>
-            <input type="range" min={1} max={2} step={0.05} value={layout.lineHeight} onChange={(event) => setLayout((current) => ({ ...current, lineHeight: Number(event.target.value) }))} />
-          </Field>
-          <Field label={`文本框宽度 ${layout.widthPercent}%`}>
-            <input type="range" min={40} max={96} step={1} value={layout.widthPercent} onChange={(event) => setLayout((current) => ({ ...current, widthPercent: Number(event.target.value) }))} />
-          </Field>
-          <Field label="字重">
-            <select value={layout.fontWeight} onChange={(event) => setLayout((current) => ({ ...current, fontWeight: Number(event.target.value) as HtmlVideoCaptionLayout['fontWeight'] }))}>
-              {HTML_VIDEO_CAPTION_FONT_WEIGHTS.map((weight) => <option key={weight} value={weight}>{weight}</option>)}
-            </select>
-          </Field>
+          <SelectField label="字体" value={layout.fontFamily} onChange={(event) => setLayout((current) => ({ ...current, fontFamily: event.target.value as HtmlVideoCaptionLayout['fontFamily'] }))} disabled={disabled} options={draftFontOptions} />
+          <SliderField label="字号" min={24} max={96} step={1} value={layout.fontSize} valueLabel={layout.fontSize} disabled={disabled} onChange={(_, { value }) => setLayout((current) => ({ ...current, fontSize: value }))} />
+          <SliderField label="行高" min={1} max={2} step={0.05} value={layout.lineHeight} valueLabel={layout.lineHeight.toFixed(2)} disabled={disabled} onChange={(_, { value }) => setLayout((current) => ({ ...current, lineHeight: value }))} />
+          <SliderField label="文本框宽度" min={40} max={96} step={1} value={layout.widthPercent} valueLabel={`${layout.widthPercent}%`} disabled={disabled} onChange={(_, { value }) => setLayout((current) => ({ ...current, widthPercent: value }))} />
+          <SelectField label="字重" value={String(layout.fontWeight)} disabled={disabled} onChange={(event) => setLayout((current) => ({ ...current, fontWeight: Number(event.target.value) as HtmlVideoCaptionLayout['fontWeight'] }))} options={HTML_VIDEO_CAPTION_FONT_WEIGHTS.map((weight) => ({ value: String(weight), label: String(weight) }))} />
           <Segmented
             label="对齐"
             value={layout.align}
@@ -224,35 +190,9 @@ function HtmlVideoCaptionEditor({
         <div className="hv-caption-colors" data-html-video-edit-field="captionColors">
           {HTML_VIDEO_CAPTION_COLOR_KEYS.map((key) => (
             <div className="hv-caption-color-item" key={key}>
-              <span>{htmlVideoCaptionColorLabels[key]}</span>
               <div className="hv-caption-color-controls">
-                <input
-                  type="color"
-                  aria-label={`${htmlVideoCaptionColorLabels[key]}颜色选择`}
-                  value={htmlVideoCaptionPickerColor(colors[key])}
-                  disabled={disabled}
-                  onChange={(event) => changeColor(key, event.target.value)}
-                />
-                <input
-                  className="hv-caption-color-code"
-                  type="text"
-                  aria-label={`${htmlVideoCaptionColorLabels[key]}十六进制颜色`}
-                  value={colors[key]}
-                  maxLength={9}
-                  spellCheck={false}
-                  disabled={disabled}
-                  onChange={(event) => changeColor(key, event.target.value)}
-                />
-                <button
-                  className="icon-button hv-caption-color-reset"
-                  type="button"
-                  title="恢复预设颜色"
-                  aria-label={`恢复${htmlVideoCaptionColorLabels[key]}预设颜色`}
-                  disabled={disabled || colorOverrides[key] === undefined}
-                  onClick={() => resetColor(key)}
-                >
-                  <RotateCcw size={13} />
-                </button>
+                <ColorField label={`${htmlVideoCaptionColorLabels[key]}颜色`} value={colors[key]} pickerValue={htmlVideoCaptionPickerColor(colors[key])} disabled={disabled} onChange={(value) => changeColor(key, value)} />
+                <IconButton label={`恢复${htmlVideoCaptionColorLabels[key]}预设颜色`} disabled={disabled || colorOverrides[key] === undefined} onClick={() => resetColor(key)} icon={<RotateCcw size={13} />} />
               </div>
             </div>
           ))}
@@ -398,47 +338,36 @@ function HtmlVideoCoverEditor({
           <span>{dimensions.width}x{dimensions.height} · {coverAsset ? `第 ${coverAsset.revision} 版` : '尚未生成'}</span>
         </div>
         <div className="hv-cover-actions">
-          <button className="mini-button primary" type="button" disabled={disabled || isBrowserPreview || mode !== 'auto' || !selectedTemplate} onClick={regenerateCover}>
-            {coverAction.busy ? <Loader2 className="spin" size={14} /> : <WandSparkles size={14} />}重画封面
-          </button>
-          <button
-            className="mini-button"
-            type="button"
-            disabled={disabled || isBrowserPreview || mode !== 'manual'}
-            onClick={importManualCover}
-          >
-            <Upload size={14} />换本地封面
-          </button>
-          <button className="mini-button" type="button" disabled={disabled || !coverAsset || !task.outputDir} onClick={openOutputDirectory}><FolderOpen size={14} />打开封面</button>
-          <button className="mini-button" type="button" disabled={disabled} onClick={saveCoverConfig}>
-            <Save size={14} />保存封面
-          </button>
+          <Button variant="primary" disabled={disabled || isBrowserPreview || mode !== 'auto' || !selectedTemplate} onClick={regenerateCover} icon={coverAction.busy ? <Loader2 className="spin" size={14} /> : <WandSparkles size={14} />}>重画封面</Button>
+          <Button disabled={disabled || isBrowserPreview || mode !== 'manual'} onClick={importManualCover} icon={<Upload size={14} />}>换本地封面</Button>
+          <Button disabled={disabled || !coverAsset || !task.outputDir} onClick={openOutputDirectory} icon={<FolderOpen size={14} />}>打开封面</Button>
+          <Button disabled={disabled} onClick={saveCoverConfig} icon={<Save size={14} />}>保存封面</Button>
         </div>
       </div>
       <fieldset className="hv-cover-editor-grid" disabled={disabled}>
         <div data-html-video-edit-field="coverImageMode">
-          <Segmented label="模式" value={mode} options={[...HTML_VIDEO_COVER_MODES]} labels={['关闭', '自动', '手动']} onChange={(value) => setMode(value as HtmlVideoCoverMode)} />
+          <Segmented label="模式" value={mode} options={[...HTML_VIDEO_COVER_MODES]} labels={['关闭', '自动', '手动']} disabled={disabled} onChange={(value) => setMode(value as HtmlVideoCoverMode)} />
         </div>
         <div data-html-video-edit-field="coverRatio">
-          <Segmented label="比例" value={ratio} options={[...HTML_VIDEO_COVER_RATIOS]} onChange={(value) => chooseRatio(value as HtmlVideoCoverRatio)} />
+          <Segmented label="比例" value={ratio} options={[...HTML_VIDEO_COVER_RATIOS]} disabled={disabled} onChange={(value) => chooseRatio(value as HtmlVideoCoverRatio)} />
         </div>
       </fieldset>
       {mode !== 'off' ? <>
         <div className="hv-cover-template-section" data-html-video-edit-field="coverTemplate">
-          <strong>封面模板</strong>
-          <div className="hv-cover-template-options" role="listbox" aria-label="封面模板">
-            {templates.map((item) => <button key={item.id} type="button" role="option" aria-selected={item.id === templateId} className={item.id === templateId ? 'selected' : ''} onClick={() => chooseTemplate(item.id)}>{item.name}</button>)}
-          </div>
+          <SelectField label="封面模板" value={templateId} disabled={disabled} onChange={(event) => chooseTemplate(event.target.value)} options={[
+            ...(!templates.some((item) => item.id === templateId) ? [{ value: templateId, label: '当前模板已缺失' }] : []),
+            ...templates.map((item) => ({ value: item.id, label: item.name })),
+          ]} />
         </div>
         {selectedTemplate ? <dl className="hv-cover-template-summary">
           <div><dt>构图方向</dt><dd>{selectedTemplate.compositionRule}</dd></div>
           <div><dt>标题文字</dt><dd>{selectedTemplate.titleLayout}</dd></div>
           <div><dt>副标题</dt><dd>{selectedTemplate.subtitleLayout}</dd></div>
         </dl> : <div className="hv-cover-error" role="alert">当前封面模板已不存在，请重新选择。</div>}
-        <label className="hv-cover-prompt" data-html-video-edit-field="coverPrompt">
-          <span><strong>封面提示词</strong><button type="button" title="恢复模板默认提示词" disabled={disabled || usesDefaultPrompt} onClick={resetPrompt}><RotateCcw size={13} /></button><button type="button" title="复制提示词" disabled={!prompt.trim()} onClick={copyPrompt}><Copy size={13} /></button></span>
-          <textarea value={prompt} rows={6} disabled={disabled || mode !== 'auto'} onChange={(event) => { setPrompt(event.target.value); setUsesDefaultPrompt(false); }} />
-        </label>
+        <div className="hv-cover-prompt" data-html-video-edit-field="coverPrompt">
+          <div className="hv-cover-actions"><IconButton label="恢复模板默认提示词" disabled={disabled || usesDefaultPrompt} onClick={resetPrompt} icon={<RotateCcw size={13} />} /><IconButton label="复制提示词" disabled={!prompt.trim() || coverAction.busy} onClick={copyPrompt} icon={<Copy size={13} />} /></div>
+          <TextAreaField label="封面提示词" value={prompt} rows={6} disabled={disabled || mode !== 'auto'} onChange={(event) => { setPrompt(event.target.value); setUsesDefaultPrompt(false); }} />
+        </div>
       </> : null}
       {coverAsset ? (
         <div className="hv-cover-artifact-meta">
@@ -500,9 +429,7 @@ function HtmlVideoWorkflowBlocked({
       <strong>{failedStep ? `${htmlVideoStepLabels[failedStep]}未完成` : '等待上一步完成'}</strong>
       <p>{detail}</p>
       {failedStep ? (
-        <button className="mini-button" type="button" disabled={busy} onClick={() => void onRetry()}>
-          <RotateCcw size={14} />从{htmlVideoStepLabels[failedStep]}重试
-        </button>
+        <Button disabled={busy} onClick={() => void onRetry()} icon={<RotateCcw size={14} />}>从{htmlVideoStepLabels[failedStep]}重试</Button>
       ) : null}
     </section>
   );
@@ -563,13 +490,13 @@ function HtmlVideoOutputActions({
   return (
     <section className="hv-output-actions" aria-label="出片设置">
       <div className="hv-output-control">
-        <label><span>背景音乐</span><select value={bgmId} disabled={locked} onChange={(event) => setBgmId(event.target.value)}><option value="">无配乐</option>{bgmId && !bgmOptions.some((item) => item.id === bgmId) ? <option value={bgmId}>{bgmId}（已缺失）</option> : null}{bgmOptions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
-        <label><span>配乐音量</span><select value={bgmVolume} disabled={locked} onChange={(event) => setBgmVolume(event.target.value as typeof bgmVolume)}>{HTML_VIDEO_BGM_VOLUMES.map((value, index) => <option key={value} value={value}>{['轻', '中', '响'][index]}</option>)}</select></label>
-        <label><span>场景转场</span><select value={transitionType} disabled={locked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)}>{HTML_VIDEO_TRANSITIONS.map((value) => <option key={value} value={value}>{HTML_VIDEO_TRANSITION_LABELS[value]}</option>)}</select></label>
+        <SelectField label="背景音乐" value={bgmId} disabled={locked} onChange={(event) => setBgmId(event.target.value)} options={[{ value: '', label: '无配乐' }, ...(bgmId && !bgmOptions.some((item) => item.id === bgmId) ? [{ value: bgmId, label: `${bgmId}（已缺失）` }] : []), ...bgmOptions.map((item) => ({ value: item.id, label: item.title }))]} />
+        <SelectField label="配乐音量" value={bgmVolume} disabled={locked} onChange={(event) => setBgmVolume(event.target.value as typeof bgmVolume)} options={HTML_VIDEO_BGM_VOLUMES.map((value, index) => ({ value, label: ['轻', '中', '响'][index] }))} />
+        <SelectField label="场景转场" value={transitionType} disabled={locked} onChange={(event) => setTransitionType(event.target.value as typeof transitionType)} options={HTML_VIDEO_TRANSITIONS.map((value) => ({ value, label: HTML_VIDEO_TRANSITION_LABELS[value] }))} />
       </div>
       <div className="hv-output-buttons">
-        <button className="mini-button primary" type="button" disabled={!task.outputDir || isBrowserPreview} onClick={openOutputDirectory}><FolderOpen size={14} />打开目录</button>
-        <button className="mini-button" type="button" disabled={locked} onClick={rerender}>{action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}重新出片</button>
+        <Button variant="primary" disabled={!task.outputDir || isBrowserPreview} onClick={openOutputDirectory} icon={<FolderOpen size={14} />}>打开目录</Button>
+        <Button disabled={locked} onClick={rerender} icon={action.busy ? <Loader2 className="spin" size={14} /> : <RefreshCw size={14} />}>重新出片</Button>
       </div>
       <InlineActionFeedback feedback={action.feedback} />
     </section>

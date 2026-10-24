@@ -31,6 +31,64 @@ afterEach(() => {
 });
 
 describe('configured media providers', () => {
+  it('persists an allowlisted response before download and recovers it without another paid POST', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-image-recovery-'));
+    const config: AppConfig = { ...defaultConfig, imageProvider: 'gpt_image', gptImage: { ...defaultConfig.gptImage, apiKey: 'secret-test-key', baseUrl: 'https://image.example', model: 'gpt-image-2' } };
+    let disconnected = true;
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      requests.push(init.method ?? 'GET');
+      if (init.method === 'POST') return new Response(JSON.stringify({ data: [{ url: 'https://cdn.example/result.png' }], authorization: 'must-not-persist' }));
+      if (disconnected) throw new Error('download network closed');
+      return new Response('saved-image');
+    }));
+    try {
+      await expect(createConfiguredImageGenerator(config, dir)([scene], [prompt], task)).rejects.toThrow('download network closed');
+      const receipt = await readFile(join(dir, 'provider-images/001.response.json'), 'utf8');
+      expect(receipt).toContain('https://cdn.example/result.png');
+      expect(receipt).not.toContain('secret-test-key'); expect(receipt).not.toContain('must-not-persist');
+      disconnected = false;
+      const result = await createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task);
+      expect(await readFile(result[0].path, 'utf8')).toBe('saved-image');
+      expect(requests).toEqual(['POST', 'GET', 'GET']);
+      await expect(createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [{ ...prompt, prompt: 'changed input' }], task)).rejects.toThrow('IMAGE_RECOVERY_MISMATCH');
+      expect(requests).toEqual(['POST', 'GET', 'GET']);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+  it('never submits in recovery-only mode without a receipt and rejects changed reference bytes', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-image-reference-recovery-'));
+    const config: AppConfig = { ...defaultConfig, imageProvider: 'custom', customImage: { ...defaultConfig.customImage, apiKey: 'test', baseUrl: 'https://image.example', model: 'test', asyncMode: false } };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('image').toString('base64') }] })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task)).rejects.toThrow('IMAGE_RECOVERY_UNAVAILABLE');
+      expect(fetchMock).not.toHaveBeenCalled();
+      const reference = join(dir, 'reference.png'); await writeFile(reference, 'first');
+      const edit = { ...prompt, referenceImagePaths: [reference] };
+      await createConfiguredImageGenerator(config, dir)([scene], [edit], task);
+      await writeFile(reference, 'changed');
+      await expect(createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [edit], task)).rejects.toThrow('IMAGE_RECOVERY_MISMATCH');
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+  it('recovers an asynchronous submitted task by GET after polling disconnects', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-image-async-recovery-'));
+    const config: AppConfig = { ...defaultConfig, imageProvider: 'custom', customImage: { ...defaultConfig.customImage, apiKey: 'test', baseUrl: 'https://image.example', model: 'test', asyncMode: true } };
+    let disconnected = true; const methods: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => {
+      methods.push(init.method ?? 'GET');
+      if (init.method === 'POST') return new Response(JSON.stringify({ id: 'submitted-task' }));
+      if (disconnected) throw new Error('poll disconnected');
+      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('recovered async image').toString('base64') }] }));
+    }));
+    try {
+      await expect(createConfiguredImageGenerator(config, dir)([scene], [prompt], task)).rejects.toThrow('poll disconnected');
+      disconnected = false;
+      const result = await createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task);
+      expect(await readFile(result[0].path, 'utf8')).toBe('recovered async image');
+      expect(methods).toEqual(['POST', 'GET', 'GET']);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it('builds OpenAI-compatible image edit form data with prompt, model, size, and references', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-edit-form-'));
     const first = join(dir, 'first.png');

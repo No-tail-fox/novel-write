@@ -37,6 +37,7 @@ interface AssetVersionInput {
   path: string;
   createdAt: string;
   prompt?: string;
+  backgroundRemoval?: ProductionAssetVersion['backgroundRemoval'];
   providerJobId?: string;
   provider?: string;
   model?: string;
@@ -380,6 +381,7 @@ function htmlLayerAsset(scope: string, asset: HtmlVideoAsset, createdAt: string)
     path: asset.src,
     createdAt,
     prompt: asset.prompt,
+    ...(asset.backgroundRemoval ? { backgroundRemoval: asset.backgroundRemoval } : {}),
     selected: true,
   });
 }
@@ -412,6 +414,7 @@ function createAssetVersion(input: AssetVersionInput): ProductionAssetVersion {
     localPath: input.path,
     createdAt: input.createdAt,
     ...(input.prompt ? { prompt: input.prompt } : {}),
+    ...(input.backgroundRemoval ? { backgroundRemoval: input.backgroundRemoval } : {}),
     ...(input.providerJobId ? { providerJobId: input.providerJobId } : {}),
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.model ? { model: input.model } : {}),

@@ -1,0 +1,638 @@
+{
+  "version": 1,
+  "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+  "revision": "3961ddb3d24d8876e0e2754f7790d66908acee51",
+  "scope": "text references only; no demo media or third-party voice tracks",
+  "files": [
+    {
+      "sha256": "511015d34b8705ebd6d758ec6424be0dcb0eacc0f83283ffcc27460fccfd7d66",
+      "license": "MIT",
+      "path": "AGENTS.md"
+    },
+    {
+      "sha256": "3b8b0c40011a0cea796bb1afe6dae0f212115b57e2aa4c9a976b1994a923d564",
+      "license": "MIT",
+      "path": "DIRECTOR.md"
+    },
+    {
+      "sha256": "14c9ff6f14bfb2391e74fedb01c256891d2a3bba1c2acf5789901bdf77e54e33",
+      "license": "MIT",
+      "path": "LICENSE"
+    },
+    {
+      "sha256": "02102b5a2983a5ee7a8841b10e52e561ddca4a28fad7de0b71a34bda776f1630",
+      "license": "MIT",
+      "path": "MY-STYLES.md"
+    },
+    {
+      "sha256": "9036c5fd58ac3c3acc30b9183ed3a415829755a59d66b259a2b13a9fde5dd7c4",
+      "license": "MIT",
+      "path": "plugin/skills/lemo-opuscar/SKILL.md"
+    },
+    {
+      "sha256": "c7988c67fab6491e206fd5af4e4efaa6042fdedabf461a461783ad2a03ee8867",
+      "license": "MIT",
+      "path": "README.md"
+    },
+    {
+      "sha256": "555a56a6edb2a27820b5a140e07ac21dbf8fff2886d1b6b55a726919dbf122c7",
+      "license": "MIT",
+      "path": "styles/archive-lighttable/style.json"
+    },
+    {
+      "sha256": "2f18ac9a42822b7a9941866c42b0642e5417dea5431d61f141f6e11b29c1ec14",
+      "license": "MIT",
+      "path": "styles/archive-lighttable/STYLE.md"
+    },
+    {
+      "sha256": "0ea0e1866adf9c601ca4118229555a563f0f9f0b2dca433f60c2b70a21bf23d5",
+      "license": "MIT",
+      "path": "styles/art-deco/style.json"
+    },
+    {
+      "sha256": "d73b30c0fa6d153487549d32d8c6c599733cf5e7576badec862a12da6d284761",
+      "license": "MIT",
+      "path": "styles/art-deco/STYLE.md"
+    },
+    {
+      "sha256": "6698b02e4a68e1c12c3c7dc95874337e40642e813dc2ae50f1d3530cbb9dac8d",
+      "license": "MIT",
+      "path": "styles/ascii-crt/style.json"
+    },
+    {
+      "sha256": "cbe0b8957c785a165f85ccb3b8eba61c30c0462b32983db6a16c76046a2bb333",
+      "license": "MIT",
+      "path": "styles/ascii-crt/STYLE.md"
+    },
+    {
+      "sha256": "8e40af80d492119fd0ec63ab5a4284d52c65c0ce2e5b12a71d9e7d41e35a9299",
+      "license": "MIT",
+      "path": "styles/backrooms/style.json"
+    },
+    {
+      "sha256": "2a3697a1ce37d0fbae3281220ae6154eeb9789233f1fae472d55ac169ba26fb4",
+      "license": "MIT",
+      "path": "styles/backrooms/STYLE.md"
+    },
+    {
+      "sha256": "6d50613e83879a1741bc1ca60f2ad528c2a0e35778fdac6f55d4af7e67ea4da7",
+      "license": "MIT",
+      "path": "styles/blueprint/style.json"
+    },
+    {
+      "sha256": "de01fc7fcb38b17b58eb017c9cdbcb36b9242b029435a33587614c93088e1717",
+      "license": "MIT",
+      "path": "styles/blueprint/STYLE.md"
+    },
+    {
+      "sha256": "74691fbe30fb39816e51f8a0290f79a7b130e980e67967400f98267b7d31aa56",
+      "license": "MIT",
+      "path": "styles/brick-toy/style.json"
+    },
+    {
+      "sha256": "29b23e846951856b722a698a03c9458cfc17b4fc71d044f45d773acf2a742768",
+      "license": "MIT",
+      "path": "styles/brick-toy/STYLE.md"
+    },
+    {
+      "sha256": "9a4767b21623df0b3bcb2e33555da08a260d2567cbe80d95d9dbe85b6d2a4fc1",
+      "license": "MIT",
+      "path": "styles/briefing-board/style.json"
+    },
+    {
+      "sha256": "44669da808da4ed37e2a4a0f6e5d2b23008775a3c4870add04641d714e9f323d",
+      "license": "MIT",
+      "path": "styles/briefing-board/STYLE.md"
+    },
+    {
+      "sha256": "efa7d8e1dd42d11301dd5e7f1a4f66968c7b8d0259292153454a7926b6a52a0f",
+      "license": "MIT",
+      "path": "styles/caption-news/style.json"
+    },
+    {
+      "sha256": "ba4c0bb5dd13e49c2c2b520af5e42a28112b36354dc445d0f6ade3727b458fd2",
+      "license": "MIT",
+      "path": "styles/caption-news/STYLE.md"
+    },
+    {
+      "sha256": "6a4afb02b4d388d7c8462b930556cfa2d79c61092efe9606783be7b626a62c4c",
+      "license": "MIT",
+      "path": "styles/cel-anime-80s/style.json"
+    },
+    {
+      "sha256": "1e16f5c6f90ebf09556ec94d37434400d309c978e00ee89e9d38dec476664eaf",
+      "license": "MIT",
+      "path": "styles/cel-anime-80s/STYLE.md"
+    },
+    {
+      "sha256": "4ad353d02e858d16534179ed39eaa05761225865dc818e0544529e2fff2fcd4b",
+      "license": "MIT",
+      "path": "styles/city-symphony/style.json"
+    },
+    {
+      "sha256": "8b78d2b08cadb045ac1649cade1e5274fba935b1177c64c176e7567c6e8b31e1",
+      "license": "MIT",
+      "path": "styles/city-symphony/STYLE.md"
+    },
+    {
+      "sha256": "d30ae465e30a1576cd08d2357e488209d5042cfde16d85dc6452562400c12e61",
+      "license": "MIT",
+      "path": "styles/countdown/style.json"
+    },
+    {
+      "sha256": "867cca6e0c9bb0d6fb914cc4e9a2e295623ecd345fda9bd00bc362ff233f220f",
+      "license": "MIT",
+      "path": "styles/countdown/STYLE.md"
+    },
+    {
+      "sha256": "6a03a6548019ba3393a8e2c73c96aa38aefc3257cdf8f6b87f32c808da27f098",
+      "license": "MIT",
+      "path": "styles/crayon-book/style.json"
+    },
+    {
+      "sha256": "ba558478fe519fa6777fe28fa7d1980117297c7beb6fe2e366ef6f00688aa175",
+      "license": "MIT",
+      "path": "styles/crayon-book/STYLE.md"
+    },
+    {
+      "sha256": "c992e65414bb4e96ff6e0eeeba2cfc7a795d332fadfb3baa5301faa0b0c6b992",
+      "license": "MIT",
+      "path": "styles/dark-keynote/style.json"
+    },
+    {
+      "sha256": "b0791b5e95f56bf46c621e6064d426ebbee810c7515fb87e951b73668a2a0d24",
+      "license": "MIT",
+      "path": "styles/dark-keynote/STYLE.md"
+    },
+    {
+      "sha256": "dfe640da294e2e128260bf788bab25eeceb9415a46675c3d7d1e0cbecfe90319",
+      "license": "MIT",
+      "path": "styles/data-physical/style.json"
+    },
+    {
+      "sha256": "2d2e6685b0dcf8a1e2ba2ff904ab02d51aede1f5dbb246fd2f6e81c8d146f208",
+      "license": "MIT",
+      "path": "styles/data-physical/STYLE.md"
+    },
+    {
+      "sha256": "a459b5b712af023a00112b94c6812f0bf7e0b3a7cd39ae818e4a47805f57a8f3",
+      "license": "MIT",
+      "path": "styles/dataviz/style.json"
+    },
+    {
+      "sha256": "e94013d5a7c548c8844598a671ff0b49bc78770696cbca0d8d00846336f3c67f",
+      "license": "MIT",
+      "path": "styles/dataviz/STYLE.md"
+    },
+    {
+      "sha256": "f5c99e129f786bfb75185f3d61c6be212c55b497e269ded71f55e0b971b6db80",
+      "license": "MIT",
+      "path": "styles/engraving/style.json"
+    },
+    {
+      "sha256": "0c6816b8b47163d158ae0ea668feecf53dcbef9d1310e27b9e797d9b9e7aac0d",
+      "license": "MIT",
+      "path": "styles/engraving/STYLE.md"
+    },
+    {
+      "sha256": "4596e00ca6942c151ae4cba763bf4f91c26a001c88f2ac0a1b0353c1f6b069aa",
+      "license": "MIT",
+      "path": "styles/game-show/style.json"
+    },
+    {
+      "sha256": "cadee8f0ff8cfc206b49d852e5a0b15d7da432ad497fa8b19ac568ce386ff8e3",
+      "license": "MIT",
+      "path": "styles/game-show/STYLE.md"
+    },
+    {
+      "sha256": "12a59c3c50e9fdd6d5613d9d093c5da7489c6baa746037dd4686ecad4a899290",
+      "license": "MIT",
+      "path": "styles/glass-product/style.json"
+    },
+    {
+      "sha256": "630fa80cde0930154ba64f15bce5c8ee0c8dcf48d921253f8c7e3194712c8fb5",
+      "license": "MIT",
+      "path": "styles/glass-product/STYLE.md"
+    },
+    {
+      "sha256": "c732c96a0d0b117252fda4cc734dac4f73ab14c323742d6ace0eff04f45c6d95",
+      "license": "MIT",
+      "path": "styles/halftone-dossier/style.json"
+    },
+    {
+      "sha256": "71b4b8f089836d95f6bd8fc3719ae184cbf2be4a04ecd935c6d55d89a5bb558d",
+      "license": "MIT",
+      "path": "styles/halftone-dossier/STYLE.md"
+    },
+    {
+      "sha256": "e3dd21ebeb8b4efc07e9caa85fb7264105ef4a43e85d875ff8a0ede8a3998e29",
+      "license": "MIT",
+      "path": "styles/hd-2d/style.json"
+    },
+    {
+      "sha256": "bdc5ef4f60d8ba9ff6e5151391a6a62d8da4685d393c242699fd5c6188f0551a",
+      "license": "MIT",
+      "path": "styles/hd-2d/STYLE.md"
+    },
+    {
+      "sha256": "acbce6cfe0ff3c1a622090d424f60f8a3e47f9485f43f825bfc3f5980eafff34",
+      "license": "MIT",
+      "path": "styles/hologram-hud/style.json"
+    },
+    {
+      "sha256": "81e2c6b0ede2cc211a8dd676417a1ce5efda278514f273c5249165e38ff34573",
+      "license": "MIT",
+      "path": "styles/hologram-hud/STYLE.md"
+    },
+    {
+      "sha256": "8eb0c2c320a2c7dd58600d2eaee537bd6f3137bed1d40f65b7e05a52bd600c31",
+      "license": "MIT",
+      "path": "styles/impasto/style.json"
+    },
+    {
+      "sha256": "38a0dcb2808c2ff03ef721c1319b9145438b4074ed37ab7a09dcf20b7268e062",
+      "license": "MIT",
+      "path": "styles/impasto/STYLE.md"
+    },
+    {
+      "sha256": "19fca58eb8e84cecaae62837f88b33e286f4ed8e45942b3395e9a320af172bde",
+      "license": "MIT",
+      "path": "styles/ink-wash/style.json"
+    },
+    {
+      "sha256": "5d71598f0b9cf4034c6461956b0d8bd63bd33750b4045376044f0d956b01d645",
+      "license": "MIT",
+      "path": "styles/ink-wash/STYLE.md"
+    },
+    {
+      "sha256": "53b58520900edafef0a5229e456206fbcfdeb0665fcc8c661b73792bfc985b97",
+      "license": "MIT",
+      "path": "styles/iso-infographic/style.json"
+    },
+    {
+      "sha256": "a3bf89913255043ff2c8616bff9be9f9536efe1eb7a3b98c755cb4189bd7dff1",
+      "license": "MIT",
+      "path": "styles/iso-infographic/STYLE.md"
+    },
+    {
+      "sha256": "57ffe5f5aabf16c010ea0ae8c96de5b265ab744307e76a473023b8b9008a7f6a",
+      "license": "MIT",
+      "path": "styles/kino-montage/style.json"
+    },
+    {
+      "sha256": "8c63deefda22d4677d286ddfffb243ce6385dfa7ab56fbc493705fe13908f204",
+      "license": "MIT",
+      "path": "styles/kino-montage/STYLE.md"
+    },
+    {
+      "sha256": "16250593c1a9123ba85f38e45a81e3e2111d1cc1a7c07a5e091501a006bf4d82",
+      "license": "MIT",
+      "path": "styles/lidar-survey/style.json"
+    },
+    {
+      "sha256": "d1b60fda2793932286372e7cf68d62af5723bba14c37e9a437639ea57b1a310d",
+      "license": "MIT",
+      "path": "styles/lidar-survey/STYLE.md"
+    },
+    {
+      "sha256": "47b9b1c6e209f5a320b4c136efdb43f8caf8e7ee705e2428485f6021877f0fdc",
+      "license": "MIT",
+      "path": "styles/living-screencast/style.json"
+    },
+    {
+      "sha256": "02e8e5521fe1f553b0e58dacc2a556aea361dd5823e2ca0996963839d3c7d5c7",
+      "license": "MIT",
+      "path": "styles/living-screencast/STYLE.md"
+    },
+    {
+      "sha256": "7ab82e432e2e725a361ef54b1df252ba19416aead6f87897bc0bc79a48c8177a",
+      "license": "MIT",
+      "path": "styles/lowpoly-island/style.json"
+    },
+    {
+      "sha256": "1ae7bcd6aa3d521f563d8905f8109842fd7252ff8b70c1bd18265105a8a450f9",
+      "license": "MIT",
+      "path": "styles/lowpoly-island/STYLE.md"
+    },
+    {
+      "sha256": "827824fb45b72ca9ec6176f40e06ae755d1b075818f5f732eb53a4bcd8104aee",
+      "license": "MIT",
+      "path": "styles/microgame/style.json"
+    },
+    {
+      "sha256": "ad13d34bd06a65bef81b04f531c4f256bcc0bff4f229f976d52e07d5beef9dd5",
+      "license": "MIT",
+      "path": "styles/microgame/STYLE.md"
+    },
+    {
+      "sha256": "eb4afae4910ec49ce0d8dac9fb228deffb080ef81ba096be8df49adb906fc4db",
+      "license": "MIT",
+      "path": "styles/microscope/style.json"
+    },
+    {
+      "sha256": "63040631bdc28a3c7f8cf05e2e8523969becd0267741e00dd3e171c22be16e92",
+      "license": "MIT",
+      "path": "styles/microscope/STYLE.md"
+    },
+    {
+      "sha256": "5595ed4524303d0e5ae3a5b6805255c0fb9cb7232ee5d680df5ae59ba8998c68",
+      "license": "MIT",
+      "path": "styles/midcentury-toon/style.json"
+    },
+    {
+      "sha256": "e73614b6f9e2f2e8ee279f4909da8429235b96f6d13a12345b6e57d5823c30b8",
+      "license": "MIT",
+      "path": "styles/midcentury-toon/STYLE.md"
+    },
+    {
+      "sha256": "7b399ecf0a748e4f4b3dab016fda9eed2167a1c707aed6c8b0d2eee896bd7965",
+      "license": "MIT",
+      "path": "styles/news-package/style.json"
+    },
+    {
+      "sha256": "6f9d1b6a04878229260ea542fe71f2b77c560ed8e40df68b68e80ac4e21710ce",
+      "license": "MIT",
+      "path": "styles/news-package/STYLE.md"
+    },
+    {
+      "sha256": "d20ae96a49893f17a46b4d549bd9324d6129e76392376b6089673f72a2a2339f",
+      "license": "MIT",
+      "path": "styles/newsreel/style.json"
+    },
+    {
+      "sha256": "0f82c1423d2463dfc2700b23dff9ec183f596724a4820757e189c6fa5225e600",
+      "license": "MIT",
+      "path": "styles/newsreel/STYLE.md"
+    },
+    {
+      "sha256": "52f2dec514028b976dfa080270b45b1bbbe1a0e965ae358fdd929ad4f2035ea0",
+      "license": "MIT",
+      "path": "styles/one-line/style.json"
+    },
+    {
+      "sha256": "69d26cb06f48ab6b03c12a76c2390d0945cdaddc38bc109b7d5e292b9af1399b",
+      "license": "MIT",
+      "path": "styles/one-line/STYLE.md"
+    },
+    {
+      "sha256": "39d839aafce6dfa94455e9857e852951bce92cac30c0153bba6e5c6c47d935e2",
+      "license": "MIT",
+      "path": "styles/paper-lantern/style.json"
+    },
+    {
+      "sha256": "6f3001ad45657262384b3012f441883ef5ac9c558b82d23e503d14e2f672ac91",
+      "license": "MIT",
+      "path": "styles/paper-lantern/STYLE.md"
+    },
+    {
+      "sha256": "aa52b5e53c3125c0a3dcb74f9964200dad1780efba557129512bafcaf817e490",
+      "license": "MIT",
+      "path": "styles/paper-popup/style.json"
+    },
+    {
+      "sha256": "8e5c0ca430fd96b75c4d9c2af92a87c84d4d1af8cda64280a189c51279e1ee9b",
+      "license": "MIT",
+      "path": "styles/paper-popup/STYLE.md"
+    },
+    {
+      "sha256": "9dd9b45e83f3eafd09c2740cfc93f9021fd2239f915af9011f4fa01063e3dc05",
+      "license": "MIT",
+      "path": "styles/papercut-red/style.json"
+    },
+    {
+      "sha256": "65e317d83335e0cb34696b643e31ad9e46fb0bb93fd748c2e21d74358aea61ec",
+      "license": "MIT",
+      "path": "styles/papercut-red/STYLE.md"
+    },
+    {
+      "sha256": "55f9659926edf159471051da1bed0d2d48b2bc2c4571afee738ba5e2711bd111",
+      "license": "MIT",
+      "path": "styles/pictogram-motion/style.json"
+    },
+    {
+      "sha256": "e982606f3d7d132d320abdc1a74c226b1e0642b664a0c41582bc76fec646da1a",
+      "license": "MIT",
+      "path": "styles/pictogram-motion/STYLE.md"
+    },
+    {
+      "sha256": "79e57f1bf9536dda3826519f4b09be75f6643e34abace9fcd98d056840721c6b",
+      "license": "MIT",
+      "path": "styles/pixel-rpg/style.json"
+    },
+    {
+      "sha256": "f79fac0d9aed03d2a69f17a50b37adca2da84156b3fa525537761c507bcaea8e",
+      "license": "MIT",
+      "path": "styles/pixel-rpg/STYLE.md"
+    },
+    {
+      "sha256": "9fddc997a4daa93ff7fb696749d1143d35044412d78fd887558147d19b8f3759",
+      "license": "MIT",
+      "path": "styles/risograph/style.json"
+    },
+    {
+      "sha256": "c3d85c91a81b0afde091d964482749482adc66c12730afe124708f7b18b331a6",
+      "license": "MIT",
+      "path": "styles/risograph/STYLE.md"
+    },
+    {
+      "sha256": "c23b23f1363450dd324e8c6ca14a4e980d61e570faae64d08fa57f63a2848fcf",
+      "license": "MIT",
+      "path": "styles/rubber-hose/style.json"
+    },
+    {
+      "sha256": "bf850f9cd22e68b2125fed00d1b9804e91479620b44420ba7ec50e570e472a94",
+      "license": "MIT",
+      "path": "styles/rubber-hose/STYLE.md"
+    },
+    {
+      "sha256": "43fb790ce6bc3257aeb5d8c2736c99fbd578b0a854935e864531379bed4368ae",
+      "license": "MIT",
+      "path": "styles/satellite-briefing/style.json"
+    },
+    {
+      "sha256": "39fec0c7fda13600de04f1a9631ca636dc8850429033c1f65bb6d3283ec2988d",
+      "license": "MIT",
+      "path": "styles/satellite-briefing/STYLE.md"
+    },
+    {
+      "sha256": "e8920bbceae36c8811e88f15ccb0cf8b04158c4b93d008320b2c4643d272cbf9",
+      "license": "MIT",
+      "path": "styles/scifi-toon/style.json"
+    },
+    {
+      "sha256": "9a720a57ce50dc554e9237e698a979cdf7311527e6e6a0dad803278dfe8ad2ce",
+      "license": "MIT",
+      "path": "styles/scifi-toon/STYLE.md"
+    },
+    {
+      "sha256": "de2e5662f81e12a95a2f6370bed8d706d8a4d8387a2715532f15e18bc9441e1f",
+      "license": "MIT",
+      "path": "styles/shadow-puppet/style.json"
+    },
+    {
+      "sha256": "8be075a8262d5a3deea9b05684d8a9abdc1e54c0d90649bf14609ecb4106c3af",
+      "license": "MIT",
+      "path": "styles/shadow-puppet/STYLE.md"
+    },
+    {
+      "sha256": "0afe1c8a86cb16bcea47782d43abd90ef206b8e9ab380102a2ef44c5943f29d0",
+      "license": "MIT",
+      "path": "styles/silent-film/style.json"
+    },
+    {
+      "sha256": "44633a4edd4ec6b84be809bd48b38503a75a71531112b3d28a52f27135012b20",
+      "license": "MIT",
+      "path": "styles/silent-film/STYLE.md"
+    },
+    {
+      "sha256": "1da0fc7bbb16158d7ef082d86238b95486fdd0a23c93e8ba63203a7428ba34f4",
+      "license": "MIT",
+      "path": "styles/silkscreen-poster/style.json"
+    },
+    {
+      "sha256": "a8b3792efb1476b78493f86a033221b27f60c1927463cc435f8816e4d9eda148",
+      "license": "MIT",
+      "path": "styles/silkscreen-poster/STYLE.md"
+    },
+    {
+      "sha256": "229b04a3a23d83c29840c3e8ba8e077ed1586dde14c57ba635c54e7b807d1885",
+      "license": "MIT",
+      "path": "styles/spy-titles/style.json"
+    },
+    {
+      "sha256": "ea6e9e9073af43ef0bb860e368f60b16ec32a91668386115a142907d92cb1f75",
+      "license": "MIT",
+      "path": "styles/spy-titles/STYLE.md"
+    },
+    {
+      "sha256": "f65be17f876377c074be18f641e9e003b5b1d8e3567bac59294318611e4c9b23",
+      "license": "MIT",
+      "path": "styles/stained-glass/style.json"
+    },
+    {
+      "sha256": "0f6551bd109a4127404068aa1e75f18f16b58c80b486c23480b3d193e597b060",
+      "license": "MIT",
+      "path": "styles/stained-glass/STYLE.md"
+    },
+    {
+      "sha256": "90019625917e8461bb2ed091cc7cd0cc7dc47ba8a32f8d9cc9ca3a39cae9ed5e",
+      "license": "MIT",
+      "path": "styles/swiss-motion/style.json"
+    },
+    {
+      "sha256": "14ddeb6dc495e691a220497069a2ee4827d820f9ee7a3173de5846489ef41f57",
+      "license": "MIT",
+      "path": "styles/swiss-motion/STYLE.md"
+    },
+    {
+      "sha256": "8c55836a46c932b455b87b513a66eb919be9bd2d390bc8669a06947dd349f6c3",
+      "license": "MIT",
+      "path": "styles/teardown/style.json"
+    },
+    {
+      "sha256": "90df05a02a3d33add58e0dd99bef19ca20ea16b10390b3c2350d8483106922ee",
+      "license": "MIT",
+      "path": "styles/teardown/STYLE.md"
+    },
+    {
+      "sha256": "e9eb4d0796252b34b6eb5042f943258dcaeacf32e4ee8dc02b1c985cf99821ee",
+      "license": "MIT",
+      "path": "styles/telestrator/style.json"
+    },
+    {
+      "sha256": "7289027728dc5e1b6d095b7c7bc7806790bb579934c81682265c0c1b4897a3d0",
+      "license": "MIT",
+      "path": "styles/telestrator/STYLE.md"
+    },
+    {
+      "sha256": "a41aa18fd789273c049562d08f0d6e63ba8fbb8c95527c3fce212428b653ebe9",
+      "license": "MIT",
+      "path": "styles/tilt-shift/style.json"
+    },
+    {
+      "sha256": "131ae50c6bddd30922638cbd5f2fae5c047223360a3f6924b074b0db525a5c63",
+      "license": "MIT",
+      "path": "styles/tilt-shift/STYLE.md"
+    },
+    {
+      "sha256": "58f9c8f2315fd7545f6804cb1bbc5c6bb9faaf46aea9f11de138fa39395964f0",
+      "license": "MIT",
+      "path": "styles/ukiyoe/style.json"
+    },
+    {
+      "sha256": "218c48a204f9034d1c2fb7f11698b4834f1faee1ca68c9e336f3d6ab992ff2e4",
+      "license": "MIT",
+      "path": "styles/ukiyoe/STYLE.md"
+    },
+    {
+      "sha256": "0a7d9cfef5b650413a9d8ea4516bd8d56aa0ef9b1c10f2ce4afbf3604bc4f179",
+      "license": "MIT",
+      "path": "styles/urban-sketch/style.json"
+    },
+    {
+      "sha256": "2baf1a19f31b06e55d66d62e4c3449c7a2686c689190976f3e3d0cbdce2faa9a",
+      "license": "MIT",
+      "path": "styles/urban-sketch/STYLE.md"
+    },
+    {
+      "sha256": "4c07d9fdf3c14c7ceb375c65933b7de9fba4d5b1aef788a73ddbc43596e39d8b",
+      "license": "MIT",
+      "path": "styles/visual-investigation/style.json"
+    },
+    {
+      "sha256": "9b39ebaa00c3d77ae544d7453e99b79caf4dfaae1d37798b1f995a5578aac30b",
+      "license": "MIT",
+      "path": "styles/visual-investigation/STYLE.md"
+    },
+    {
+      "sha256": "fe64241069de6aaf0173de56b6ff038ae03eb131ef96c799512a5efea7821b47",
+      "license": "MIT",
+      "path": "styles/watercolor/style.json"
+    },
+    {
+      "sha256": "662d57568408a7c82ef8f64980ca85798b8bb239df3dc3a6715283d7f4555ef0",
+      "license": "MIT",
+      "path": "styles/watercolor/STYLE.md"
+    },
+    {
+      "sha256": "411b60987f3e61c827b8cf4ec3449acaa7514b2f6c19ad7ce723b9ded2ae9849",
+      "license": "MIT",
+      "path": "styles/white-model/style.json"
+    },
+    {
+      "sha256": "02b6423a69ac5a30322997ec9523bd6b6f776b7c8cf14f249eeb996b9d21e2c2",
+      "license": "MIT",
+      "path": "styles/white-model/STYLE.md"
+    },
+    {
+      "sha256": "d0037e21fb291faca08cd0f379d51f8a452bb73992165b713d7b229653648f5b",
+      "license": "MIT",
+      "path": "styles/whiteboard/style.json"
+    },
+    {
+      "sha256": "19f66326257bcafb8aca18af3e209d1fee31d9e23902ce1708bbb606cbf4b718",
+      "license": "MIT",
+      "path": "styles/whiteboard/STYLE.md"
+    },
+    {
+      "sha256": "5143205fccfc7977a594f360ce1549630cd15c4a0df04873e9428fe352f152c4",
+      "license": "MIT",
+      "path": "styles/woodcut/style.json"
+    },
+    {
+      "sha256": "b96fda6eeac038137310cc0766d979c8d8a5f3ff6acd87bada5aa50d5136a6a0",
+      "license": "MIT",
+      "path": "styles/woodcut/STYLE.md"
+    },
+    {
+      "sha256": "8790803f846846032cba16c11c6f1c477625460e9df74f32d1c650717ea8526b",
+      "license": "MIT",
+      "path": "TECHNIQUE.md"
+    },
+    {
+      "path": "STYLE-INDEX.md",
+      "sha256": "66c4ad73fb0135a7ec95efc503119f2527cb28bec4a4557cbaf0917698c13c58",
+      "license": "MIT"
+    }
+  ]
+}

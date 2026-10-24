@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Code2, Plus, Save, Upload, Sparkles, Trash2, X } from 'lucide-react';
-import { Button, IconButton, PreviewSelectField, SegmentedControl, SelectField, SliderField, TextAreaField, TextField } from '../../ui';
-import { VOX_TEMPLATES, createVoxAnimation, validateVoxAnimation, voxTemplate, voxItemSchema, type VoxAnimation, type VoxAnimationProps, type VoxSavedTemplate } from '../../shared/vox-animation';
+import { Button, IconButton, SegmentedControl, SelectField, SliderField, TextAreaField, TextField } from '../../ui';
+import { createVoxAnimation, validateVoxAnimation, voxTemplate, voxItemSchema, type VoxAnimation, type VoxAnimationProps, type VoxSavedTemplate } from '../../shared/vox-animation';
 import type { VoxApi, VoxLocalAsset } from './VoxAnimationPreview';
 import { VoxTemplateCatalog } from './VoxTemplateCatalog';
-import { VoxTemplateSample } from './VoxTemplateSample';
 import './vox-animation.css';
 
-export function VoxAnimationEditor({shotId,animation,title,subtitle,api,assets,ratio,durationMs,busy,onChange,onImportAsset,previewReady,onExport,onCancelExport}:{shotId:string;animation?:VoxAnimation;title:string;subtitle:string;api:VoxApi;assets:readonly VoxLocalAsset[];ratio:string;durationMs:number;busy:boolean;previewReady?:boolean;onExport?:()=>Promise<boolean>;onCancelExport?:()=>Promise<void>;onChange:(a:VoxAnimation)=>void;onImportAsset?:(kind:'image'|'audio')=>Promise<void>}){
+export function VoxAnimationEditor({shotId,animation,title,subtitle,api,assets,ratio,durationMs,busy,onChange:onCommit,onImportAsset,previewReady,onExport,onCancelExport}:{shotId:string;animation?:VoxAnimation;title:string;subtitle:string;api:VoxApi;assets:readonly VoxLocalAsset[];ratio:string;durationMs:number;busy:boolean;previewReady?:boolean;onExport?:()=>Promise<boolean>;onCancelExport?:()=>Promise<void>;onChange:(a:VoxAnimation)=>void;onImportAsset?:(kind:'image'|'audio')=>Promise<void>}){
+  // Editing transfers ownership to the author. Automatic production must lock
+  // this code rather than treating it as replaceable generated material.
+  const onChange=(next:VoxAnimation)=>onCommit({...next,authoring:undefined});
   const value=animation??createVoxAnimation(title,subtitle),p=value.template.props,t=voxTemplate(value.template.id)!;
   const [catalogOpen,setCatalogOpen]=useState(false),[exporting,setExporting]=useState(false);
   const [saved,setSaved]=useState<VoxSavedTemplate[]>([]),[name,setName]=useState(''),[showCode,setShowCode]=useState(false),[running,setRunning]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
@@ -21,9 +23,9 @@ export function VoxAnimationEditor({shotId,animation,title,subtitle,api,assets,r
   const images=assets.filter(x=>x.kind==='image'),audios=assets.filter(x=>x.kind==='audio');
   const canUsePreview=previewReady&&validateVoxAnimation(value,assets).length===0;
   return <fieldset disabled={busy} className="vox-editor" aria-label="动画模板与 AI 创作">
+    {value.authoring ? <p className="vox-hint" role="status">风格：{value.authoring.styleId} · {value.authoring.status==='reviewed'?'代码与抽帧检查通过':value.authoring.status==='fallback'?'已回退模板，生成源码保留在下方':value.authoring.status==='needs-repair'?'等待一次代码修复':'代码已保存，等待检查'}。{value.authoring.error} 修改后请在自动制作设置中锁定此镜头。</p> : null}
     <SegmentedControl label="动画创作方式" value={value.mode} options={[{value:'template',label:'动画模板'},{value:'code',label:'AI 生成动画'}]} onChange={mode=>onChange({...value,mode})}/>
     {value.mode==='template'?<>
-      <PreviewSelectField label="动画模板" value={value.template.id} disabled={busy} options={VOX_TEMPLATES.map(template=>({value:template.id,label:template.name,description:template.description,preview:()=> <VoxTemplateSample templateId={template.id} api={api} ratio={ratio}/>}))} onChange={choose} hint="悬停看动画；选择后应用到当前镜头。"/>
       <Button variant="secondary" onClick={()=>setCatalogOpen(x=>!x)} aria-expanded={catalogOpen}>选择模板 · {t?.name??'未选择'}</Button>
       {catalogOpen?<VoxTemplateCatalog currentId={value.template.id} api={api} assets={assets} ratio={ratio} durationMs={durationMs} saved={saved} busy={busy} onApply={choose} onApplySaved={next=>{onChange(next);setCatalogOpen(false);setError('');}} onDeleteSaved={id=>void api.deleteVoxTemplate(id).then(setSaved).catch(e=>setError(String(e)))} onClose={()=>setCatalogOpen(false)}/>:null}
     </>:<div className="vox-ai-controls"><TextAreaField label="描述动画或继续修改" value={value.code.prompt} onChange={(_,d)=>onChange({...value,code:{...value.code,prompt:d.value}})} resize="vertical" placeholder="例如：标题从左侧进入，三个观点依次展开，使用纸张质感"/><p className="vox-hint">使用系统设置中的文本模型，按该服务实际用量计费。图片和数据取自下方已选内容。</p><div className="vox-row"><Button variant="primary" disabled={busy||running||!value.code.prompt.trim()} onClick={()=>void generate()}><Sparkles size={14}/>{running?'正在生成…':value.code.source?'按要求修改':'生成动画'}</Button>{running?<Button onClick={()=>{const id=request.current;request.current='';if(id)void api.cancelVoxAnimation(id).catch(()=>{});setRunning(false);setMessage('已取消生成');}}><X size={14}/>取消</Button>:null}<Button variant="subtle" onClick={()=>setShowCode(x=>!x)}><Code2 size={14}/>{showCode?'收起代码':'查看代码'}</Button></div>{showCode?<><TextAreaField label="动画 TSX 代码" value={value.code.source} onChange={(_,d)=>onChange({...value,code:{...value.code,source:d.value,compiled:''}})} resize="vertical" fieldClassName="vox-code"/><Button disabled={running||busy||!value.code.source.trim()} onClick={()=>void compile()}>检查代码并预览</Button></>:null}</div>}

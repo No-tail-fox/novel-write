@@ -1,0 +1,66 @@
+[
+  {
+    "full_name": "heygen-com/hyperframes",
+    "stargazers_count": 68187,
+    "pushed_at": "2026-10-20T14:27:32Z",
+    "description": "Write HTML. Render video. Built for agents.",
+    "html_url": "https://github.com/heygen-com/hyperframes",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "latent-spaces/brag",
+    "stargazers_count": 17087,
+    "pushed_at": "2026-10-13T11:08:09Z",
+    "description": "You built it. Now brag. Turn the project you just created into a short, shareable launch video with one command.",
+    "html_url": "https://github.com/latent-spaces/brag",
+    "license": "MIT"
+  },
+  {
+    "full_name": "nexu-io/html-anything",
+    "stargazers_count": 9186,
+    "pushed_at": "2026-10-13T02:33:42Z",
+    "description": "✨ The agentic HTML editor — your local AI agent writes the HTML, you ship it. 🚀 75 Skills × 9 Surfaces (magazine · deck · poster · XHS / tweet · prototype · data report · Hyperframes) 🛡️ Sandboxed preview · 📤 1-click to WeChat / X / Zhihu / HTML / PNG 🔑 Zero API key — Claude Code / Cursor / Codex / Gemini / Copilot / OpenCode / Qwen / Aider.",
+    "html_url": "https://github.com/nexu-io/html-anything",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "nexu-io/html-video",
+    "stargazers_count": 4723,
+    "pushed_at": "2026-06-21T16:18:31Z",
+    "description": "Programmatic video for coding agents — HTML to video on your laptop. Turn HTML, CSS & data into real MP4s with pluggable render engines, 21 templates, AI soundtrack. Apache-2.0, no per-render fees. An official project by the Open Design team.",
+    "html_url": "https://github.com/nexu-io/html-video",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "nateherkai/herk-edit-kit",
+    "stargazers_count": 1892,
+    "pushed_at": "2026-10-14T12:51:12Z",
+    "description": "Herk Edit Kit by Nate Herk: edit videos, reels, and YouTube Shorts with Codex or Claude Code. 15 skills, transcript-driven cuts, storytelling, 406 motion-graphics cards, and HyperFrames templates.",
+    "html_url": "https://github.com/nateherkai/herk-edit-kit",
+    "license": "NOASSERTION"
+  },
+  {
+    "full_name": "pireel/pireel",
+    "stargazers_count": 1309,
+    "pushed_at": "2026-09-18T18:34:52Z",
+    "description": "The open-source alternative to Capcut、ChatCut. Drivable by any AI agent over MCP.",
+    "html_url": "https://github.com/pireel/pireel",
+    "license": "AGPL-3.0"
+  },
+  {
+    "full_name": "feicaiclub/video-spec-builder",
+    "stargazers_count": 1033,
+    "pushed_at": "2026-05-18T06:21:03Z",
+    "description": "video-spec-builder —— 把我想做个视频逼成一份精确到秒的分镜脚本 video-spec.md,交给 HyperFrames 渲染。一条命令装到 Claude Code / Cursor / Codex:npx skills add feicaiclub/video-spec-builder",
+    "html_url": "https://github.com/feicaiclub/video-spec-builder",
+    "license": "MIT"
+  },
+  {
+    "full_name": "blixvip/NullMotion",
+    "stargazers_count": 1018,
+    "pushed_at": "2026-10-08T22:47:27Z",
+    "description": "Play a finished motion-graphics ad in sync with the rough drafts it grew from, and export the breakdown as MP4.",
+    "html_url": "https://github.com/blixvip/NullMotion",
+    "license": null
+  }
+]

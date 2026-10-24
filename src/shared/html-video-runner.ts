@@ -1,3 +1,4 @@
+import { HTML_COMPOSITION_REVISION } from './html-video-composition';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, realpath, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -869,7 +870,7 @@ function hashStepInput(
   else if (step === 'voice') input = { scenes: state.scenes, config };
   else if (step === 'preview') input = { scenes: state.scenes, assets: state.assets, voices: state.voices, config };
   else input = { compositions: state.compositions, coverAsset: state.coverAsset, draftTemplate: state.config.draftTemplate, config };
-  return createHash('sha256').update(JSON.stringify({ step, input })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ step, input, ...(state.scenes.some(scene => scene.compositionVersion === 2) && (step === 'preview' || step === 'render') ? { compositionRevision: HTML_COMPOSITION_REVISION } : {}) })).digest('hex');
 }
 
 async function loadCheckpoint(workDir: string, fallback: HtmlVideoPipelineDataV2): Promise<HtmlVideoPipelineDataV2> {
