@@ -74,9 +74,10 @@ export const povOptions = [
   ['first-person', '第一人称'],
   ['third-person', '第三人称'],
 ] as const;
-export const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt'];
+export const promptTemplateTypeOptions: Array<PromptTemplateType | 'all'> = ['all', 'task', 'review', 'rewrite', 'cover', 'storyboard', 'image-prompt', 'workflow'];
 export const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string> = {
   all: '全部类型',
+  workflow: '工作流提示词',
   task: '任务模板',
   review: '预审提示词',
   rewrite: '改写提示词',
@@ -84,7 +85,7 @@ export const promptTemplateTypeLabels: Record<PromptTemplateType | 'all', string
   storyboard: '分镜提示词',
   'image-prompt': '出图提示词',
 };
-export type PromptTemplateVariableScope = PromptTemplateType;
+export type PromptTemplateVariableScope = Exclude<PromptTemplateType, 'workflow'>;
 export const promptTemplateVariableDefinitions = [
   { key: 'inputText', label: '原文素材', description: '新建任务里粘贴或导入的原始文案', scopes: ['task', 'review'] },
   { key: 'title', label: '任务标题', description: '当前任务标题或自动生成标题', scopes: ['task', 'review', 'rewrite', 'cover'] },

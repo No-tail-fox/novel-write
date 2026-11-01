@@ -8,11 +8,13 @@ import {
   runHtmlVideoPipeline,
   synchronizeHtmlVideoPipelineCheckpoint,
   synchronizeHtmlVideoPreviewArtifact,
+  synchronizeHtmlVideoEditorialArtifacts,
   type HtmlVideoRewriteOutput,
   type HtmlVideoRunnerInput,
   type HtmlVideoRunnerOptions,
 } from '@shared/html-video-runner';
 import { AppError } from '@shared/app-error';
+import { adaptHtmlVideoAssetGenerator } from '@shared/task-runtime-providers';
 import {
   MAX_HTML_VIDEO_PIPELINE_JSON_CHARS,
   MAX_HTML_VIDEO_PIPELINE_FILE_BYTES,
@@ -26,6 +28,7 @@ import {
 } from '@shared/html-video-workflow';
 import type {
   DraftTemplate,
+  Task,
   HtmlVideoAsset,
   HtmlVideoCompositionSnapshot,
   HtmlVideoJobConfig,
@@ -97,6 +100,19 @@ describe('HTML video runner module', () => {
       expect(result.scenes.map((scene) => scene.narration)).toEqual(['第一句。', '第二句。']);
       expect(result.warnings.join('\n')).toMatch(/LLM|分句/);
       expect(runtime.calls).toEqual(['assets', 'voice', 'preview', 'render']);
+    });
+  });
+
+  it('surfaces cutout failures even when the rest of the video can finish', async () => {
+    await withTempRunner(async workDir => {
+      const runtime = createFakeRuntime(workDir);
+      const generate = runtime.options.generateAssets;
+      runtime.options.generateAssets = async input => (await generate(input)).map(asset => asset.kind === 'fg' ? { ...asset, transparency: 'opaque' as const } : asset);
+      const result = await runHtmlVideoPipeline(createRunnerInput('opaque-foreground-warning', '第一句。'), runtime.options);
+      expect(result.current).toBe('done');
+      expect(result.assets.some(asset => asset.transparency === 'opaque')).toBe(true);
+      expect(result.warnings.join('')).toContain('未通过透明度检查');
+      expect(result.warnings.join('')).toContain('已保留原图并跳过叠加');
     });
   });
 
@@ -191,6 +207,57 @@ describe('HTML video runner module', () => {
       expect(checkpoint.assets).toMatchObject([{ sceneIndex: 1, kind: 'bg', slot: 0 }]);
     });
   });
+
+  it.each(['failed', 'cancelled', 'running', 'missing-file', 'changed-input', 'explicit-rerun'] as const)(
+    'recovers only valid partial image slots after %s without repeating paid images',
+    async mode => {
+      await withTempRunner(async workDir => {
+        const input = createRunnerInput('partial-image-resume');
+        const first = createFakeRuntime(workDir);
+        const savedPath = join(workDir, 'paid-background.png');
+        first.options.generateAssets = async assetInput => {
+          await writeFile(savedPath, 'paid-background');
+          await assetInput.onAssetGenerated?.({ sceneIndex: 1, kind: 'bg', slot: 0, src: savedPath });
+          throw new Error('IMAGE_PROVIDER_FAILED: upstream unavailable');
+        };
+        await expect(runHtmlVideoPipeline(input, first.options)).rejects.toThrow(/upstream unavailable/);
+        const failed = await readCheckpoint(workDir);
+        expect(failed.assets).toHaveLength(1);
+        if (mode === 'cancelled' || mode === 'running') failed.steps.assets.status = mode;
+        if (mode === 'changed-input') failed.steps.assets.inputHash = '0'.repeat(64);
+        if (mode === 'missing-file') await unlink(savedPath);
+
+        const retry = createFakeRuntime(workDir);
+        const generatedIds: number[] = [];
+        retry.options.generateAssets = adaptHtmlVideoAssetGenerator(async scenes => {
+          const generated = [];
+          for (const scene of scenes) {
+            generatedIds.push(scene.id);
+            const path = join(workDir, `new-image-${scene.id}.png`);
+            await writeFile(path, `new-image-${scene.id}`);
+            generated.push({ sceneId: scene.id, path });
+          }
+          return generated;
+        }, { ratio: '9:16', style: 'modern-film' } as Task);
+        const result = await runHtmlVideoPipeline({
+          ...input,
+          state: failed,
+          ...(mode === 'explicit-rerun' ? { rerunFrom: 'assets' as const } : {}),
+        }, retry.options);
+        const keepsPaidImage = ['failed', 'cancelled', 'running'].includes(mode);
+        expect(generatedIds).toEqual(keepsPaidImage ? [2, 3, 4] : [1, 2, 3, 4]);
+        expect(result.assets).toHaveLength(4);
+        if (keepsPaidImage) {
+          expect(result.assets[0].src).toBe(await realpath(savedPath));
+          expect(await readFile(savedPath, 'utf8')).toBe('paid-background');
+          expect(retry.checkpoints.find(snapshot => snapshot.steps.assets.status === 'running')?.assets).toHaveLength(1);
+        }
+        if (mode === 'missing-file') expect(result.warnings.join('')).toContain('素材已缺失或失效');
+        expect(retry.calls).toEqual(['voice', 'preview', 'render']);
+        expect(result.current).toBe('done');
+      });
+    },
+  );
 
   it('keeps deterministic fallback warnings within the persisted schema limit', async () => {
     await withTempRunner(async (workDir) => {
@@ -1470,6 +1537,33 @@ describe('HTML video runner module', () => {
 
       expect(resumed.calls).toEqual(['render']);
       expect(renderedSource).toContain('data-editor-revision="2"');
+      expect(result.current).toBe('done');
+    });
+  });
+
+  it('resumes edited scenes and cutout assets at render without repeating paid generation', async () => {
+    await withTempRunner(async (workDir) => {
+      const input = createRunnerInput('edited-media-render');
+      const initial = createFakeRuntime(workDir);
+      const completed = await runHtmlVideoPipeline(input, initial.options);
+      const edited = structuredClone(completed);
+      edited.scenes[0].title = 'Edited editorial scene';
+      const foreground = edited.assets.find(asset => asset.kind === 'fg')!;
+      const cutoutPath = join(workDir, 'editor-cutout.png');
+      await writeFile(cutoutPath, 'new foreground cutout');
+      foreground.src = cutoutPath;
+      foreground.sizeBytes = Buffer.byteLength('new foreground cutout');
+      edited.current = 'render';
+      edited.steps.render = { status: 'pending' };
+      delete edited.output;
+      edited.revision += 1;
+      const synchronized = await synchronizeHtmlVideoEditorialArtifacts(workDir, edited, input.sourceText);
+      await synchronizeHtmlVideoPipelineCheckpoint(workDir, synchronized);
+      const resumed = createFakeRuntime(workDir);
+      const result = await runHtmlVideoPipeline({ ...input, state: synchronized }, resumed.options);
+      expect(resumed.calls).toEqual(['render']);
+      expect(result.scenes[0].title).toBe('Edited editorial scene');
+      expect(result.assets.find(asset => asset.kind === 'fg')?.src).toBe(await realpath(cutoutPath));
       expect(result.current).toBe('done');
     });
   });

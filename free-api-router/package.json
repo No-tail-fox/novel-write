@@ -1,0 +1,16 @@
+{
+  "name": "free-api-router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local OpenAI and Anthropic compatible failover router for user-configured public AI providers.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "sync": "node src/cli.mjs sync",
+    "check": "node src/cli.mjs check",
+    "test": "node --test test/*.test.mjs"
+  }
+}

@@ -9,6 +9,7 @@ export interface ImageLabBatchSeed {
   styles: string[];
   quantity: number;
   provider: ImageLabProviderChoice;
+  imageProfileId?: string;
   resolution: ImageLabRecord['resolution'];
   quality?: ImageGenerationQuality;
   smartMode: ImageLabSmartMode;
@@ -30,6 +31,7 @@ export function buildImageLabBatchInputs(seed: ImageLabBatchSeed): ImageLabGener
           ratio,
           style,
           provider: seed.provider,
+          ...(seed.imageProfileId ? { imageProfileId: seed.imageProfileId } : {}),
           resolution: seed.resolution,
           quality: seed.quality ?? 'medium',
           smartMode: seed.smartMode,
@@ -46,6 +48,7 @@ export function buildImageLabBatchInputs(seed: ImageLabBatchSeed): ImageLabGener
 export function imageLabRetryInput(record: ImageLabRecord): ImageLabGenerateInput {
   const provider = isImageLabProviderChoice(record.provider) ? record.provider : undefined;
   return {
+    ...(record.imageProfileId ? { imageProfileId: record.imageProfileId } : {}),
     prompt: record.prompt,
     ratio: record.ratio,
     style: record.style,

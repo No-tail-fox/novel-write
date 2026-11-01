@@ -385,13 +385,13 @@ export function HtmlVideoAuthoringWorkspace({
         <div className="hv-authoring-time-ruler" aria-hidden="true">
           {Array.from({ length: 5 }, (_, index) => <span key={index} style={{ left: `${index * 25}%` }}>{formatTime((duration * index) / 4)}</span>)}
         </div>
-        <div className="hv-authoring-track-grid" style={{ minHeight: `${Math.max(84, trackCount * 28)}px` }}>
-          <div className="hv-authoring-track-labels" aria-hidden="true">
+        <div className="hv-authoring-track-grid">
+          <div className="hv-authoring-track-labels" aria-hidden="true" style={{ minHeight: `${Math.max(84, trackCount * 28)}px` }}>
             {visibleTrackIndices.map((trackIndex, rowIndex) => (
               <span key={trackIndex} className="hv-authoring-track-line" style={{ top: `${rowIndex * 28}px` }}>T{trackIndex}</span>
             ))}
           </div>
-          <div ref={timelineRef} className="hv-authoring-track-surface">
+          <div ref={timelineRef} className="hv-authoring-track-surface" style={{ minHeight: `${Math.max(84, trackCount * 28)}px` }}>
             {parsed.clips.map((clip) => (
               <div
                 key={`${clip.sourceIndex}-${clip.id}`}

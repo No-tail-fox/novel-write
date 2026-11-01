@@ -35,6 +35,10 @@ export interface NetworkFetchOptions extends RequestInit, NetworkPolicyOverrides
   purpose: NetworkPurpose;
   fetchImpl?: NetworkFetch;
   lookup?: NetworkLookup;
+  /** Retry one connection timeout before any HTTP request can be sent. */
+  retryConnectTimeout?: boolean;
+  /** Observe bounded body bytes as they arrive; redirects are never observed. */
+  onResponseChunk?: (chunk: Uint8Array, response: Response) => void;
 }
 
 export interface PinnedLookup {
@@ -231,6 +235,8 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
     purpose,
     fetchImpl = dynamicFetch,
     lookup,
+    retryConnectTimeout = false,
+    onResponseChunk,
     allowPrivate,
     allowLoopback,
     maxRedirects,
@@ -252,6 +258,7 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
   let body = requestInit.body;
   let headers = filterRequestHeaders(requestInit.headers, policy);
   let redirects = 0;
+  let connectRetries = 0;
   const controller = new AbortController();
   const abortFromParent = () => controller.abort(signal?.reason ?? networkError('NETWORK_ABORTED', 'Network request aborted.'));
   const timer = setTimeout(
@@ -269,12 +276,15 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
       const pinned = createPinnedLookup(currentUrl, policy, lookup ?? defaultNetworkLookup);
       if (lookup) await pinned.resolve();
       const dispatcher = new Agent({
+        // Keep transport limits aligned with the overall request deadline.
+        headersTimeout: policy.timeoutMs,
+        bodyTimeout: policy.timeoutMs,
         connect: {
           lookup: pinned.nodeLookup,
           timeout: Math.min(30_000, policy.timeoutMs),
         },
       });
-      let response: Response;
+      let response: Response | undefined;
       try {
         const init: RequestInit & { dispatcher?: Dispatcher } = {
           ...requestInit,
@@ -310,11 +320,19 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
           continue;
         }
 
-        const bytes = await readResponseBytesBounded(response, policy.maxBytes, controller);
+        const bytes = await readResponseBytesBounded(response, policy.maxBytes, controller, onResponseChunk);
         return rebuildResponse(response, bytes, currentUrl.href, redirects > 0);
       } catch (error) {
         if (controller.signal.aborted) throw abortReason(controller.signal);
-        throw unwrapNetworkPolicyCause(error);
+        const failure = unwrapNetworkPolicyCause(error, currentUrl);
+        if (!response && retryConnectTimeout && purpose === 'provider-api' && connectRetries === 0
+          && failure instanceof NetworkPolicyError && failure.code === 'UND_ERR_CONNECT_TIMEOUT'
+          && isReplayableBody(body)) {
+          // This connector error happens before HTTP is sent. Never replay a lost response.
+          connectRetries += 1;
+          continue;
+        }
+        throw failure;
       } finally {
         await dispatcher.close().catch(() => undefined);
       }
@@ -531,6 +549,7 @@ async function readResponseBytesBounded(
   response: Response,
   maxBytes: number,
   controller?: AbortController,
+  onChunk?: (chunk: Uint8Array, response: Response) => void,
 ): Promise<Uint8Array> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
     throw networkError('NETWORK_INVALID_BYTE_LIMIT', 'Network response byte limit must be a positive safe integer.');
@@ -557,8 +576,12 @@ async function readResponseBytesBounded(
         await reader.cancel(error).catch(() => undefined);
         throw error;
       }
+      onChunk?.(value, response);
       chunks.push(value);
     }
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
   } finally {
     reader.releaseLock();
   }
@@ -633,14 +656,35 @@ function abortReason(signal: AbortSignal): Error {
   return networkError('NETWORK_ABORTED', typeof signal.reason === 'string' ? signal.reason : 'Network request aborted.');
 }
 
-function unwrapNetworkPolicyCause(error: unknown): unknown {
+function isReplayableBody(body: BodyInit | null | undefined): boolean {
+  return body == null || typeof body === 'string' || body instanceof URLSearchParams
+    || body instanceof FormData || body instanceof Blob || body instanceof ArrayBuffer || ArrayBuffer.isView(body);
+}
+
+function unwrapNetworkPolicyCause(error: unknown, url: URL): unknown {
   if (!(error instanceof Error)) return error;
-  let cause: unknown = error.cause;
-  while (cause instanceof Error) {
+  let cause: unknown = error;
+  let code: string | undefined;
+  const seen = new Set<Error>();
+  while (cause instanceof Error && !seen.has(cause)) {
+    seen.add(cause);
     if (cause instanceof NetworkPolicyError) return cause;
+    code ??= (cause as NodeJS.ErrnoException).code;
     cause = cause.cause;
   }
-  return error;
+  const detail = code === 'UND_ERR_CONNECT_TIMEOUT'
+    ? `连接 ${url.host} 超时，尚未建立可发送 HTTP 请求的连接。请检查网络、代理或服务可用性。`
+    : code === 'ENOTFOUND' || code === 'EAI_AGAIN'
+      ? `无法解析 ${url.hostname}，请检查网络和 DNS。`
+      : code === 'UND_ERR_SOCKET' || code === 'ECONNRESET'
+        ? `与 ${url.host} 的连接中断，未收到完整响应；云端请求结果可能未知。`
+        : code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT'
+          ? `等待 ${url.host} 的响应超时；云端请求结果可能未知。`
+          : undefined;
+  if (!detail) return error;
+  const failure = networkError(code!, `${detail}（${code}）`);
+  failure.cause = error;
+  return failure;
 }
 
 function networkError(code: string, message: string): NetworkPolicyError & NodeJS.ErrnoException {

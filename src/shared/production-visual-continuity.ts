@@ -2,6 +2,11 @@ import { z } from 'zod';
 import type { ProductionQualityCheck } from './production-workflow';
 
 export const DIRECTOR_VISUAL_FPS = 24;
+type VisualScene = { id: string; durationMs: number; animation?: { code: { engine?: string }; native?: { fps: number } } };
+/** One output clock; preserve a native film's frame rate, including 12 fps artwork. */
+export function directorVisualFps(scenes: readonly Pick<VisualScene, 'animation'>[]): number {
+  return scenes.length ? Math.max(...scenes.map(scene => scene.animation?.code.engine === 'lemo-native' ? scene.animation.native?.fps ?? DIRECTOR_VISUAL_FPS : DIRECTOR_VISUAL_FPS)) : DIRECTOR_VISUAL_FPS;
+}
 export const MAX_VISUAL_CUTS = 499;
 const luma = z.number().finite().min(0).max(255);
 const frameSchema = z.object({
@@ -28,7 +33,7 @@ export type VisualCut = ProductionVisualContinuityEvidence['cuts'][number];
 
 export function directorVisualCutTimes(scenes: readonly { durationMs: number }[]): number[] {
   let elapsed = 0;
-  return scenes.slice(0, -1).map(scene => (elapsed += Math.max(800, scene.durationMs)));
+  return scenes.slice(0, -1).map(scene => (elapsed += scene.durationMs));
 }
 
 export function visualCutFrameIndices(atMs: number, fps = DIRECTOR_VISUAL_FPS): number[] {
@@ -47,11 +52,12 @@ export function visualCutIssues(cut: VisualCut): string[] {
 }
 
 export function evaluateDirectorVisualContinuity(
-  scenes: readonly { id: string; durationMs: number }[],
+  scenes: readonly VisualScene[],
   evidence: ProductionVisualContinuityEvidence | undefined,
 ): ProductionQualityCheck {
   const base = { id: 'visual-continuity', label: '切点前后四帧画面采样', severity: 'warning' as const };
   const expected = directorVisualCutTimes(scenes);
+  const fps = directorVisualFps(scenes);
   if (!expected.length) return { ...base, status: 'passed', detail: '当前成片没有镜头间切点，切点采样不适用。' };
   const pending = (status: 'failed' | 'pending', detail: string): ProductionQualityCheck => ({
     ...base, status, detail, recheckScope: { kind: 'media', startMs: Math.max(0, expected[0] - 100), endMs: expected.at(-1)! + 100 },
@@ -60,12 +66,12 @@ export function evaluateDirectorVisualContinuity(
   const parsed = productionVisualContinuityEvidenceSchema.safeParse(evidence);
   if (!parsed.success) return pending('failed', '切点帧证据不完整或数值无效。');
   if (evidence.status !== 'ok') return pending(evidence.status === 'failed' ? 'failed' : 'pending', `切点帧探测${evidence.status === 'failed' ? '失败' : '不可用'}：${evidence.error || '未取得证据'}`);
-  if (evidence.fps !== DIRECTOR_VISUAL_FPS || evidence.cuts.length !== expected.length) return pending('failed', '切点数量或采样帧率与当前成片不一致。');
-  const total = scenes.reduce((sum, scene) => sum + Math.max(800, scene.durationMs), 0);
+  if (evidence.fps !== fps || evidence.cuts.length !== expected.length) return pending('failed', '切点数量或采样帧率与当前成片不一致。');
+  const total = scenes.reduce((sum, scene) => sum + scene.durationMs, 0);
   for (const [i, cut] of evidence.cuts.entries()) {
-    const indices = visualCutFrameIndices(expected[i]);
+    const indices = visualCutFrameIndices(expected[i], fps);
     if (Math.abs(cut.atMs - expected[i]) > 0.01 || cut.frames.some((frame, j) =>
-      frame.index !== indices[j] || Math.abs(frame.timeMs - indices[j] * 1000 / DIRECTOR_VISUAL_FPS) > 1 || frame.timeMs >= total)) {
+      frame.index !== indices[j] || Math.abs(frame.timeMs - indices[j] * 1000 / fps) > 1 || frame.timeMs >= total)) {
       return pending('failed', '切点证据的实际帧时间与当前时间线不一致。');
     }
   }
@@ -85,7 +91,7 @@ export function evaluateDirectorVisualContinuity(
       kind: 'media',
       shotIds: [...new Set(affected.flatMap(item => [scenes[item.i].id, scenes[item.i + 1].id]))],
       startMs: first.cut.frames[0].timeMs,
-      endMs: Math.min(total, affected.at(-1)!.cut.frames[3].timeMs + 1000 / DIRECTOR_VISUAL_FPS),
+      endMs: Math.min(total, affected.at(-1)!.cut.frames[3].timeMs + 1000 / fps),
     },
   };
 }

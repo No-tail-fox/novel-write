@@ -60,11 +60,14 @@ describe('music and video settings', () => {
       { ...config.video.providers[0], id: 'video-two', name: '备用视频', model: 'model-two', enabled: false },
     ] } });
     const onChange = vi.fn();
-    const html = render(createElement(VideoProfileSwitcher, { ...managerProps(), config: videoConfig, selectedProfileId: 'video-two', onChange }));
+    const props = managerProps();
+    const html = render(createElement(VideoProfileSwitcher, { ...props, config: videoConfig, selectedProfileId: 'video-two', onChange }));
     expect(html).toContain('model-one');
     expect(html).toContain('model-two');
     expect(html).toContain('正在编辑：');
-    expect(html).toContain('启用此配置');
+    expect(html).toContain('设为默认');
+    expect(html).toContain('新项目默认');
+    expect(props.onActivate).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
     expect(videoConfig.video.activeProviderId).toBe('video-one');
   });

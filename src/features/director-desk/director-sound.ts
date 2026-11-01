@@ -2,16 +2,18 @@ import type { DirectorAudioDocument } from '../../shared/director-audio-edit';
 import { directorEditableAudioClips } from '../../shared/director-audio-edit';
 import type { ProductionAudioClip } from '../../shared/production-audio';
 import { toLocalAssetUrl } from '../tasks/task-formatters';
+import { PROJECT_MUSIC_PREFIX } from '../../shared/editorial-music';
 
 export interface DirectorSoundClip extends ProductionAudioClip {
   title: string;
   available: boolean;
+  previewUrl?: string;
 }
 
 export function directorSoundClips(document: DirectorAudioDocument, shotId: string): DirectorSoundClip[] {
-  return directorEditableAudioClips(document, shotId).map((clip) => {
+  return directorEditableAudioClips(document, shotId).filter(clip => !clip.id.startsWith(PROJECT_MUSIC_PREFIX)).map((clip) => {
     const asset = document.assets.find((item) => item.id === clip.assetVersionId && item.kind === 'audio');
-    return { ...clip, title: asset?.prompt || '音频片段', available: Boolean(asset?.localPath) };
+    return { ...clip, title: asset?.prompt || '音频片段', available: Boolean(asset?.localPath), previewUrl: asset?.localPath ? toLocalAssetUrl(asset.localPath) : undefined };
   });
 }
 

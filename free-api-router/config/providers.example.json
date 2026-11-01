@@ -1,0 +1,61 @@
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "selection": {
+    "maxAttempts": 3,
+    "cooldownMs": 30000
+  },
+  "sync": {
+    "intervalMs": 21600000
+  },
+  "providers": [
+    {
+      "sourceId": "agentrouter",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "AGENTROUTER_API_KEY",
+      "weight": 2
+    },
+    {
+      "sourceId": "docode",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "DOCODE_API_KEY"
+    },
+    {
+      "sourceId": "justdowork",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "JUSTDOWORK_API_KEY"
+    },
+    {
+      "sourceId": "flushapi",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "FLUSHAPI_API_KEY"
+    },
+    {
+      "sourceId": "kktoken",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "KKTOKEN_API_KEY"
+    },
+    {
+      "sourceId": "gorouter",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "GOROUTER_API_KEY"
+    },
+    {
+      "sourceId": "tabitoken",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "TABITOKEN_API_KEY"
+    },
+    {
+      "sourceId": "anyrouter",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "ANYROUTER_API_KEY"
+    },
+    {
+      "sourceId": "cheapcodex",
+      "protocols": ["openai", "anthropic"],
+      "apiKeyEnv": "CHEAPCODEX_API_KEY"
+    }
+  ]
+}

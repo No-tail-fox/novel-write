@@ -1,4 +1,5 @@
 import hashlib
+import http.client
 import json
 import socket
 import ssl
@@ -11,7 +12,7 @@ from threading import Thread
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from server import LicenseHTTPServer, LicenseStore, Rejected, b64, initialize, public_pem, renew_tls
+from server import LicenseHTTPServer, LicenseStore, Rejected, b64, initialize, public_pem, renew_tls, set_admin_password, verify_admin_password
 
 
 class LicensingTests(unittest.TestCase):
@@ -29,6 +30,18 @@ class LicensingTests(unittest.TestCase):
         self.now = 1800000000
         self.store = LicenseStore(self.root / 'data', lambda: self.now)
         self.license = self.store.issue(days=1, max_devices=1)
+
+    def start_admin_server(self):
+        server = LicenseHTTPServer(('127.0.0.1', 0), self.store)
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        context = ssl.create_default_context(cafile=str(self.root / 'data' / 'ca.pem'))
+        connection = http.client.HTTPSConnection('127.0.0.1', server.server_address[1], context=context, timeout=5)
+        self.addCleanup(connection.close)
+        self.addCleanup(worker.join, 5)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server, connection
 
     def proof(self, path, device, key, **extra):
         payload = json.dumps({'deviceId': hashlib.sha256(device.encode()).hexdigest(), 'publicKey': public_pem(key.public_key()),
@@ -87,6 +100,117 @@ class LicensingTests(unittest.TestCase):
         self.rejected('INVALID_DEVICE_PROOF', lambda: self.store.request(path, proof))
         proof = self.proof(path, device, key, timestamp=self.now - 301)
         self.rejected('CLOCK_SKEW', lambda: self.store.request(path, proof))
+
+    def test_announcements_are_signed_bounded_and_withdrawable(self):
+        installer = self.root / 'announcement-test.exe'
+        installer.write_bytes(b'MZ' + bytes(range(64)))
+        self.store.publish(installer, '998.0.0', '0.0.0', '😀' * 2500)
+        update = self.store.latest_announcements()[0]
+        update_payload = json.loads(update['payload'])
+        self.assertEqual(update_payload['category'], 'update')
+        self.assertEqual(update_payload['version'], '998.0.0')
+        self.assertIn('createdAt', update_payload)
+        self.assertNotIn('created_at', update_payload)
+        self.assertLessEqual(len(update_payload['body'].encode('utf-16-le')) // 2, 2000)
+        self.assertEqual(update_payload['body'], '😀' * 1000)
+
+        problem_ids = [self.store.announce(f'问题 {index}', '问题说明') for index in range(10)]
+        with self.assertRaises(Rejected):
+            self.store.announce('过长内容', '😀' * 1001)
+        notices = self.store.latest_announcements()
+        self.assertEqual(len(notices), 8)
+        self.assertTrue(all(json.loads(item['payload'])['category'] == 'problem' for item in notices))
+        self.store.withdraw_announcement(problem_ids[-1])
+        self.assertNotIn(problem_ids[-1], [json.loads(item['payload'])['id'] for item in self.store.latest_announcements()])
+
+    def test_admin_website_authentication_and_announcement_workflow(self):
+        password = 'correct horse battery staple 2026'
+        set_admin_password(self.store.directory, password)
+        self.assertTrue(verify_admin_password(self.store.directory, password))
+        self.assertFalse(verify_admin_password(self.store.directory, 'wrong password'))
+        server, connection = self.start_admin_server()
+        origin = f'https://127.0.0.1:{server.server_address[1]}'
+
+        connection.request('GET', '/admin/api/announcements')
+        response = connection.getresponse()
+        self.assertEqual(response.status, 401)
+        response.read()
+
+        login_body = json.dumps({'password': password})
+        connection.request('POST', '/admin/api/login', body=login_body,
+                           headers={'Content-Type': 'application/json', 'Origin': 'https://attacker.example'})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 403)
+        response.read()
+
+        connection.request('POST', '/admin/api/login', body=login_body,
+                           headers={'Content-Type': 'application/json', 'Origin': origin})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        cookie_header = response.getheader('Set-Cookie')
+        self.assertIn('Secure', cookie_header)
+        self.assertIn('HttpOnly', cookie_header)
+        self.assertIn('SameSite=Strict', cookie_header)
+        cookie = cookie_header.split(';', 1)[0]
+        response.read()
+
+        connection.request('GET', '/admin/', headers={'Cookie': cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertIn("StoryDream 管理后台".encode('utf-8'), response.read())
+        self.assertIn("default-src 'self'", response.getheader('Content-Security-Policy'))
+
+        for path, content_type, marker in (
+            ('/admin/admin.css', 'text/css', b'.workspace'),
+            ('/admin/admin.js', ('application/javascript', 'text/javascript'), b'loadAnnouncements'),
+        ):
+            connection.request('GET', path)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertTrue(response.getheader('Content-Type').startswith(content_type))
+            self.assertEqual(response.getheader('X-Content-Type-Options'), 'nosniff')
+            self.assertEqual(response.getheader('Cache-Control'), 'no-store')
+            self.assertIn(marker, response.read())
+
+        connection.request('GET', '/admin')
+        response = connection.getresponse()
+        self.assertEqual(response.status, 308)
+        self.assertEqual(response.getheader('Location'), '/admin/')
+        response.read()
+
+        connection.request('POST', '/admin/api/announcements', body=json.dumps({'title': '服务维护', 'body': '图片生成将于今晚维护。'}),
+                           headers={'Content-Type': 'application/json', 'Origin': origin, 'Cookie': cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 201)
+        identity = json.loads(response.read())['id']
+        self.assertIn(identity, [item['id'] for item in self.store.admin_announcements()])
+
+        update_id = str(uuid.uuid4())
+        with self.store.transaction() as db:
+            db.execute('INSERT INTO announcements(id,category,title,body,version,created_at) VALUES(?,?,?,?,?,?)',
+                       (update_id, 'update', '版本更新', '版本说明', '998.0.0', self.now))
+        connection.request('POST', f'/admin/api/announcements/{update_id}/withdraw',
+                           headers={'Origin': origin, 'Cookie': cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 409)
+        response.read()
+
+        connection.request('POST', f'/admin/api/announcements/{identity}/withdraw',
+                           headers={'Origin': origin, 'Cookie': cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        response.read()
+        withdrawn = next(item for item in self.store.admin_announcements() if item['id'] == identity)
+        self.assertEqual(withdrawn['withdrawn'], 1)
+
+        connection.request('POST', '/admin/api/logout', headers={'Origin': origin, 'Cookie': cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        response.read()
+        connection.request('GET', '/admin/api/session', headers={'Cookie': cookie})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 401)
+        response.read()
 
     def test_release_order_withdrawal_and_tamper_hash(self):
         installer = self.root / 'test.exe'

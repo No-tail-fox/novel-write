@@ -1,3 +1,6 @@
+import { projectRuntimeConfig } from './project-models';
+import { backgroundRemovalFailure } from './background-removal';
+import { workflowPrompt } from './workflow-prompt-runtime';
 import { upgradeHtmlSceneComposition } from './html-video-composition';
 import { HYPERFRAMES_AUTHORING_RULES, selectHtmlSemanticTemplate } from './html-video-authoring';
 import type { RunTaskOptions } from './runner';
@@ -17,6 +20,7 @@ import {
   MAX_HTML_VIDEO_SCENES,
   MAX_HTML_VIDEO_SOURCE_CHARS,
   validateHtmlVideoScenePlans,
+  validateHtmlVideoAssets,
 } from './html-video-workflow';
 import { createHtmlVideoJobConfig } from './html-video-config';
 import { createHtmlVideoCoverAsset, type HtmlVideoCoverImageProcessor } from './html-video-cover';
@@ -38,6 +42,7 @@ export interface HtmlVideoRuntimeProviderOptions {
   imageStyle?: CustomStyle | null;
   inspectAssetTransparency?: (path: string) => Promise<boolean>;
   inspectAssetBackgroundRemoval?: (path: string) => Promise<BackgroundRemovalMetadata>;
+  prepareForegroundAsset?: (path: string, signal?: AbortSignal) => Promise<{ src: string; backgroundRemoval: BackgroundRemovalMetadata }>;
   prepareCoverImage?: HtmlVideoCoverImageProcessor;
 }
 
@@ -53,6 +58,7 @@ interface HtmlVideoAssetGeneratorOptions {
   imageStyle?: CustomStyle | null;
   inspectAssetTransparency?: (path: string) => Promise<boolean>;
   inspectAssetBackgroundRemoval?: (path: string) => Promise<BackgroundRemovalMetadata>;
+  prepareForegroundAsset?: (path: string, signal?: AbortSignal) => Promise<{ src: string; backgroundRemoval: BackgroundRemovalMetadata }>;
   imageConcurrency?: number;
 }
 
@@ -135,8 +141,9 @@ export type TaskRuntimeProviders = Pick<RunTaskOptions, 'llm' | 'generateImages'
 export function createTaskRuntimeProviders(
   config: AppConfig,
   workDir: string,
-  task?: Partial<Pick<Task, 'llmProfileId' | 'ttsProvider' | 'imageQuality'>>,
+  task?: Partial<Pick<Task, 'llmProfileId' | 'projectModels' | 'ttsProvider' | 'imageQuality'>>,
 ): TaskRuntimeProviders {
+  if (task?.projectModels) config = projectRuntimeConfig(config, task.projectModels);
   const llm = task?.llmProfileId ? config.llmProfiles.find((profile) => profile.id === task.llmProfileId) ?? config.llm : config.llm;
   return {
     llm: hasUsableLlm(llm) ? createConfiguredJsonLlm(llm) : undefined,
@@ -165,6 +172,7 @@ export function createHtmlVideoRuntimeProviders(
           imageStyle: options.imageStyle,
           inspectAssetTransparency: options.inspectAssetTransparency,
           inspectAssetBackgroundRemoval: options.inspectAssetBackgroundRemoval,
+          prepareForegroundAsset: options.prepareForegroundAsset,
           imageConcurrency: providers.imageConcurrency,
         })
       : async () => {
@@ -249,9 +257,18 @@ export function adaptHtmlVideoAssetGenerator(
       ),
     };
     const requests = buildHtmlAssetRequests(validatedInput);
+    const existingAssets = validateHtmlVideoAssets(
+      input.existingAssets ?? [], validatedInput.scenes, input.config, 'existingAssets', { requireComplete: false },
+    );
+    const existingBySlot = new Map(existingAssets.map(asset => [htmlVideoAssetSlotKey(asset), asset]));
     const runtimeTask = applyHtmlTaskConfig(task, input.config);
     const assets = new Array<HtmlVideoAsset>(requests.length);
     await runHtmlAssetRequestsWithConcurrency(requests, options.imageConcurrency ?? 1, async (request, index) => {
+      const existing = existingBySlot.get(htmlVideoAssetSlotKey({ sceneIndex: request.scene.index, kind: request.kind, slot: request.slot }));
+      if (existing) {
+        assets[index] = existing;
+        return;
+      }
       const ratio = request.kind === 'bg' ? runtimeTask.ratio : '1:1';
       let generated: SceneAsset[];
       try {
@@ -266,18 +283,35 @@ export function adaptHtmlVideoAssetGenerator(
       } catch (error) {
         throw asHtmlVideoImageProviderError(error);
       }
-      const src = indexProviderAssets(
+      let src = indexProviderAssets(
         generated,
         [request.syntheticId],
         'IMAGE_PROVIDER_INVALID_OUTPUT',
       ).get(request.syntheticId)!.path;
       let transparency: HtmlVideoAsset['transparency'];
       let backgroundRemoval: BackgroundRemovalMetadata | undefined;
-      if (request.kind === 'fg' && options.inspectAssetBackgroundRemoval) {
-        backgroundRemoval = await options.inspectAssetBackgroundRemoval(src);
-        transparency = backgroundRemoval.transparentFraction > 0 ? 'transparent' : 'opaque';
-      } else if (request.kind === 'fg' && options.inspectAssetTransparency) {
-        transparency = await options.inspectAssetTransparency(src) ? 'transparent' : 'opaque';
+      if (request.kind === 'fg') {
+        if (options.inspectAssetBackgroundRemoval) {
+          backgroundRemoval = await options.inspectAssetBackgroundRemoval(src);
+          transparency = backgroundRemoval.quality === 'passed' ? 'transparent' : 'opaque';
+        } else if (options.inspectAssetTransparency) {
+          transparency = await options.inspectAssetTransparency(src) ? 'transparent' : 'opaque';
+        }
+        if (transparency !== 'transparent' && options.prepareForegroundAsset) {
+          input.signal?.throwIfAborted();
+          try {
+            const prepared = await options.prepareForegroundAsset(src, input.signal);
+            if (prepared.backgroundRemoval.quality === 'passed') src = prepared.src;
+            backgroundRemoval = prepared.backgroundRemoval;
+          } catch (error) {
+            input.signal?.throwIfAborted();
+            const normalized = normalizeBackgroundRemovalError(error);
+            backgroundRemoval = backgroundRemovalFailure('onnx', normalized.code, normalized.message, {
+              sourceSha256: backgroundRemoval?.sourceSha256,
+            });
+          }
+          transparency = backgroundRemoval.quality === 'passed' ? 'transparent' : 'opaque';
+        }
       }
       const asset: HtmlVideoAsset = {
         sceneIndex: request.scene.index,
@@ -293,6 +327,15 @@ export function adaptHtmlVideoAssetGenerator(
     });
     return assets;
   };
+}
+
+function htmlVideoAssetSlotKey(asset: Pick<HtmlVideoAsset, 'sceneIndex' | 'kind' | 'slot'>): string {
+  return `${asset.sceneIndex}:${asset.kind}:${asset.slot}`;
+}
+
+function normalizeBackgroundRemovalError(error: unknown): { code: string; message: string } {
+  const message = redactErrorText(error instanceof Error ? error.message : String(error));
+  return { code: message.match(/\bBACKGROUND_REMOVAL_[A-Z0-9_]+\b/u)?.[0] ?? 'BACKGROUND_REMOVAL_WORKER_FAILED', message };
 }
 
 async function runHtmlAssetRequestsWithConcurrency(
@@ -361,7 +404,7 @@ async function generateHtmlAssetBatch(
 function buildHtmlAssetProviderPrompt(request: HtmlAssetRequest, imageStyle: CustomStyle | null | undefined): string {
   return request.kind === 'bg'
     ? joinBoundedHtmlPrompt(imageStyle?.prefix, request.prompt, imageStyle?.suffix)
-    : joinBoundedHtmlPrompt(imageStyle?.prefix, request.prompt, '纯透明背景 PNG，主体居中，无背景');
+    : joinBoundedHtmlPrompt(imageStyle?.prefix, request.prompt, workflowPrompt("html-foreground", '纯透明背景 PNG，主体居中，无背景'));
 }
 
 function joinBoundedHtmlPrompt(prefix: string | undefined, content: string, suffix: string | undefined): string {
@@ -422,7 +465,7 @@ function createHtmlVideoLlmProviders(
       0,
       'html-video-rewrite',
       [
-        { role: 'system', content: '将输入改写为适合短视频旁白的文案。只返回 JSON：rewrittenText 为完整文案，segments 为按场景拆分的非空字符串数组。' },
+        { role: 'system', content: workflowPrompt("html-rewrite", '将输入改写为适合短视频旁白的文案。只返回 JSON：rewrittenText 为完整文案，segments 为按场景拆分的非空字符串数组。') },
         { role: 'user', content: JSON.stringify({ sourceText: input.sourceText, config: input.config }) },
       ],
       htmlRewriteSchema,
@@ -489,12 +532,12 @@ export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInpu
     })
     .join('\n');
   const elementRule = foreground
-    ? '- elements：严格按所选版式的素材槽输出。N 个槽就完整输出 slot 0 到 N-1，每项只写一个独立人物、物件或动作主体；无素材槽版式必须输出 []。'
-    : '- elements：本次不使用前景素材，只能选择无素材槽版式，所有场景必须输出 []。';
+    ? workflowPrompt("html-elements-1", '- elements：严格按所选版式的素材槽输出。N 个槽就完整输出 slot 0 到 N-1，每项只写一个独立人物、物件或动作主体；无素材槽版式必须输出 []。')
+    : workflowPrompt("html-elements-2", '- elements：本次不使用前景素材，只能选择无素材槽版式，所有场景必须输出 []。');
 
-  return [
+  return workflowPrompt("html-planning", [
     '你是短视频分镜策划。你的唯一任务是把输入旁白拆成可直接生成的 HTML 动画短视频场景，并且只输出 JSON。',
-    HYPERFRAMES_AUTHORING_RULES,
+    workflowPrompt('html-authoring', HYPERFRAMES_AUTHORING_RULES),
     '一个场景只对应一个清晰的画面单元，用来承载一句关键话、一次转折、一个事实或一句金句；不要把多个互不相关的画面意图塞进同一场景。',
     '',
     `【画面方向】${orientation}`,
@@ -521,7 +564,7 @@ export function buildHtmlVideoPlanningSystemPrompt(config: HtmlVideoPlanningInpu
     '7. 回复第一个字符必须是 {，最后一个字符必须是 }；只输出 JSON，不要前言、解释、Markdown 代码块、JSON Schema 或错误对象。',
     '',
     '格式：{"scenes":[{"index":1,"narration":"...","title":"...","captions":["..."],"sceneTemplate":"center-focus","background":{"prompt":"..."},"elements":[{"slot":0,"prompt":"..."}]}]}',
-  ].join('\n');
+  ].join('\n'), { HYPERFRAMES_AUTHORING_RULES: (workflowPrompt('html-authoring', HYPERFRAMES_AUTHORING_RULES)), orientation: (orientation), templates: (templates), elementRule: (elementRule) });
 }
 
 function validateHtmlVideoPlanningContract(

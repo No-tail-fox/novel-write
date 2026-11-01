@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { ArrowLeft, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ArrowLeft, Bell, Coins, FolderOpen, History, Info, KeyRound, Maximize2, Minus, Moon, Sun, X } from 'lucide-react';
 import { AsyncActionFeedback as InlineActionFeedback } from '../components/AsyncActionFeedback';
 import { taskStatusLabel as statusLabel } from '../components/StatusBadge';
 import { taskProgressLabel } from '../shared/html-video-workflow';
@@ -18,7 +18,9 @@ import {
   type NavigationItem as NavItem,
 } from './navigation';
 import type { ShellView } from '../shared/types';
+import type { UpdateStatus } from '../shared/licensing';
 import { preloadRoute } from './route-registry';
+import { AnnouncementDialog } from './AnnouncementsDialog';
 import { version } from '../../package.json';
 
 export type SaveTone = 'saved' | 'saving' | 'dirty';
@@ -37,6 +39,13 @@ export function AppShell({
   toggleMaximizeWindow,
   closeWindow,
   toggleTheme,
+  updateStatus,
+  updateBusy,
+  updateAction,
+  openAnnouncements,
+  checkForUpdate,
+  downloadUpdate,
+  installUpdate,
   children,
 }: {
   activeView: ShellView;
@@ -52,8 +61,17 @@ export function AppShell({
   toggleMaximizeWindow: () => void;
   closeWindow: () => void;
   toggleTheme: () => void;
+  updateStatus: UpdateStatus | null;
+  updateBusy: boolean;
+  updateAction: 'checking' | 'downloading' | 'installing' | null;
+  openAnnouncements: () => void;
+  checkForUpdate: () => void;
+  downloadUpdate: () => void;
+  installUpdate: () => void;
   children: ReactNode;
 }) {
+  const [announcementsOpen, setAnnouncementsOpen] = useState(false);
+  const [unreadAnnouncementCount, setUnreadAnnouncementCount] = useState(0);
   const recentTasks = state.tasks.slice(0, 3);
   const trialDaysLabel = state.activation.expiresAt
     ? `${Math.max(0, Math.ceil((new Date(state.activation.expiresAt).getTime() - Date.now()) / 86400000))} 天`
@@ -96,6 +114,18 @@ export function AppShell({
 
       <div className="shell-grid">
         <aside className="sidebar">
+          <div className="announcement-entry">
+            <IconButton
+              className="announcement-trigger"
+              variant="subtle"
+              density="compact"
+              label={unreadAnnouncementCount ? `公告通知，有 ${unreadAnnouncementCount} 条未读` : '公告通知'}
+              icon={<Bell size={17} />}
+              disabled={updateBusy}
+              onClick={() => { setAnnouncementsOpen(true); openAnnouncements(); }}
+            />
+            {unreadAnnouncementCount ? <span className="announcement-unread-count" aria-hidden="true">{unreadAnnouncementCount > 9 ? '9+' : unreadAnnouncementCount}</span> : null}
+          </div>
           <Button
             className="new-task-button"
             variant="primary"
@@ -271,6 +301,18 @@ export function AppShell({
           {children}
         </section>
       </div>
+      <AnnouncementDialog
+        open={announcementsOpen}
+        onOpenChange={setAnnouncementsOpen}
+        updateStatus={updateStatus}
+        busy={busy || updateBusy}
+        updateAction={updateAction}
+        isBrowserPreview={isBrowserPreview}
+        onUnreadCountChange={setUnreadAnnouncementCount}
+        onCheckForUpdate={checkForUpdate}
+        onDownloadUpdate={downloadUpdate}
+        onInstallUpdate={installUpdate}
+      />
     </main>
   );
 }

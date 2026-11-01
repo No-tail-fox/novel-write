@@ -101,6 +101,8 @@ export interface HtmlVideoAssetInput {
   config: HtmlVideoJobConfig;
   configSnapshot?: HtmlVideoJobConfig;
   signal?: AbortSignal;
+  /** Validated images from an interrupted attempt; providers generate only missing slots. */
+  existingAssets?: HtmlVideoAsset[];
   onAssetGenerated?: (asset: HtmlVideoAsset) => Promise<void>;
 }
 
@@ -300,6 +302,47 @@ export async function synchronizeHtmlVideoPipelineCheckpoint(
   await atomicWriteJson(join(workDir, checkpointFileName), snapshot);
 }
 
+/** Publish trusted editorial changes as new resumable artifacts, preserving paid upstream work. */
+export async function synchronizeHtmlVideoEditorialArtifacts(
+  workDir: string,
+  state: HtmlVideoPipelineDataV2,
+  sourceText: string,
+  signal?: AbortSignal,
+): Promise<HtmlVideoPipelineDataV2> {
+  const snapshot = cloneValidatedState(state);
+  const context: RunnerContext = {};
+  if (snapshot.steps.rewrite.status === 'completed') {
+    context.rewrite = await validateCompletedStep(
+      workDir, 'rewrite', snapshot, hashStepInput('rewrite', sourceText, snapshot, context), signal,
+    ) as HtmlVideoRewriteOutput;
+  }
+  for (const step of ['planning', 'assets', 'voice'] as const) {
+    if (snapshot.steps[step].status !== 'completed') continue;
+    let payload: unknown;
+    if (step === 'planning') {
+      snapshot.scenes = validateHtmlVideoScenePlans(snapshot.scenes, snapshot.config.maxScenes ?? MAX_HTML_VIDEO_SCENES);
+      payload = { scenes: snapshot.scenes };
+    } else if (step === 'assets') {
+      snapshot.assets = await validateAssets(workDir, snapshot, snapshot.assets);
+      payload = { assets: snapshot.assets };
+    } else {
+      snapshot.voices = await validateVoices(workDir, snapshot, snapshot.voices);
+      payload = { voices: snapshot.voices };
+    }
+    const artifact = await writeStepArtifact(workDir, step, payload, snapshot, context, signal);
+    snapshot.steps[step] = {
+      ...snapshot.steps[step],
+      inputHash: hashStepInput(step, sourceText, snapshot, context),
+      artifactPath: artifact.relativePath,
+      artifactSize: artifact.size,
+      artifactHash: artifact.hash,
+    };
+  }
+  return snapshot.steps.preview.status === 'completed' && snapshot.compositions.length > 0
+    ? synchronizeHtmlVideoPreviewArtifact(workDir, snapshot, signal)
+    : cloneValidatedState(snapshot);
+}
+
 export async function synchronizeHtmlVideoPreviewArtifact(
   workDir: string,
   state: HtmlVideoPipelineDataV2,
@@ -369,7 +412,11 @@ async function runOwnedPipeline(
         inputHash = hashStepInput(step, input.sourceText, state, context);
       }
     } else if (state.steps[step].status !== 'pending') {
+      const reusableAssets = step === 'assets' && state.steps.assets.inputHash === inputHash
+        ? await validateResumableHtmlVideoAssets(options.workDir, state, options.signal)
+        : [];
       state = invalidateHtmlVideoPipeline(state, step);
+      if (step === 'assets') state.assets = reusableAssets;
       inputHash = hashStepInput(step, input.sourceText, state, context);
     }
 
@@ -493,6 +540,7 @@ async function executeStep(
     const generated = await options.generateAssets({
       scenes: structuredClone(state.scenes),
       ...htmlVideoConfigEnvelopeForStage(state.config, 'assets'),
+      ...(state.assets.length ? { existingAssets: structuredClone(state.assets) } : {}),
       signal: options.signal,
       onAssetGenerated: async (asset) => {
         const checkpoint = checkpointQueue.then(async () => {
@@ -508,6 +556,11 @@ async function executeStep(
     });
     await checkpointQueue;
     state.assets = await validateAssets(options.workDir, state, generated);
+    for (const asset of state.assets) {
+      if (asset.kind === 'fg' && (asset.transparency === 'opaque' || (asset.backgroundRemoval && asset.backgroundRemoval.quality !== 'passed'))) {
+        addWarning(state, `场景 ${asset.sceneIndex} 的前景 ${asset.slot + 1} 未通过透明度检查，已保留原图并跳过叠加。请在素材页重试去背景。`);
+      }
+    }
     return { assets: state.assets };
   }
 
@@ -690,6 +743,24 @@ async function validateAssets(
     src: await localFilePath(workDir, asset.src, asset.sizeBytes),
     sizeBytes: (await stat(await localFilePath(workDir, asset.src))).size,
   })));
+}
+
+async function validateResumableHtmlVideoAssets(
+  workDir: string,
+  state: HtmlVideoPipelineDataV2,
+  signal?: AbortSignal,
+): Promise<HtmlVideoAsset[]> {
+  const assets: HtmlVideoAsset[] = [];
+  for (const asset of state.assets) {
+    throwIfAborted(signal);
+    try {
+      assets.push(await validateIncrementalAsset(workDir, state, asset));
+    } catch (error) {
+      if (signal?.aborted || isCancellation(error)) throw cancellationReason(error, signal);
+      addWarning(state, `场景 ${asset.sceneIndex} 的${asset.kind === 'bg' ? '背景' : '前景'}素材已缺失或失效，将重新生成该素材。`);
+    }
+  }
+  return assets;
 }
 
 async function validateIncrementalAsset(

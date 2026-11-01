@@ -107,6 +107,21 @@ describe('motion comic active-episode stage state', () => {
     expect(siblingStages.audio.complete).toBe(false);
   });
 
+  it('allows one ready shot to enter video production while other frames are pending', () => {
+    const document = twoEpisodeFixture();
+    const shots = document.episodes[0].scenes.flatMap((scene) => scene.shots);
+    for (const shot of shots.slice(1)) shot.firstFrameAssetVersionId = undefined;
+    for (const shot of shots) { shot.videoAssetVersionId = undefined; shot.videoJobId = undefined; }
+    const stages = resolveMotionComicStageState(document, new Set(), false);
+    expect(stages.storyboard.complete).toBe(false);
+    expect(stages.video.ready).toBe(true);
+    expect(stages.video.complete).toBe(false);
+    expect(stages.audio.ready).toBe(true);
+    expect(stages.export.ready).toBe(false);
+    shots[0].firstFrameAssetVersionId = undefined;
+    expect(resolveMotionComicStageState(document, new Set(), false).video.ready).toBe(false);
+  });
+
   it('requires a usable video asset and its authoritative completed shot job', () => {
     const document = twoEpisodeFixture();
     const shot = document.episodes[0].scenes[0].shots[0];

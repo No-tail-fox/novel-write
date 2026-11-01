@@ -1,4 +1,5 @@
 import type { AiSourceSection } from '../../shared/types';
+import { copywritingTrack } from '../../shared/copywriting-tracks';
 import { NEW_TASK_DRAFT_STORAGE_KEY, type NewTaskDraftSnapshot } from '../tasks/new-task-draft';
 
 export const COPY_STUDIO_STORAGE_KEY = 'storydream.copy-studio.v1';
@@ -19,6 +20,8 @@ export interface CopyStudioDocument {
   topic: string;
   requirements: string;
   track: string;
+  customTrack?: string;
+  skipReview?: boolean;
   sourceIds: string[];
   sources: AiSourceSection[];
   revisions: CopyRevision[];
@@ -39,7 +42,9 @@ export function readCopyStudioDocument(storage: Pick<Storage, 'getItem'>): CopyS
       version: 1,
       topic: value.topic,
       requirements: typeof value.requirements === 'string' ? value.requirements : '',
-      track: typeof value.track === 'string' ? value.track : '人物故事',
+      track: typeof value.track === 'string' ? value.track : 'character-story',
+      customTrack: typeof value.customTrack === 'string' ? value.customTrack : '',
+      skipReview: typeof value.skipReview === 'boolean' ? value.skipReview : true,
       sourceIds: Array.isArray(value.sourceIds) ? value.sourceIds.filter((item): item is string => typeof item === 'string') : [],
       sources: Array.isArray(value.sources) ? value.sources : [],
       revisions: value.revisions.filter((item): item is CopyRevision => Boolean(item && typeof item.id === 'string' && typeof item.text === 'string')),
@@ -69,6 +74,11 @@ export function handoffCopyToVideo(
     try { return JSON.parse(storage.getItem(NEW_TASK_DRAFT_STORAGE_KEY) || 'null') as NewTaskDraftSnapshot | null; }
     catch { return null; }
   })();
+  const genre = copywritingTrack(input.track.trim() || 'character-story');
+  const requirements = [
+    input.requirements.trim(),
+    genre.taskTrack !== genre.id ? `【文案赛道】${genre.label}\n${genre.guidance}` : '',
+  ].filter(Boolean).join('\n\n');
   const snapshot: NewTaskDraftSnapshot = {
     version: 1,
     savedAt: now.toISOString(),
@@ -79,8 +89,8 @@ export function handoffCopyToVideo(
       inputText: input.copy.trim(),
       mode: 'paste',
       aiKeyword: input.topic.trim(),
-      extraRequirements: input.requirements.trim(),
-      track: input.track.trim() || 'character-story',
+      extraRequirements: requirements,
+      track: genre.taskTrack,
       selectedSources: input.sources,
       selectedSearchSourceIds: input.sources.map(copySourceKey),
       researchCopy: input.copy.trim(),

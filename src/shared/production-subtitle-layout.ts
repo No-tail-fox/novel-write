@@ -26,6 +26,8 @@ const cueSchema = z.object({
   fontFamily: z.string().max(1024), fontSize: z.number().finite().positive(),
   issues: z.array(issueSchema).max(5),
   glyphCoverage: glyphCoverageSchema.optional(),
+  /** Native film text and fonts observed from real Canvas/DOM drawing, used by the font engine probe. */
+  text: z.string().max(10000).optional(), renderedFontFamilies: z.array(z.string().max(1024)).max(32).optional(),
 }).strict();
 const visibilitySampleSchema = z.object({
   atMs: z.number().finite().nonnegative(),
@@ -39,6 +41,7 @@ export const productionSubtitleSceneLayoutSchema = z.discriminatedUnion('status'
     viewportWidth: z.number().int().positive(), viewportHeight: z.number().int().positive(),
     safeArea: rectSchema, titleBounds: rectSchema.nullable(), titleOutsideSafeArea: z.boolean(),
     cues: z.array(cueSchema).max(100), visibilitySamples: z.array(visibilitySampleSchema).max(200).optional(),
+    visibilityMode: z.enum(['cue-boundaries', 'native-animation']).optional(),
   }).strict(),
   z.object({ status: z.literal('failed'), shotId: z.string().min(1).max(256), error: z.string().min(1).max(2000) }).strict(),
 ]);
@@ -63,7 +66,7 @@ export function evaluateDirectorSubtitleLayout(
   const completeSet = measurements.length === scenes.length && byShot.size === scenes.length;
   const issues: string[] = []; const missing: string[] = []; const glyphIssues: string[] = []; let glyphEvidenceComplete = measurements.length > 0;
   const affectedShots = new Set<string>(); const affectedCues = new Set<string>(); const glyphShots = new Set<string>();
-  const labels = { 'outside-safe-area': '超出画面 5% 安全区', 'too-many-lines': '超过 3 行', 'title-overlap': '与标题重叠', 'cue-overlap': '与同时出现的字幕重叠', 'empty-text-bounds': '没有取得文字边界' };
+  const labels = { 'outside-safe-area': '超出当前画面安全区', 'too-many-lines': '超过 3 行', 'title-overlap': '与标题重叠', 'cue-overlap': '与同时出现的字幕重叠', 'empty-text-bounds': '没有取得文字边界' };
   let offset = 0; let measuredCues = 0; let maxLines = 0;
   const visibilityIssues: string[] = [];
   for (const scene of scenes) {
@@ -77,7 +80,8 @@ export function evaluateDirectorSubtitleLayout(
     const valid = completeSet && measured?.status === 'ok' && measured.width === canvas.width && measured.height === canvas.height
       && measured.cues.length === cues.length && cues.every((cue, index) => {
         const result = measured.cues[index];
-        return result.cueId === cue.id && result.startMs === sceneStart + cue.startMs && result.endMs === sceneStart + cue.endMs;
+        return result.cueId === cue.id && result.startMs === sceneStart + cue.startMs && result.endMs === sceneStart + cue.endMs
+          && (measured.visibilityMode !== 'native-animation' || result.text === cue.text);
       });
     if (!valid || measured?.status !== 'ok') {
       missing.push(`镜头 ${scene.index} ${measured?.status === 'failed' ? '排版测量失败' : '缺少匹配当前画布与字幕的测量'}`);
@@ -91,7 +95,9 @@ export function evaluateDirectorSubtitleLayout(
       ]);
       if (!measured.visibilitySamples || expectedSamples.some(expected => {
         const actual = measured.visibilitySamples?.find(sample => Math.abs(sample.atMs - expected.atMs) < 0.01);
-        return !actual || JSON.stringify(actual.activeCueIds) !== JSON.stringify(expected.activeCueIds);
+        return !actual || (measured.visibilityMode === 'native-animation'
+          ? actual.activeCueIds.some(id => !expected.activeCueIds.includes(id))
+          : JSON.stringify(actual.activeCueIds) !== JSON.stringify(expected.activeCueIds));
       })) visibilityIssues.push(`镜头 ${scene.index} 字幕切换边界未取得匹配的实际可见 cue`);
         measured.cues.forEach((cue, index) => {
         if (!cue.glyphCoverage || cue.glyphCoverage.verification !== 'font-engine') glyphEvidenceComplete = false;
@@ -110,17 +116,17 @@ export function evaluateDirectorSubtitleLayout(
   return [{
     id: 'subtitle-text-safety', label: '字幕、标题排版与画面安全区', severity: 'manual',
     status: issues.length ? 'failed' : missing.length ? 'pending' : 'passed',
-    detail: issues.length || missing.length ? summarize([...issues, ...missing]) : `已在 ${canvas.width}×${canvas.height} 输出画布测量 ${measuredCues} 句字幕，最多 ${maxLines} 行，标题与字幕未重叠。`,
+    detail: issues.length || missing.length ? summarize([...issues, ...missing]) : `已在 ${canvas.width}×${canvas.height} 输出画布测量 ${measuredCues} 句字幕，最多 ${maxLines} 行，未检出排版越界或遮挡。`,
     ...(affectedShots.size ? { recheckScope: { kind: 'subtitle' as const, shotIds: [...affectedShots], cueIds: [...affectedCues].slice(0, 500) } } : {}),
   }, {
     id: 'subtitle-glyphs', label: '字幕字形完整性', severity: 'manual',
     status: glyphIssues.length ? 'failed' : glyphShots.size && !glyphEvidenceComplete ? 'pending' : 'passed',
-    detail: glyphIssues.length ? summarize(glyphIssues) : glyphShots.size && !glyphEvidenceComplete ? '部分字幕缺少逐字字体引擎覆盖证据，请重新测量或人工复核。' : glyphShots.size ? '已通过 Chromium 与系统字体引擎逐字字形覆盖验证。' : '当前成片没有字幕。',
+    detail: glyphIssues.length ? summarize(glyphIssues) : glyphShots.size && !glyphEvidenceComplete ? '部分字幕缺少逐字字体引擎覆盖证据，请重新测量或人工复核。' : glyphShots.size ? '已根据实际渲染字体完成逐字字体引擎覆盖验证。' : '当前成片没有字幕。',
     ...(glyphShots.size ? { recheckScope: { kind: 'subtitle' as const, shotIds: [...glyphShots] } } : {}),
   }, {
     id: 'subtitle-visibility', label: '字幕切换与时间线可见性', severity: 'manual',
     status: visibilityIssues.length ? 'pending' : 'passed',
-    detail: visibilityIssues.length ? visibilityIssues.slice(0, 20).join('；') : '已在输出时间线的每个字幕开始/结束边界核对实际可见 cue。',
+    detail: visibilityIssues.length ? visibilityIssues.slice(0, 20).join('；') : '已核对输出时间线的字幕边界；原生文字允许在所属字幕区间内入场与退场，并须实测完整文案的可读画面。',
     ...(visibilityIssues.length ? { recheckScope: { kind: 'subtitle' as const, shotIds: scenes.map(scene => scene.id) } } : {}),
   }];
 }

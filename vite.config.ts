@@ -36,6 +36,9 @@ export default defineConfig({
     outDir: 'dist-renderer',
     emptyOutDir: true,
     manifest: true,
+    minify: 'esbuild',
+    sourcemap: false,
+    cssMinify: true,
     rollupOptions: {
       output: {
         manualChunks: rendererManualChunk,

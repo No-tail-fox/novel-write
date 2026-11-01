@@ -363,7 +363,7 @@ describe('Electron HTML video runtime contract', () => {
     expect(tryStart).toBeGreaterThan(-1);
     expect(catchStart).toBeGreaterThan(tryStart);
     for (const initialization of [
-      "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '')",
+      "await ensureHtmlVideoTaskWorkDir(artifactDataDir(), task.managedStorageKey ?? '')",
       "status: 'running',",
       'await publishTaskUpsert(database, task.id);',
     ]) {
@@ -381,7 +381,7 @@ describe('Electron HTML video runtime contract', () => {
       main.indexOf('async function probeHtmlVideoMedia'),
     );
     const ensureDirectory = runner.indexOf(
-      "await ensureHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '')",
+      "await ensureHtmlVideoTaskWorkDir(artifactDataDir(), task.managedStorageKey ?? '')",
     );
     const firstTaskWrite = runner.indexOf('await database.updateTask(task.id, {');
 
@@ -1961,6 +1961,28 @@ describe('Electron HTML video runtime contract', () => {
       }
     },
   );
+
+  it('keeps failed foreground originals as assets while omitting their opaque layers from preview HTML', async () => {
+    await withRuntimeDir(async (workDir) => {
+      const background = join(workDir, 'background.png');
+      const foreground = join(workDir, 'foreground.png');
+      const voice = join(workDir, 'voice.wav');
+      await Promise.all([writeFile(background, 'background'), writeFile(foreground, 'foreground'), writeFile(voice, 'voice')]);
+      const runtime = createElectronHtmlVideoRuntime({
+        taskDirectory: taskDirectoryFor(workDir), taskTitle: 'Cutout quality',
+        renderer: {
+          async capturePreview(input) { await writeFile(input.outputPath, 'thumbnail'); return input.outputPath; },
+          async render() { throw new Error('render was not expected'); },
+        },
+        probeMedia: async () => validFinalMediaProbe(),
+      });
+      const input = runtimeInput(background, foreground, voice);
+      input.assets[1] = { ...input.assets[1], transparency: 'opaque', backgroundRemoval: { method: 'onnx', transparentFraction: 0, foregroundFraction: 1, edgeFraction: 0, quality: 'failed' } };
+      const preview = await runtime.createPreviews(input);
+      expect(await readFile(preview.compositions[0].htmlPath!, 'utf8')).not.toContain('id="foreground-1"');
+      expect(await readFile(foreground, 'utf8')).toBe('foreground');
+    });
+  });
 
   it('publishes preview HTML without writing a pre-existing external hardlink inode', async () => {
     await withRuntimeDir(async (workDir) => {

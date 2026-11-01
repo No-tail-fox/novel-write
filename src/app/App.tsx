@@ -1,11 +1,13 @@
-import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, Suspense } from "react";
 import type { AppDelta, AppMutationResult, HistoryFamily, ShellView, ThemeName } from "../shared/types";
 import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from "../shared/state-delta";
 import { applyAppMutationResult, applyBufferedMutationResults, applyHistorySelectionBarrier, applyLocalMutationResponse, authoritativeMissingRequestedTaskId, claimMutationResult, collectTaskEventPages, collectViralEventPages, createRequestGenerationCompletionQueue, createRequestGenerationGuard, historyEntityRevisionKey, historyResponseDisposition, mergeAuthoritativeSnapshotDetails, mergeReconciliationSlices, raiseMutationRevisionFloor, reduceCompletionTrackedState, shouldApplyDeltaViewTransition } from "../shared/state-reconciliation";
 import { applyStoredTheme, changeRuntimeTheme, revealThemedApplication, transitionRendererTheme, withRuntimeTheme } from "../features/settings/theme-controller";
 import { defaultUiPreferences } from "../shared/config";
 import { useAsyncAction } from "../ui/async-action";
-import { StoryDreamProvider } from "../ui";
+import { Button, StoryDreamProvider } from "../ui";
+import { AsyncActionFeedback } from "../components/AsyncActionFeedback";
+import { Minus, Square, X } from "lucide-react";
 import { advanceHistoryFamilyEpochs, allHistoryFamilies, bootstrapToState, captureHistoryResponseRevision, cloneState, initialState, isHistoryResponseCurrent, loadCompleteBootstrap, MAX_TASK_DETAIL_REVISION_ATTEMPTS, mergeDeltaView, registerHistoryDeltaBarrier, replaceHistoryRevisionMap, type HistoryFamilyEpochs } from "./app-state";
 import { makeLazyFallbackApi } from './lazy-browser-fallback';
 import type { RendererAppState as AppState } from "./route-types";
@@ -13,13 +15,69 @@ import { AppRoutes } from './AppRoutes';
 import { AppShell } from './AppShell';
 import { taskWorkspaceView, workspaceReturnViewForNavigation } from './navigation';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
+import { RouteLoadingState } from './RouteLoadingState';
 import type { SettingsSection } from '../features/settings/SettingsPage';
 import { WorkspaceNavigationProvider, WorkspaceLeaveDialog, useNativeWindowLeaveGuard, useWorkspaceNavigation } from './workspace-navigation';
+import type { LicenseStatus, UpdateStatus } from '../shared/licensing';
+import type { StoryDreamApi } from '../shared/storydream-api';
+import { routeComponents } from './route-registry';
 
 applyStoredTheme(defaultUiPreferences.theme);
 
 export function App() {
-  return <WorkspaceNavigationProvider><AppWorkspace /></WorkspaceNavigationProvider>;
+  const desktopApi = window.storydream ?? window.storybound;
+  if (!desktopApi) return <main role="alert" style={{ minHeight: '100vh', display: 'grid', alignContent: 'center', justifyItems: 'center', gap: 12, padding: 24, background: 'var(--shell-bg)', color: 'var(--shell-text)', textAlign: 'center' }}><h1>授权服务不可用</h1><p>无法验证本机授权，程序功能已锁定。请在 StoryDream 桌面端完成授权后使用。</p></main>;
+  return <DesktopLicenseGate api={desktopApi} />;
+}
+
+function DesktopLicenseGate({ api }: { api: StoryDreamApi }) {
+  const [license, setLicense] = useState<LicenseStatus | null>(null);
+  const [statusError, setStatusError] = useState('');
+  const licenseRequestRef = useRef(0);
+  const windowAction = useAsyncAction();
+  const controlWindow = (action: 'minimize' | 'toggle-maximize' | 'close') => windowAction.run(() => api.windowControl(action));
+  const publishLicenseStatus = useCallback((next: LicenseStatus) => { licenseRequestRef.current++; setLicense(next); setStatusError(''); }, []);
+  const readLicense = useCallback(async () => {
+    const requestId = ++licenseRequestRef.current;
+    try {
+      const next = await api.getLicenseStatus();
+      if (requestId !== licenseRequestRef.current) return;
+      setLicense(next);
+      setStatusError('');
+    } catch (error) {
+      if (requestId !== licenseRequestRef.current) return;
+      setLicense(null);
+      setStatusError(error instanceof Error ? error.message : '无法验证授权状态。');
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void readLicense();
+    const timer = window.setInterval(() => { void readLicense(); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [readLicense]);
+
+  const canOpenWorkspace = Boolean(license?.configured && ['active', 'offline'].includes(license.status));
+  useLayoutEffect(() => {
+    if (canOpenWorkspace) return;
+    applyStoredTheme('dark');
+    revealThemedApplication();
+  }, [canOpenWorkspace]);
+
+  if (canOpenWorkspace) {
+    return <WorkspaceNavigationProvider><AppWorkspace /></WorkspaceNavigationProvider>;
+  }
+
+  return (
+    <StoryDreamProvider theme="dark">
+      <main className="license-gate">
+        <header className="license-gate-header"><div className="app-mark">S</div><div className="license-gate-brand"><strong>StoryDream</strong><span>授权验证</span></div><div className="license-gate-controls" role="toolbar" aria-label="窗体控制"><Button type="button" aria-label="最小化" title="最小化" icon={<Minus size={14} />} variant="subtle" density="compact" disabled={windowAction.busy} onClick={() => { void controlWindow('minimize'); }} /><Button type="button" aria-label="最大化或还原" title="最大化或还原" icon={<Square size={14} />} variant="subtle" density="compact" disabled={windowAction.busy} onClick={() => { void controlWindow('toggle-maximize'); }} /><Button type="button" aria-label="关闭" title="关闭" icon={<X size={14} />} variant="subtle" density="compact" disabled={windowAction.busy} onClick={() => { void controlWindow('close'); }} /></div></header>
+        <AsyncActionFeedback feedback={windowAction.feedback} />
+        {statusError ? <p className="license-gate-error" role="alert">{statusError} 未验证通过前，程序功能保持锁定。</p> : null}
+        <Suspense fallback={<RouteLoadingState label="正在加载授权界面" />}><routeComponents.activation api={api} onLicenseStatusChange={publishLicenseStatus} /></Suspense>
+      </main>
+    </StoryDreamProvider>
+  );
 }
 
 function AppWorkspace() {
@@ -36,6 +94,8 @@ function AppWorkspace() {
     dispatchState({ update });
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
+  const [bootstrapReady, setBootstrapReady] = useState(false);
+  const bootstrapReadyRef = useRef(false);
   const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string; taskReturnView: ShellView } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskDetailReturnView, setTaskDetailReturnView] = useState<ShellView>('projects');
@@ -47,6 +107,11 @@ function AppWorkspace() {
   const isBrowserPreview = !window.storydream && !window.storybound;
   const api = useMemo(() => window.storydream ?? window.storybound ?? makeLazyFallbackApi(setState), []);
   const shellAction = useAsyncAction();
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [updateAction, setUpdateAction] = useState<'checking' | 'downloading' | 'installing' | null>(null);
+  const updateStatusRequestRef = useRef(0);
+  const updateActionActiveRef = useRef(false);
+  const [updateActionBusy, setUpdateActionBusy] = useState(false);
   const runtimeThemeRef = useRef<ThemeName>(state.ui.theme);
   const revisionRef = useRef(0);
   const mutationRevisionsRef = useRef(new Map<string, number>());
@@ -78,6 +143,47 @@ function AppWorkspace() {
     const revealTimer = window.setTimeout(revealThemedApplication, 1_200);
     return () => window.clearTimeout(revealTimer);
   }, []);
+  const refreshUpdateStatus = useCallback(async () => {
+    const requestId = ++updateStatusRequestRef.current;
+    try {
+      const next = await api.getUpdateStatus();
+      if (requestId === updateStatusRequestRef.current) setUpdateStatus(next);
+    } catch {
+      // Update checks must not block the workspace.
+    }
+  }, [api]);
+  useEffect(() => {
+    void refreshUpdateStatus();
+    const pending = updateActionBusy || ['checking', 'downloading', 'installing'].includes(updateStatus?.phase ?? '');
+    const timer = window.setInterval(() => { void refreshUpdateStatus(); }, pending ? 1000 : 60_000);
+    return () => window.clearInterval(timer);
+  }, [refreshUpdateStatus, updateActionBusy, updateStatus?.phase]);
+  const runUpdateAction = useCallback(async (
+    phase: 'checking' | 'downloading' | 'installing',
+    operation: () => Promise<UpdateStatus>,
+  ) => {
+    if (updateActionActiveRef.current) return;
+    updateActionActiveRef.current = true;
+    updateStatusRequestRef.current++;
+    setUpdateAction(phase);
+    setUpdateActionBusy(true);
+    try {
+      const next = await operation();
+      updateStatusRequestRef.current++;
+      setUpdateStatus(next);
+    } catch (error) {
+      shellAction.reportError(error);
+      const requestId = ++updateStatusRequestRef.current;
+      try {
+        const next = await api.getUpdateStatus();
+        if (requestId === updateStatusRequestRef.current) setUpdateStatus(next);
+      } catch { /* Preserve the last known update status. */ }
+    } finally {
+      updateActionActiveRef.current = false;
+      setUpdateAction(null);
+      setUpdateActionBusy(false);
+    }
+  }, [api, shellAction.reportError]);
   const isHistoryTombstoned = useCallback((family: HistoryFamily, id: string) => (
     historyTombstoneRevisionsRef.current.has(historyEntityRevisionKey(family, id))
   ), []);
@@ -336,6 +442,12 @@ function AppWorkspace() {
         );
         return replayed;
       });
+      if (!bootstrapReadyRef.current) {
+        bootstrapReadyRef.current = true;
+        setActiveView(rebuiltState.ui.activeView);
+        setBootstrapReady(true);
+        shellAction.clearFeedback();
+      }
       refreshHistoryFamilies(allHistoryFamilies);
     };
     const recoverSnapshotInstallation = (snapshotRevision: number, replayedRevision: number) => {
@@ -535,7 +647,6 @@ function AppWorkspace() {
         replayed.revision,
         false,
       );
-      setActiveView(bootstrap.ui.activeView);
       flushQueuedReconciliation();
     }).catch((error) => {
       if (disposed) return;
@@ -552,7 +663,7 @@ function AppWorkspace() {
       window.clearInterval(reconciliationTimer);
       unsubscribe();
     };
-  }, [api, applyHistoryBarrier, refreshHistoryFamilies, refreshTaskDetail, refreshViralEvents, shellAction.reportError]);
+  }, [api, applyHistoryBarrier, refreshHistoryFamilies, refreshTaskDetail, refreshViralEvents, shellAction.clearFeedback, shellAction.reportError]);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -702,9 +813,16 @@ function AppWorkspace() {
         toggleMaximizeWindow={toggleMaximizeWindow}
         closeWindow={closeWindow}
         toggleTheme={toggleTheme}
+        updateStatus={updateStatus}
+        updateBusy={updateActionBusy}
+        updateAction={updateAction}
+        openAnnouncements={() => { if (!isBrowserPreview) void runUpdateAction('checking', () => api.checkForUpdate()); }}
+        checkForUpdate={() => { void runUpdateAction('checking', () => api.checkForUpdate()); }}
+        downloadUpdate={() => { void runUpdateAction('downloading', () => api.downloadUpdate()); }}
+        installUpdate={() => { void runUpdateAction('installing', () => api.installUpdate()); }}
       >
         <RouteErrorBoundary resetKey={activeView} onNavigate={navigate}>
-          <AppRoutes
+          {bootstrapReady ? <AppRoutes
             activeView={activeView}
             api={api}
             state={state}
@@ -731,7 +849,9 @@ function AppWorkspace() {
             refreshViralEvents={refreshViralEvents}
             onActiveViralAnalysisChange={onActiveViralAnalysisChange}
             isBrowserPreview={isBrowserPreview}
-          />
+          /> : <RouteLoadingState label={shellAction.feedback?.tone === 'error'
+            ? '加载配置失败，正在尝试重新连接。'
+            : '正在加载项目和模型配置'} />}
         </RouteErrorBoundary>
       </AppShell>
       <WorkspaceLeaveDialog />

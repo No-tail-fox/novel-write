@@ -4,9 +4,10 @@ import { lstat, mkdir, open, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { AppError } from '../src/shared/app-error';
-import type { ReleaseManifest, SignedEnvelope, UpdateStatus } from '../src/shared/licensing';
-import { compareVersions, verifyRelease } from './license-security';
+import type { AnnouncementManifest, ReleaseManifest, SignedEnvelope, UpdateStatus } from '../src/shared/licensing';
+import { compareVersions, verifyAnnouncement, verifyRelease } from './license-security';
 import type { LicenseService } from './license-service';
+import { tryDifferentialUpdate } from './differential-update';
 
 export async function installerHash(path: string): Promise<string> {
   const digest = createHash('sha256');
@@ -19,7 +20,7 @@ export class UpdateService {
   private busy = false;
   private installationPending = false;
   constructor(private readonly options: { license: LicenseService; version: string; directory: string; canInstall: () => boolean; quit: () => void; packaged: boolean }) {
-    this.state = { currentVersion: options.version, phase: 'idle', release: null, downloaded: 0, required: false, message: '' };
+    this.state = { currentVersion: options.version, phase: 'idle', release: null, announcements: [], downloaded: 0, required: false, message: '' };
   }
   get installing(): boolean { return this.installationPending; }
   status(): UpdateStatus { return structuredClone(this.state); }
@@ -44,6 +45,18 @@ export class UpdateService {
       let offset = (await stat(partial).catch(() => null))?.size ?? 0;
       if (offset >= release.size) { await rm(partial, { force: true }); offset = 0; }
       if (!offset) await rm(partial, { force: true });
+      if (!offset) {
+        this.state.phase = 'downloading'; this.state.downloaded = 0; this.state.message = '正在检查差分更新。';
+        const differential = await tryDifferentialUpdate({
+          transport: this.options.license.transport!, directory: this.options.directory, currentVersion: this.options.version, release,
+          now: this.options.license.now(), progress: bytes => { this.state.downloaded = bytes; this.state.message = '正在下载差分数据。'; },
+        });
+        if (differential) {
+          this.state.phase = 'ready'; this.state.downloaded = release.size;
+          this.state.message = `差分更新已验证，复用了 ${(differential.reused / release.size * 100).toFixed(0)}% 的安装包。`;
+          return this.status();
+        }
+      }
       this.state.phase = 'downloading'; this.state.downloaded = offset; this.state.message = '';
       const response = await this.options.license.transport!.open(`/v1/releases/files/${release.filename}`, undefined, offset);
       const length = Number(response.headers['content-length']);
@@ -97,7 +110,12 @@ export class UpdateService {
   private async latest(): Promise<void> {
     const { license } = this.options;
     if (!license.config || !license.transport) throw new AppError('UPDATE_NOT_CONFIGURED', '更新服务尚未配置。');
-    const value = await license.transport.json<{ release: SignedEnvelope | null }>('/v1/releases/latest');
+    const value = await license.transport.json<{ release: SignedEnvelope | null; announcements?: SignedEnvelope[] }>('/v1/releases/latest');
+    const announcements: AnnouncementManifest[] = [];
+    for (const envelope of value.announcements ?? []) {
+      try { announcements.push(verifyAnnouncement(envelope, license.config, license.now())); } catch { /* ignore malformed notices */ }
+    }
+    this.state.announcements = announcements;
     if (value.release === null) { this.state.release = null; this.state.phase = 'idle'; this.state.required = false; this.state.message = '暂未发布更新。'; return; }
     const release = verifyRelease(value.release, license.config, license.now());
     await license.acceptRelease(release.sequence, release.sha256);

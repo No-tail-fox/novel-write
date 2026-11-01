@@ -18,7 +18,8 @@ describe('director multi-track audio render projection', () => {
         }],
       }],
       assets: [{ id: 'image', assetId: 'image', kind: 'image', localPath: 'C:/image.png', createdAt: draft.createdAt },
-        { id: 'subject', assetId: 'subject', kind: 'image', localPath: 'C:/subject.png', createdAt: draft.createdAt },
+        { id: 'subject', assetId: 'subject', kind: 'image', localPath: 'C:/subject.png', createdAt: draft.createdAt,
+          backgroundRemoval: { method: 'native-alpha', transparentFraction: 0.5, foregroundFraction: 0.48, edgeFraction: 0.02, quality: 'passed' } },
         { id: 'voice', assetId: 'voice', kind: 'audio', localPath: 'C:/voice.wav', createdAt: draft.createdAt }],
       timeline: undefined,
     });

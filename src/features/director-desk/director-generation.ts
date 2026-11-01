@@ -1,6 +1,8 @@
+import { narrationSpeechText } from '../../shared/narration-speech-text';
 import { activeImageProfileId, activeTtsProfileId, normalizedImageProfiles, normalizedTtsProfiles } from '../../shared/provider-profile-utils';
 import type { SecretStatus } from '../../shared/config-secrets';
 import { rebuildEditorialTimeline, type EditorialCollagePipelineData } from '../../shared/editorial-collage';
+import { joinEditorialNarration } from '../../shared/editorial-script';
 import { createEditorialMotionLayers, editorialLayerPrompt } from '../../shared/editorial-motion';
 import { editorialKeyframeAssetId, editorialNeedsLayerUpgrade } from '../../shared/editorial-media';
 import { editorialRecipe } from '../../shared/editorial-recipe-catalog';
@@ -10,7 +12,7 @@ import { fitEditorialNarrationTiming } from '../../shared/editorial-narration-ti
 import { invalidateMotionComicShotVideo, type MotionComicPipelineData } from '../../shared/motion-comic';
 import type { ProductionAssetVersion, ProductionProviderJob, ProductionSubtitleCue } from '../../shared/production-workflow';
 import type { ProductionAudioClip } from '../../shared/production-audio';
-import { motionComicDialogueInputMatches, type MotionComicDialogueInput } from '../../shared/motion-comic-dialogue';
+import { fitMotionComicDialogueTiming, motionComicDialogueInputMatches, type MotionComicDialogueInput } from '../../shared/motion-comic-dialogue';
 import { invalidateSubtitleAlignment } from '../../shared/audio-alignment';
 import { defaultTaskSpeakerForProvider, taskSpeakerLabel, ttsVoiceOptionsForProvider, type RuntimeTtsProvider } from '../../shared/tts-voices';
 import type { AppConfig, BackgroundRemovalMetadata, ImageLabRecord, ImageProvider, VoiceLabRecord } from '../../shared/types';
@@ -18,6 +20,8 @@ import { selectMotionComicVideoRoute } from '../../shared/motion-comic-video';
 import { selectVideoGenerationRoute } from '../../shared/video-routing';
 import { resolveVolcengineTtsApiVersion } from '../../shared/volcengine-tts';
 import { buildMotionComicConsistencyPrompt, collectMotionComicReferenceBundle } from '../motion-comic/motion-comic-consistency';
+import { resolveCreativeStyle, CREATIVE_ADAPTER_REVISION } from '../../shared/creative-animation/styles';
+import { creativeScenePrompt, creativeLayerPrompt, creativeImageTargetRules } from '../../shared/creative-animation/image-prompts';
 
 export interface DirectorImageProviderStatus {
   profileId: string;
@@ -70,7 +74,10 @@ export function resolveDirectorImageProviderOptions(config: AppConfig, secrets: 
 
 export function resolveDirectorImageProviderStatus(config: AppConfig, secrets: SecretStatus, requestedProfileId = activeImageProfileId(config)): DirectorImageProviderStatus {
   const activeProfile = activeImageProfileId(config);
-  const profileId = normalizedImageProfiles(config).some((candidate) => candidate.id === requestedProfileId) ? requestedProfileId : activeProfile;
+  const profileId = requestedProfileId;
+  if (!config.imageProfiles.some(candidate => candidate.id === profileId)) {
+    return { profileId, connected: false, provider: config.imageProvider, supportsReferenceImages: false, maxReferenceImages: 0, label: '项目生图配置缺失', model: '请在项目模型中重新选择', resolution: '2K', quality: 'medium', unavailableReason: '项目绑定的生图配置已删除，请在项目模型中重新选择。' };
+  }
   const profile = normalizedImageProfiles(config).find((candidate) => candidate.id === profileId);
   const segment = encodeURIComponent(profileId);
   const configured = (...ids: Array<keyof SecretStatus | string>) => ids.some((id) => secrets[id as keyof SecretStatus] === true);
@@ -248,7 +255,7 @@ export function resolveDirectorVideoProviderStatus(
     durationSec,
     requiredCapabilities: input.requiresLastFrame ? ['i2v', 'first-last-frame'] : ['i2v'],
     remainingBudget,
-  }); } catch(error) { return {providerId:'',connected:false,label:'输入待补齐',model:'',estimatedCost:0,remainingBudget,unavailableReason:error instanceof Error?error.message:String(error)}; }
+  }); } catch(error) { return {providerId:'',connected:false,label:'输入待补齐',model:'',estimatedCost:0,remainingBudget,unavailableReason:(error instanceof Error?error.message:String(error)).replace(/^[A-Z][A-Z0-9_]+:\s*/, '')}; }
   if (route.kind === 'provider') {
     return {
       providerId: route.provider.id,
@@ -277,40 +284,46 @@ export function directorImageInput(document: EditorialCollagePipelineData | Moti
     const shot = beat?.shots.find((item) => item.id === shotId);
     if (!shot) throw new Error('当前 VOX 镜头不存在。');
     const selectedStyle = document.styleCandidates.find((candidate) => candidate.id === document.selectedStyleId && candidate.selected);
-    const stylePrompt = selectedStyle?.prompt?.trim() ? `Style baseline (${selectedStyle.label}): ${selectedStyle.prompt.trim()}.` : '';
+    const settings = document.productionRun?.status === 'running' ? document.productionRun.settings : document.productionSettings ?? document.productionRun?.settings;
+    const creative = settings?.authoring ? resolveCreativeStyle(settings.authoring.styleId, settings.presetId) : undefined;
+    const stylePrompt = creative?.adapter ? `Selected material (${creative.cn}), adapter ${CREATIVE_ADAPTER_REVISION}: ${creative.adapter.imageDirection}\nPalette: background ${creative.adapter.background}, foreground ${creative.adapter.foreground}, accent ${creative.adapter.accent}.`
+      : selectedStyle?.prompt?.trim() ? `Style baseline (${selectedStyle.label}): ${selectedStyle.prompt.trim()}.` : '';
     const layer = layerId ? shot.layers.find((candidate) => candidate.id === layerId) : undefined;
     if (layerId && (!layer || layer.content)) throw new Error('当前镜头中没有可生成的图片图层。');
     const target = layer ? 'layer' as const : shot.renderStrategy === 'living-poster' || shot.productionRecipe === 'paper-cut' ? 'keyframe' as const : 'legacy' as const;
-    const scenePrompt = resolveEditorialScenePrompt({ scenePrompt: shot.scenePrompt, narration: editorialShotNarration(beat!, shot) || beat!.narration, ratio: document.ratio, motionStyle: shot.motionStyle, knownStylePrompts: document.styleCandidates.map(candidate => candidate.prompt) });
-    const layerPrompt = layer ? layer.prompt?.trim() || editorialLayerPrompt(layer.kind, scenePrompt) : undefined;
+    const sceneInput = { scenePrompt: shot.scenePrompt, narration: editorialShotNarration(beat!, shot) || beat!.narration, ratio: document.ratio, motionStyle: shot.motionStyle, knownStylePrompts: document.styleCandidates.map(candidate => candidate.prompt) };
+    const scenePrompt = creative ? creativeScenePrompt(sceneInput) : resolveEditorialScenePrompt(sceneInput);
+    const layerPrompt = layer ? creative ? creativeLayerPrompt(layer.kind, scenePrompt, layer.prompt,
+      [shot.scenePrompt, scenePrompt, resolveEditorialScenePrompt(sceneInput), sceneInput.narration, beat!.narration]) : layer.prompt?.trim() || editorialLayerPrompt(layer.kind, scenePrompt) : undefined;
     const recipe = editorialRecipe(shot.productionRecipe);
     const hero = shot.productionRecipe === 'paper-cut' && layer ? document.assets.find(asset => asset.id === shot.keyframeAssetVersionId && asset.kind === 'image' && asset.localPath) : undefined;
     const derivation = hero ? layer!.kind === 'background'
-      ? 'Edit the reference into a clean background plate. Remove the hero and moving props, reconstruct the exposed paper background, preserve its palette, texture, shadows and perspective. Do not leave a duplicate subject behind.'
-      : 'Isolate the requested subject from the reference. Preserve its identity, paper texture, silhouette, orientation and edge style. Output only this subject on a flat pure green field for local alpha extraction; do not include the background or duplicate subjects.' : '';
+      ? `Edit the reference into a clean background plate. Remove the hero and moving props, reconstruct the exposed ${creative ? 'selected-material' : 'paper'} background, preserve its palette, texture, shadows and perspective. Do not leave a duplicate subject behind.`
+      : `Isolate the requested subject from the reference. Preserve its identity, ${creative ? 'selected material' : 'paper texture'}, silhouette, orientation and edge style. Output only this subject on a flat pure green field for local alpha extraction; do not include the background or duplicate subjects.` : '';
     return {
       projectId: document.id, workflowKind: document.workflowKind, ownerId: beat!.id, shotId,
       target, layerId: layer?.id, layerKind: layer?.kind,
       ratio: document.ratio,
       prompt: [
-        'Create one editorial collage image from the following visual brief. Narrative context explains meaning; it is not text to print on the image.',
+        `Create one ${creative ? 'image in the selected visual material' : 'editorial collage image'} from the following visual brief. Narrative context explains meaning; it is not text to print on the image.`,
         stylePrompt,
+        creative ? 'The selected material controls rendering. Saved scene or layer briefs may describe an older production style: reuse their subject, action, object identity and composition, but replace that previous rendering treatment with the selected material. Keep real object properties distinct from the image rendering style.' : '',
         `SCENE VISUAL BRIEF${layer ? ' (context only; render only the requested layer below)' : ''}:\n${scenePrompt}`,
         layerPrompt ? `REQUESTED LAYER — this layer description chooses the subject; do not add other actors from the scene:\n${layerPrompt}` : '',
         // Recipe and layout describe a whole frame. Adding them to green-screen
         // cutouts previously asked the same image to be both a scene and a layer.
-        !layer ? recipe?.imagePrompt : '',
-        !layer ? `Layout: ${shot.layoutTemplate ?? '对比拼贴 · 纸张撕裂'}.` : '',
+        !layer && !creative ? recipe?.imagePrompt : '',
+        !layer && !creative ? `Layout: ${shot.layoutTemplate ?? '对比拼贴 · 纸张撕裂'}.` : '',
         derivation,
         shot.seedLocked && shot.seed ? `Keep visual seed reference ${shot.seed}.` : '',
-        editorialImageTargetRules(layer?.kind),
+        creative ? creativeImageTargetRules(layer?.kind) : editorialImageTargetRules(layer?.kind),
       ].filter(Boolean).join('\n\n'),
       references: hero ? [{ assetVersionId: hero.id, path: hero.localPath! }] : [] as Array<{ assetVersionId: string; path: string }>,
       selectedAssetIds: layer ? (layer.assetVersionId ? [layer.assetVersionId] : []) : target === 'keyframe' ? [editorialKeyframeAssetId(shot)].filter((id): id is string => Boolean(id)) : shot.layers.flatMap((layer) => layer.assetVersionId ? [layer.assetVersionId] : []),
-      styleCandidateId: selectedStyle?.id,
+      styleCandidateId: creative ? undefined : selectedStyle?.id,
       renderStrategy: shot.renderStrategy,
       productionRecipe: shot.productionRecipe,
-      layerPrompt: layer?.prompt,
+      layerPrompt: creative ? layerPrompt : layer?.prompt,
     };
   }
   const episode = document.episodes.find((item) => item.scenes.some((scene) => scene.shots.some((shot) => shot.id === shotId)));
@@ -463,11 +476,16 @@ export function editorialVoiceInput(document: EditorialCollagePipelineData, shot
   const beat = document.beats.find((item) => item.shots.some((shot) => shot.id === shotId));
   const shot = beat?.shots.find((item) => item.id === shotId);
   if (!shot) throw new Error('当前 VOX 镜头不存在。');
-  const cues = shot.subtitleCueIds.flatMap((id) => beat!.subtitleCues.find((cue) => cue.id === id) ?? []);
+  // A split narration is still one purchased recording, not only its first child.
+  const group = shot.narrationSplit?.sourceShotId === shot.id
+    ? document.beats.flatMap(b => b.shots).filter(s => s.narrationSplit?.sourceShotId === shot.id)
+    : [shot];
+  const cueIds = group.flatMap(s => s.subtitleCueIds);
+  const cues = cueIds.flatMap(id => document.beats.flatMap(b => b.subtitleCues).find(c => c.id === id) ?? []);
   return {
     projectId: document.id, beatId: beat!.id, shotId,
-    text: cues.map((cue) => cue.text).filter(Boolean).join(' '),
-    cueIds: shot.subtitleCueIds,
+    text: narrationSpeechText(joinEditorialNarration(cues.map((cue) => cue.text))),
+    cueIds,
     provider: defaults.provider, voiceId: shot.voiceId || defaults.voiceId,
     voiceLabel: shot.voiceLabel || defaults.voiceLabel, speed: shot.voiceSpeed ?? defaults.speed,
     selectedAssetId: shot.voiceAssetVersionId,
@@ -690,6 +708,7 @@ export function applyEditorialVoiceRecord(
   expectedInput?: EditorialVoiceInput,
   isCurrentRequest = true,
   measuredDurationMs?: number,
+  fitTiming = true,
 ): EditorialCollagePipelineData {
   const production = directorVoiceProductionRecord(document, shotId, record, model, measuredDurationMs);
   const matches = isCurrentRequest && (!expectedInput || (expectedInput.shotId === shotId
@@ -698,11 +717,13 @@ export function applyEditorialVoiceRecord(
     && editorialVoiceInputMatches(document, expectedInput)));
   const completedAsset = record.status === 'generated' ? production.asset : null;
   const generated = matches ? completedAsset : null;
+  const group = new Set(document.beats.flatMap(b => b.shots)
+    .filter(s => s.id === shotId || s.narrationSplit?.sourceShotId === shotId).map(s => s.id));
   const next = rebuildEditorialTimeline({
     ...document,
     assets: completedAsset ? (matches ? appendAssetVersion(document.assets, completedAsset) : [...document.assets, { ...completedAsset, selected: false }]) : document.assets,
     providerJobs: appendProviderJob(document.providerJobs, production.job),
-    ...(generated && measuredDurationMs && document.timeline ? {
+    ...(generated && measuredDurationMs && document.timeline && group.size === 1 ? {
       timeline: {
         ...document.timeline,
         audioClips: upsertAggregateNarrationAudioClip(document.timeline.audioClips, document.timeline.clips.find((clip) => clip.shotId === shotId)?.startMs ?? 0, shotId, generated.id, shotDuration(document, shotId), measuredDurationMs),
@@ -710,8 +731,8 @@ export function applyEditorialVoiceRecord(
     } : {}),
     beats: document.beats.map((beat) => ({
       ...beat,
-      subtitleCues: generated ? beat.subtitleCues.map((cue) => beat.shots.some((shot) => shot.id === shotId && shot.subtitleCueIds.includes(cue.id)) ? refreshShotCueAlignment(cue, generated.id, record) : cue) : beat.subtitleCues,
-      shots: beat.shots.map((shot) => shot.id === shotId && generated ? {
+      subtitleCues: generated ? beat.subtitleCues.map((cue) => beat.shots.some((shot) => group.has(shot.id) && shot.subtitleCueIds.includes(cue.id)) ? refreshShotCueAlignment(cue, generated.id, record) : cue) : beat.subtitleCues,
+      shots: beat.shots.map((shot) => group.has(shot.id) && generated ? {
         ...shot,
         voiceId: record.voiceId,
         voiceLabel: record.voiceLabel,
@@ -720,7 +741,7 @@ export function applyEditorialVoiceRecord(
       } : shot),
     })),
   });
-  return generated && measuredDurationMs ? fitEditorialNarrationTiming(next, [shotId]) : next;
+  return generated && measuredDurationMs && fitTiming ? fitEditorialNarrationTiming(next, [shotId]) : next;
 }
 
 export function applyMotionComicVoiceRecord(
@@ -739,7 +760,7 @@ export function applyMotionComicVoiceRecord(
     && record.text === expectedInput.text && record.voiceId === expectedInput.voiceId && record.speed === expectedInput.speed && record.provider === expectedInput.provider
     && motionComicDialogueInputMatches(document, expectedInput));
   const generated = matches ? completedAsset : null;
-  return {
+  const next: MotionComicPipelineData = {
     ...document,
     stage: generated ? 'audio' : document.stage,
     assets: completedAsset ? (matches ? appendAssetVersion(document.assets, completedAsset) : [...document.assets, { ...completedAsset, selected: false }]) : document.assets,
@@ -776,6 +797,7 @@ export function applyMotionComicVoiceRecord(
       };
     }),
   };
+  return generated && measuredDurationMs ? fitMotionComicDialogueTiming(next, shotId) : next;
 }
 
 function refreshShotCueAlignment<T extends ProductionSubtitleCue>(cue: T, audioAssetVersionId: string, record: VoiceLabRecord): T {
@@ -853,7 +875,7 @@ function imageLabBackgroundRemoval(record: ImageLabRecord): BackgroundRemovalMet
   };
 }
 
-function directorProductionRecord(
+export function directorProductionRecord(
   document: Pick<EditorialCollagePipelineData | MotionComicPipelineData, 'id' | 'workflowKind' | 'providerJobs'>,
   shotId: string,
   record: ImageLabRecord,

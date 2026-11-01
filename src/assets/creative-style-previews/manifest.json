@@ -1,0 +1,1245 @@
+{
+  "retrievedAt": "2026-10-25T00:19:08.052805+00:00",
+  "attribution": "LemoLab, Lemo Opuscar official gallery stills, CC BY 4.0.",
+  "entries": [
+    {
+      "slug": "caption-news",
+      "label": "字幕新闻",
+      "file": "caption-news.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/caption-news_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "b2882dcab4c5a338736cf2334df4dc1b74fb355caf387e3f055424ab8c541df1",
+      "previewSha256": "3677a5a30c2e93cddc1154be1b8690ad71a28d7ad974c5fd0043db3f6a2dad87",
+      "previewBytes": 49354
+    },
+    {
+      "slug": "newsreel",
+      "label": "1920s 新闻影片",
+      "file": "newsreel.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/newsreel_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "d09be02d5efc4a316984833e5dd71bea7fcf95ac94af9540b0483fcf34d89616",
+      "previewSha256": "99b54ddf01d5dd7e162f1114017efd50693c91690fcd8804b01769bade6c5f0d",
+      "previewBytes": 19376
+    },
+    {
+      "slug": "countdown",
+      "label": "实时倒计时分屏",
+      "file": "countdown.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/countdown_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "c301b2a73c4e222a83bf044d74310adf42d2b37f8ba1505a74091bf7bb7aa318",
+      "previewSha256": "e78ce99a1804e58a0cf381044052c675c4eb496d2b685ef1fbbf69a27cd59de6",
+      "previewBytes": 40202
+    },
+    {
+      "slug": "city-symphony",
+      "label": "延时交响",
+      "file": "city-symphony.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/city-symphony_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "ed5ad70aa40f1cb6584c4e4ea4db3d85e4b69f3a35d63c6999f9ad66a9135fbe",
+      "previewSha256": "57b99324590a7f2915c6f002e2fe7368424a0ff5b0e5953ce6b92ffe233486b1",
+      "previewBytes": 36364
+    },
+    {
+      "slug": "visual-investigation",
+      "label": "视觉调查",
+      "file": "visual-investigation.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/visual-investigation_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "4e0078b2eaac53e8598f09ac8b6a1921d3bd877d5547386f49d59b64293b3253",
+      "previewSha256": "c74b8268582dc2bc07c3d3ab2c26710f19f7533a2738d1576df458295fdb45b9",
+      "previewBytes": 33392
+    },
+    {
+      "slug": "kino-montage",
+      "label": "构成主义蒙太奇",
+      "file": "kino-montage.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/kino-montage_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "fdb890c5c68dfa4b8dee334712ba2906a06d6eda2809952060f8543f5ee7f591",
+      "previewSha256": "db7745aed255b36336c87638b3a0c43dac710a347d885912ea4fa5834b079fa9",
+      "previewBytes": 27520
+    },
+    {
+      "slug": "telestrator",
+      "label": "体育战术板",
+      "file": "telestrator.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/telestrator_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "43b6da443f0ac77b2a7717a25bb05083063790a8ad824c4106c3b15f5982e60e",
+      "previewSha256": "726923cd9e620e01412dd9c84900144f58aed5a6029060372ab88bcbae0760e8",
+      "previewBytes": 38892
+    },
+    {
+      "slug": "news-package",
+      "label": "电视新闻包装",
+      "file": "news-package.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/news-package_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "998a6255361c81565d211453fed7a1be70286e29d02c163d77a32517867da26a",
+      "previewSha256": "d7d8071f74f1a8400271dcf76e540b45237d0674c0998781923cc719fcae26cf",
+      "previewBytes": 26986
+    },
+    {
+      "slug": "satellite-briefing",
+      "label": "卫星简报",
+      "file": "satellite-briefing.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/satellite-briefing_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "2b445629b72125b3f6a359411def9fde4478294abb8a9c4821e2e219aef9fcbc",
+      "previewSha256": "b83d0d5720518897c5956d5e77b18f2aed9b59f1e2b6279d02a555c9c9ff4784",
+      "previewBytes": 54776
+    },
+    {
+      "slug": "briefing-board",
+      "label": "工程简报板",
+      "file": "briefing-board.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/briefing-board_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "2cf0a4f42dae3b8361a8758c7ee334aab41cacdb6dfb231dd41937dda97931ee",
+      "previewSha256": "81adbb1655c670d9924d01540720ab1f5d3a2a5a553a1e7a90c864cfefe09cf1",
+      "previewBytes": 27982
+    },
+    {
+      "slug": "lidar-survey",
+      "label": "点云测绘",
+      "file": "lidar-survey.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/lidar-survey_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "9b5ef160d7f2109403b04fa13817bccdb836ecaa464467e4b8e8357509db367b",
+      "previewSha256": "0621e8676ea0b944f37fd79c97a73ce7a4c35bc35f2dd3303243ab1a945b00ed",
+      "previewBytes": 42402
+    },
+    {
+      "slug": "white-model",
+      "label": "白模投影",
+      "file": "white-model.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/white-model_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "aa6ddde5a18be001340cf20d1e2550fdce5b7e4c9f4392dcad5f03b276be1059",
+      "previewSha256": "e680df0f21fcc446dedf031a325e81ca42b8278d00a1856f9b6e9c07142bf550",
+      "previewBytes": 66940
+    },
+    {
+      "slug": "data-physical",
+      "label": "数据实物化",
+      "file": "data-physical.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/data-physical_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "778ce5e060fe2a2cdf689913155012a527e929e569eb46237691ae4b8a234714",
+      "previewSha256": "a319862d28d719534bcfea6c6fb7ec75142e273902afdc44b4933d92529a6434",
+      "previewBytes": 19562
+    },
+    {
+      "slug": "teardown",
+      "label": "产品拆解",
+      "file": "teardown.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/teardown_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "c0e7f9dc5a5b415cbe2ff1706dfe6e647c70e212fcee619e25426ef8de6dd803",
+      "previewSha256": "7abf441a336dec194592624fcec3f9667bd3ccf81f940bc4989850a18c68b5b3",
+      "previewBytes": 19746
+    },
+    {
+      "slug": "microscope",
+      "label": "显微叙事",
+      "file": "microscope.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/microscope_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "bdefb1ae91eac33abc56d8c4f91fa86a7786d2e842068388afac5fe269703428",
+      "previewSha256": "be7bca2d30e789e9f929070f92ecaa99668902f0b8dbac7b7b659747147326d4",
+      "previewBytes": 151324
+    },
+    {
+      "slug": "archive-lighttable",
+      "label": "档案灯台",
+      "file": "archive-lighttable.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/archive-lighttable_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "594f6d15fce4848e086d2adc1218b0e32d5b118cae4a49ef23857fe378d5800b",
+      "previewSha256": "dfcc9069ff48352a949183931746e6a1b4521e2eb05d478c9111ecf685c7ee74",
+      "previewBytes": 25018
+    },
+    {
+      "slug": "crayon-book",
+      "label": "蜡笔儿童绘本",
+      "file": "crayon-book.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/crayon-book_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "e47c200812b180a0fb21bc9e5b457de80ead855de2f056a4c62766b13bd9ca8f",
+      "previewSha256": "cd053374766417878abf021fe0ec0a8f545319c1ba7069ad6a6a84b31841bc64",
+      "previewBytes": 77720
+    },
+    {
+      "slug": "watercolor",
+      "label": "水彩笔刷",
+      "file": "watercolor.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/watercolor_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "be138ab3476cd8c7bcafc462ecec99a466a91f5c18b5f9b9fa325170e261fd5f",
+      "previewSha256": "f85eb3d7f49dc56d609795d649f9a16afa178902888c8089a692e237423de378",
+      "previewBytes": 26418
+    },
+    {
+      "slug": "ink-wash",
+      "label": "中国水墨",
+      "file": "ink-wash.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/ink-wash_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "f12f7f564254ddc2507ab145ee2e2be47df021bfe9c9d440f0d9062a7d90bb20",
+      "previewSha256": "9a166e74951e162c3087bfd0a8964fcf37441ff4f38763220fba7b8bf385cf82",
+      "previewBytes": 37740
+    },
+    {
+      "slug": "impasto",
+      "label": "油画厚涂",
+      "file": "impasto.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/impasto_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "b32a4ec7026b88b0c71b639bd87bc4b304d6286dfa46f7b73696625ad84d8a22",
+      "previewSha256": "d23f93ef9c64c1fec28eaecccea2761b09489e1d29128ab9dfe1c0fcc6305ab4",
+      "previewBytes": 52622
+    },
+    {
+      "slug": "one-line",
+      "label": "一笔画",
+      "file": "one-line.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/one-line_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "da2bd273d62fe7ecf5df216b6e96f21b6a0778ad77c41272252c0c6d81b01de1",
+      "previewSha256": "d1a8a26f0c8f99252f61a77453ce2e18a647425f65488a70e5097660a6ae3b2f",
+      "previewBytes": 9104
+    },
+    {
+      "slug": "whiteboard",
+      "label": "白板讲解",
+      "file": "whiteboard.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/whiteboard_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "aaf08759959faa4c1059e8e97b707228b209457eb2eb345811513e5a54e109b3",
+      "previewSha256": "f3877f28c77ef64f54d7f3782e367bb9e934c3e3313520f6a81954896fd7563d",
+      "previewBytes": 12388
+    },
+    {
+      "slug": "urban-sketch",
+      "label": "钢笔淡彩",
+      "file": "urban-sketch.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/urban-sketch_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "75e5675cc05e5825e50aaf8ce55c11a554bdec5d8b51cb02882f596434bba5fe",
+      "previewSha256": "002286315e1ed3ee20e079124034ecbd5e8c122894dc8acc7d6bedf1e84027fb",
+      "previewBytes": 53458
+    },
+    {
+      "slug": "shadow-puppet",
+      "label": "皮影戏",
+      "file": "shadow-puppet.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/shadow-puppet_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "72f7edc86977015ded7ecb11a305c85cf4fcafec1dff5d5a0fd78d2a5264fe7c",
+      "previewSha256": "e2969aecb689e045802e58600d5a88f520b37ad0b6b23d3091aa84697b17bee6",
+      "previewBytes": 37250
+    },
+    {
+      "slug": "ukiyoe",
+      "label": "浮世绘",
+      "file": "ukiyoe.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/ukiyoe_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "8304c6b69800e80e2be929c3b86759b73abd8d7e1798789fc19e11d41eeffc39",
+      "previewSha256": "ca2430b698d2c556e028cfb1fe45a189bfd8b1d54ad8dbe687dd9373a5650560",
+      "previewBytes": 27732
+    },
+    {
+      "slug": "papercut-red",
+      "label": "红色窗花剪纸",
+      "file": "papercut-red.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/papercut-red_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "bdc3dc9185d32b8e0ee94dc5d90bd3a384149c780c661304e020330913745e18",
+      "previewSha256": "034c27b8d043e82dd5b3eb3c26cc6e6e70b03f95f993760c9f9db5696a8d80be",
+      "previewBytes": 39180
+    },
+    {
+      "slug": "paper-lantern",
+      "label": "纸雕灯影",
+      "file": "paper-lantern.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/paper-lantern_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "a2ac99facda434f956076e9508ebdba44406bbeb80064ca9def756d72675918a",
+      "previewSha256": "8d61a7b7ad49cb678d17d6ad3a72aa8f156379b7864321005f5227e74dba8ef9",
+      "previewBytes": 16134
+    },
+    {
+      "slug": "risograph",
+      "label": "Risograph 孔版印刷",
+      "file": "risograph.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/risograph_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "b052cd84ed69898732debd293009cab02786b4fc7728dccb9d02a9a1192b47e5",
+      "previewSha256": "f4e827aeb4fec0e78df7efca6bb2f22ca4e4af4069b9a6ae31b743dccc5876e1",
+      "previewBytes": 128824
+    },
+    {
+      "slug": "halftone-dossier",
+      "label": "复古半调案卷",
+      "file": "halftone-dossier.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/halftone-dossier_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "8a145a2edb7d1b4cfbe289bdf0a606430219f53c2f25c55ba619725158f9a815",
+      "previewSha256": "9fe115af9dd4981f67f920c55d432696f3751a98f4050c5aa350bbb3970376b6",
+      "previewBytes": 45600
+    },
+    {
+      "slug": "woodcut",
+      "label": "木刻版画",
+      "file": "woodcut.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/woodcut_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "896f28e20bdd6c466544a6b137495adf9de04eb4c08bc25b5405cf9905656bc8",
+      "previewSha256": "ca765f86ccf49e4fccc02aa745d741f7f4e40c6ca2ee1da2b5fd3c79fc4356f8",
+      "previewBytes": 82238
+    },
+    {
+      "slug": "engraving",
+      "label": "铜版画",
+      "file": "engraving.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/engraving_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "58625715a33d2d7e42758f65981678563745653cf78bebe7f61788e5960474a6",
+      "previewSha256": "233b5e07ac2d9ee10c1783fc8674815edd44af448ffbf75ffa9540a691103de5",
+      "previewBytes": 32280
+    },
+    {
+      "slug": "silkscreen-poster",
+      "label": "丝印旅行海报",
+      "file": "silkscreen-poster.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/silkscreen-poster_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "11a2a9dc043daf3b0b8225bd058268687534a3df520a57772962fa74abeafc18",
+      "previewSha256": "200ea85101c8bc62c916488541b954c83290719169177eeb28beaf680e175abb",
+      "previewBytes": 40910
+    },
+    {
+      "slug": "swiss-motion",
+      "label": "瑞士动态排版",
+      "file": "swiss-motion.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/swiss-motion_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "45d52af40432e240aa4aa2120060b8311e9c1d56f1bfcd7f5aedafa36bfc2ce6",
+      "previewSha256": "4e2b4f2467cc6bd8ab7aea71ef6a8a531e0be32aa14995d782c7ea80b882d844",
+      "previewBytes": 12026
+    },
+    {
+      "slug": "spy-titles",
+      "label": "60s 间谍片头",
+      "file": "spy-titles.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/spy-titles_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "f9f4d366156a9b62a4f35911996d846fc663169044508a871e50242785d7f392",
+      "previewSha256": "9fa2fa188c59305ee50848311ff95c07e8e360e00d12ef616f8060d9424a3872",
+      "previewBytes": 25366
+    },
+    {
+      "slug": "art-deco",
+      "label": "装饰艺术",
+      "file": "art-deco.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/art-deco_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "306dda677b859ace3cc1a12f372dd84fd5b8b91395852affa7d4b632080b9672",
+      "previewSha256": "867f089b8d7d1609362fa5f9646e4f11e9186e10f5df97e30994098eb9245623",
+      "previewBytes": 15612
+    },
+    {
+      "slug": "blueprint",
+      "label": "蓝图 / 工程制图",
+      "file": "blueprint.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/blueprint_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "28a1e4f35e042d9d5cdbbd8740a57bd5267430320e34fa3eaa72753a7ce93ddf",
+      "previewSha256": "692cac42d6a60ffe68a143874a05de9b2adba2c82e3286f9e0c440bc82e1f519",
+      "previewBytes": 23854
+    },
+    {
+      "slug": "stained-glass",
+      "label": "彩色玻璃窗",
+      "file": "stained-glass.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/stained-glass_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "425b9c6deed7e39815412b2d9c5f3059f906156669ca8297f8a481076704b2a2",
+      "previewSha256": "72ad072842b1a5aa19739a496d8e5bdf95b45a1c2a4b05ef3937d197c2bc97cc",
+      "previewBytes": 38568
+    },
+    {
+      "slug": "pictogram-motion",
+      "label": "象形运动图形",
+      "file": "pictogram-motion.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/pictogram-motion_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "f753b7f26994d63f7d128198ef099d183206edf6bd7492cf23bce7df12b857cb",
+      "previewSha256": "b438579cd580eceb5768a82feb4b4a546da9c77f9e6ef6a00e4f8818bcc94421",
+      "previewBytes": 21038
+    },
+    {
+      "slug": "ascii-crt",
+      "label": "ASCII / CRT 终端",
+      "file": "ascii-crt.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/ascii-crt_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "543a4acf51a6e7f8c4896f60f847db86f605c6858b9e16c301f71bc3222a10d1",
+      "previewSha256": "4666a4104e6f32d1bba461f4811803d80497e15ad37464699e209791ee2d2c5d",
+      "previewBytes": 56326
+    },
+    {
+      "slug": "dataviz",
+      "label": "数据叙事",
+      "file": "dataviz.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/dataviz_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "1b504e873efe6c5d8db468298997cbdb5eff4341f463fa51c2b405cb53d6d2cd",
+      "previewSha256": "33f7b5964bbe1e2af791a340d11f587d9b6a3879045792501bc576237369df40",
+      "previewBytes": 19018
+    },
+    {
+      "slug": "iso-infographic",
+      "label": "等距信息图",
+      "file": "iso-infographic.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/iso-infographic_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "37b28287f9f9dee08bb7fcbca378f0631e53a3dc4744a440960548a6941c59d6",
+      "previewSha256": "e72322cbc715cd4770b3b9bfcc532226546286ea2220455d1b3346c5b748e2f4",
+      "previewBytes": 31928
+    },
+    {
+      "slug": "dark-keynote",
+      "label": "暗色科技发布",
+      "file": "dark-keynote.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/dark-keynote_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "e69159dcd56d50865f4275b03576b8f53dd6d451cd646456238a2d045e9316e7",
+      "previewSha256": "08de6b9853cef535336d4e59dd02002ed33793906f7ecba25b590ade8b739c46",
+      "previewBytes": 35992
+    },
+    {
+      "slug": "living-screencast",
+      "label": "活体实机录屏",
+      "file": "living-screencast.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/living-screencast_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "45700b6e0abf87d3325c8a5cdcc4db5782e4c15c544b747cc570d9ce3710e89a",
+      "previewSha256": "5f221e95816a66efa5f79b7782dd359445239c17d632bc1961493e50c90b8818",
+      "previewBytes": 8980
+    },
+    {
+      "slug": "hologram-hud",
+      "label": "科幻全息界面",
+      "file": "hologram-hud.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/hologram-hud_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "77b9801a82ff1bf619dac25ae5cc1bd826ef976ee5953bae0fde33510d821619",
+      "previewSha256": "e070040f858bcc41a5a3f8cd6cd48c72ed615d2cda0b8bffd3ecaaeb0f1bb1f0",
+      "previewBytes": 31256
+    },
+    {
+      "slug": "rubber-hose",
+      "label": "1930s 橡皮管卡通",
+      "file": "rubber-hose.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/rubber-hose_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "9b332777f058c5914d5fea84b1be445c14faf632c807c9f883cb8fdc899bb098",
+      "previewSha256": "66fa2d6bcee696e422b88840281bd0d0bb21341f366fa73474c79be278f23509",
+      "previewBytes": 20964
+    },
+    {
+      "slug": "cel-anime-80s",
+      "label": "80 年代赛璐璐动画",
+      "file": "cel-anime-80s.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/cel-anime-80s_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "a0f76f40ce55c6d33b5b3c290bf88c2b5ea7df9adfe221b1a527d47c5d3a707e",
+      "previewSha256": "739470d315679e7c85710ce9c480dc1f9ed6160d4dabde0004887790c8a1efcc",
+      "previewBytes": 19996
+    },
+    {
+      "slug": "scifi-toon",
+      "label": "科幻情景喜剧卡通",
+      "file": "scifi-toon.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/scifi-toon_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "5ce16fc270baed1e582c801f5db5b1d377f91065872c420c449c26eea9eda328",
+      "previewSha256": "d68c39ba93ac81d04f3efa09e924dfc6fdf2a048100743d5feb52768555bdddc",
+      "previewBytes": 29832
+    },
+    {
+      "slug": "midcentury-toon",
+      "label": "50s 扁平卡通",
+      "file": "midcentury-toon.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/midcentury-toon_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "60c5bde99994234d51b125765d2e1583da867fe47500ae42d05a7df88610e8f7",
+      "previewSha256": "628032165bca7ba0cac0c8e5b8cf379cbf47778c241c15fb5bc7c552ee1f12b1",
+      "previewBytes": 28158
+    },
+    {
+      "slug": "pixel-rpg",
+      "label": "16-bit 像素 RPG",
+      "file": "pixel-rpg.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/pixel-rpg_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "656b16a674c5c142d9a540c5a92cda8469c6e9e758f737494db2152c989e604a",
+      "previewSha256": "7136d56812741c6010dbde7fafbbb9135ce7dc9564896a604a637e4aef3d8fc7",
+      "previewBytes": 54702
+    },
+    {
+      "slug": "hd-2d",
+      "label": "HD-2D",
+      "file": "hd-2d.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/hd-2d_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "e655f50b3c6f26ec8f7354c88bd41b058da878612941244ec168d8840ac77cee",
+      "previewSha256": "9d77a4156cc61309fa15c9bb3a09860b6f63e7527162afb6bba6c6052ac2aa9f",
+      "previewBytes": 11256
+    },
+    {
+      "slug": "microgame",
+      "label": "微游戏快闪",
+      "file": "microgame.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/microgame_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "987d734ac7608270e2b039e283bfb47414cdfadfe049f80bc2e9a7273b45cf56",
+      "previewSha256": "1291737c650807b770251911ee36909df20188160f2a328f4eb282e261c2078c",
+      "previewBytes": 129060
+    },
+    {
+      "slug": "game-show",
+      "label": "综艺节奏扁平",
+      "file": "game-show.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/game-show_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "204bd842120beabc6e491f7881c4ecf4807c9a317c5cba3527b3b71c8cf70a53",
+      "previewSha256": "27b2afb132289d986d279feff94ed4d7dd121daf1f84dbfbddbcb08e6a11be82",
+      "previewBytes": 35112
+    },
+    {
+      "slug": "silent-film",
+      "label": "1920s 默片",
+      "file": "silent-film.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/silent-film_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "4911e71060640f3721ca7cafd1079a5fbe3d774071fba9ddae67d27df136dda2",
+      "previewSha256": "c77f390d72764dc72ff4a0e736dadceada61cc6442db9327c3f1d335398c27a5",
+      "previewBytes": 55818
+    },
+    {
+      "slug": "backrooms",
+      "label": "后室 / 新怪谈",
+      "file": "backrooms.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/backrooms_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "4133b3587ce009c44cd8d1c10e094c771fe3c47da6e4fd74dda9a21d061332d6",
+      "previewSha256": "eca1810af9489852508f258fdcdb6df42068220743ef0f618a2e230c242d5536",
+      "previewBytes": 14542
+    },
+    {
+      "slug": "brick-toy",
+      "label": "积木玩具",
+      "file": "brick-toy.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/brick-toy_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "79d70fe522b57789211616288f64acff3e3aaa140c13dfd13d7ddc8454e9b250",
+      "previewSha256": "da5367a81fda98311e3a6684c5cb406038c6b13392729876ba279aef6da0bcdb",
+      "previewBytes": 18686
+    },
+    {
+      "slug": "paper-popup",
+      "label": "纸片立体书",
+      "file": "paper-popup.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/paper-popup_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "373ff711470a10d9101cb19c30fd2639197fa7fe8a599a30ba0dd6958ee7bc38",
+      "previewSha256": "c0cdaf230b9cbcd9b0010f1f43d34dcf0556013d3f8e53dca58a29a840825373",
+      "previewBytes": 32974
+    },
+    {
+      "slug": "tilt-shift",
+      "label": "移轴微缩",
+      "file": "tilt-shift.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/tilt-shift_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "3941384751b0c93f72708afd33b272a097de72db09ac4e23b4fbe640e07a5714",
+      "previewSha256": "6c4e45f099809521dc721c6c436c98a464842ea0019515e2cd2e81546326b751",
+      "previewBytes": 40982
+    },
+    {
+      "slug": "lowpoly-island",
+      "label": "低多边形等距",
+      "file": "lowpoly-island.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/lowpoly-island_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "7feaf6cf1ba68b90b78106eeb4386a9881eacd0d6b31b33ed48a32dd13ec7854",
+      "previewSha256": "63c89f71dd268439d6956e9cbc005f93054b8b5b8d6d3b1ed744e61cbb7156f1",
+      "previewBytes": 12334
+    },
+    {
+      "slug": "glass-product",
+      "label": "玻璃质感产品",
+      "file": "glass-product.webp",
+      "source": "https://lemomo-ai.github.io/lemo-opuscar/img/glass-product_0.jpg",
+      "creator": "LemoLab",
+      "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+      "license": "CC-BY-4.0",
+      "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "d403e6074cc0e974186482c4d058c4297e5ec889f6c02b97190ea9e535206f75",
+      "previewSha256": "73a7fbc38f6ce124be938f6616e0f627a298390eaf39a393097ff36312e8cbf3",
+      "previewBytes": 27928
+    }
+  ]
+}

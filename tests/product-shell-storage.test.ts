@@ -26,7 +26,7 @@ describe('product shell storage', () => {
       expect(state.imageLabRecords).toEqual([]);
       expect(state.customStyles.map((style) => style.name)).toContain('写实彩色');
       expect(state.account.displayName).toBe('本地用户');
-      expect(state.activation.plan).toBe('trial');
+      expect(state.activation).toMatchObject({ plan: 'inactive', status: 'inactive', expiresAt: null });
       expect(state.ui.activeView).toBe('new-task');
 
       await db.close();
@@ -84,7 +84,7 @@ describe('product shell storage', () => {
     }
   });
 
-  it('refreshes built-in prompt templates to the current StoryDream defaults', async () => {
+  it('preserves edited built-in prompts and restores missing defaults on restart', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-shell-template-reconcile-'));
     const file = join(dir, 'app.db');
 
@@ -104,7 +104,11 @@ describe('product shell storage', () => {
       const reopened = await FileDatabase.open(file);
       const state = await reopened.getState();
 
-      expect(state.promptTemplates.find((template) => template.id === 'system-character-story')?.content).toContain('StoryDream 系统模板：人物故事');
+      expect(state.promptTemplates.find((template) => template.id === 'system-character-story')).toMatchObject({
+        content: '用户已经修改过的内置人物模板',
+        isBuiltin: true,
+        builtinModified: true,
+      });
       expect(state.promptTemplates.find((template) => template.id === 'system-food-vlog')?.stepPrompts?.rewrite).toContain('# 美食探店 · 文案改写规则');
 
       await reopened.close();

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ArtifactStorageSettings } from './ArtifactStorageSettings';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Eye, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Music2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
@@ -46,7 +47,7 @@ import {
   type SecretEditor,
 } from './settings-controls';
 
-export type SettingsSection = 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
+export type SettingsSection = 'storage' | 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
 
 export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, initialVideoPreset, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; initialVideoPreset?: VideoModelPreset; returnView?: ShellView; onReturn?: () => void }) {
   const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm');
@@ -189,10 +190,10 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     return commitAndApplySettingsDraft(draft);
   }
   async function activateLlmProfile(id: string) {
-    await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '已启用 LLM 配置档案');
+    await commitAndApplySettingsDraft(enableLlmProfile(draft, id), '已设为新项目默认语言配置');
   }
   async function activateImageProfile(id: string) {
-    await commitAndApplySettingsDraft(enableImageProfile(draft, id), '已启用绘图配置档案');
+    await commitAndApplySettingsDraft(enableImageProfile(draft, id), '已设为新项目默认生图配置');
   }
   async function activateTtsProfile(id: string) {
     await commitAndApplySettingsDraft(enableTtsProfile(draft, id), '已启用旁白服务配置档案');
@@ -201,7 +202,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     await commitAndApplySettingsDraft(enableMusicProfile(draft, id), '已启用音乐创作配置');
   }
   async function activateVideoProfile(id: string) {
-    await commitAndApplySettingsDraft(enableVideoProfile(draft, id), '已启用视频生成配置');
+    await commitAndApplySettingsDraft(enableVideoProfile(draft, id), '已设为新项目默认视频配置');
   }
   async function activateSpeechToTextProfile(id: string) {
     await commitAndApplySettingsDraft(enableSpeechToTextProfile(draft, id), '已启用语音转文字配置');
@@ -463,6 +464,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const settingsBgms = validBgmItems(draft);
   const isSiliconFlowSpeechToText = selectedSpeechToTextProfile.provider === 'siliconflow';
   const sections = [
+    ['storage', FolderOpen, '产物存储', '全部创作产物', '本地目录'],
     ['appearance', Palette, '外观', '明暗主题', state.ui.theme === 'dark' ? '深色' : '浅色'],
     ['llm', Sparkles, 'LLM', '文案与分镜', settingsStatusLabel(configTargetStatus('llm', draftWithCredentialStatus))],
     ['image', ImageIcon, 'AI 绘图', '分镜图片', settingsStatusLabel(configTargetStatus('image', draftWithCredentialStatus))],
@@ -496,9 +498,9 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         <div className="panel-title-row">
           <div className="settings-heading">
             <div className="square-icon"><Sparkles size={18} /></div>
-            <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>配置 API 凭证与本地路径</span></div>
+            <div><h2>{sections.find(([id]) => id === section)?.[2]}</h2><span>{section === 'storage' ? '统一设置创作产物的保存位置' : '配置 API 凭证与本地路径'}</span></div>
           </div>
-          <div className="button-row">
+          {section !== 'storage' ? <div className="button-row">
             {section === 'llm' ? (
               <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <FlaskConical size={15} />} title={selectedLlmTestBlocked ? '请先保存当前 LLM 配置档案或密钥变更' : '仅测试当前 LLM'} disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked} onClick={testSelectedLlmConfig}>
                 仅测试当前 LLM
@@ -510,9 +512,10 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             <Button variant="primary" icon={savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />} disabled={savingConfig || saveAction.busy} onClick={save}>
               保存配置
             </Button>
-          </div>
+          </div> : null}
         </div>
-        {configTestResult ? <div className="test-result">{configTestResult}</div> : null}
+        {section === 'storage' ? <ArtifactStorageSettings api={api} /> : null}
+        {section !== 'storage' && configTestResult ? <div className="test-result">{configTestResult}</div> : null}
         {section === 'llm' || section === 'image' || section === 'tts' ? <p className="settings-profile-explanation">可保存多个模型配置，选中用于编辑，启用用于创作。保存或测试所选配置会保留当前启用项。</p> : null}
         {section === 'appearance' ? (
           <SettingsCard title="界面主题" status={state.ui.theme === 'dark' ? '深色' : '浅色'}>
@@ -527,8 +530,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             <InlineActionFeedback feedback={themeAction.feedback} />
           </SettingsCard>
         ) : null}
-        <InlineActionFeedback feedback={saveAction.feedback} />
-        <InlineActionFeedback feedback={settingsAction.feedback} />
+        {section !== 'storage' ? <><InlineActionFeedback feedback={saveAction.feedback} /><InlineActionFeedback feedback={settingsAction.feedback} /></> : null}
         {section === 'llm' ? (
           <SettingsCard title="LLM 配置档案" status={secrets.configured(profileSecretId('llm', selectedLlmProfileId, 'apiKey')) ? '已配置' : '待配置'}>
             <LlmProfileManager

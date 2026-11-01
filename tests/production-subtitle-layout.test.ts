@@ -16,6 +16,24 @@ function fixture(): ProductionSubtitleLayoutEvidence {
 }
 
 describe('measured subtitle layout policy', () => {
+  it('allows native text entrance inside its own interval while still rejecting late or unknown captions', () => {
+    const evidence = fixture();
+    for (const scene of evidence.scenes) {
+      if (scene.status !== 'ok' || !scene.visibilitySamples) throw new Error('Expected fixture');
+      scene.visibilityMode = 'native-animation'; scene.cues[0].text = '字幕';
+      scene.visibilitySamples[0].activeCueIds = [];
+    }
+    const visibility = () => evaluateDirectorSubtitleLayout(scenes, evidence, canvas).find(check => check.id === 'subtitle-visibility');
+    expect(visibility()).toMatchObject({status:'passed'});
+    const first = evidence.scenes[0];
+    if (first.status !== 'ok' || !first.visibilitySamples) throw new Error('Expected fixture');
+    first.visibilitySamples[1].activeCueIds = ['cue-0'];
+    expect(visibility()).toMatchObject({status:'pending'});
+    first.visibilitySamples[1].activeCueIds = []; first.visibilitySamples[0].activeCueIds = ['unknown'];
+    expect(visibility()).toMatchObject({status:'pending'});
+    first.visibilitySamples[0].activeCueIds = []; first.cues[0].text = '改写的字幕';
+    expect(evaluateDirectorSubtitleLayout(scenes, evidence, canvas)[0]).toMatchObject({status:'pending'});
+  });
   it('accepts complete output measurements while leaving glyph coverage for manual review', () => {
     const checks = evaluateDirectorSubtitleLayout(scenes, fixture(), canvas);
     expect(checks[0]).toMatchObject({ status: 'passed', severity: 'manual' });

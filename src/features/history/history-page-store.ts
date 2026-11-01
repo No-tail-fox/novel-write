@@ -47,7 +47,7 @@ export interface HistoryPageStore<F extends HistoryFamily, T extends { id: strin
   next: () => HistoryPageNavigation | null;
   previous: () => HistoryPageNavigation | null;
   reload: () => HistoryPageNavigation | null;
-  invalidateFamily: () => HistoryPageNavigation | null;
+  invalidateFamily: (keepPage?: boolean, isTombstoned?: (family: F, id: string) => boolean) => HistoryPageNavigation | null;
   removeTombstone: (family: HistoryFamily, id: string) => HistoryPageNavigation | null;
   current: () => HistoryPageSnapshot<F, T>;
 }
@@ -227,11 +227,14 @@ export function createHistoryPageStore<F extends HistoryFamily, T extends { id: 
       entry.token = null;
       return navigate(entry.cursors.at(-1) ?? null);
     },
-    invalidateFamily() {
+    invalidateFamily(keepPage = false, isTombstoned = () => false) {
       tombstones.clear();
       const current = activeEntry();
       if (!current) return null;
-      current.page = null;
+      if (keepPage && current.page) {
+        const items = current.page.items.filter((item) => !isTombstoned(family, item.id));
+        current.page = { ...current.page, items, totalCount: Math.max(0, current.page.totalCount - (current.page.items.length - items.length)) };
+      } else current.page = null;
       current.token = null;
       return navigate(current.cursors.at(-1) ?? null);
     },

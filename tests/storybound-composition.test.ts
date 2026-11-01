@@ -48,7 +48,7 @@ namespace['_compose_with_hard_cuts'](paths, grouped, durations, fps)
 context['run_bounded_subprocess'] = original
 assert max(input_counts) <= 8
 assert not list(root.glob('compose-groups-*'))
-inputs, filters = namespace['hard_cut_filter_graph'](paths, durations)
+inputs, filters = namespace['hard_cut_filter_graph'](paths, durations, fps)
 namespace['run_ffmpeg']([*inputs,'-filter_complex',';'.join(filters),'-map','[vout]','-map','[aout]','-pix_fmt','yuv420p','-c:v','libx264','-c:a','aac',reference])
 def decode(path, kind):
     options = ['-f','s16le','-ac','2','-ar','44100'] if kind == 'audio' else ['-f','rawvideo','-pix_fmt','rgb24']

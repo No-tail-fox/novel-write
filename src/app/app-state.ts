@@ -1,3 +1,4 @@
+import { defaultProjectModels } from '../shared/project-models';
 import type { StoryDreamApi } from '../shared/storydream-api';
 import {
   defaultAccount,
@@ -95,7 +96,7 @@ export function hydrateState(state: Partial<AppState>): AppState {
     ...state,
     config: stripConfigSecrets(normalizeAppConfig(state.config ?? defaultConfig)),
     secretStatus: state.secretStatus ?? {},
-    tasks: state.tasks ?? [],
+    tasks: (state.tasks ?? []).map(task => task.projectModels ? task : { ...task, projectModels: defaultProjectModels(normalizeAppConfig(state.config ?? defaultConfig), task.llmProfileId) }),
     events: state.events ?? [],
     promptTemplates: state.promptTemplates ?? initialPromptTemplates,
     draftTemplates: reconcileBuiltinDraftTemplates(state.draftTemplates),

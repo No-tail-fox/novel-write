@@ -13,6 +13,65 @@ afterEach(() => {
 });
 
 describe('cloud video provider', () => {
+  it.each(['geekai.co', 'geekai.dev'])('uses the unified GeekAI contract on %s and downloads video_result', async (host) => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-geekai-video-'));
+    const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      requests.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
+      if (init.method === 'POST') return Response.json({ task_id: 'geek-task-1', task_status: 'pending' });
+      if (url.endsWith('/videos/geek-task-1')) return Response.json({ task_id: 'geek-task-1', task_status: 'succeed', video_result: { url: 'https://cdn.example/geek.mp4' } });
+      return new Response(Buffer.from('downloaded-video'), { headers: { 'content-type': 'video/mp4' } });
+    }));
+    try {
+      const config = multimodalConfig('doubao-seedance-2.0-mini', { baseUrl: `https://${host}/api/v1`, submitPath: '/videos/generations', statusPathTemplate: '/videos/{id}', maxResolution: '720p' });
+      const provider = createConfiguredVideoProvider(config, dir, { durationSec: 5, requiredCapabilities: ['i2v', 'first-last-frame'], remainingBudget: Infinity });
+      const submitted = vi.fn();
+      const result = await provider.generate({ prompt: '人物转身', durationSec: 5, ratio: '16:9', generateAudio: false,
+        firstFramePath: 'https://media.example/first.png', lastFramePath: 'https://media.example/last.png',
+        onSubmitted: submitted });
+      expect(requests[0].body).toEqual({ model: 'doubao-seedance-2.0-mini', prompt: '人物转身', duration: 5, aspect_ratio: '16:9', resolution: '720p', async: true, with_audio: false,
+        image: 'https://media.example/first.png', image_tail: 'https://media.example/last.png' });
+      expect(submitted).toHaveBeenCalledExactlyOnceWith('geek-task-1');
+      expect(requests.filter((request) => request.body)).toHaveLength(1);
+      expect(await readFile(result.path, 'utf8')).toBe('downloaded-video');
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it.each([false, true])('submits Getezo H3 relay files once and downloads its completed result (direct=%s)', async (direct) => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-getezo-video-'));
+    const image = join(dir, 'first.png');
+    await writeFile(image, Buffer.from('reference-image'));
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      requests.push({ url, init });
+      if (init.method === 'POST') return Response.json({ id: 'getezo-task-1', status: 'queued' });
+      if (url.endsWith('/videos/getezo-task-1')) return Response.json({ id: 'getezo-task-1', status: 'completed',
+        ...(direct ? { metadata: { url: 'https://cdn.example/getezo.mp4' } } : {}) });
+      return new Response(Buffer.from('actual-video-bytes'), { headers: { 'content-type': 'video/mp4' } });
+    }));
+    try {
+      const config = multimodalConfig('minimax_h3_768p-15s', { baseUrl: 'https://1.cnmz.de/v1', submitPath: '/videos',
+        statusPathTemplate: '/videos/{id}', maxDurationSec: 15, maxResolution: '768P', modelPreset: 'custom',
+        capabilities: ['t2v', 'i2v', 'reference-image', 'reference-audio'] });
+      const provider = createConfiguredVideoProvider(config, dir, { durationSec: 1, requiredCapabilities: ['i2v'], remainingBudget: Infinity });
+      const submitted = vi.fn();
+      const result = await provider.generate({ prompt: '人物转身', durationSec: 1, ratio: '16:9', firstFramePath: image, onSubmitted: submitted });
+      const form = requests[0].init.body as FormData;
+      expect(form).toBeInstanceOf(FormData);
+      expect(Object.fromEntries([...form.entries()].filter(([key]) => key !== 'ref_image_0'))).toEqual({
+        model: 'minimax_h3_768p-15s', prompt: '人物转身', duration: '1', resolution: '768p横',
+      });
+      expect(await (form.get('ref_image_0') as Blob).text()).toBe('reference-image');
+      expect(new Headers(requests[0].init.headers).has('content-type')).toBe(false);
+      expect(requests.filter(({ init }) => init.method === 'POST')).toHaveLength(1);
+      expect(submitted).toHaveBeenCalledExactlyOnceWith('getezo-task-1');
+      const download = requests.at(-1)!;
+      expect(download.url).toBe(direct ? 'https://cdn.example/getezo.mp4' : 'https://1.cnmz.de/v1/videos/getezo-task-1/content');
+      expect(new Headers(download.init.headers).get('authorization')).toBe(direct ? null : 'Bearer test-key');
+      expect(await readFile(result.path, 'utf8')).toBe('actual-video-bytes');
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
   it('migrates old configs and keeps the provider key in the encrypted secret inventory', () => {
     const config = normalizeAppConfig(defaultConfig);
     expect(config.video.providers[0]).toMatchObject({

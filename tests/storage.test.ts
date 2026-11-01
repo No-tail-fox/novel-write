@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import initSqlJs from 'sql.js';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -139,7 +139,7 @@ describe('file database', () => {
         displayName: '本地用户',
         workspace: 'StoryDream 本地工作区',
       });
-      expect(state.activation.message).toContain('试用');
+      expect(state.activation.message).toBe('本机尚未激活。');
       expect(state.creditTransactions.length).toBeGreaterThan(0);
       expect(state.minimaxCloneVoices).toEqual(expect.any(Array));
 
@@ -370,6 +370,8 @@ describe('file database', () => {
 
     try {
       const db = await FileDatabase.open(file);
+      const draftProfile = { ...defaultConfig.llm, id: 'llm-draft', name: 'Draft fixture', enabled: true };
+      await db.upsertConfig({ ...structuredClone(defaultConfig), llm: draftProfile, llmProfiles: [draftProfile], activeLlmProfileId: draftProfile.id });
       await db.createTask({
         title: '参考字段任务',
         inputText: '一段原始素材',
@@ -473,16 +475,18 @@ describe('file database', () => {
     }
   });
 
-  it('atomically saves versioned HTML composition source and rolls back file and database failures', async () => {
+  it.each(['direct', 'directory-alias'] as const)('atomically saves versioned HTML composition source through %s and rolls back file and database failures', async (pathMode) => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-html-video-source-'));
     const file = join(dir, 'app.db');
+    const artifactAlias = join(dir, 'artifact-alias');
+    if (pathMode === 'directory-alias') await symlink(dir, artifactAlias, process.platform === 'win32' ? 'junction' : 'dir');
     let rejectDatabaseReplace = false;
     const db = await FileDatabase.open(file, {
       replaceFile: async (source, target) => {
         if (rejectDatabaseReplace) throw new Error('injected composition database commit failure');
         await rename(source, target);
       },
-    });
+    }, pathMode === 'directory-alias' ? artifactAlias : dir);
     const sourceV1 = '<!doctype html><html><body><main data-composition-id="scene-1" data-duration="2"></main></body></html>';
     const sourceV2 = sourceV1.replace(
       '</main>',

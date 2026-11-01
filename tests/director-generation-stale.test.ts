@@ -24,6 +24,16 @@ const voiceRecord = (input: ReturnType<typeof editorialVoiceInput>, id = 'voice-
 });
 
 describe('director generation input ownership', () => {
+  it('sends original narration without adding pauses at subtitle display breaks', () => {
+    const document = vox();
+    const beat = document.beats[0];
+    const shot = beat.shots[0];
+    const parts = ['这是一段连续', '旁白，保留自然停顿。', 'An English ', 'phrase stays intact.'];
+    beat.subtitleCues = parts.map((text, index) => ({ id: `speech-${index}`, text, startMs: index * 500, endMs: (index + 1) * 500, shotId: shot.id }));
+    shot.subtitleCueIds = beat.subtitleCues.map(cue => cue.id);
+    expect(editorialVoiceInput(document, shot.id, defaults).text).toBe('这是一段连续旁白，保留自然停顿。An English phrase stays intact.');
+  });
+
   it('binds a matching image after unrelated edits and a persistence revision change', () => {
     const document = vox();
     const shotId = document.beats[0].shots[0].id;

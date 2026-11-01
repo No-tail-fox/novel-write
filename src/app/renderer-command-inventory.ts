@@ -110,6 +110,120 @@ const libraryBehavior = { disabled: 'disabled={busy', loading: 'busy', error: 'r
 const libraryTest = 'tests/asset-library.test.ts';
 
 export const rendererCommandInventory = {
+  cancelDirectorRender: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onClick={() => void cancelRender()}", "取消渲染", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderCancelling}","loading":"setRenderCancelling(true)","error":"setActionError(normalizeAppError(error))"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onCancelRender="}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onClick={()=>void cancelRender()}", "取消渲染", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderCancelling}","loading":"setRenderCancelling(true)","error":"setActionError(normalizeAppError(error))"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onCancelRender="}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onSelect: () => void cancelRender()", "取消渲染", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: renderCancelling","loading":"setRenderCancelling(true)","error":"setActionError(normalizeAppError(error))"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onCancelRender="}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onClick={() => void cancelRender()}", "取消渲染", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderCancelling}","loading":"setRenderCancelling(true)","error":"setActionError(normalizeAppError(error))"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onCancelRender="}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onClick={()=>void cancelRender()}", "取消渲染", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderCancelling}","loading":"setRenderCancelling(true)","error":"setActionError(normalizeAppError(error))"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onCancelRender="}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onSelect: () => void cancelRender()", "取消渲染", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: renderCancelling","loading":"setRenderCancelling(true)","error":"setActionError(normalizeAppError(error))"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onCancelRender="}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onClick={()=>void cancelExport()}", "取消导出", "tests/renderer-workflow-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={exportCancelling}","loading":"setExportCancelling(true)","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onCancelRender="},{"source":"src/features/director-desk/DirectorDeskWorkspace.tsx","evidence":"onCancelExport={onCancelRender}"}])
+  ),
+  reviewDirectorArtifact: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "reviewQualityArtifact", "onClick={() => void reviewQualityArtifact('verify')}", "重新核验成片", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={artifactBusy || qualityConfirmBusy || qualityFreshness !== 'current'}","loading":"qualityConfirmBusy","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onReviewQualityArtifact={reviewQualityArtifact}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "reviewQualityArtifact", "onClick={() => void reviewQualityArtifact('confirm')}", "确认已复核当前版本", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={!qualityCanConfirm || qualityConfirmBusy}","loading":"qualityConfirmBusy","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onReviewQualityArtifact={reviewQualityArtifact}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "reviewQualityArtifact", "onClick={() => void reviewQualityArtifact('verify')}", "重新核验成片", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={artifactBusy || qualityConfirmBusy || qualityFreshness !== 'current'}","loading":"qualityConfirmBusy","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onReviewQualityArtifact={reviewQualityArtifact}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "reviewQualityArtifact", "onClick={() => void reviewQualityArtifact('confirm')}", "确认已复核当前版本", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={!qualityCanConfirm || qualityConfirmBusy}","loading":"qualityConfirmBusy","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onReviewQualityArtifact={reviewQualityArtifact}"}])
+  ),
+  exportVoxAnimationShot: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "exportAnimationShot", "onClick={()=>void exportShot()}", "导出此镜头", "tests/renderer-workflow-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={busy||running||exporting||exportCancelling||!canUsePreview}","loading":"setExporting(true)","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onExportAnimationShot={exportAnimationShot}"},{"source":"src/features/director-desk/DirectorDeskWorkspace.tsx","evidence":"onExport={onExportAnimationShot?()=>onExportAnimationShot(selectedShot.id):undefined}"}])
+  ),
+  startVoxProduction: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "startProduction", "onClick={() => parsed.success && void onStart(parsed.data)}", "开始自动制作", "tests/renderer-workflow-actions.test.ts", "src/features/editorial-collage/VoxProductionDialog.tsx", {"disabled":"disabled={busy || !parsed.success || Boolean(error)}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onStart={startProduction}"}])
+  ),
+  controlVoxProduction: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onClick={() => void onControl('retry-unknown', { nodeId: target.id })}", "直接重试此步骤", "tests/renderer-workflow-actions.test.ts", "src/features/editorial-collage/VoxProductionProgress.tsx", {"disabled":"disabled={busy}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onControl={controlProduction}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onClick={() => void onControl('recheck-code')}", "重新检查现有代码", "tests/renderer-workflow-actions.test.ts", "src/features/editorial-collage/VoxProductionProgress.tsx", {"disabled":"disabled={busy}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onControl={controlProduction}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onClick={() => void onControl('resume')}", "继续自动制作", "tests/renderer-workflow-actions.test.ts", "src/features/editorial-collage/VoxProductionProgress.tsx", {"disabled":"disabled={busy}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onControl={controlProduction}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onClick={() => void onControl('reconcile')}", "恢复已保存结果", "tests/renderer-workflow-actions.test.ts", "src/features/editorial-collage/VoxProductionProgress.tsx", {"disabled":"disabled={busy || run.status === 'running'}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onControl={controlProduction}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onClick={async () => { await onControl('confirm-no-result', { nodeId: target.id, evidence: evidence.trim() }); setEvidence(''); setAcknowledged(false); }}", "记录核对并解锁此步骤", "tests/renderer-workflow-actions.test.ts", "src/features/editorial-collage/VoxProductionProgress.tsx", {"disabled":"disabled={busy || !acknowledged || evidence.trim().length < 8}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onControl={controlProduction}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onClick={() => completedOutputAction ? void openOutput() : production ? production.running ? production.onPause() : production.onAction() : void renderProject()}", "production?.label", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || (completedOutputAction ? outputBusy : production ? production.disabled : projectAction.disabled)}","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('resume')"},{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('pause')"},{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('cancel')"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onSelect: production.onCancel", "取消自动制作", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: production.disabled","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('resume')"},{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('pause')"},{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('cancel')"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "controlProduction", "onSelect: production.onAction", "remake-production", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: production.disabled || structureBusy","loading":"projectAction.busy","error":"errorMessage={actionError"}, "src/features/editorial-collage/EditorialCollagePage.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('resume')"},{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('pause')"},{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"controlProduction('cancel')"}])
+  ),
+  generateCustomStylePreview: command(
+    owner("prompt-templates", "src/features/templates/PromptTemplatesPage.tsx", "generateImageTemplatePreview", "onClick={() => void generateImageTemplatePreview()}", "生成示例图", "tests/renderer-workflow-actions.test.ts", "src/features/templates/PromptTemplateEditor.tsx", {"disabled":"disabled={promptTemplateAction.busy}","loading":"promptTemplateAction.busy","error":"InlineActionFeedback"}, "src/features/templates/PromptTemplateEditor.tsx", undefined, [{"source":"src/features/templates/PromptTemplatesPage.tsx","evidence":"generateImageTemplatePreview={generateImageTemplatePreview}"}])
+  ),
+  checkForUpdate: command(
+    owner("activation", "src/features/account/ActivationPage.tsx", "ActivationPage", "onClick={() => { void updateAction.run(async () => setUpdate(await api.checkForUpdate())); }}", "检查更新", "tests/renderer-workflow-actions.test.ts", "src/features/account/ActivationPage.tsx", {"disabled":"disabled={updateBusy || !license?.configured}","loading":"updateAction.busy","error":"AsyncActionFeedback"}, "src/features/account/ActivationPage.tsx"),
+    owner("shell", "src/app/App.tsx", "AppWorkspace", "onClick={onCheckForUpdate}", "检查更新", "tests/renderer-workflow-actions.test.ts", "src/app/AnnouncementsDialog.tsx", {"disabled":"disabled={busy || updateInProgress || isBrowserPreview}","loading":"updateInProgress","error":"role=\"alert\""}, "src/app/AnnouncementsDialog.tsx", undefined, [{"source":"src/app/App.tsx","evidence":"checkForUpdate={() =>"},{"source":"src/app/AppShell.tsx","evidence":"onCheckForUpdate={checkForUpdate}"}]),
+    owner("shell", "src/app/App.tsx", "AppWorkspace", "onClick={() => { setAnnouncementsOpen(true); openAnnouncements(); }}", "公告通知", "tests/renderer-workflow-actions.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={updateBusy}","loading":"updateActionBusy","error":"shellAction.reportError"}, "src/app/App.tsx", undefined, [{"source":"src/app/App.tsx","evidence":"openAnnouncements={() =>"}])
+  ),
+  downloadUpdate: command(
+    owner("activation", "src/features/account/ActivationPage.tsx", "ActivationPage", "onClick={() => { void updateAction.run(async () => setUpdate(await api.downloadUpdate())); }}", "下载更新", "tests/renderer-workflow-actions.test.ts", "src/features/account/ActivationPage.tsx", {"disabled":"disabled={updateBusy || !update?.release || update.phase === 'ready'}","loading":"updateAction.busy","error":"AsyncActionFeedback"}, "src/features/account/ActivationPage.tsx"),
+    owner("shell", "src/app/App.tsx", "AppWorkspace", "onClick={onDownloadUpdate}", "下载更新", "tests/renderer-workflow-actions.test.ts", "src/app/AnnouncementsDialog.tsx", {"disabled":"disabled={busy || updateInProgress || isBrowserPreview}","loading":"updateInProgress","error":"role=\"alert\""}, "src/app/AnnouncementsDialog.tsx", undefined, [{"source":"src/app/App.tsx","evidence":"downloadUpdate={() =>"},{"source":"src/app/AppShell.tsx","evidence":"onDownloadUpdate={downloadUpdate}"}])
+  ),
+  installUpdate: command(
+    owner("activation", "src/features/account/ActivationPage.tsx", "confirmed", "onClick={() => { void confirmed(); }}", "确认", "tests/renderer-workflow-actions.test.ts", "src/features/account/ActivationPage.tsx", {"disabled":"disabled={action.busy || updateAction.busy}","loading":"updateAction.busy","error":"AsyncActionFeedback"}, "src/features/account/ActivationPage.tsx"),
+    owner("shell", "src/app/App.tsx", "AppWorkspace", "onClick={() => { setConfirmInstall(false); onInstallUpdate(); }}", "确认安装", "tests/renderer-workflow-actions.test.ts", "src/app/AnnouncementsDialog.tsx", {"disabled":"disabled={busy || updateInProgress || isBrowserPreview}","loading":"updateInProgress","error":"role=\"alert\""}, "src/app/AnnouncementsDialog.tsx", undefined, [{"source":"src/app/App.tsx","evidence":"installUpdate={() =>"},{"source":"src/app/AppShell.tsx","evidence":"onInstallUpdate={installUpdate}"}])
+  ),
+  planMotionComicEpisodes: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "prepareCreateEpisodes", "onClick={onPrepareEpisodes}", "生成 AI 分集", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicCreateFlow.tsx", {"disabled":"disabled={busy || !sourceText.trim()}","loading":"busy ? <Loader2","error":"errorMessage"}, "src/features/motion-comic/MotionComicCreateFlow.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onPrepareEpisodes={() => void prepareCreateEpisodes()}"}])
+  ),
+  selectMotionComicSourceFile: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "importSourceFile", "onClick={onImportFile}", "上传 TXT / MD", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicCreateFlow.tsx", {"disabled":"disabled={busy}","loading":"busy ? <Loader2","error":"errorMessage"}, "src/features/motion-comic/MotionComicCreateFlow.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onImportFile={() => void importSourceFile()}"}])
+  ),
+  planMotionComic: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "generatePlan", "onClick={onGenerate}", "正在重新规划", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={locked}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onGenerate={() => void generatePlan("}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "generatePlan", "onClick={onGenerate}", "生成剧本，进入审核", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={locked || sourceLength === 0 || sourceLength > 30_000 || targetDurationInvalid}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onGenerate={() => void generatePlan("}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "generatePlan", "onClick={onResume}", "确认剧本，生成分镜", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={locked || reviewTextInvalid || (!recovery.needsValidation && !reviewedScript)}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onResume={() => currentPlanRecovery?.needsValidation"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "generatePlan", "onClick={() => onRepairScript(scriptDraft!)}", "保存修正并重新校验", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={locked}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onRepairScript={(draft) => void generatePlan("}])
+  ),
+  applyMotionComicPlan: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "applyPlan", "onClick={() => onReplaceStarter(reviewedAdjustments)}", "替换默认空模板", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={applyLocked}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onReplaceStarter={(reviewed) => void applyPlan("}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "applyPlan", "onClick={() => onReplaceStarter(reviewedAdjustments)}", "正在写入首集", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={applyLocked}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onReplaceStarter={(reviewed) => void applyPlan("}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "applyPlan", "onClick={() => onApply(reviewedAdjustments)}", "正在追加新集", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicPlanDialog.tsx", {"disabled":"disabled={applyLocked}","loading":"aria-busy={locked}","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicPlanDialog.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onApply={(reviewed) => void applyPlan("}])
+  ),
+  enqueueMotionComicScripts: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", "enqueue", "onClick={() => void enqueue().catch(() => {})}", "开始后台生成", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy || durationInvalid}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx")
+  ),
+  controlMotionComicScripts: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", "control", "onClick={() => control(snapshot?.paused ? 'resume' : 'pause')}", "暂停后续", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy || !snapshot}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx"),
+    owner("motion-comic", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", "control", "onClick={() => control('cancel')}", "取消本集", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx")
+  ),
+  editMotionComicScript: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", "MotionComicScriptWorkspace", "onClick={() => void save()}", "保存修改并校验", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy || saving || !changed || invalidText || conflict}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicScriptWorkspace.tsx","evidence":"onSave={async (script, revision) => run("}])
+  ),
+  storyboardMotionComicScript: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", "MotionComicScriptWorkspace", "onClick={() => void onStoryboard().catch(() => {})}", "仅生成本集分镜", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy || changed || conflict}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx")
+  ),
+  approveMotionComicScripts: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "approveScripts", "onClick={() => void approveTasks(reviewed.map((item) => ({ taskId: item.id, outputRevision: item.outputRevision }))).catch(() => {})}", "批准", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy || !bulkReviewed || !reviewed.length}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onApproveScripts={approveScripts}"},{"source":"src/features/motion-comic/MotionComicScriptWorkspace.tsx","evidence":"onApprove={() => approveTasks("}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "approveScripts", "onClick={() => void onApprove().catch(() => {})}", "批准本集剧本", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={busy || saving || changed || conflict || !reviewed || unresolvedAssets > 0 || candidate.issues.length > 0}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onApproveScripts={approveScripts}"},{"source":"src/features/motion-comic/MotionComicScriptWorkspace.tsx","evidence":"onApprove={() => approveTasks("}])
+  ),
+  applyMotionComicScriptStoryboard: command(
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "applyScriptStoryboard", "onClick={() => void onApply(reviewed)}", "确认并应用本集分镜", "tests/renderer-workflow-actions.test.ts", "src/features/motion-comic/MotionComicScriptWorkspace.tsx", {"disabled":"disabled={disabled || !reviewed}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/motion-comic/MotionComicScriptWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onApplyStoryboard={applyScriptStoryboard}"},{"source":"src/features/motion-comic/MotionComicScriptWorkspace.tsx","evidence":"onApply={async (reviewedAdjustments) =>"}])
+  ),
+  updateHtmlVideoSceneStructure: command(
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutateStructure", "onClick={() => void mutateStructure('move-up')}", "上移场景", "tests/renderer-workflow-actions.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || scene.index === 1}","loading":"action.busy","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutateStructure", "onClick={() => void mutateStructure('move-down')}", "下移场景", "tests/renderer-workflow-actions.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || scene.index === data.scenes.length}","loading":"action.busy","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutateStructure", "onClick={() => void mutateStructure('duplicate')}", "复制场景", "tests/renderer-workflow-actions.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || data.scenes.length >= (data.config.maxScenes ?? 30)}","loading":"action.busy","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutateStructure", "onClick={() => void mutateStructure('add-after')}", "在后面新增场景", "tests/renderer-workflow-actions.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || data.scenes.length >= (data.config.maxScenes ?? 30)}","loading":"action.busy","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutateStructure", "onClick={() => void mutateStructure('remove')}", "删除场景", "tests/renderer-workflow-actions.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || data.scenes.length <= 1}","loading":"action.busy","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx")
+  ),
+  importLocalViralAnalysis: command(
+    owner("viral-analyzer", "src/features/viral/ViralAnalyzerPage.tsx", "startAnalysis", "onClick={startAnalysis}", "选择并导入视频", "tests/renderer-workflow-actions.test.ts", "src/features/viral/ViralAnalyzerPage.tsx", {"disabled":"disabled={viralAction.busy || (inputKind === 'local' && isBrowserPreview)}","loading":"viralAction.busy","error":"InlineActionFeedback"}, "src/features/viral/ViralAnalyzerPage.tsx")
+  ),
+  analyzePreparedViralAnalysis: command(
+    owner("viral-analyzer", "src/features/viral/ViralAnalyzerPage.tsx", "analyzePrepared", "onClick={preparedLocal ? analyzePrepared : resumeAnalysis}", "开始分析", "tests/renderer-workflow-actions.test.ts", "src/features/viral/ViralAnalyzerPage.tsx", {"disabled":"disabled={viralAction.busy}","loading":"viralAction.busy","error":"InlineActionFeedback"}, "src/features/viral/ViralAnalyzerPage.tsx")
+  ),
+  configureViralReferenceRun: command(
+    owner("viral-analyzer", "src/features/viral/ViralAnalyzerPage.tsx", "configureReferenceRun", "onClick={() => void configure(false)}", "保存预算与能力设置", "tests/renderer-workflow-actions.test.ts", "src/features/viral/ViralReferenceRunSettings.tsx", {"disabled":"disabled={busy || budgetInvalid}","loading":"viralAction.busy","error":"InlineActionFeedback"}, "src/features/viral/ViralAnalyzerPage.tsx", undefined, [{"source":"src/features/viral/ViralAnalyzerPage.tsx","evidence":"onConfigure={configureReferenceRun}"}]),
+    owner("viral-analyzer", "src/features/viral/ViralAnalyzerPage.tsx", "configureReferenceRun", "onClick={() => void configure(true)}", "允许重新提交已核对的请求", "tests/renderer-workflow-actions.test.ts", "src/features/viral/ViralReferenceRunSettings.tsx", {"disabled":"disabled={busy || budgetInvalid || !reviewedCharges}","loading":"viralAction.busy","error":"InlineActionFeedback"}, "src/features/viral/ViralAnalyzerPage.tsx", undefined, [{"source":"src/features/viral/ViralAnalyzerPage.tsx","evidence":"onConfigure={configureReferenceRun}"}])
+  ),
+  compileVoxAnimation: command(owner("editorial-collage", "src/features/vox-animation/VoxAnimationEditor.tsx", "compile", "onClick={()=>void compile()}", "检查代码并预览", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={running||busy||!value.code.source.trim()}","loading":"setRunning(true)","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, undefined)),
+  generateVoxAnimation: command(owner("editorial-collage", "src/features/vox-animation/VoxAnimationEditor.tsx", "generate", "onClick={()=>void generate()}", "生成动画", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={busy||running||!value.code.prompt.trim()}","loading":"正在生成…","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, undefined)),
+  cancelVoxAnimation: command(owner("editorial-collage", "src/features/vox-animation/VoxAnimationEditor.tsx", "cancelGeneration", "onClick={()=>void cancelGeneration()}", "取消", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={cancelling}","loading":"正在取消…","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, undefined)),
+  saveVoxTemplate: command(owner("editorial-collage", "src/features/vox-animation/VoxAnimationEditor.tsx", "saveTemplate", "onClick={()=>void saveTemplate()}", "保存模板", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={busy||running||templateAction!==null||!canUsePreview}","loading":"正在保存…","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, undefined)),
+  deleteVoxTemplate: command(owner("editorial-collage", "src/features/vox-animation/VoxAnimationEditor.tsx", "deleteTemplate", "onDeleteSaved(template.id)", "删除模板", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxTemplateCatalog.tsx", {"disabled":"disabled={busy}","loading":"templateAction==='delete'","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, [{"source":"src/features/vox-animation/VoxAnimationEditor.tsx","evidence":"onDeleteSaved={id=>void deleteTemplate(id)}"}])),
+  removeImageLabBackground: command(owner("image-lab", "src/features/labs/ImageLabPage.tsx", "retryImageLabBackground", "onClick={() => retryImageLabBackground(record)}", "去底", "tests/renderer-workflow-actions.test.ts", "src/features/labs/ImageLabPage.tsx", {"disabled":"disabled={generating || imageLabAction.busy}","loading":"imageLabAction.busy","error":"InlineActionFeedback"}, "src/features/labs/ImageLabPage.tsx", undefined, undefined)),
+  activateLicense: command(owner("activation", "src/features/account/ActivationPage.tsx", "activate", "void activate()", "激活本机", "tests/activation-actions.test.ts", "src/features/account/ActivationPage.tsx", {"disabled":"disabled={changing || !license?.configured","loading":"action.busy","error":"AsyncActionFeedback"}, "src/features/account/ActivationPage.tsx", undefined, undefined)),
+  refreshLicense: command(owner("activation", "src/features/account/ActivationPage.tsx", "ActivationPage", "api.refreshLicense()", "验证授权", "tests/activation-actions.test.ts", "src/features/account/ActivationPage.tsx", {"disabled":"disabled={changing || !license?.configured}","loading":"action.busy","error":"AsyncActionFeedback"}, "src/features/account/ActivationPage.tsx", undefined, undefined)),
+  releaseLicense: command(owner("activation", "src/features/account/ActivationPage.tsx", "confirmed", "void confirmed()", "确认", "tests/activation-actions.test.ts", "src/features/account/ActivationPage.tsx", {"disabled":"disabled={action.busy || updateAction.busy}","loading":"action.busy","error":"AsyncActionFeedback"}, "src/features/account/ActivationPage.tsx", undefined, undefined)),
+  saveViralReferenceEdit: command(owner("viral-analyzer", "src/features/viral/ViralReferenceReport.tsx", "saveEdit", "onClick={() => void saveEdit()}", "保存修订", "tests/renderer-workflow-actions.test.ts", "src/features/viral/ViralReferenceReport.tsx", {"disabled":"disabled={!editable || busy","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/viral/ViralReferenceReport.tsx", undefined, undefined)),
+  exportViralReference: command(owner("viral-analyzer", "src/features/viral/ViralReferenceReport.tsx", "exportReport", "onClick={() => void exportReport(format)}", "Markdown", "tests/viral-reference-ui.test.ts", "src/features/viral/ViralReferenceReport.tsx", {"disabled":"disabled={!manifest || busy}","loading":"setBusy(true)","error":"role=\"alert\""}, "src/features/viral/ViralReferenceReport.tsx", undefined, undefined)),
+  chooseArtifactStorage: command(owner('settings', 'src/features/settings/ArtifactStorageSettings.tsx', 'chooseDirectory', 'onClick={chooseDirectory}', '选择存储文件夹', 'tests/ipc-inventory.test.ts', undefined, { disabled: 'disabled={action.busy}', loading: 'action.busy', error: 'AsyncActionFeedback' })),
+  cancelArtifactStorageChange: command(owner('settings', 'src/features/settings/ArtifactStorageSettings.tsx', 'cancelDirectoryChange', 'onClick={cancelDirectoryChange}', '取消切换', 'tests/ipc-inventory.test.ts', undefined, { disabled: 'disabled={action.busy}', loading: 'action.busy', error: 'AsyncActionFeedback' })),
   saveLibraryAsset: command(owner('person-assets', 'src/features/asset-library/LibrarySaveDialog.tsx', 'save', 'onClick={() => void save()}', '保存素材', libraryTest, undefined, libraryBehavior)),
   updateLibraryAsset: command(owner('person-assets', libraryPageSource, 'saveMetadata', 'onClick={() => void saveMetadata().catch(() => undefined)}', '保存信息', libraryTest, undefined, libraryBehavior)),
   recycleLibraryAsset: command(owner('person-assets', libraryPageSource, 'recycle', 'onClick={() => void recycle()}', '移入回收站', libraryTest, undefined, libraryBehavior)),
@@ -151,7 +265,7 @@ export const rendererCommandInventory = {
     '选图并添加',
     htmlVideoStudioTest,
     undefined,
-    { disabled: 'disabled={!prompt.trim() || action.busy}', loading: 'action.busy ? <Loader2', error: 'InlineActionFeedback' },
+    { disabled: 'disabled={!prompt.trim() || locked}', loading: 'action.busy ? <Loader2', error: 'InlineActionFeedback' },
   )),
   addImageLabRecord: command(
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest),
@@ -163,7 +277,7 @@ export const rendererCommandInventory = {
       '导入参考图',
       'tests/motion-comic-workbench.test.ts',
       undefined,
-      { disabled: 'disabled={referenceAction.busy', loading: 'referenceTargetId', error: 'InlineActionFeedback' },
+      { disabled: 'disabled={referenceAction.busy', loading: 'referenceTargetId', error: 'referenceAction.feedback' },
     ),
   ),
   archiveImageLabRecord: command(owner('history', 'src/features/tasks/HistoryPage.tsx', 'archiveRecord', 'archiveRecord(record)', '归档记录', historyTest)),
@@ -285,13 +399,13 @@ export const rendererCommandInventory = {
     owner('benchmark', 'src/features/labs/BenchmarkImportPage.tsx', 'createBenchmarkTask', 'createBenchmarkTask(selectedPost)', '用此文案创建任务', productShellTest),
     owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'runMusicMv', 'onClick={runMusicMv}', '生成音乐 MV', productShellTest),
   ),
-  createAndRunViralAnalysis: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'startAnalysis', 'onClick={startAnalysis}', '开始拆解', productShellTest, undefined, { disabled: 'disabled={viralAction.busy}', loading: 'viralAction.busy ? <Loader2', error: 'InlineActionFeedback' })),
+  createAndRunViralAnalysis: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'startAnalysis', 'onClick={startAnalysis}', '开始拆解', productShellTest, undefined, { disabled: 'disabled={viralAction.busy || (inputKind', loading: 'viralAction.busy ? <Loader2', error: 'InlineActionFeedback' })),
   createEditorialCollage: command(owner(
     'editorial-collage',
     'src/features/editorial-collage/EditorialCollagePage.tsx',
     'createProject',
     'onClick={onCreate}',
-    '创建 VOX 项目',
+    '创建 创意动画项目',
     'tests/editorial-collage-workbench.test.ts',
     'src/features/director-desk/DirectorProjectStart.tsx',
     { disabled: 'disabled={!canCreate || busy}', loading: 'busy ? <Loader2', error: 'errorMessage ?' },
@@ -373,14 +487,14 @@ export const rendererCommandInventory = {
     owner(
       'editorial-collage',
       'src/features/editorial-collage/EditorialCollagePage.tsx',
-      'generateShot',
+      'generateShotImage',
       'startGeneration(selectedShot.id)',
       '生成当前镜头',
       'tests/editorial-collage-workbench.test.ts',
       'src/features/director-desk/DirectorDeskWorkspace.tsx',
       { disabled: "disabled={busy || batchActive || !providerConnected || selectedQueueItem?.status === 'running'}", loading: "status === 'running'", error: 'actionError ?' },
       'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      undefined,
+      ['generateShot', 'generateShotImage'],
       bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onGenerateShot={']),
     ),
     owner(
@@ -409,6 +523,7 @@ export const rendererCommandInventory = {
       undefined,
       bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onGenerateShot={']),
     ),
+    owner('motion-comic', 'src/features/motion-comic/MotionComicPage.tsx', 'generateReference', 'onClick={() => void generateReference(kind, targetId)}', '生成参考图', 'tests/motion-comic-workbench.test.ts', undefined, { disabled: 'disabled={referenceAction.busy || providerAction.busy || !providerStatus.connected || Boolean(definitionError)}', loading: 'active && referenceAction.busy', error: 'referenceAction.feedback' }),
   ),
   generateDirectorShotVideo: command(
     owner(
@@ -416,13 +531,26 @@ export const rendererCommandInventory = {
       'src/features/editorial-collage/EditorialCollagePage.tsx',
       'generateVideo',
       'generateVideo(selectedShot.id,',
-      '生成 AI 动态海报',
+      '生成视频',
       'tests/director-render-strategy-ui.test.ts',
       'src/features/director-desk/DirectorDeskWorkspace.tsx',
       { disabled: "disabled={busy || batchActive || Boolean(videoGenerationDisabledReason) || selectedVideoStatus === 'running' || selectedVideoStatus === 'queued'}", loading: "selectedVideoStatus === 'running'", error: 'actionError ?' },
       'src/features/director-desk/DirectorDeskWorkspace.tsx',
       undefined,
       bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onGenerateVideo={']),
+    ),
+    owner(
+      'motion-comic',
+      'src/features/motion-comic/MotionComicPage.tsx',
+      'generateVideo',
+      'generateVideo(selectedShot.id,',
+      '生成视频',
+      'tests/director-render-strategy-ui.test.ts',
+      'src/features/director-desk/DirectorDeskWorkspace.tsx',
+      { disabled: "disabled={busy || batchActive || Boolean(videoGenerationDisabledReason) || selectedVideoStatus === 'running' || selectedVideoStatus === 'queued'}", loading: "selectedVideoStatus === 'running'", error: 'actionError ?' },
+      'src/features/director-desk/DirectorDeskWorkspace.tsx',
+      undefined,
+      bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onGenerateVideo={']),
     ),
   ),
   generateVideoLab: command(
@@ -513,6 +641,8 @@ export const rendererCommandInventory = {
     ),
   ),
   importBgmAudio: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "importAnimationAsset", "onClick={()=>void importAsset('audio')}", "导入音频到时间线", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={busy||importing}","loading":"正在导入素材","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onImportAnimationAsset={importAnimationAsset}"},{"source":"src/features/director-desk/DirectorDeskWorkspace.tsx","evidence":"onImportAsset={onImportAnimationAsset?kind=>onImportAnimationAsset(selectedShot.id,kind):undefined}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/ProjectMusicFields.tsx", "importMusic", "onClick={() => void importMusic()}", "导入背景音乐", "tests/editorial-import-actions.test.ts", "src/features/editorial-collage/ProjectMusicFields.tsx", {"disabled":"disabled={busy || importing}","loading":"正在导入…","error":"role=\"alert\""}, "src/features/editorial-collage/ProjectMusicFields.tsx", undefined, undefined),
     owner('music-lab',musicOperationSource,'selectAudio','onClick={() => void selectAudio()}','选择本地音频',musicLabTest),
     owner('music-lab', musicLabSource, 'chooseUpload', 'onClick={() => void chooseUpload()}', '选择音频文件', musicLabTest),
     owner('music-lab', musicVoiceSource, 'chooseRecording', 'onClick={() => void chooseRecording(false)}', '选择源人声录音', musicLabTest),
@@ -634,36 +764,20 @@ export const rendererCommandInventory = {
   ),
   openPersonAssetDirectory: command(owner('person-assets', 'src/features/labs/PersonAssetsPage.tsx', 'openSelectedAssetDir', 'onClick={openSelectedAssetDir}', '打开目录', 'tests/electron-ipc-contract.test.ts')),
   openTaskOutputDirectory: command(
-    owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'openOutputDirectory', 'onClick={openOutputDirectory}', '打开目录', 'tests/electron-ipc-contract.test.ts'),
-    owner('queue', 'src/features/tasks/QueuePage.tsx', 'openQueueOutput', 'openQueueOutput(task.id)', '打开任务输出目录', 'tests/electron-ipc-contract.test.ts'),
-    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'openArtifactOutput', 'onClick={openArtifactOutput}', '打开草稿目录', 'tests/task-operations-ui.test.ts'),
-    owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'openDraftDirectory', 'onClick={onOpenDirectory}', '草稿目录', 'tests/task-operations-ui.test.ts'),
-    owner(
-      'editorial-collage',
-      'src/features/editorial-collage/EditorialCollagePage.tsx',
-      'EditorialCollagePage',
-      'openOutput',
-      '打开导出目录',
-      'tests/editorial-collage-workbench.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={!outputUrl || outputBusy}', loading: 'outputBusy ? <RefreshCw', error: 'actionError ?' },
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      undefined,
-      bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onOpenOutput={() => api.openTaskOutputDirectory(document.id)}']),
-    ),
-    owner(
-      'motion-comic',
-      'src/features/motion-comic/MotionComicPage.tsx',
-      'MotionComicPage',
-      'openOutput',
-      '打开导出目录',
-      'tests/motion-comic-workbench.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={!outputUrl || outputBusy}', loading: 'outputBusy ? <RefreshCw', error: 'actionError ?' },
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      undefined,
-      bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onOpenOutput={() => api.openTaskOutputDirectory(document.id)}']),
-    ),
+    owner("html-video", "src/features/html-video/HtmlVideoPage.tsx", "openOutputDirectory", "onClick={openOutputDirectory}", "打开目录", "tests/electron-ipc-contract.test.ts", "src/features/html-video/HtmlVideoPage.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoPage.tsx"),
+    owner("queue", "src/features/tasks/QueuePage.tsx", "openQueueOutput", "openQueueOutput(task.id)", "打开任务输出目录", "tests/electron-ipc-contract.test.ts", "src/features/tasks/QueuePage.tsx", {"disabled":"disabled={","loading":"queueAction.busy","error":"InlineActionFeedback"}, "src/features/tasks/QueuePage.tsx"),
+    owner("task-detail", "src/features/tasks/TaskArtifactPreview.tsx", "openArtifactOutput", "onClick={openArtifactOutput}", "打开草稿目录", "tests/task-operations-ui.test.ts", "src/features/tasks/TaskArtifactPreview.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/tasks/TaskArtifactPreview.tsx"),
+    owner("task-detail", "src/features/tasks/TaskDetailPage.tsx", "openDraftDirectory", "onClick={onOpenDirectory}", "草稿目录", "tests/task-operations-ui.test.ts", "src/features/tasks/TaskDetailPage.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/tasks/TaskDetailPage.tsx"),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onClick={() => void openOutput()}", "打开成片目录", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={outputBusy || renderBusy}","loading":"outputBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onClick={() => void openOutput()}", "打开导出目录", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={!hasOutput || outputBusy}","loading":"outputBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "completedOutputAction ? void openOutput()", "vox-project-primary", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || (completedOutputAction ? outputBusy : production ? production.disabled : projectAction.disabled)}","loading":"outputBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onClick={() => void openOutput()}", "打开成片目录", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={outputBusy || renderBusy}","loading":"outputBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onClick={() => void openOutput()}", "打开导出目录", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={!hasOutput || outputBusy}","loading":"outputBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "completedOutputAction ? void openOutput()", "vox-project-primary", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || (completedOutputAction ? outputBusy : production ? production.disabled : projectAction.disabled)}","loading":"outputBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onSelect: () => void openOutput()", "id: 'output'", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: outputBusy","loading":"setOutputBusy(true)","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "EditorialCollagePage", "onSelect: () => void openOutput()", "id: 'open-output'", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: outputBusy","loading":"setOutputBusy(true)","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onSelect: () => void openOutput()", "id: 'output'", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: outputBusy","loading":"setOutputBusy(true)","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "MotionComicPage", "onSelect: () => void openOutput()", "id: 'open-output'", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: outputBusy","loading":"setOutputBusy(true)","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onOpenOutput={() => api.openTaskOutputDirectory(document.id)}"}]),
   ),
   openViralLoginWindow: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'openDouyinLogin', 'onClick={openDouyinLogin}', '打开抖音登录窗口', productShellTest)),
   regenerateHtmlVideoAsset: command(owner(
@@ -733,14 +847,14 @@ export const rendererCommandInventory = {
     htmlVideoStudioTest,
   )),
   replaceTaskImage: command(
-    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onClick={() => void replaceImage(scene.id)}', '本地图片', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onSelect: () => void replaceImage(scene.id)', '本地图片', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceImage', 'onClick={() => void replaceImage(librarySceneId)}', '本地图片', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'pasteImage', 'onClick={() => void pasteImage(scene.id)}', '粘贴图', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'chooseLibraryImage', 'onClick={() => void chooseLibraryImage(record.id)}', '选用', productShellTest),
   ),
   replaceTaskSceneVideo: command(
-    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onClick={() => void replaceVideo(scene.id, { kind: 'local' })}", '本地视频', productShellTest),
-    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onClick={() => void replaceVideo(scene.id, { kind: 'random' })}", '随机匹配视频', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onSelect: () => void replaceVideo(scene.id, { kind: 'local' })", '本地视频', productShellTest),
+    owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onSelect: () => void replaceVideo(scene.id, { kind: 'random' })", '随机匹配视频', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'replaceVideo', "onClick={() => void replaceVideo(videoLibrarySceneId, { kind: 'library', libraryId: item.id })}", '选用', productShellTest),
   ),
   rerenderHtmlVideo: command(owner(
@@ -752,32 +866,16 @@ export const rendererCommandInventory = {
     htmlVideoStudioTest,
   )),
   renderDirectorProject: command(
-    owner(
-      'editorial-collage',
-      'src/features/editorial-collage/EditorialCollagePage.tsx',
-      'renderProject',
-      'renderProject()',
-      '生成成片',
-      'tests/editorial-collage-workbench.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={renderBusy || batchActive}', loading: 'renderBusy ? <RefreshCw', error: 'actionError ?' },
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      undefined,
-      bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onRender={']),
-    ),
-    owner(
-      'motion-comic',
-      'src/features/motion-comic/MotionComicPage.tsx',
-      'renderProject',
-      'renderProject()',
-      '生成成片',
-      'tests/motion-comic-workbench.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={renderBusy || batchActive}', loading: 'renderBusy ? <RefreshCw', error: 'actionError ?' },
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      undefined,
-      bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onRender={']),
-    ),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "renderProject", "onClick={() => void renderProject()}", "生成现有镜头成片", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={structureBusy || renderBusy || batchActive || !onRender}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onRender={"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "renderProject", "onClick={() => void renderProject()}", "重新生成并审片", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || batchActive || !onRender}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onRender={"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "renderProject", "onClick={() => void renderProject()}", "}生成成片", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || batchActive}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onRender={"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "renderProject", "completedOutputAction ? void openOutput()", "vox-project-primary", "tests/editorial-collage-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || (completedOutputAction ? outputBusy : production ? production.disabled : projectAction.disabled)}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onRender={"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "renderProject", "onClick={() => void renderProject()}", "生成现有镜头成片", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={structureBusy || renderBusy || batchActive || !onRender}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onRender={"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "renderProject", "onClick={() => void renderProject()}", "重新生成并审片", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || batchActive || !onRender}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onRender={"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "renderProject", "onClick={() => void renderProject()}", "}生成成片", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || batchActive}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onRender={"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "renderProject", "completedOutputAction ? void openOutput()", "vox-project-primary", "tests/motion-comic-workbench.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled={renderBusy || (completedOutputAction ? outputBusy : production ? production.disabled : projectAction.disabled)}","loading":"renderBusy ? <RefreshCw","error":"actionError ?"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onRender={"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "renderProject", "onSelect: () => void renderProject()", "生成现有镜头成片", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: structureBusy || projectAction.disabled","loading":"setRenderBusy(true)","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onRender={"}]),
+    owner("motion-comic", "src/features/motion-comic/MotionComicPage.tsx", "renderProject", "onSelect: () => void renderProject()", "生成现有镜头成片", "tests/renderer-workflow-actions.test.ts", "src/features/director-desk/DirectorDeskWorkspace.tsx", {"disabled":"disabled: structureBusy || projectAction.disabled","loading":"setRenderBusy(true)","error":"actionError"}, "src/features/director-desk/DirectorDeskWorkspace.tsx", undefined, [{"source":"src/features/motion-comic/MotionComicPage.tsx","evidence":"onRender={"}]),
   ),
   recheckDirectorSubtitles: command(
     owner(
@@ -857,7 +955,6 @@ export const rendererCommandInventory = {
   retryViralAnalysis: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'retryAnalysis', 'onClick={retryAnalysis}', '重试', productShellTest)),
   runDiagnostics: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'runDiagnostics', 'onClick={runDiagnostics}', '检查诊断', productShellTest)),
   saveAccount: command(owner('account', 'src/features/account/AccountPage.tsx', 'saveAccountProfile', 'onClick={saveAccountProfile}', '保存资料', productShellTest)),
-  saveActivation: command(owner('activation', 'src/features/account/ActivationPage.tsx', 'saveActivationState', 'onClick={saveActivationState}', '保存状态', productShellTest)),
   saveBenchmarkGroup: command(owner('benchmark', 'src/features/labs/BenchmarkImportPage.tsx', 'saveGroup', 'onClick={saveGroup}', '保存对标组', 'tests/local-labs-ui.test.ts')),
   saveBenchmarkPost: command(
     owner('benchmark', 'src/features/labs/BenchmarkImportPage.tsx', 'savePost', 'onClick={savePost}', '保存作品', 'tests/local-labs-ui.test.ts'),
@@ -891,49 +988,9 @@ export const rendererCommandInventory = {
     owner('benchmark', 'src/features/labs/BenchmarkImportPage.tsx', 'addSelectedToSelections', 'onClick={addSelectedToSelections}', '加入选品候选', 'tests/local-labs-ui.test.ts'),
   ),
   saveConfig: command(
-    owner(
-      'editorial-collage',
-      'src/features/editorial-collage/EditorialCollagePage.tsx',
-      'selectImageProvider',
-      'onChange={(event) => void onProviderProfileChange?.(event.target.value)}',
-      '生成服务',
-      'tests/editorial-collage-workbench.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={busy || batchActive || !onProviderProfileChange}', loading: 'providerAction.busy', error: "providerAction.feedback?.tone === 'error'" },
-      'src/features/editorial-collage/EditorialCollagePage.tsx',
-      undefined,
-      bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onProviderProfileChange={selectImageProvider}']),
-    ),
-    owner(
-      'editorial-collage',
-      'src/features/editorial-collage/EditorialCollagePage.tsx',
-      'selectVideoProvider',
-      'onChange={(event) => void onProviderChange?.(event.target.value)}',
-      '视频生成服务',
-      'tests/director-render-strategy-ui.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={busy || !onProviderChange}', loading: 'providerAction.busy', error: "providerAction.feedback?.tone === 'error'" },
-      'src/features/editorial-collage/EditorialCollagePage.tsx',
-      undefined,
-      bridgeChain(['src/features/editorial-collage/EditorialCollagePage.tsx', 'onVideoProviderChange={selectVideoProvider}']),
-    ),
-    owner(
-      'motion-comic',
-      'src/features/motion-comic/MotionComicPage.tsx',
-      'selectImageProvider',
-      'onChange={(event) => void onProviderProfileChange?.(event.target.value)}',
-      '生成服务',
-      'tests/motion-comic-workbench.test.ts',
-      'src/features/director-desk/DirectorDeskWorkspace.tsx',
-      { disabled: 'disabled={busy || batchActive || !onProviderProfileChange}', loading: 'providerAction.busy', error: "providerAction.feedback?.tone === 'error'" },
-      'src/features/motion-comic/MotionComicPage.tsx',
-      undefined,
-      bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onProviderProfileChange={selectImageProvider}']),
-    ),
-    owner('music-mv', 'src/features/music-mv/MusicMvPage.tsx', 'selectMusicMvAudio', 'onClick={selectMusicMvAudio}', '选择音频', productShellTest),
     owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onClick={save}', '保存配置', productShellTest, undefined, undefined, undefined, ['save', 'commitAndApplySettingsDraft', 'persistSettingsDraft']),
-    owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onActivate(profile.id!)', '启用 LLM 配置', productShellTest, 'src/features/settings/ProviderProfileManagers.tsx', { disabled: 'disabled={saving}', loading: 'settingsAction.busy', error: 'InlineActionFeedback' }, 'src/features/settings/SettingsPage.tsx', ['activateLlmProfile', 'commitAndApplySettingsDraft', 'persistSettingsDraft'], [{ source: 'src/features/settings/SettingsPage.tsx', evidence: 'onActivate={activateLlmProfile}' }]),
-    owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onActivate(profile.id!)', '启用绘图配置', productShellTest, 'src/features/settings/ProviderProfileManagers.tsx', { disabled: 'disabled={saving}', loading: 'settingsAction.busy', error: 'InlineActionFeedback' }, 'src/features/settings/SettingsPage.tsx', ['activateImageProfile', 'commitAndApplySettingsDraft', 'persistSettingsDraft'], [{ source: 'src/features/settings/SettingsPage.tsx', evidence: 'onActivate={activateImageProfile}' }]),
+    owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onActivate(profile.id!)', '设为新项目默认语言配置', 'tests/project-models.test.ts', 'src/features/settings/ProviderProfileManagers.tsx', { disabled: 'disabled={saving}', loading: 'settingsAction.busy', error: 'InlineActionFeedback' }, 'src/features/settings/SettingsPage.tsx', ['activateLlmProfile', 'commitAndApplySettingsDraft', 'persistSettingsDraft'], [{ source: 'src/features/settings/SettingsPage.tsx', evidence: 'onActivate={activateLlmProfile}' }]),
+    owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onActivate(profile.id!)', '设为新项目默认生图配置', 'tests/project-models.test.ts', 'src/features/settings/ProviderProfileManagers.tsx', { disabled: 'disabled={saving}', loading: 'settingsAction.busy', error: 'InlineActionFeedback' }, 'src/features/settings/SettingsPage.tsx', ['activateImageProfile', 'commitAndApplySettingsDraft', 'persistSettingsDraft'], [{ source: 'src/features/settings/SettingsPage.tsx', evidence: 'onActivate={activateImageProfile}' }]),
     owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onActivate(profile.id!)', '启用旁白服务配置', productShellTest, 'src/features/settings/ProviderProfileManagers.tsx', { disabled: 'disabled={saving}', loading: 'saving', error: 'InlineActionFeedback' }, 'src/features/settings/SettingsPage.tsx', ['activateTtsProfile', 'commitAndApplySettingsDraft', 'persistSettingsDraft'], [{ source: 'src/features/settings/SettingsPage.tsx', evidence: 'onActivate={activateTtsProfile}' }]),
     owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onClick={fetchImaKnowledgeFromSettings}', '测试并拉取知识库', productShellTest, undefined, undefined, undefined, ['fetchImaKnowledgeFromSettings', 'persistSettingsDraft']),
     owner('settings', 'src/features/settings/SettingsPage.tsx', 'persistSettingsDraft', 'onClick={uploadBgmFromSettings}', '添加 BGM 文件', productShellTest, undefined, undefined, undefined, ['uploadBgmFromSettings', 'persistSettingsDraft']),
@@ -942,7 +999,7 @@ export const rendererCommandInventory = {
     owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'persistViralCookiePath', 'onClick={chooseCookieFile}', '选择 Cookie 文件', productShellTest, undefined, undefined, undefined, ['chooseCookieFile', 'persistViralCookiePath']),
     owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'persistViralCookiePath', 'onBlur={() => saveViralCookiePath(cookieFilePath)}', 'id="viral-cookie-input"', productShellTest, undefined, undefined, undefined, ['saveViralCookiePath', 'persistViralCookiePath']),
     owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'persistViralCookiePath', "saveViralCookiePath('')", '清空', productShellTest, undefined, undefined, undefined, ['saveViralCookiePath', 'persistViralCookiePath']),
-    owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'persistViralCookiePath', 'onClick={startAnalysis}', '开始拆解', productShellTest, undefined, { disabled: 'disabled={viralAction.busy}', loading: 'viralAction.busy ? <Loader2', error: 'InlineActionFeedback' }, undefined, ['startAnalysis', 'persistViralCookiePath']),
+    owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'persistViralCookiePath', 'onClick={startAnalysis}', '开始拆解', productShellTest, undefined, { disabled: 'disabled={viralAction.busy || (inputKind', loading: 'viralAction.busy ? <Loader2', error: 'InlineActionFeedback' }, undefined, ['startAnalysis', 'persistViralCookiePath']),
   ),
   saveCustomStyle: command(
     owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'saveCustomStyleDraft', 'onClick={saveCustomStyleDraft}', '保存修改', productShellTest, 'src/features/templates/PromptTemplateEditor.tsx', undefined, 'src/features/templates/PromptTemplatesPage.tsx', undefined, bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'saveCustomStyleDraft={async () => { await saveCustomStyleDraft(); }}'])),
@@ -979,7 +1036,7 @@ export const rendererCommandInventory = {
       'src/features/editorial-collage/EditorialCollagePage.tsx',
       'createProject',
       'onClick={onCreate}',
-      '创建 VOX 项目',
+      '创建 创意动画项目',
       'tests/editorial-collage-workbench.test.ts',
       'src/features/director-desk/DirectorProjectStart.tsx',
       { disabled: 'disabled={!canCreate || busy}', loading: 'busy ? <Loader2', error: 'errorMessage ?' },
@@ -1001,19 +1058,6 @@ export const rendererCommandInventory = {
       'src/features/director-desk/DirectorDeskWorkspace.tsx',
       ['saveProject', 'enqueueProjectMutation', 'persistProject'],
       bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onSave={() => void saveProject()}']),
-    ),
-    owner(
-      'motion-comic',
-      'src/features/motion-comic/MotionComicPage.tsx',
-      'createProject',
-      'onClick={onCreate}',
-      '创建 AI 漫剧系列',
-      'tests/motion-comic-workbench.test.ts',
-      'src/features/director-desk/DirectorProjectStart.tsx',
-      { disabled: 'disabled={!canCreate || busy}', loading: 'busy ? <Loader2', error: 'errorMessage ?' },
-      'src/features/director-desk/DirectorProjectStart.tsx',
-      undefined,
-      bridgeChain(['src/features/motion-comic/MotionComicPage.tsx', 'onCreate={() => void createProject()}']),
     ),
   ),
   deleteDraftTemplate: command(
@@ -1049,27 +1093,33 @@ export const rendererCommandInventory = {
     { disabled: 'disabled={action.busy', loading: 'action.busy ? <Loader2', error: 'InlineActionFeedback' },
   )),
   savePromptTemplate: command(
-    owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft', 'onClick={savePromptTemplateDraft}', '保存修改', productShellTest, 'src/features/templates/PromptTemplateEditor.tsx', undefined, 'src/features/templates/PromptTemplatesPage.tsx', undefined, bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft={async () => { await savePromptTemplateDraft(); }}'])),
+    owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft', 'onClick={() => void savePromptTemplateDraft()}', '保存并应用', productShellTest, 'src/features/templates/PromptTemplateEditor.tsx', undefined, 'src/features/templates/PromptTemplatesPage.tsx', undefined, bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft={async (apply = true) => { await savePromptTemplateDraft(apply); }}'])),
+    owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft', 'onClick={() => void onSave()}', '保存并应用', productShellTest, 'src/features/templates/WorkflowPromptEditor.tsx', { disabled: 'disabled={busy}', loading: 'promptTemplateAction.busy', error: 'InlineActionFeedback' }, 'src/features/templates/PromptTemplatesPage.tsx', undefined, bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft={async (apply = true) => { await savePromptTemplateDraft(apply); }}'], ['src/features/templates/PromptTemplateEditor.tsx', 'onSave={savePromptTemplateDraft}'])),
+    owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft', 'onClick={() => void onSave(false)}', '保存为备用', productShellTest, 'src/features/templates/WorkflowPromptEditor.tsx', { disabled: 'disabled={busy}', loading: 'promptTemplateAction.busy', error: 'InlineActionFeedback' }, 'src/features/templates/PromptTemplatesPage.tsx', undefined, bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'savePromptTemplateDraft={async (apply = true) => { await savePromptTemplateDraft(apply); }}'], ['src/features/templates/PromptTemplateEditor.tsx', 'onSave={savePromptTemplateDraft}'])),
     owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'duplicateTemplate', 'duplicateTemplate(template)', '克隆', productShellTest),
     owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'duplicateTemplate', 'onClick={duplicate}', '克隆', productShellTest, 'src/features/templates/PromptTemplateEditor.tsx', undefined, 'src/features/templates/PromptTemplatesPage.tsx', ['duplicate', 'duplicateTemplate'], bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'duplicate={duplicate}'])),
-    owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'createPromptTemplate', "promptTemplateLibraryTab === 'story' ? createPromptTemplate : createImageTemplate", '新建模板', productShellTest),
+    owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'duplicateTemplate', 'onClick={() => void onClone()}', '克隆', productShellTest, 'src/features/templates/WorkflowPromptEditor.tsx', { disabled: 'disabled={busy}', loading: 'promptTemplateAction.busy', error: 'InlineActionFeedback' }, 'src/features/templates/PromptTemplatesPage.tsx', ['duplicate', 'duplicateTemplate'], bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'duplicate={duplicate}'], ['src/features/templates/PromptTemplateEditor.tsx', 'onClone={duplicate}'])),
     owner('prompt-templates', 'src/features/templates/PromptTemplatesPage.tsx', 'importPromptTemplateJson', 'importPromptTemplateJson()', '导入 JSON', productShellTest, 'src/features/templates/PromptTemplateEditor.tsx', undefined, 'src/features/templates/PromptTemplatesPage.tsx', undefined, bridgeChain(['src/features/templates/PromptTemplatesPage.tsx', 'importPromptTemplateJson={importPromptTemplateJson}'])),
   ),
   saveUiPreferences: command(
-    owner('settings', 'src/features/settings/SettingsPage.tsx', 'persist', 'selectTheme', '主题', productShellTest, undefined, { disabled: 'disabled={themeAction.busy}', loading: 'themeAction.busy', error: 'InlineActionFeedback' }),
-    owner('shell', 'src/app/App.tsx', 'persistActiveViewPreference', 'navigate(newTaskPrimaryAction.view)', 'newTaskPrimaryAction.label', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, ['navigate', 'navigateNow', 'persistActiveViewPreference'], bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
-    owner('shell', 'src/app/App.tsx', 'persistActiveViewPreference', 'navigate(item.view)', 'item.label', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, ['navigate', 'navigateNow', 'persistActiveViewPreference'], bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
-    owner('shell', 'src/app/App.tsx', 'persistActiveViewPreference', "navigate('activation')", '试用剩余', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, ['navigate', 'navigateNow', 'persistActiveViewPreference'], bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
-    owner('shell', 'src/app/App.tsx', 'persistActiveViewPreference', "navigate('account')", '积分明细', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, ['navigate', 'navigateNow', 'persistActiveViewPreference'], bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
-    owner('shell', 'src/app/App.tsx', 'persistActiveViewPreference', "navigate('account')", '账户中心', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, ['navigate', 'navigateNow', 'persistActiveViewPreference'], bridgeChain(['src/app/App.tsx', 'navigate={navigate}'])),
-    owner('shell', 'src/app/App.tsx', 'openTaskDetailNow', 'openTaskDetail(task.id)', '未命名任务', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, ['openTaskDetail', 'openTaskDetailNow'], bridgeChain(['src/app/App.tsx', 'openTaskDetail={openTaskDetail}'])),
-    owner('shell', 'src/app/App.tsx', 'persist', 'onClick={toggleTheme}', 'themeLabel', productShellTest, 'src/app/AppShell.tsx', undefined, 'src/app/AppShell.tsx', undefined, bridgeChain(['src/app/App.tsx', 'toggleTheme={toggleTheme}'])),
+    owner("settings", "src/features/settings/SettingsPage.tsx", "persist", "selectTheme", "主题", "tests/product-shell-ui.test.ts", "src/features/settings/SettingsPage.tsx", {"disabled":"disabled={themeAction.busy}","loading":"themeAction.busy","error":"InlineActionFeedback"}, "src/features/settings/SettingsPage.tsx"),
+    owner("shell", "src/app/App.tsx", "persistActiveViewPreference", "navigate(newTaskPrimaryAction.view)", "newTaskPrimaryAction.label", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", ["navigate","navigateNow","persistActiveViewPreference"], [{"source":"src/app/App.tsx","evidence":"navigate={navigate}"}]),
+    owner("shell", "src/app/App.tsx", "persistActiveViewPreference", "navigate(item.view)", "item.label", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", ["navigate","navigateNow","persistActiveViewPreference"], [{"source":"src/app/App.tsx","evidence":"navigate={navigate}"}]),
+    owner("shell", "src/app/App.tsx", "persistActiveViewPreference", "navigate('activation')", "软件授权", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", ["navigate","navigateNow","persistActiveViewPreference"], [{"source":"src/app/App.tsx","evidence":"navigate={navigate}"}]),
+    owner("shell", "src/app/App.tsx", "persistActiveViewPreference", "navigate('account')", "积分明细", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", ["navigate","navigateNow","persistActiveViewPreference"], [{"source":"src/app/App.tsx","evidence":"navigate={navigate}"}]),
+    owner("shell", "src/app/App.tsx", "persistActiveViewPreference", "navigate('account')", "账户中心", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", ["navigate","navigateNow","persistActiveViewPreference"], [{"source":"src/app/App.tsx","evidence":"navigate={navigate}"}]),
+    owner("shell", "src/app/App.tsx", "openTaskDetailNow", "openTaskDetail(task.id)", "未命名任务", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", ["openTaskDetail","openTaskDetailNow"], [{"source":"src/app/App.tsx","evidence":"openTaskDetail={openTaskDetail}"}]),
+    owner("shell", "src/app/App.tsx", "persist", "onClick={toggleTheme}", "themeLabel", "tests/product-shell-ui.test.ts", "src/app/AppShell.tsx", {"disabled":"disabled={busy}","loading":"saveTone === 'saving'","error":"InlineActionFeedback"}, "src/app/AppShell.tsx", undefined, [{"source":"src/app/App.tsx","evidence":"toggleTheme={toggleTheme}"}]),
   ),
   saveViralTemplates: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'saveViralTemplates', 'handleSaveTemplates', '保存为模板', productShellTest, 'src/features/viral/ViralReport.tsx', undefined, 'src/features/viral/ViralAnalyzerPage.tsx', undefined, bridgeChain(['src/features/viral/ViralAnalyzerPage.tsx', 'saveTemplates={saveViralTemplates}'], ['src/features/viral/ViralReport.tsx', 'await saveTemplates({']))),
   setTaskFavorite: command(
     owner('history', 'src/features/tasks/HistoryPage.tsx', 'toggleTaskFavorite', 'toggleTaskFavorite(task)', '添加收藏', historyTest),
     owner('projects', 'src/features/projects/ProjectHomePage.tsx', 'toggleFavorite', 'onClick={onToggleFavorite}', '收藏项目', productShellTest),
   ),
+  setProjectModels: command(owner('projects', 'src/features/projects/ProjectModelFields.tsx', 'saveModels', 'onClick={() => void saveModels()}', '保存项目模型', 'tests/project-models.test.ts', undefined, { disabled: 'disabled={busy || locked}', loading: 'busy', error: 'role="alert"' })),
+  generateProjectCover: command(owner('projects', 'src/features/projects/ProjectCoverDialog.tsx', 'generateCover', 'onClick={() => void generateCover()}', '生成封面', 'tests/project-cover-storage.test.ts', undefined, { disabled: 'disabled={busy || !prompt.trim()}', loading: 'coverAction.busy', error: 'InlineActionFeedback' })),
+  importProjectCover: command(owner('projects', 'src/features/projects/ProjectCoverDialog.tsx', 'importCover', 'onClick={() => void importCover()}', '上传封面', 'tests/project-cover-storage.test.ts', undefined, { disabled: 'disabled={busy}', loading: 'coverAction.busy', error: 'InlineActionFeedback' })),
+  resetProjectCover: command(owner('projects', 'src/features/projects/ProjectCoverDialog.tsx', 'resetCover', 'onClick={() => void resetCover()}', '恢复自动封面', 'tests/project-cover-storage.test.ts', undefined, { disabled: 'disabled={busy}', loading: 'coverAction.busy', error: 'InlineActionFeedback' })),
   syncBenchmarkGroup: command(owner(
     'benchmark',
     'src/features/labs/BenchmarkImportPage.tsx',
@@ -1111,20 +1161,22 @@ export const rendererCommandInventory = {
   selectCookieFile: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'chooseCookieFile', 'onClick={chooseCookieFile}', '选择 Cookie 文件', productShellTest)),
   selectLocalAudio: command(
     owner('settings', 'src/features/settings/MinimaxCloneVoiceManager.tsx', 'selectSourceAudio', 'onClick={selectSourceAudio}', '选择来源音频', 'tests/minimax-clone-voice-management.test.ts', undefined, { disabled: 'disabled={action.busy}', loading: 'action.busy ? <Loader2', error: 'InlineActionFeedback' }),
-    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('audio')", '添加音频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferenceAudio', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('audio')", '添加音频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || draft.referenceAudioPaths.length >= referenceLimits.audio}', loading: 'pickingImage', error: 'submitError' }),
   ),
   selectLocalSubtitleTimestampFile: command(
-    owner('editorial-collage', 'src/features/editorial-collage/EditorialCollagePage.tsx', 'importSubtitleTimestamps', 'onClick=', '导入识别时间戳', 'tests/audio-alignment.test.ts', 'src/features/director-desk/DirectorSubtitleInspector.tsx', { disabled: 'disabled={props.busy', loading: 'props.busy', error: 'role="alert"' }, 'src/features/director-desk/DirectorSubtitleInspector.tsx', undefined, [{ source: 'src/features/editorial-collage/EditorialCollagePage.tsx', evidence: 'onImportSubtitleTimestamps=' }]),
-    owner('motion-comic', 'src/features/motion-comic/MotionComicPage.tsx', 'importSubtitleTimestamps', 'onClick=', '导入识别时间戳', 'tests/audio-alignment.test.ts', 'src/features/director-desk/DirectorSubtitleInspector.tsx', { disabled: 'disabled={props.busy', loading: 'props.busy', error: 'role="alert"' }, 'src/features/director-desk/DirectorSubtitleInspector.tsx', undefined, [{ source: 'src/features/motion-comic/MotionComicPage.tsx', evidence: 'onImportSubtitleTimestamps=' }]),
+    owner('editorial-collage', 'src/features/editorial-collage/EditorialCollagePage.tsx', 'importSubtitleTimestamps', 'onClick={() => run(() => props.onImportTimestamps?.(cueItem.id))}', '导入识别时间戳', 'tests/director-subtitle-import-ui.test.ts', 'src/features/director-desk/DirectorSubtitleInspector.tsx', { disabled: 'disabled={props.busy', loading: 'props.busy', error: 'role="alert"' }, 'src/features/director-desk/DirectorSubtitleInspector.tsx', undefined, [{ source: 'src/features/editorial-collage/EditorialCollagePage.tsx', evidence: 'onImportSubtitleTimestamps=' }, { source: 'src/features/director-desk/DirectorDeskWorkspace.tsx', evidence: 'onImportTimestamps={onImportSubtitleTimestamps ? (cueId) => onImportSubtitleTimestamps(selectedShot.id, cueId)' }]),
+    owner('motion-comic', 'src/features/motion-comic/MotionComicPage.tsx', 'importSubtitleTimestamps', 'onClick={() => run(() => props.onImportTimestamps?.(cueItem.id))}', '导入识别时间戳', 'tests/director-subtitle-import-ui.test.ts', 'src/features/director-desk/DirectorSubtitleInspector.tsx', { disabled: 'disabled={props.busy', loading: 'props.busy', error: 'role="alert"' }, 'src/features/director-desk/DirectorSubtitleInspector.tsx', undefined, [{ source: 'src/features/motion-comic/MotionComicPage.tsx', evidence: 'onImportSubtitleTimestamps=' }, { source: 'src/features/director-desk/DirectorDeskWorkspace.tsx', evidence: 'onImportTimestamps={onImportSubtitleTimestamps ? (cueId) => onImportSubtitleTimestamps(selectedShot.id, cueId)' }]),
   ),
   selectLocalFolder: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'pickJianyingDraftPath', 'onClick={pickJianyingDraftPath}', '选择目录', productShellTest)),
   selectLocalImage: command(
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "importAnimationAsset", "onClick={() => void importFrame()}", "导入原画 / 尾帧", "tests/editorial-import-actions.test.ts", "src/features/editorial-collage/EditorialRecipeInspector.tsx", {"disabled":"disabled={busy || importing}","loading":"正在导入…","error":"role=\"alert\""}, "src/features/editorial-collage/EditorialRecipeInspector.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onImport={() => importAnimationAsset(shotId, 'image')}"}]),
+    owner("editorial-collage", "src/features/editorial-collage/EditorialCollagePage.tsx", "importAnimationAsset", "onClick={()=>void importAsset('image')}", "导入图片", "tests/vox-editor-actions.test.ts", "src/features/vox-animation/VoxAnimationEditor.tsx", {"disabled":"disabled={busy||importing}","loading":"正在导入素材","error":"role=\"alert\""}, "src/features/vox-animation/VoxAnimationEditor.tsx", undefined, [{"source":"src/features/editorial-collage/EditorialCollagePage.tsx","evidence":"onImportAnimationAsset={importAnimationAsset}"},{"source":"src/features/director-desk/DirectorDeskWorkspace.tsx","evidence":"onImportAsset={onImportAnimationAsset?kind=>onImportAnimationAsset(selectedShot.id,kind):undefined}"}]),
     owner('person-assets', libraryPageSource, 'importImage', 'onClick={() => void importImage()}', '导入图片', 'tests/asset-library-ui.test.ts', undefined, libraryBehavior),
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'selectImageLabReferenceImage', 'onClick={selectImageLabReferenceImage}', '添加参考图', productShellTest, undefined, { disabled: 'disabled={imageLabAction.busy}', loading: 'imageLabAction.busy', error: 'InlineActionFeedback' }),
     owner('image-lab', 'src/features/labs/ImageLabPage.tsx', 'importCompletedImage', 'importCompletedImage', '导入成品', productShellTest),
-    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('first')", '首帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsFirstFrame}', loading: 'pickingImage', error: 'submitError' }),
-    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('last')", '尾帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsLastFrame}', loading: 'pickingImage', error: 'submitError' }),
-    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('reference')", '添加图片', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferences || references.length >= referenceLimits.images}', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('first')", '首帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage}', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('last')", '尾帧', videoLabTest, undefined, { disabled: 'disabled={pickingImage}', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceImage', "selectReferenceImage('reference')", '添加图片', videoLabTest, undefined, { disabled: 'disabled={pickingImage || references.length >= referenceLimits.images}', loading: 'pickingImage', error: 'submitError' }),
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'selectTaskReferenceImage', 'onClick={selectTaskReferenceImage}', '上传主角参考图', productShellTest),
     owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'addEditorReferenceImage', 'onClick={() => void addEditorReferenceImage()}', '添加参考图', productShellTest),
     owner('draft-templates', 'src/features/templates/DraftTemplatesPage.tsx', 'selectDraftBackgroundImage', 'onClick={selectDraftBackgroundImage}', '浏览', productShellTest),
@@ -1136,11 +1188,15 @@ export const rendererCommandInventory = {
       '导入参考图',
       'tests/motion-comic-workbench.test.ts',
       undefined,
-      { disabled: 'disabled={referenceAction.busy', loading: 'referenceTargetId', error: 'InlineActionFeedback' },
+      { disabled: 'disabled={referenceAction.busy', loading: 'referenceTargetId', error: 'referenceAction.feedback' },
     ),
   ),
+  selectShortVideoMaterials: command(
+    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'addShortVideoMaterials', 'onClick={handleAdd}', '添加混剪视频', 'tests/short-video-materials.test.ts', 'src/features/tasks/ShortVideoMaterialFields.tsx', { disabled: 'disabled={picking || value.files.length >= 100}', loading: "picking ? '正在选择素材…'", error: 'addError' }, 'src/features/tasks/ShortVideoMaterialFields.tsx', undefined, [{ source: 'src/features/tasks/NewTaskPage.tsx', evidence: 'onAdd={addShortVideoMaterials}' }]),
+  ),
   selectLocalVideo: command(
-    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('video')", '添加视频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || !supportsReferenceVideo', loading: 'pickingImage', error: 'submitError' }),
+    owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('video')", '添加视频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || draft.referenceVideoPaths.length >= referenceLimits.videos}', loading: 'pickingImage', error: 'submitError' }),
+    owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'selectPixelleVideo', 'onClick={handleSelectVideo}', '选择本地视频', 'tests/pixelle-task.test.ts', 'src/features/tasks/PixelleTemplateFields.tsx', { disabled: 'disabled={pickingVideo}', loading: "pickingVideo ? '正在选择视频…'", error: 'videoSelectionError' }, 'src/features/tasks/PixelleTemplateFields.tsx', undefined, [{ source: 'src/features/tasks/NewTaskPage.tsx', evidence: 'onSelectVideo={selectPixelleVideo}' }]),
   ),
   testAppConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testCurrentConfig', 'onClick={testCurrentConfig}', '保存并测试', productShellTest)),
   testLlmConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testSelectedLlmConfig', 'onClick={testSelectedLlmConfig}', '仅测试当前 LLM', productShellTest)),
@@ -1155,12 +1211,18 @@ export const rendererCommandInventory = {
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'rerender', 'onClick={rerender}', '重新出片', htmlVideoStudioTest),
   ),
   updateHtmlVideoScene: command(
-    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'save', 'onClick={save}', '保存并重配', htmlVideoStudioTest),
-    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'mutate[1]', "onClick={() => mutate([{ field: 'titleHidden'", '隐藏标题', htmlVideoStudioTest),
-    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'mutate[2]', "onClick={() => void mutate([{ field: 'sceneTemplate'", 'template.label', htmlVideoStudioTest),
-    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'savePrompt', 'onClick={savePrompt}', '保存提示词', htmlVideoStudioTest),
-    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'AssetCard', 'onClick={() => run(() => api.updateHtmlVideoScene', '隐藏前景', htmlVideoStudioTest),
-    owner('html-video', 'src/features/html-video/HtmlVideoStoryboundPanels.tsx', 'regenerate', 'onClick={() => regenerate(narration)}', '保存并重配', htmlVideoStudioTest),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "save", "onClick={save}", "保存并重配", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[1]", "onChange={(_, data) => mutate([{ field: 'titleHidden'", "显示标题", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onChange={(value) => void mutate([{ field: 'sceneTemplate'", "当前场景版式", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onChange={(_, data) => void mutate([{ field: 'foregroundHidden'", "显示全部前景", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || foregrounds.length === 0}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onClick={() => void mutate([{ field: 'elementHidden'", "隐藏前景", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || scene.foregroundHidden}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onChange={(_, data) => void mutate([{ field: 'titleHidden'", "显示标题", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onClick={() => void mutate([{ field: 'title'", "保存标题", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || !title.trim() || !titleChanged}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onClick={() => void mutate(captionChanges)}", "保存场景字幕", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || captionChanges.length === 0}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "mutate[2]", "onClick={() => void mutate(promptChanges)}", "保存提示词", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={locked || promptChanges.length === 0}","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "savePrompt", "onClick={savePrompt}", "保存提示词", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "AssetCard", "onClick={() => run(() => api.updateHtmlVideoScene", "隐藏前景", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
+    owner("html-video", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", "regenerate", "onClick={() => regenerate(narration)}", "保存并重配", "tests/html-video-studio-ui.test.ts", "src/features/html-video/HtmlVideoStoryboundPanels.tsx", {"disabled":"disabled={","loading":"Loader2","error":"InlineActionFeedback"}, "src/features/html-video/HtmlVideoStoryboundPanels.tsx"),
   ),
   updateTaskBgm: command(owner('task-detail', 'src/features/tasks/TaskDetailPage.tsx', 'applyDraftBgm', 'onClick={onApplyBgm}', '应用音乐', 'tests/task-operations-ui.test.ts')),
   updateTaskImagePrompt: command(owner('task-detail', 'src/features/tasks/TaskArtifactPreview.tsx', 'submitEditor', 'onClick={() => void submitEditor()}', '保存并重绘', productShellTest)),
@@ -1185,6 +1247,9 @@ export const rendererCommandInventory = {
   ),
   updateViralAnalysisStatus: command(owner('viral-analyzer', 'src/features/viral/ViralAnalyzerPage.tsx', 'updateAnalysisStatus', 'pauseAnalysis', '暂停', productShellTest)),
   windowControl: command(
+    owner("shell", "src/app/App.tsx", "controlWindow", "void controlWindow('close')", "关闭", "tests/product-shell-ui.test.ts", "src/app/App.tsx", {"disabled":"disabled={windowAction.busy}","loading":"windowAction.busy","error":"AsyncActionFeedback"}, "src/app/App.tsx", undefined, undefined),
+    owner("shell", "src/app/App.tsx", "controlWindow", "void controlWindow('toggle-maximize')", "最大化或还原", "tests/product-shell-ui.test.ts", "src/app/App.tsx", {"disabled":"disabled={windowAction.busy}","loading":"windowAction.busy","error":"AsyncActionFeedback"}, "src/app/App.tsx", undefined, undefined),
+    owner("shell", "src/app/App.tsx", "controlWindow", "void controlWindow('minimize')", "最小化", "tests/product-shell-ui.test.ts", "src/app/App.tsx", {"disabled":"disabled={windowAction.busy}","loading":"windowAction.busy","error":"AsyncActionFeedback"}, "src/app/App.tsx", undefined, undefined),
     owner('shell', 'src/app/App.tsx', 'minimizeWindow', 'onClick={minimizeWindow}', '最小化', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, undefined, bridgeChain(['src/app/App.tsx', 'minimizeWindow={minimizeWindow}'])),
     owner('shell', 'src/app/App.tsx', 'toggleMaximizeWindow', 'onClick={toggleMaximizeWindow}', '最大化', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, undefined, bridgeChain(['src/app/App.tsx', 'toggleMaximizeWindow={toggleMaximizeWindow}'])),
     owner('shell', 'src/app/App.tsx', 'AppWorkspace', 'onClick={closeWindow}', '关闭', productShellTest, 'src/app/AppShell.tsx', undefined, undefined, undefined, bridgeChain(['src/app/App.tsx', 'closeWindow={closeWindow}'])),
@@ -1193,3 +1258,15 @@ export const rendererCommandInventory = {
 
 const typedRendererCommandInventory: Partial<Record<keyof StoryDreamApi, RendererCommandContract>> = rendererCommandInventory;
 void typedRendererCommandInventory;
+
+/** Legacy IPC surfaces retained for stored clients, never exposed by the renderer. */
+export const rendererCompatibilityMethods = {
+  saveActivation: 'Replaced by activateLicense/refreshLicense; the old state-save endpoint is compatibility-only.',
+  updateMusicMvTask: 'Legacy aggregate updater; the renderer uses explicit task configuration commands.',
+} as const satisfies Partial<Record<keyof StoryDreamApi, string>>;
+
+/** Non-interactive calls still require explicit ownership and effect/cleanup coverage. */
+export const rendererLifecycleCommands = [
+  { method: 'compileVoxAnimation', route: 'editorial-collage', source: 'src/features/vox-animation/VoxAnimationPreview.tsx', handler: 'VoxAnimationPreview', lifecycle: 'effect', test: 'tests/vox-preview-lifecycle.test.ts' },
+  { method: 'cancelVoxAnimation', route: 'editorial-collage', source: 'src/features/vox-animation/VoxAnimationEditor.tsx', handler: 'VoxAnimationEditor', lifecycle: 'cleanup', test: 'tests/vox-editor-actions.test.ts' },
+] as const;

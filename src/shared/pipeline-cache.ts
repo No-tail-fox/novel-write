@@ -16,6 +16,7 @@ interface PipelineStateFile {
     imageErrors?: TaskArtifactImageErrorPreview[];
     narration?: TaskArtifactAssetPreview[];
   };
+  deliverables?: import('./types').TaskDeliverables;
   draft?: TaskArtifactSnapshot['draft'];
   rerun?: TaskStepRerunMarker;
 }
@@ -217,6 +218,7 @@ export async function markSceneImagesForRegeneration(statePath: string, sceneIds
     markDagPending(state, 4);
     markDagPending(state, 6);
     delete state.draft;
+    delete state.deliverables;
     state.updatedAt = new Date().toISOString();
 
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
@@ -272,6 +274,7 @@ export async function replaceSceneImageAssets(
     state.steps['6'] = pendingStep(state.steps['6']);
     markDagPending(state, 6);
     delete state.draft;
+    delete state.deliverables;
     state.updatedAt = updatedAt;
 
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
@@ -306,6 +309,7 @@ export async function replaceSceneVideoAsset(
     state.steps['6'] = pendingStep(state.steps['6']);
     markDagPending(state, 6);
     delete state.draft;
+    delete state.deliverables;
     state.updatedAt = new Date().toISOString();
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
     return { video: normalizedVideo, videos };
@@ -329,6 +333,7 @@ export async function removeSceneVideoAsset(statePath: string, sceneId: number):
       state.steps['6'] = pendingStep(state.steps['6']);
       markDagPending(state, 6);
       delete state.draft;
+    delete state.deliverables;
       state.updatedAt = new Date().toISOString();
       await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
     }
@@ -362,6 +367,7 @@ export async function updateSceneVideoTrim(
     state.steps['6'] = pendingStep(state.steps['6']);
     markDagPending(state, 6);
     delete state.draft;
+    delete state.deliverables;
     state.updatedAt = new Date().toISOString();
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
     return { video: updatedVideo, videos };
@@ -387,6 +393,7 @@ export async function markSceneNarrationForRegeneration(statePath: string, scene
     markDagPending(state, 5);
     markDagPending(state, 6);
     delete state.draft;
+    delete state.deliverables;
     state.updatedAt = new Date().toISOString();
 
     await writeFile(normalizedStatePath, JSON.stringify(state, null, 2), 'utf8');
@@ -466,6 +473,7 @@ function clearAssetsFromStep(state: PipelineStateFile, step: number): void {
   }
   if (step <= 6) {
     delete state.draft;
+    delete state.deliverables;
   }
 }
 

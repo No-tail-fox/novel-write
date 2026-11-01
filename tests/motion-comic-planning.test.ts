@@ -920,3 +920,19 @@ describe('motion comic AI planning', () => {
     expect(normalized.shots[0].durationSec).toBeGreaterThan(15);
   });
 });
+
+describe('quoted source units', () => {
+  it('keeps dialogue closing quotes attached to the sentence', () => {
+    const source = '第1集 最后一封信\n林夏问：“是你留下的吗？”\n周沉回答：“不是。”两人望向门外。';
+    const units = splitMotionComicSource(source);
+    expect(units.map(unit => unit.text)).toEqual(['第1集 最后一封信', '林夏问：“是你留下的吗？”', '周沉回答：“不是。”', '两人望向门外。']);
+    expect(units.map(unit => unit.text).join('')).toBe(source.replace(/\n/g, ''));
+  });
+
+  it('can still open a validated legacy plan with its original source unit IDs', () => {
+    const prior = plan();
+    const quoted = prior.sourceText.replace('信。', '信。”');
+    const legacy = quoted.trim().split(/\r?\n+|(?<=[。！？!?；;])\s*/u).map(v => v.trim()).filter(Boolean).map((text, i) => ({id: `S${i+1}`, text}));
+    expect(parseMotionComicPlanDraft({...prior, sourceText: quoted, sourceUnits: legacy}).sourceUnits).toEqual(legacy);
+  });
+});

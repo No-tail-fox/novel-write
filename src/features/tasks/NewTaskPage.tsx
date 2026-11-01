@@ -1,3 +1,12 @@
+import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
+import { ShortVideoMaterialFields } from './ShortVideoMaterialFields';
+import { appendShortVideoMaterialFiles, shortVideoMaterialsSchema, type ShortVideoMaterials } from '../../shared/short-video-materials';
+import { PixelleTemplateFields } from './PixelleTemplateFields';
+import type { PixelleCatalog, PixelleTaskOptions, PixelleVisualTemplateRef } from '../../shared/pixelle';
+import { pixelleOptionsSchema, pixelleRefSchema, pixelleRatio, pixelleUsesVideo, resolvePixelleTask } from '../../shared/pixelle-task';
+import type { TaskOutputTarget } from '../../shared/types';
+import { ProjectModelFields } from '../projects/ProjectModelFields';
+import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Link2, Loader2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
@@ -82,7 +91,6 @@ import {
 import {
   addUploadedBgm,
   bookProductTrack,
-  characterPolicyLabel,
   defaultTaskDraftTemplateId,
   draftTemplateIdForRatio,
   draftTemplateImageRatio,
@@ -93,7 +101,6 @@ import {
   normalizeTaskTargetLength,
   productInfoSummary,
   parseBookProductInfo,
-  referenceKindLabel,
   resolveDefaultBgmId,
   resolvePromptTemplateForTrack,
   sourceKey,
@@ -103,6 +110,7 @@ import {
   validBgmItems,
 } from './task-formatters';
 import '../../styles/features/new-task.css';
+import { copywritingTrack } from '../../shared/copywriting-tracks';
 
 type NewTaskStage = 'material' | 'creative' | 'output';
 
@@ -151,7 +159,7 @@ function ContentMetricsSummary({
   return (
     <div className="content-metrics-row">
       <span>字数：{visibleCount}</span>
-      <span>预审字数：{reviewRange ? `${reviewRange.min}-${reviewRange.max}` : '待输入'}</span>
+      <span>目标字数范围：{reviewRange ? `${reviewRange.min}-${reviewRange.max}` : '待输入'}</span>
       <span>自动分镜：{previewSceneRange ? `自动（${previewSceneRange.target}）` : '待输入'}</span>
       {manualSceneRange ? <span>当前目标：{manualSceneRange.target} 个（{manualSceneRange.min}-{manualSceneRange.max}）</span> : null}
     </div>
@@ -184,9 +192,24 @@ export function NewTaskPage({
   const [track, setTrack] = useState('character-story');
   const [style, setStyle] = useState('photo-real');
   const [templateId, setTemplateId] = useState(initialDraftTemplateId);
+  const [pixelleCatalog, setPixelleCatalog] = useState<PixelleCatalog>();
+  const [pixelleCatalogError, setPixelleCatalogError] = useState('');
+  const [visualTemplateRef, setVisualTemplateRef] = useState<PixelleVisualTemplateRef>();
+  const [pixelleOptions, setPixelleOptions] = useState<PixelleTaskOptions>({ subtitleMode: 'template' });
+  async function selectPixelleVideo() {
+    const path = await api.selectLocalVideo();
+    if (path) setPixelleOptions(current => ({ ...current, videoPath: path }));
+  }
+  useEffect(() => {
+    let active = true;
+    if (!api.getPixelleCatalog) { setPixelleCatalogError('当前预览环境未连接 Pixelle 本地运行器'); return; }
+    void api.getPixelleCatalog().then(value => { if (active) setPixelleCatalog(value); }).catch(error => { if (active) setPixelleCatalogError(formatAppErrorMessage(normalizeAppError(error))); });
+    return () => { active = false; };
+  }, [api]);
   const [ratio, setRatio] = useState(() => draftTemplateImageRatio(state.draftTemplates, initialDraftTemplateId));
   const [imageQuality, setImageQuality] = useState<'default' | ImageGenerationQuality>('default');
-  const [selectedTaskLlmProfileId, setSelectedTaskLlmProfileId] = useState(state.config.activeLlmProfileId || state.config.llm.id || state.config.llmProfiles[0]?.id || '');
+  const [projectModels, setProjectModels] = useState(() => defaultProjectModels(state.config));
+  const selectedTaskLlmProfileId = projectModels.llmProfileId;
   const [promptTemplateOverrideId, setPromptTemplateOverrideId] = useState('');
   const [promptTemplateManuallyOverridden, setPromptTemplateManuallyOverridden] = useState(false);
   const [styleManuallyOverridden, setStyleManuallyOverridden] = useState(false);
@@ -200,6 +223,7 @@ export function NewTaskPage({
     speaker: defaultTaskSpeakerForProvider(state.config.tts.provider, state.config),
   };
   const appliedTtsDefaultsRef = useRef(taskTtsDefaults);
+  const [outputTargets, setOutputTargets] = useState<TaskOutputTarget[]>(['mp4']);
   const [bgmId, setBgmId] = useState(() => resolveDefaultBgmId(state.config));
   const [referenceImagePath, setReferenceImagePath] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -211,7 +235,12 @@ export function NewTaskPage({
   const [narrativePov, setNarrativePov] = useState<Task['narrativePov']>('keep-original');
   const [keepPromotion, setKeepPromotion] = useState(false);
   const [productInfo, setProductInfo] = useState<string | null>(null);
-  const [materialSource, setMaterialSource] = useState<'ai' | 'local'>('ai');
+  const [materialSource, setMaterialSource] = useState<'ai' | 'local' | 'video'>('ai');
+  const [shortVideoMaterials, setShortVideoMaterials] = useState<ShortVideoMaterials>({ files: [], fit: 'cover' });
+  async function addShortVideoMaterials() {
+    const paths = await api.selectShortVideoMaterials();
+    if (paths.length) setShortVideoMaterials(appendShortVideoMaterialFiles(shortVideoMaterials, paths));
+  }
   const [materialPerson, setMaterialPerson] = useState('');
   const [fixedIntro, setFixedIntro] = useState('');
   const [outroCta, setOutroCta] = useState('');
@@ -282,9 +311,19 @@ export function NewTaskPage({
     : [['cinematic-poster', '电影海报封面', 'StoryDream 默认封面模板']];
   const coverTemplateHint = storyDreamCoverTemplateIds.includes(coverTemplateId) ? 'StoryDream 兼容模板' : '自定义封面模板';
   const selectedMaterialAsset = personAssets.find((asset) => asset.name === materialPerson) ?? null;
-  const isLocalMaterialInvalid = materialSource === 'local' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);
+  const pixelleTemplate = pixelleCatalog?.templates.find(item => item.ref.path === visualTemplateRef?.path);
+  const pixelleSkipsImages = !!pixelleTemplate && (pixelleTemplate.type === 'static' || pixelleUsesVideo(pixelleTemplate, pixelleOptions));
+  let pixelleValidationError = '';
+  if (visualTemplateRef) {
+    if (!pixelleCatalog) pixelleValidationError = pixelleCatalogError || '正在验证原版模板';
+    else { try { resolvePixelleTask({ visualTemplateRef, pixelleOptions, ratio, shortVideoMaterials: materialSource === 'video' ? shortVideoMaterials : undefined }, pixelleCatalog); } catch (error) { pixelleValidationError = String(error); } }
+  }
+  const isLocalMaterialInvalid = !pixelleSkipsImages && materialSource === 'local' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);
   const sourceText = mode === 'paste' ? inputText : researchCopy.trim() || `${aiKeyword}\n\n${extraRequirements}`;
   const createTaskDisabled = running
+    || (materialSource === 'video' && !shortVideoMaterialsSchema.safeParse(shortVideoMaterials).success)
+    || !!pixelleValidationError
+    || outputTargets.length === 0
     || isBrowserPreview
     || isLocalMaterialInvalid
     || (coverPageEnabled && (coverImageMode === 'off' || (coverImageMode === 'manual' && !manualCoverAsset)))
@@ -303,7 +342,7 @@ export function NewTaskPage({
           : processingMode === 'semi-auto'
             ? '半自动（兼容）'
             : '只出方案（兼容）';
-  const publishModeLabel = publishMode === 'review-rewrite' ? '审核 + 改写' : '直接复用';
+  const publishModeLabel = publishMode === 'review-rewrite' ? '整理并改写' : '使用原文';
   const coverPageTextHint = coverImageMode === 'auto' ? '可选 · 留空保留 AI 封面原图' : '可选 · 留空使用 AI 创作标题';
   const coverPageTextPlaceholder = coverImageMode === 'auto' ? '留空则不叠加文字' : '留空则自动使用 AI 创作标题';
   const coverPageTextSummary = coverPageText.trim() ? '自定义文字' : coverImageMode === 'auto' ? '不叠加文字' : 'AI 标题';
@@ -329,9 +368,13 @@ export function NewTaskPage({
         track,
         style,
         templateId,
+        visualTemplateRef,
+        pixelleOptions,
+        shortVideoMaterials,
         ratio,
         imageQuality,
         selectedTaskLlmProfileId,
+        projectModels,
         promptTemplateOverrideId,
         promptTemplateManuallyOverridden,
         styleManuallyOverridden,
@@ -340,6 +383,7 @@ export function NewTaskPage({
         ttsProvider,
         speaker,
         bgmId,
+        outputTargets,
         referenceImagePath,
         pausePoint,
         processingMode,
@@ -391,9 +435,12 @@ export function NewTaskPage({
     if (typeof values.track === 'string') setTrack(values.track);
     if (typeof values.style === 'string') setStyle(values.style);
     if (typeof values.templateId === 'string') setTemplateId(values.templateId);
+    setVisualTemplateRef(pixelleRefSchema.safeParse(values.visualTemplateRef).data);
+    setPixelleOptions(pixelleOptionsSchema.safeParse(values.pixelleOptions).data ?? { subtitleMode: 'template' });
+    setShortVideoMaterials(shortVideoMaterialsSchema.safeParse(values.shortVideoMaterials).data ?? { files: [], fit: 'cover' });
     if (typeof values.ratio === 'string') setRatio(values.ratio);
     if (values.imageQuality === 'default' || values.imageQuality === 'low' || values.imageQuality === 'medium' || values.imageQuality === 'high') setImageQuality(values.imageQuality);
-    if (typeof values.selectedTaskLlmProfileId === 'string') setSelectedTaskLlmProfileId(values.selectedTaskLlmProfileId);
+    setProjectModels(current => readProjectModelsDraft(values.projectModels, { ...current, llmProfileId: typeof values.selectedTaskLlmProfileId === 'string' ? values.selectedTaskLlmProfileId : current.llmProfileId }));
     if (typeof values.promptTemplateOverrideId === 'string') setPromptTemplateOverrideId(values.promptTemplateOverrideId);
     if (typeof values.promptTemplateManuallyOverridden === 'boolean') setPromptTemplateManuallyOverridden(values.promptTemplateManuallyOverridden);
     if (typeof values.styleManuallyOverridden === 'boolean') setStyleManuallyOverridden(values.styleManuallyOverridden);
@@ -401,6 +448,7 @@ export function NewTaskPage({
     if (typeof values.ratioManuallyOverridden === 'boolean') setRatioManuallyOverridden(values.ratioManuallyOverridden);
     if (values.ttsProvider === 'volcengine' || values.ttsProvider === 'minimax') setTtsProvider(values.ttsProvider);
     if (typeof values.speaker === 'string') setSpeaker(values.speaker);
+    setOutputTargets(Array.isArray(values.outputTargets) ? values.outputTargets.filter(target => target === 'mp4' || target === 'jianying-draft') : ['mp4']);
     if (typeof values.bgmId === 'string') setBgmId(values.bgmId);
     if (typeof values.referenceImagePath === 'string') setReferenceImagePath(values.referenceImagePath);
     if (values.pausePoint === 'none' || values.pausePoint === 'critical' || values.pausePoint === 'every-step') setPausePoint(values.pausePoint);
@@ -416,7 +464,7 @@ export function NewTaskPage({
     if (values.narrativePov === 'keep-original' || values.narrativePov === 'first-person' || values.narrativePov === 'third-person') setNarrativePov(values.narrativePov);
     if (typeof values.keepPromotion === 'boolean') setKeepPromotion(values.keepPromotion);
     if (typeof values.productInfo === 'string' || values.productInfo === null) setProductInfo(values.productInfo);
-    if (values.materialSource === 'ai' || values.materialSource === 'local') setMaterialSource(values.materialSource);
+    if (values.materialSource === 'ai' || values.materialSource === 'local' || values.materialSource === 'video') setMaterialSource(values.materialSource);
     if (typeof values.materialPerson === 'string') setMaterialPerson(values.materialPerson);
     if (typeof values.fixedIntro === 'string') setFixedIntro(values.fixedIntro);
     if (typeof values.outroCta === 'string') setOutroCta(values.outroCta);
@@ -639,9 +687,9 @@ export function NewTaskPage({
     setHasSavedDraft(true);
   }, [
     draftReady, activeStage, title, inputText, mode, aiKeyword, aiSources, webSearchProviders, extraRequirements,
-    track, style, templateId, ratio, imageQuality, selectedTaskLlmProfileId, promptTemplateOverrideId,
+    track, style, templateId, visualTemplateRef, pixelleOptions, shortVideoMaterials, ratio, imageQuality, projectModels, selectedTaskLlmProfileId, promptTemplateOverrideId,
     promptTemplateManuallyOverridden, styleManuallyOverridden, draftTemplateManuallyOverridden,
-    ratioManuallyOverridden, ttsProvider, speaker, bgmId, referenceImagePath, pausePoint,
+    ratioManuallyOverridden, ttsProvider, speaker, bgmId, outputTargets, referenceImagePath, pausePoint,
     processingMode, platformVariants, versionsPerPlatform, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
     materialPerson, fixedIntro, outroCta, lockIntroSentences, ttsSpeed, targetLength,
     storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, coverPageEnabled, coverPageText, manualCoverAsset, autoBorrowImage,
@@ -681,11 +729,6 @@ export function NewTaskPage({
     setSpeaker(taskTtsDefaults.speaker);
   }, [taskTtsDefaults.profileId, taskTtsDefaults.provider, taskTtsDefaults.speaker]);
 
-  useEffect(() => {
-    if (!state.config.llmProfiles.some((profile) => profile.id === selectedTaskLlmProfileId)) {
-      setSelectedTaskLlmProfileId(state.config.activeLlmProfileId || state.config.llm.id || state.config.llmProfiles[0]?.id || '');
-    }
-  }, [state.config.activeLlmProfileId, state.config.llm.id, state.config.llmProfiles, selectedTaskLlmProfileId]);
 
   useEffect(() => {
     if (manualCoverAsset && manualCoverAsset.ratio !== ratio) setManualCoverAsset(null);
@@ -730,11 +773,12 @@ export function NewTaskPage({
   function handleDraftTemplateChange(nextTemplateId: string) {
     setDraftTemplateManuallyOverridden(true);
     setTemplateId(nextTemplateId);
-    setRatioManuallyOverridden(false);
-    setRatio(draftTemplateImageRatio(state.draftTemplates, nextTemplateId));
+    setRatioManuallyOverridden(!!visualTemplateRef);
+    if (!visualTemplateRef) setRatio(draftTemplateImageRatio(state.draftTemplates, nextTemplateId));
   }
 
   function handleRatioChange(nextRatio: string) {
+    if (visualTemplateRef) return;
     setRatioManuallyOverridden(true);
     setRatio(nextRatio);
     const nextTemplateId = draftTemplateIdForRatio(state.draftTemplates, nextRatio, templateId);
@@ -878,7 +922,10 @@ export function NewTaskPage({
         : '正在使用 AI 内置知识生成文案...');
       try {
         const result = await api.composeResearchCopy({
+          llmProfileId: projectModels.llmProfileId,
           keyword,
+          track,
+          intent: 'draft',
           extraRequirements,
           selectedSources: webSearchEnabled ? selectedSources : [],
           useBuiltinKnowledge: builtinKnowledgeEnabled,
@@ -941,11 +988,12 @@ export function NewTaskPage({
       setDraftNotice('浏览器预览不能执行真实流水线，请在 Electron 应用中运行任务。');
       return;
     }
-    if (materialSource === 'local' && !materialPerson) {
+    if (materialSource === 'video' && !shortVideoMaterialsSchema.safeParse(shortVideoMaterials).success) { setDraftNotice('请至少添加一个有效混剪视频'); return; }
+    if (!pixelleSkipsImages && materialSource === 'local' && !materialPerson) {
       setDraftNotice('请先选择人物素材。');
       return;
     }
-    if (materialSource === 'local' && (!selectedMaterialAsset || selectedMaterialAsset.count <= 0)) {
+    if (!pixelleSkipsImages && materialSource === 'local' && (!selectedMaterialAsset || selectedMaterialAsset.count <= 0)) {
       setDraftNotice('所选人物素材至少导入 1 张图片后才能创建任务。');
       return;
     }
@@ -953,6 +1001,7 @@ export function NewTaskPage({
       setDraftNotice('请先导入与当前画面比例一致的手动封面。');
       return;
     }
+    if (pixelleValidationError) { setDraftNotice(pixelleValidationError); return; }
     setDraftNotice('');
     await taskAction.run(async () => {
       setRunning(true);
@@ -971,7 +1020,11 @@ export function NewTaskPage({
         ratio,
         imageQuality: imageQualityOverrideEnabled ? imageQuality : null,
         templateId,
+        visualTemplateRef,
+        pixelleOptions: visualTemplateRef ? pixelleOptions : undefined,
+        shortVideoMaterials: materialSource === 'video' ? shortVideoMaterials : undefined,
         llmProfileId: selectedTaskLlmProfileId,
+        projectModels,
         videoForm,
         coverImageMode,
         coverTemplateId,
@@ -985,6 +1038,7 @@ export function NewTaskPage({
         podcastSpeakerB: videoForm === 'two-host-podcast' ? podcastVoiceDefaults.podcastSpeakerB : null,
         scriptFormat: videoForm === 'two-host-podcast' ? 'dialogue' : 'narration',
         bgmId,
+        outputTargets,
         pausePoints: [pausePoint],
         processingMode,
         pipelineData: createOrdinaryTaskPipelineData({ platformVariants, versionsPerPlatform }),
@@ -1171,9 +1225,11 @@ export function NewTaskPage({
                 </div>
               )}
 
+              {pixelleSkipsImages ? <p>当前 Pixelle 模板不生成镜头图片；如需封面，仍按封面设置单独处理。</p> : null}
               <div className="new-task-material-options">
-                <Segmented label="素材来源" value={materialSource} options={['ai', 'local']} labels={['AI 生图', '本地人物素材']} onChange={(value) => setMaterialSource(value as 'ai' | 'local')} />
-                {materialSource === 'local' ? (
+                <Segmented label="素材来源" value={materialSource} options={['ai', 'local', 'video']} labels={['AI 生图', '本地人物素材', '素材混剪']} onChange={(value) => setMaterialSource(value as 'ai' | 'local' | 'video')} />
+                {materialSource === 'video' ? <ShortVideoMaterialFields templateControlsFit={Boolean(visualTemplateRef)} value={shortVideoMaterials} onChange={setShortVideoMaterials} onAdd={addShortVideoMaterials} /> : null}
+                {materialSource === 'local' && !pixelleSkipsImages ? (
                   <SelectField label="本地人物素材" value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)} options={[
                     { value: '', label: '请选择人物' },
                     ...personAssets.map((asset) => ({ value: asset.name, label: `${asset.name} · ${asset.count} 张` })),
@@ -1185,18 +1241,24 @@ export function NewTaskPage({
 
           {activeStage === 'creative' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.creative.join(' ')}>
+              <PixelleTemplateFields materialPoolCount={materialSource === 'video' ? shortVideoMaterials.files.length : undefined} catalog={pixelleCatalog} selected={visualTemplateRef} options={pixelleOptions} error={pixelleValidationError || pixelleCatalogError} onChange={(ref, settings) => {
+                setVisualTemplateRef(ref); setPixelleOptions(settings);
+                const next = pixelleCatalog?.templates.find(item => item.ref.path === ref?.path);
+                if (next) { setRatio(pixelleRatio(next)); setRatioManuallyOverridden(true); }
+              }} onSelectVideo={selectPixelleVideo} />
+
               <div className="new-task-track-options">
-                <SelectField label="内容赛道" options={storyTemplateOptions.map(([value, label, hint]) => ({ value, label: hint ? `${label} · ${hint}` : label }))} value={selectedStoryTemplateId} onChange={(event) => handleStoryTemplateChange(event.target.value)} />
+                <SelectField label="内容赛道" hint={copywritingTrack(track).description} options={storyTemplateOptions.map(([value, label]) => ({ value, label }))} value={selectedStoryTemplateId} onChange={(event) => handleStoryTemplateChange(event.target.value)} />
               </div>
               <div className="new-task-field-grid">
                 <SelectField label="提示词模板" hint={resolvedPromptTemplate ? `当前使用：${resolvedPromptTemplate.name}` : '自动匹配赛道模板'} className="prompt-template-selector" value={promptTemplateOverrideId || resolvedPromptTemplate?.id || ''} onChange={(event) => handlePromptTemplateOverrideChange(event.target.value)} options={[
                   { value: '', label: '自动匹配赛道模板' },
-                  ...taskPromptTemplateOptions.map(([id, label, hint]) => ({ value: id, label: hint ? `${label} · ${hint}` : label })),
+                  ...taskPromptTemplateOptions.map(([id, label]) => ({ value: id, label })),
                 ]} />
                 <ImageStylePicker value={style} onChange={handleStyleChange} styles={state.customStyles} options={imageTemplateStyleOptions} />
               </div>
               <div className="new-task-field-grid">
-                <SelectField label="草稿模板" hint={draftTemplateLabel(templateId, state.draftTemplates)} value={templateId} onChange={(event) => handleDraftTemplateChange(event.target.value)} options={state.draftTemplates.map((template) => ({ value: template.id, label: `${template.name} · 出图 ${template.image.ratio}` }))} />
+                <SelectField label="草稿模板" hint={visualTemplateRef ? 'Pixelle 接管画面排版；此处仅保留配音、音乐和程序字幕样式' : draftTemplateLabel(templateId, state.draftTemplates)} value={templateId} onChange={(event) => handleDraftTemplateChange(event.target.value)} options={state.draftTemplates.map((template) => ({ value: template.id, label: `${template.name} · 出图 ${template.image.ratio}` }))} />
                 <div className="new-task-video-form">
                   <Segmented label="视频形态" value={videoForm} options={['narration', 'two-host-podcast']} labels={['旁白视频', '双人播客']} onChange={(value) => setVideoForm(value as TaskVideoForm)} />
                   <span className="hint-text">{videoForm === 'two-host-podcast' ? '自动使用对话脚本与播客配图' : '单人配音讲述'}</span>
@@ -1211,8 +1273,11 @@ export function NewTaskPage({
                 </div>
               </div>
               <div className="new-task-field-grid compact-controls">
-                <Segmented label="自动化模式" value={processingMode} options={['full-auto', 'milestone-review', 'scene-review', 'manual']} labels={['全自动', '里程碑审批', '逐场景审批', '手动']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
-                <Segmented label="发布方式" value={publishMode} options={['review-rewrite', 'direct-copy']} labels={['预审改写', '直接复用']} onChange={(value) => setPublishMode(value as 'review-rewrite' | 'direct-copy')} />
+                <Segmented label="自动化模式" value={processingMode} options={['full-auto', 'milestone-review', 'scene-review', 'manual']} labels={['全自动', '关键节点确认', '逐场景确认', '手动']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
+                <div>
+                  <Segmented label="文案处理" value={publishMode} options={['review-rewrite', 'direct-copy']} labels={['整理并改写', '使用原文']} onChange={(value) => setPublishMode(value as 'review-rewrite' | 'direct-copy')} />
+                  <p className="hint-text">{publishMode === 'review-rewrite' ? 'AI 先整理素材，再按赛道重新改写文案；这一步可能改变原有措辞。' : '保留当前文案，跳过 AI 素材整理和改写，直接进入分镜制作。'}</p>
+                </div>
               </div>
               <div className="new-task-field-grid compact-controls">
                 <Field label="平台变体" hint="每个平台独立生成标题、发布文案和标签">
@@ -1242,7 +1307,7 @@ export function NewTaskPage({
               </div>
               {resolvedPromptTemplate ? (
                 <div className="template-default-summary">
-                  <strong>模板默认项</strong><span>故事模板：{resolvedPromptTemplate.name}</span><span>默认图像模板：{styleLabel(style, state.customStyles)}</span><span>默认草稿模板：{draftTemplateLabel(templateId, state.draftTemplates)}</span><span>主角档案：{characterPolicyLabel(resolvedPromptTemplate.characterPolicy)}</span><span>参考图类型：{referenceKindLabel(resolvedPromptTemplate.referenceKind)}</span><span>Step 3 骨架：{(resolvedPromptTemplate.step3SkeletonModules ?? []).join('、') || '未设置'}</span>
+                  <strong>当前模板配置</strong><span>故事：{resolvedPromptTemplate.name}</span><span>画面：{styleLabel(style, state.customStyles)}</span><span>草稿：{draftTemplateLabel(templateId, state.draftTemplates)}</span>
                 </div>
               ) : null}
               <Button className="new-task-advanced-toggle" variant="subtle" icon={showAdvanced ? <ChevronUp size={16} /> : <ChevronDown size={16} />} aria-expanded={showAdvanced} onClick={() => setShowAdvanced(!showAdvanced)}>
@@ -1268,12 +1333,18 @@ export function NewTaskPage({
 
           {activeStage === 'output' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.output.join(' ')}>
+              <div className="new-task-field-grid" role="group" aria-label="输出方式">
+                <CheckboxField label="直接成片 MP4" checked={outputTargets.includes('mp4')} onChange={(_, data) => setOutputTargets(current => data.checked ? [...current.filter(target => target !== 'mp4'), 'mp4'] : current.filter(target => target !== 'mp4'))} />
+                <CheckboxField label="剪映草稿" checked={outputTargets.includes('jianying-draft')} onChange={(_, data) => setOutputTargets(current => data.checked ? [...current.filter(target => target !== 'jianying-draft'), 'jianying-draft'] : current.filter(target => target !== 'jianying-draft'))} />
+              </div>
+              <p className="hint-text">至少选择一种。两种输出共用素材、配音与字幕，不重复生成素材。</p>
+              {outputTargets.length === 0 ? <p role="alert">请选择至少一种输出方式。</p> : null}
               <div className="new-task-field-grid">
                 <TextField label="目标字数" hint="字（±20%，留空跟随原文）" type="number" min="100" max="5000" step="50" value={targetLength} placeholder="自动" onChange={(event) => handleTargetLengthChange(event.target.value)} />
                 <TextField label="目标分镜数" hint="个（±10%，建议每镜 25-45 字）" type="number" min="1" max="60" step="1" value={storyboardSceneCount} placeholder={storyboardScenePreviewRange ? `自动（${storyboardScenePreviewRange.target}）` : '自动'} onChange={(event) => setStoryboardSceneCount(event.target.value)} />
               </div>
               <div className="new-task-field-grid">
-                <div><span className="field-title">AI 出图比例 <small>{ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><Choice label="AI 出图比例" value={ratio} options={['9:16', '4:3', '1:1', '16:9'].map((value) => ({ value, label: value, icon: <AspectRatioSwatch ratio={value} /> }))} onChange={handleRatioChange} /></div>
+                <div><span className="field-title">AI 出图比例 <small>{visualTemplateRef ? '已锁定原版模板画幅' : ratioManuallyOverridden ? '已手动覆盖' : '已跟随草稿模板'}</small></span><Choice label="AI 出图比例" value={ratio} options={['9:16', '4:3', '1:1', '16:9'].map((value) => ({ value, label: value, icon: <AspectRatioSwatch ratio={value} />, disabled: !!visualTemplateRef }))} onChange={handleRatioChange} /></div>
                 <div className="new-task-quality-override">
                   <ToggleField
                     label="覆盖生图质量"
@@ -1296,8 +1367,8 @@ export function NewTaskPage({
               ) : <span className="hint-text">双人播客会按主播组合自动拆分 A/B 音色，当前模型：{ttsProvider}</span>}
               <div className="new-task-field-grid">
                 <div className="new-task-bgm-field"><SelectField label="背景音乐" value={bgmId} onChange={(event) => setBgmId(event.target.value)} options={[{ value: '', label: '无 BGM' }, ...bgmOptions.map((bgm) => ({ value: bgm.id, label: bgm.title }))]} /><IconButton label="添加背景音乐" disabled={taskAction.busy} onClick={addBgmFromTask} icon={<Plus size={16} />} /></div>
-                <SelectField label="文本模型" value={selectedTaskLlmProfileId} onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)} options={state.config.llmProfiles.map((profile) => ({ value: profile.id ?? profile.model, label: `${profile.provider}: ${profile.model}` }))} />
               </div>
+              <ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} />
               <section className={coverPageEnabled ? 'ordinary-cover-page-editor enabled' : 'ordinary-cover-page-editor'} data-cover-page-enabled={coverPageEnabled ? 'true' : 'false'}>
                 <header>
                   <div><span className="field-title">片头封面页</span><small>{ORDINARY_TASK_COVER_PAGE_DURATION_MS / 1000} 秒独立首屏</small></div>
@@ -1360,7 +1431,7 @@ export function NewTaskPage({
           <div className="new-task-readiness">
             <span className={selectedTaskLlmProfileId ? 'ready' : ''}><Check size={15} />LLM {selectedTaskLlmProfileId ? '已配置' : '未配置'}</span>
             <span className={state.config.imageProvider !== 'mock' ? 'ready' : ''}><Check size={15} />图片服务{state.config.imageProvider !== 'mock' ? '已配置' : '未配置'}</span>
-            <span className={state.config.jianying.draftPath ? 'ready' : ''}><Check size={15} />剪映目录{state.config.jianying.draftPath ? '可写' : '未配置'}</span>
+            {outputTargets.includes('jianying-draft') ? <span className={state.config.jianying.draftPath ? 'ready' : ''}><Check size={15} />剪映目录{state.config.jianying.draftPath ? '已配置' : '未配置'}</span> : null}
           </div>
           <div className="new-task-summary-actions">
             <Button variant="primary" onClick={run} disabled={createTaskDisabled} icon={running ? <Loader2 className="spin" size={17} /> : <Play size={17} />}>{running ? '生成中' : '创建并开始生成'}</Button>

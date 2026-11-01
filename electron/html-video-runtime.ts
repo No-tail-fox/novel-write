@@ -173,14 +173,17 @@ export interface HtmlVideoMediaFetchContext {
 }
 
 export async function ensureHtmlVideoTaskWorkDir(
-  trustedAppDataRoot: string,
-  appDataDirectoryName: string,
-  managedStorageKey: string,
+  trustedArtifactRoot: string,
+  appDataDirectoryNameOrManagedKey: string,
+  legacyManagedStorageKey?: string,
 ): Promise<HtmlVideoTaskDirectoryIdentity> {
-  const appDataName = validateHtmlVideoTaskId(appDataDirectoryName);
-  const trustedRoot = await realpath(trustedAppDataRoot);
-  resolveManagedHistoryWorkDir(join(trustedRoot, appDataName), 'task', managedStorageKey);
-  const trustedTaskRoot = await ensureTaskLocalDirectory(trustedRoot, [appDataName, 'tasks']);
+  const legacyMode = legacyManagedStorageKey !== undefined;
+  const appDataName = legacyMode ? validateHtmlVideoTaskId(appDataDirectoryNameOrManagedKey) : '';
+  const managedStorageKey = legacyManagedStorageKey ?? appDataDirectoryNameOrManagedKey;
+  const trustedRoot = await realpath(trustedArtifactRoot);
+  const artifactRoot = legacyMode ? join(trustedRoot, appDataName) : trustedRoot;
+  resolveManagedHistoryWorkDir(artifactRoot, 'task', managedStorageKey);
+  const trustedTaskRoot = await ensureTaskLocalDirectory(trustedRoot, legacyMode ? [appDataName, 'tasks'] : ['tasks']);
   const workDir = await ensureTaskLocalDirectory(trustedTaskRoot, [managedStorageKey]);
   return Object.freeze({
     trustedTaskRoot: await pinHtmlVideoDirectory(trustedTaskRoot),
@@ -189,17 +192,19 @@ export async function ensureHtmlVideoTaskWorkDir(
 }
 
 export async function resolveExistingHtmlVideoTaskWorkDir(
-  trustedAppDataRoot: string,
-  appDataDirectoryName: string,
-  managedStorageKey: string,
+  trustedArtifactRoot: string,
+  appDataDirectoryNameOrManagedKey: string,
+  legacyManagedStorageKey?: string,
 ): Promise<HtmlVideoTaskDirectoryIdentity> {
-  const appDataName = validateHtmlVideoTaskId(appDataDirectoryName);
-  const trustedRoot = await realpath(trustedAppDataRoot);
-  const appDataRoot = join(trustedRoot, appDataName);
-  const workDirPath = resolveManagedHistoryWorkDir(appDataRoot, 'task', managedStorageKey);
+  const legacyMode = legacyManagedStorageKey !== undefined;
+  const appDataName = legacyMode ? validateHtmlVideoTaskId(appDataDirectoryNameOrManagedKey) : '';
+  const managedStorageKey = legacyManagedStorageKey ?? appDataDirectoryNameOrManagedKey;
+  const trustedRoot = await realpath(trustedArtifactRoot);
+  const artifactRoot = legacyMode ? join(trustedRoot, appDataName) : trustedRoot;
+  const workDirPath = resolveManagedHistoryWorkDir(artifactRoot, 'task', managedStorageKey);
   const trustedTaskRootPath = await resolveTaskLocalDirectoryFromPinnedRoot(
     trustedRoot,
-    join(appDataRoot, 'tasks'),
+    join(artifactRoot, 'tasks'),
   );
   const workDir = await resolveTaskLocalDirectoryFromPinnedRoot(trustedTaskRootPath, workDirPath);
   return Object.freeze({
@@ -207,7 +212,6 @@ export async function resolveExistingHtmlVideoTaskWorkDir(
     workDir: await pinHtmlVideoDirectory(workDir),
   });
 }
-
 export interface PrepareHtmlVideoBgmOptions {
   taskDirectory: HtmlVideoTaskDirectoryIdentity;
   bgmId: string;
@@ -2509,7 +2513,9 @@ function buildRuntimeComposition(
       .filter((asset) => asset.kind === 'bg')
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src })),
     foregroundImages: input.assets
-      .filter((asset) => asset.kind === 'fg')
+      // A generated checkerboard is opaque artwork, not a usable transparent layer.
+      .filter((asset) => asset.kind === 'fg' && asset.transparency !== 'opaque'
+        && (!asset.backgroundRemoval || asset.backgroundRemoval.quality === 'passed'))
       .map((asset) => ({ sceneId: asset.sceneIndex, path: asset.src, slot: asset.slot })),
     narrationAudio: input.voices.map((voice) => ({ sceneId: voice.sceneIndex, path: voice.src, captionCues: voice.captionCues })),
     coverPath,

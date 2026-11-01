@@ -178,7 +178,7 @@ export function nextUnplannedMotionComicSourceEpisodeId(document: MotionComicPip
 
 /** Deterministic source units prevent a model from inventing its own evidence. */
 export function splitMotionComicSource(sourceText: string): MotionComicSourceUnit[] {
-  const parts = sourceText.trim().split(/\r?\n+|(?<=[。！？!?；;])\s*/u).map((value) => value.trim()).filter(Boolean);
+  const parts = Array.from(sourceText.trim().matchAll(/[^。！？!?；;\r\n]+(?:[。！？!?；;][”’」』"']*)?|[。！？!?；;][”’」』"']*/gu), (match) => match[0].trim()).filter(Boolean);
   if (parts.length > 500) throw new Error('MOTION_COMIC_SOURCE_TOO_LONG: 原文超过 500 个句段，请按集拆分后生成。');
   return parts.map((value, index) => ({ id: `S${index + 1}`, text: value }));
 }
@@ -369,7 +369,8 @@ export function parseMotionComicPlanDraft(value: unknown, document?: MotionComic
   if (!parsed.success) throw new Error(`MOTION_COMIC_PLAN_INVALID: ${parsed.error.issues.slice(0, 8).map((issue) => `${issue.path.join('.')} ${issue.message}`).join('；')}`);
   const plan = parsed.data;
   const expectedUnits = splitMotionComicSource(plan.sourceText);
-  if (JSON.stringify(expectedUnits) !== JSON.stringify(plan.sourceUnits)) throw new Error('MOTION_COMIC_PLAN_INVALID: 原文句段被修改，请重新生成分镜方案。');
+  const legacyUnits = plan.sourceText.trim().split(/\r?\n+|(?<=[。！？!?；;])\s*/u).map(value => value.trim()).filter(Boolean).map((text, index) => ({ id: `S${index + 1}`, text }));
+  if (JSON.stringify(expectedUnits) !== JSON.stringify(plan.sourceUnits) && JSON.stringify(legacyUnits) !== JSON.stringify(plan.sourceUnits)) throw new Error('MOTION_COMIC_PLAN_INVALID: 原文句段被修改，请重新生成分镜方案。');
   const issues = [...validateMotionComicScriptDraft(plan.script, plan.sourceUnits, document), ...validateMotionComicStoryboard(plan.script, plan.shots, plan.targetDurationSec)];
   if (issues.length) throw new Error(`MOTION_COMIC_PLAN_INVALID: ${issues.slice(0, 8).map((issue) => `${issue.path} ${issue.message}`).join('；')}`);
   return plan;

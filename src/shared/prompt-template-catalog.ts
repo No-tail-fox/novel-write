@@ -1,4 +1,5 @@
 import type { PromptTemplateSummary } from './types';
+import { workflowPromptCatalog } from './workflow-prompt-catalog';
 
 const promptUpdatedAt = '2026-05-26T00:00:00.000Z';
 const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
@@ -13,6 +14,12 @@ export const promptTemplateCatalog: readonly PromptTemplateSummary[] = [
   systemTemplate('health-book', '健康图书', '健康养生 / 医学知识，印象派油画调性，多元意象（食物 / 草药 / 自然 / 书页）穿插少量温馨人物', 'oil-painting', 1779610217, 'force-skip', ['no-dialogue'], 'product'),
   systemTemplate('inspirational', '心灵鸡汤', '情感治愈 / 励志感悟 / 深夜电台，氛围意象驱动', 'cinematic', 1779611218, 'force-skip', [], 'face'),
   systemTemplate('picture-book', '绘本故事', '儿童绘本 / 睡前故事，可爱角色与梦幻场景', 'pixar-3d', 1779614152, 'force-extract', ['no-dialogue'], 'face'),
+  ...workflowPromptCatalog.map((entry): PromptTemplateSummary => ({
+    id: `workflow-${entry.slot}`, name: entry.name, type: 'workflow',
+    description: `提取自 ${entry.source}`, slot: entry.slot, channel: entry.channel,
+    ...('baseTrack' in entry ? { baseTrack: entry.baseTrack } : {}),
+    isBuiltin: true, enabled: true, updatedAt: promptUpdatedAt, origin: 'system',
+  })),
   builtinTemplate('builtin-review', '预审整理', 'review', '清洗素材、去噪、压缩为适合短视频的事实文案。', promptUpdatedAt),
   builtinTemplate('builtin-rewrite', 'StoryDream 通用改写', 'rewrite', 'StoryDream 通用故事赛道改写提示词兜底。', iso(1779149852)),
   builtinTemplate('builtin-cover', 'StoryDream 通用封面信息', 'cover', 'StoryDream 通用故事赛道封面标题与视频简介提示词兜底。', iso(1779149852)),

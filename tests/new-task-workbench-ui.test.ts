@@ -14,7 +14,10 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain("{ id: 'creative', label: '内容'");
     expect(page).toContain("{ id: 'output', label: '制作设置'");
     expect(page).toContain('className="new-task-type-step"');
-    expect(page).toContain('data-new-task-stage-tab={stage.id}');
+    expect(page).toContain('label="新建任务步骤"');
+    expect(page).toContain('value={activeStage}');
+    expect(page).toContain('value: stage.id');
+    expect(page).toContain('onChange={(value) => setActiveStage(value as NewTaskStage)}');
     expect(page).toContain('data-new-task-summary');
     expect(page).toContain('处理模式');
     expect(page).toContain('目标长度');
@@ -37,7 +40,8 @@ describe('three-stage new task workbench', () => {
     const footer = page.slice(page.indexOf('<footer className="new-task-stage-footer">'), page.indexOf('</footer>', page.indexOf('<footer className="new-task-stage-footer">')));
 
     expect(page).toContain('const createTaskDisabled =');
-    expect(footer).toContain("className={activeStage === 'output' ? 'primary-action' : 'ghost-action'}");
+    expect(page).toContain('|| outputTargets.length === 0');
+    expect(footer).toContain("variant={activeStage === 'output' ? 'primary' : 'secondary'}");
     expect(footer).toContain("onClick={activeStage === 'output' ? run : advanceStage}");
     expect(footer).toContain("disabled={activeStage === 'output' ? createTaskDisabled : false}");
     expect(footer).toContain("{activeStage === 'output' ? '创建并开始生成' : '下一步'}");
@@ -54,14 +58,13 @@ describe('three-stage new task workbench', () => {
     expect(css).toMatch(/@media \(max-width:\s*1180px\)[\s\S]*\.new-task-workbench\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\)/u);
     expect(css).toMatch(/@media \(max-width:\s*1180px\)[\s\S]*\.new-task-summary\s*\{[\s\S]*order:\s*2/u);
     expect(css).toMatch(/\.new-task-summary\s*\{[\s\S]*background:\s*var\(--shell-surface\)/u);
-    expect(css).toMatch(/\.new-task-editor \.ghost-action,[\s\S]*background:\s*var\(--shell-surface-raised\)/u);
-    expect(css).toMatch(/\.new-task-stage-panel \.new-task-track-options \.option-cloud\s*\{[\s\S]*repeat\(3,/u);
+    expect(css).toMatch(/\.new-task-stage-footer > \.sd-button\s*\{[^}]*white-space:\s*nowrap;/u);
+    expect(css).toMatch(/\.new-task-check-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/u);
     expect(css).not.toContain('var(--shell-surface-muted)');
     expect(css).not.toMatch(/font-size:\s*clamp\(/u);
-    expect(css).toContain('.new-task-summary-actions > .primary-action:disabled');
-    expect(css).toContain('.new-task-stage-footer > .primary-action:disabled');
-    expect(css).toContain('background: var(--shell-border);');
-    expect(css).toContain('cursor: not-allowed;');
+    expect(css).toContain('.new-task-summary-actions > .sd-button');
+    const sharedCss = await readFile(new URL('../src/styles/components.css', import.meta.url), 'utf8');
+    expect(sharedCss).toMatch(/button:disabled,[\s\S]*?cursor:\s*not-allowed;/u);
   });
 
   it('offers ordinary manual cover import without exposing a path input', async () => {
@@ -104,7 +107,8 @@ describe('three-stage new task workbench', () => {
     expect(draft).toContain('coverPageText?: string');
     expect(types).toContain('coverPageEnabled?: boolean');
     expect(types).toContain('coverPageText?: string');
-    expect(css).toMatch(/\.ordinary-cover-page-editor\.enabled\s*\{[\s\S]*border-color:/u);
+    expect(page).toContain("data-cover-page-enabled={coverPageEnabled ? 'true' : 'false'}");
+    expect(css).toMatch(/\.ordinary-cover-page-editor\s*\{[^}]*border-block:\s*1px solid var\(--shell-border\)/u);
     expect(css).toMatch(/\.ordinary-cover-page-body\s*\{[\s\S]*border-top:/u);
   });
 
@@ -144,7 +148,7 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain('应用预设');
     expect(page).toContain('删除预设');
     expect(page).toContain('selectTaskPreset(event.target.value)');
-    expect(css).toMatch(/\.new-task-preset-panel \.icon-button\s*\{[\s\S]*background:\s*var\(--shell-surface-raised\);[\s\S]*color:\s*var\(--shell-muted\);/u);
+    expect(css).toMatch(/\.new-task-preset-panel \.sd-button\s*\{[^}]*white-space:\s*nowrap;/u);
   });
 
   it('submits the existing validated creation flow with Ctrl+Enter', async () => {
@@ -167,8 +171,9 @@ describe('three-stage new task workbench', () => {
     expect(component).toContain("'--aspect-ratio-value': normalizedWidth / normalizedHeight");
     expect(component).toContain('className="aspect-ratio-swatch"');
     expect(component).toContain('className="aspect-ratio-swatch-shape"');
-    expect(newTask).toContain('<AspectRatioSwatch ratio={item} />');
-    expect(musicMv).toContain('<AspectRatioSwatch ratio={item} />');
+    expect(newTask).toContain('<AspectRatioSwatch ratio={value} />');
+    expect(musicMv).toContain('<SelectField label="成片画幅" value={ratio}');
+    expect(musicMv).toContain("options={['16:9', '9:16', '1:1', '4:3'].map(value => ({ value, label: value }))}");
     expect(imageLab).toContain('<AspectRatioSwatch ratio={value} />');
     expect(css).toMatch(/\.aspect-ratio-swatch\s*\{[\s\S]*width:\s*26px;[\s\S]*height:\s*24px;/u);
     expect(css).toMatch(/\.aspect-ratio-swatch-shape\s*\{[\s\S]*width:\s*min\(24px, calc\(22px \* var\(--aspect-ratio-value\)\)\);[\s\S]*aspect-ratio:\s*var\(--aspect-ratio-value\);/u);

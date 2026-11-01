@@ -39,6 +39,8 @@ describe('HTML video creation page workflow', () => {
     const result = await composeHtmlVideoResearchCopy({ composeResearchCopy }, {
       keyword: ' 钱学森回国 ',
       extraRequirements: ' 500 字 ',
+      track: 'character-story',
+      writingStyleId: 'documentary',
       selectedSources: context.sections,
       warnings: context.warnings,
     });
@@ -50,6 +52,9 @@ describe('HTML video creation page workflow', () => {
     expect(composeResearchCopy).toHaveBeenCalledWith({
       keyword: '钱学森回国',
       extraRequirements: '500 字',
+      channel: 'html-video',
+      track: 'character-story',
+      writingStyleId: 'documentary',
       selectedSources: [expect.objectContaining({ title: '有效资料' })],
       useBuiltinKnowledge: false,
     });

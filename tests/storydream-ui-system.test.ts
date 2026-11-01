@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
+// Load Fluent theme modules during collection, not inside the contrast assertion timer.
+import { storyDreamDarkTheme, storyDreamLightTheme } from '../src/ui/theme';
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(path, import.meta.url), 'utf8');
@@ -38,7 +40,6 @@ describe('StoryDream Fluent UI system', () => {
   });
 
   it('keeps enabled control labels readable on primary and secondary surfaces', async () => {
-    const { storyDreamDarkTheme, storyDreamLightTheme } = await import('../src/ui/theme');
     const luminance = (hex: string): number => {
       const channels = hex.slice(1).match(/.{2}/gu)!.map((channel) => {
         const value = parseInt(channel, 16) / 255;
@@ -140,6 +141,8 @@ describe('StoryDream Fluent UI system', () => {
       source('../src/styles/storydream-ui.css'),
     ]);
     expect(base).toContain(":where(button, input, select, textarea):not([class*='fui-'])");
+    expect(base).toContain(":where(button):not([class*='fui-'])");
+    expect(base).not.toMatch(/(?:^|\})\s*(?:button|input|select|textarea)\s*[,\{]/u);
     expect(css).toContain(":where(input, select, textarea):not([class*='fui-'])");
     expect(css).toContain(".config-input > span:not([class*='fui-'])");
     expect(shared).not.toContain('color: #fff !important');

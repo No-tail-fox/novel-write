@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { Bot, ChevronDown, ChevronUp, Flag, MessageSquare, Play, Plus, Sparkles, Trash2, Upload, Volume2, WandSparkles } from 'lucide-react';
 import type { ProductionSubtitleCue } from '../../shared/production-workflow';
+import { LEMO_FOLLOW_STYLE_SUBTITLES } from '../../shared/creative-animation/native-film';
 import { isSubtitleAlignmentValid } from '../../shared/audio-alignment';
 import type {
   MotionComicSpeakerRole,
@@ -39,6 +40,7 @@ export interface DirectorSubtitleInspectorProps {
   durationMs: number;
   busy: boolean;
   style: string;
+  nativeCaptions?: boolean;
   safeAreaVisible: boolean;
   characters?: readonly { value: string; label: string }[];
   voiceConnected?: boolean;
@@ -428,6 +430,17 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
                     <WandSparkles size={12} />
                     逐词估算
                   </Button>
+                  {props.onImportTimestamps ? (
+                    <Button
+                      density="compact"
+                      variant="subtle"
+                      disabled={props.busy || !cueItem.text.trim()}
+                      onClick={() => run(() => props.onImportTimestamps?.(cueItem.id))}
+                    >
+                      <Upload size={12} />
+                      导入识别时间戳
+                    </Button>
+                  ) : null}
                   {props.onGenerateVoice ? (
                     <Button
                       density="compact"
@@ -480,7 +493,9 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
         label="字幕样式"
         value={props.style}
         disabled={props.busy}
+        hint={props.nativeCaptions ? '字幕由 Lemo 全片代码绘制；修改后到自动制作设置重新创作全片。' : undefined}
         options={[
+          ...(props.nativeCaptions ? [{ value: LEMO_FOLLOW_STYLE_SUBTITLES, label: LEMO_FOLLOW_STYLE_SUBTITLES }] : []),
           { value: '简体中文 · 白色描边', label: '简体中文 · 白色描边' },
           { value: '简体中文 · 下方黑底', label: '简体中文 · 下方黑底' },
         ]}
@@ -493,7 +508,7 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
       />
       <div className="director-inspector-note">
         <Flag size={14} />
-        <span>漫画气泡浮层直接悬浮于画布上方；底部字幕适用于旁白或传统字幕。修改台词文本后可重新生成专属音色配音。</span>
+        <span>{props.nativeCaptions ? '跟随风格时，字幕的字体、位置与动效由所选风格决定；手动选择的样式会作为全片创作要求。' : '漫画气泡浮层直接悬浮于画布上方；底部字幕适用于旁白或传统字幕。修改台词文本后可重新生成专属音色配音。'}</span>
       </div>
     </section>
   );

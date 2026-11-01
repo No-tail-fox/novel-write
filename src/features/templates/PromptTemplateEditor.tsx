@@ -1,3 +1,4 @@
+import { WorkflowPromptEditor } from './WorkflowPromptEditor';
 import React, { useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, ImagePlus, Plus, RotateCcw, Save, Sparkles, Upload } from 'lucide-react';
 import type { CustomStyle, PromptTemplate, PromptStepTemplateType, PromptTemplateType } from '../../shared/types';
@@ -33,7 +34,7 @@ export interface PromptTemplateEditorProps {
   setImageTemplateAiPrompt: (value: string) => void;
   setImageTemplateJsonDraft: (value: string) => void;
   setTemplateJsonDraft: (value: string) => void;
-  savePromptTemplateDraft: () => Promise<void>;
+  savePromptTemplateDraft: (apply?: boolean) => Promise<void>;
   duplicate: () => Promise<void>;
   exportPromptTemplateJson: () => void;
   importPromptTemplateJson: () => Promise<void>;
@@ -162,6 +163,12 @@ export function PromptTemplateEditor({
     );
   }
 
+  if (draft?.type === 'workflow') return (
+    <WorkflowPromptEditor draft={draft} state={state} setDraft={setDraft} busy={promptTemplateAction.busy}
+      feedback={<InlineActionFeedback feedback={promptTemplateAction.feedback} />}
+      onBack={() => setTemplateMode('gallery')} onSave={savePromptTemplateDraft} onClone={duplicate} />
+  );
+
   return (
     <div className="prompt-template-detail">
       <section className="panel editor-panel">
@@ -171,7 +178,7 @@ export function PromptTemplateEditor({
             <div className="panel-title-row prompt-template-detail-title">
               <div>
                 <Button variant="subtle" icon={<ArrowLeft size={15} />} onClick={() => setTemplateMode('gallery')}>返回模板库</Button>
-                <h2>查看系统模板 · {draft.name}</h2>
+                <h2>编辑提示词 · {draft.name}</h2>
               </div>
               <div className="button-row">
                 <Button icon={<Copy size={15} />} disabled={promptTemplateAction.busy} onClick={duplicate}>
@@ -183,8 +190,8 @@ export function PromptTemplateEditor({
                 <Button icon={<Upload size={15} />} disabled={promptTemplateAction.busy} onClick={() => void importPromptTemplateJson()}>
                   导入 JSON
                 </Button>
-                <Button variant="primary" icon={<Save size={15} />} disabled={promptTemplateAction.busy} onClick={savePromptTemplateDraft}>
-                  {draft.isBuiltin ? '保存为自定义模板' : '保存修改'}
+                <Button variant="primary" icon={<Save size={15} />} disabled={promptTemplateAction.busy} onClick={() => void savePromptTemplateDraft()}>
+                  保存并应用
                 </Button>
               </div>
             </div>
@@ -193,9 +200,9 @@ export function PromptTemplateEditor({
                 <div className="template-meta-grid prompt-template-basics-grid">
                   <TextField label="模板名" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
                   <TextField label="描述（一句话说明这个模板的特点）" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-                  <SelectField label="模板类型" value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as PromptTemplateType })}
-                    options={promptTemplateTypeOptions.filter((type) => type !== 'all').map((type) => ({ value: type, label: promptTemplateTypeLabel(type) }))} />
-                  <SelectField label="绑定赛道" value={draft.baseTrack ?? ''} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}
+                  <SelectField label="模板类型" value={draft.type} disabled={draft.isBuiltin} onChange={(event) => setDraft({ ...draft, type: event.target.value as PromptTemplateType })}
+                    options={promptTemplateTypeOptions.filter((type) => type !== 'all' && type !== 'workflow').map((type) => ({ value: type, label: promptTemplateTypeLabel(type) }))} />
+                  <SelectField label="绑定赛道" value={draft.baseTrack ?? ''} disabled={draft.isBuiltin} onChange={(event) => setDraft({ ...draft, baseTrack: event.target.value || undefined })}
                     options={[{ value: '', label: '无' }, ...promptTemplateBindingTrackOptions.map(([id, label]) => ({ value: id, label }))]} />
                 </div>
                 <ImageStylePicker label="默认画风" styles={promptTemplateStyleOptions(state.customStyles, draft)}
@@ -250,7 +257,7 @@ export function PromptTemplateEditor({
                 </div>
               </section>
 
-              <span className="local-note">{draft.isBuiltin ? '系统模板保存后会生成自定义副本，原系统模板保持不变。' : '自定义模板保存会更新当前模板，历史任务和已绑定配置会继续使用这个模板。'}</span>
+              <span className="local-note">{draft.isBuiltin ? '系统默认模板不可删除，保存会保留修改并应用于后续生成。' : '自定义模板保存会更新当前模板，历史任务和已绑定配置会继续使用这个模板。'}</span>
 
               {draft.type === 'task' ? (
                 <section className="prompt-step-editor-list" aria-label="AI 步骤设置">

@@ -1,3 +1,5 @@
+import './lemo-native-runtime';
+import { creativeFont, creativeRenderSpec } from '../../shared/creative-animation/render-spec';
 import React from 'react';
 import * as ReactModule from 'react';
 import * as Remotion from 'remotion';
@@ -20,11 +22,14 @@ function Subtitles({payload}:{payload:VoxAnimationPayload}) {
   const ms=Remotion.useCurrentFrame()/payload.fps*1000;
   const centered=payload.animation.mode==='template'&&['audio-captions','audio-lyrics'].includes(payload.animation.template.id);
   const outline=payload.subtitleStyle?.includes('描边');
+  const style=payload.animation.creativeStyle?creativeRenderSpec(payload.animation.creativeStyle.styleId):undefined;
+  const paper=style&&['board','paper','ink','draft','flat','print'].includes(style.material);
+  const palette=payload.animation.template.props;
   const fontSize=payload.width*(centered?.055:payload.height>payload.width?.042:.025);
-  return <div style={{position:'absolute',inset:0,pointerEvents:'none',fontFamily:'Microsoft YaHei, Noto Sans CJK SC, sans-serif'}}>
+  return <div style={{position:'absolute',inset:0,pointerEvents:'none',fontFamily:style?creativeFont(style.font):'Microsoft YaHei, Noto Sans CJK SC, sans-serif'}}>
     {payload.cues.map((cue,i)=><div key={cue.id??i} className="caption" data-cue-id={cue.id??`#${i}`} data-cue-start={cue.startMs} data-cue-end={cue.endMs} hidden={ms<cue.startMs||ms>=cue.endMs}
-      style={{position:'absolute',left:'8%',right:'8%',bottom:centered?'42%':'6%',padding:'.6em .9em',fontSize,fontWeight:650,lineHeight:1.35,textAlign:'center',whiteSpace:'pre-wrap',overflowWrap:'anywhere',color:centered?payload.animation.template.props.foreground:'#fff',background:centered||outline?'transparent':'rgba(7,9,10,.82)',textShadow:outline?'-2px -2px #000,2px 2px #000,0 2px 6px #000':undefined}}>
-      {cue.tokens?.length?(()=>{let cursor=0;const parts:React.ReactNode[]=[];cue.tokens!.forEach((token,j)=>{const position=cue.text.indexOf(token.text,cursor);if(position<cursor)return;parts.push(cue.text.slice(cursor,position));parts.push(<span key={j} data-word-start={token.startMs} data-word-end={token.endMs} style={{color:ms>=token.startMs&&ms<token.endMs?'#ff6255':undefined}}>{token.text}</span>);cursor=position+token.text.length;});parts.push(cue.text.slice(cursor));return parts;})():cue.text}
+      style={{position:'absolute',left:'8%',right:'8%',bottom:centered?'42%':'6%',padding:'.6em .9em',fontSize,fontWeight:650,lineHeight:1.35,textAlign:'center',whiteSpace:'pre-wrap',overflowWrap:'anywhere',color:centered||paper?palette.foreground:'#fff',background:centered||outline||paper?'transparent':'rgba(7,9,10,.82)',textShadow:outline?(paper?`-1px -1px ${palette.background},1px 1px ${palette.background},0 0 4px ${palette.background}`:'-2px -2px #000,2px 2px #000,0 2px 6px #000'):undefined}}>
+      {cue.tokens?.length?(()=>{let cursor=0;const parts:React.ReactNode[]=[];cue.tokens!.forEach((token,j)=>{const position=cue.text.indexOf(token.text,cursor);if(position<cursor)return;parts.push(cue.text.slice(cursor,position));parts.push(<span key={j} data-word-start={token.startMs} data-word-end={token.endMs} style={{color:ms>=token.startMs&&ms<token.endMs?palette.accent:undefined}}>{token.text}</span>);cursor=position+token.text.length;});parts.push(cue.text.slice(cursor));return parts;})():cue.text}
     </div>)}
   </div>;
 }
@@ -33,7 +38,7 @@ runtimeWindow.VoxRuntime={require:runtimeRequire,mount(payload,Custom){
   const root=createRoot(document.getElementById('root')!);
   const ref=React.createRef<PlayerRef>();
   const durationInFrames=Math.max(1,Math.ceil(payload.durationMs*payload.fps/1000));
-  const Composition=()=> <Boundary><Remotion.AbsoluteFill className="frame">{Custom?<Custom {...payload.animation.template.props} assets={payload.assets} cues={payload.cues}/>:<VoxComposition {...payload}/>}<Subtitles payload={payload}/></Remotion.AbsoluteFill></Boundary>;
+  const Composition=()=> <Boundary><Remotion.AbsoluteFill className="frame" style={{backgroundColor:payload.animation.template.props.background}}>{Custom?<Custom {...payload.animation.template.props} assets={payload.assets} cues={payload.cues}/>:<VoxComposition {...payload}/>}<Subtitles payload={payload}/></Remotion.AbsoluteFill></Boundary>;
   flushSync(()=>root.render(<Player ref={ref} component={Composition} compositionWidth={payload.width} compositionHeight={payload.height} fps={payload.fps} durationInFrames={durationInFrames} controls={false} clickToPlay={false} style={{width:'100%',height:'100%'}} errorFallback={({error})=>{fail(error);return <div>{error.message}</div>;}}/>));
   const ready=Promise.all(payload.assets.filter(x=>x.kind==='audio').map(async a=>{voxAudioCache.set(a.url,await getAudioData(a.url));}));
   let lastFrame=-1;
@@ -46,7 +51,7 @@ runtimeWindow.VoxRuntime={require:runtimeRequire,mount(payload,Custom){
     await document.fonts.ready;
     await Promise.all(Array.from(document.images).map(image=>image.decode()));
     document.querySelectorAll<HTMLElement>('.caption').forEach(el=>{el.hidden=seconds*1000<Number(el.dataset.cueStart)||seconds*1000>=Number(el.dataset.cueEnd);});
-    document.querySelectorAll<HTMLElement>('[data-word-start]').forEach(el=>{el.style.color=seconds*1000>=Number(el.dataset.wordStart)&&seconds*1000<Number(el.dataset.wordEnd)?'#ff6255':'';});
+    document.querySelectorAll<HTMLElement>('[data-word-start]').forEach(el=>{el.style.color=seconds*1000>=Number(el.dataset.wordStart)&&seconds*1000<Number(el.dataset.wordEnd)?payload.animation.template.props.accent:'';});
     if(runtimeWindow.__htmlVideoMediaError)throw new Error(runtimeWindow.__htmlVideoMediaError);
   };
   window.__tl={seek};

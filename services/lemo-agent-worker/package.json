@@ -1,0 +1,12 @@
+{
+  "name": "storydream-lemo-agent-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.314"
+  }
+}

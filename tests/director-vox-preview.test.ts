@@ -1,9 +1,16 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DirectorDeskWorkspace, directorLayerStyle, directorPreviewTitleVisible, type DirectorPreviewLayer, type DirectorShot } from '../src/features/director-desk/DirectorDeskWorkspace';
 import { buildDirectorSceneHtml, buildDirectorTextLayerSvg } from '../src/shared/director-render';
+
+// Server markup cannot mount a Fluent portal. Keep inspector field contracts
+// inspectable here; the offline browser QA covers the real drawer and its opener.
+vi.mock('../src/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/ui')>(),
+  Drawer: ({ children }: { children: import('react').ReactNode }) => createElement('aside', { 'data-ssr-inspector': true }, children),
+}));
 
 const layer: DirectorPreviewLayer = {
   id: 'subject', label: '独立主体', kind: 'subject', src: 'data:image/png;base64,AA==', zIndex: 1, depth: 0.2,
@@ -91,10 +98,11 @@ describe('VOX dimensioned layer preview', () => {
     expect(workspaceMarkup(shot)).not.toContain('class="director-preview-title"');
     expect(workspaceMarkup(shot)).not.toContain('class="director-preview-kicker"');
     expect(directorPreviewTitleVisible({ ...shot, renderStrategy: 'living-poster' }, 'vox')).toBe(true);
-    expect(directorPreviewTitleVisible(shot, 'motion-comic')).toBe(true);
+    expect(directorPreviewTitleVisible(shot, 'motion-comic')).toBe(false);
     expect(directorPreviewTitleVisible({ ...shot, previewLayers: [{ ...previewLayers[0], visible: false }] }, 'vox')).toBe(true);
     expect(directorPreviewTitleVisible({ ...shot, previewLayers: [{ ...previewLayers[0], content: { type: 'text', text: '25%' } }] }, 'vox')).toBe(true);
     expect(directorPreviewTitleVisible({ ...shot, title: ' ' }, 'vox')).toBe(false);
-    expect(workspaceMarkup(shot, 'motion-comic')).toContain('class="director-preview-kicker"');
+    expect(workspaceMarkup(shot, 'motion-comic')).not.toContain('class="director-preview-kicker"');
+    expect(workspaceMarkup(shot, 'motion-comic')).not.toContain('class="director-preview-shade"');
   });
 });

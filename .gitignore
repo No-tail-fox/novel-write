@@ -37,3 +37,7 @@ Thumbs.db
 # Local QA and audit artifacts
 .artifacts/
 .codex-audit-temp/
+
+# Upstream tracks these alignment receipts; retain them despite our general out/ rule.
+!vendor/lemo-upstream/**/out/
+!vendor/lemo-upstream/**/out/*.json

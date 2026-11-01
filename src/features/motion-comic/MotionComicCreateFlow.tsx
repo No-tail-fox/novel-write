@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,6 +29,7 @@ export interface MotionComicEpisodeDraft {
   continuityHook?: string;
 }
 interface MotionComicCreateFlowProps {
+  models?: ReactNode;
   step: number;
   title: string;
   ratio: MotionComicPipelineData['ratio'];
@@ -47,6 +48,7 @@ interface MotionComicCreateFlowProps {
   busy: boolean;
   feedback?: string;
   errorMessage?: string;
+  services?: readonly { id: string; label: string; model: string; ready: boolean; detail?: string; onConfigure?: () => void }[];
   onStepChange: (step: number) => void;
   onTitleChange: (value: string) => void;
   onRatioChange: (value: MotionComicPipelineData['ratio']) => void;
@@ -68,6 +70,7 @@ const STEPS = [
 ] as const;
 
 export function MotionComicCreateFlow({
+  models,
   step,
   title,
   ratio,
@@ -86,6 +89,7 @@ export function MotionComicCreateFlow({
   busy,
   feedback,
   errorMessage,
+  services = [],
   onStepChange,
   onTitleChange,
   onRatioChange,
@@ -154,6 +158,7 @@ export function MotionComicCreateFlow({
             </div>
 
             {step === 0 ? <div className="motion-comic-create__fields">
+              {models}
               <div className="motion-comic-create__row">
                 <TextField label="项目名称" value={title} placeholder="例如：雨夜来信" onChange={(_, data) => onTitleChange(data.value)} />
                 <SegmentedControl label="成片画幅" value={ratio} options={(['9:16', '16:9', '1:1', '4:3'] as const).map((value) => ({ value, label: value }))} onChange={onRatioChange} />
@@ -287,6 +292,16 @@ export function MotionComicCreateFlow({
               <div><dt>分集</dt><dd>{episodes.length || '待拆分'}</dd></div>
               <div><dt>画幅</dt><dd>{ratio}</dd></div>
             </dl>
+            {services.length > 0 ? <section className="motion-comic-create__services" aria-label="制作服务就绪情况">
+              <strong>制作服务</strong>
+              <p>创建后将固定使用本项目所选模型。远程视频未就绪时，制作会停在视频生成前。</p>
+              {services.map((service) => <div key={service.id} data-ready={service.ready}>
+                <div><strong>{service.label}</strong><span>{service.ready ? '已配置' : '待配置'}</span></div>
+                <small>{service.model}</small>
+                {!service.ready && service.detail ? <small>{service.detail}</small> : null}
+                {service.onConfigure ? <Button variant="subtle" density="compact" onClick={service.onConfigure}>配置{service.label}</Button> : null}
+              </div>)}
+            </section> : null}
             <div className="motion-comic-create__route">
               <strong>后续流程</strong>
               <span>分集 → 分幕分场 → 制作资产 → 分镜图 → 远程视频 → 配音合成 → 导出</span>

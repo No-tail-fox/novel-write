@@ -1,0 +1,24 @@
+.prompt-template-gallery, .prompt-template-gallery .prompt-template-list { min-width: 0; }
+.prompt-template-gallery .prompt-template-row { min-width: 0; grid-template-columns: 24px minmax(0, 1fr) auto; }
+.prompt-template-gallery .prompt-template-row-main > * { white-space: normal; overflow-wrap: anywhere; }
+.prompt-template-gallery .prompt-template-list-title { flex-wrap: wrap; }
+.image-template-gallery > .sd-hover-preview-anchor { display: block; min-width: 0; }
+.image-template-gallery .prompt-template-row { grid-template-columns: 112px minmax(0, 1fr) auto; }
+.image-template-gallery .image-style-sample-thumb { width: 112px; height: 76px; max-height: none; object-fit: contain; background: var(--shell-surface); }
+.image-template-gallery .image-style-sample-empty { box-sizing: border-box; width: 112px; min-height: 76px; }
+@media (max-width: 1120px) {
+  .prompt-template-gallery .prompt-template-row { grid-template-columns: 24px minmax(0, 1fr); align-items: start; }
+  .image-template-gallery .prompt-template-row { grid-template-columns: 112px minmax(0, 1fr); }
+  .prompt-template-gallery .prompt-template-row-actions { grid-column: 2; justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  .image-template-gallery .prompt-template-row { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; }
+  .image-template-gallery .image-style-sample-thumb, .image-template-gallery .image-style-sample-empty { width: 88px; height: 64px; min-height: 64px; }
+}
+
+.workflow-prompt-variables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.workflow-prompt-variables > span { min-width: 0; overflow-wrap: anywhere; }
+.workflow-prompt-variables code { margin-right: 8px; }
+@media (max-width: 1120px) {
+  .workflow-prompt-variables { grid-template-columns: minmax(0, 1fr); }
+}

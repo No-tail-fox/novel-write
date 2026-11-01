@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { appendMotionComicEpisode, createMotionComicDraft, createMotionComicStarterProject, parseMotionComicPipelineData } from '../src/shared/motion-comic';
-import { motionComicDialogueInput, motionComicDialogueInputMatches, updateMotionComicCharacterVoice } from '../src/shared/motion-comic-dialogue';
+import { prepareMotionComicDialogueForRender, fitMotionComicDialogueTiming, motionComicDialogueInput, motionComicDialogueInputMatches, updateMotionComicCharacterVoice } from '../src/shared/motion-comic-dialogue';
 import { applyMotionComicVoiceRecord } from '../src/features/director-desk/director-generation';
 import { updateDirectorSubtitleCue } from '../src/shared/director-subtitles';
 import type { VoiceLabRecord } from '../src/shared/types';
@@ -72,5 +72,91 @@ describe('independent motion comic dialogue', () => {
     const next = appendMotionComicEpisode(voiced);
     expect(next.episodes[1].dialogueCues.every((cue) => !cue.voiceAssetVersionId && !cue.audioAssetVersionId && !cue.tokens)).toBe(true);
     expect(parseMotionComicPipelineData(JSON.stringify(next))).toEqual(next);
+  });
+  it('fits real recording lengths and shifts the next cue without cutting speech or video', () => {
+    const { document, shot, cues } = fixture();
+    const owner = document.episodes[0].timeline.clips.find(clip => clip.shotId === shot.id)!;
+    shot.durationMs = 7000; owner.durationMs = 7000;
+    document.episodes[0].timeline.durationMs = Math.max(7000, document.episodes[0].timeline.durationMs);
+    Object.assign(cues[0], { startMs: 629, endMs: 3518 });
+    Object.assign(cues[1], { startMs: 4148, endMs: 6371 });
+    let next = applyMotionComicVoiceRecord(document, shot.id, record(motionComicDialogueInput(document, shot.id, cues[1].id, defaults)), 'm', cues[1].id, undefined, 2040);
+    next = applyMotionComicVoiceRecord(next, shot.id, record(motionComicDialogueInput(next, shot.id, cues[0].id, defaults)), 'm', cues[0].id, undefined, 3624);
+    expect(next.episodes[0].dialogueCues.find(cue => cue.id === cues[0].id)).toMatchObject({ startMs: 629, endMs: 4253 });
+    expect(next.episodes[0].dialogueCues.find(cue => cue.id === cues[1].id)).toMatchObject({ startMs: 4373, endMs: 6413 });
+    expect(next.episodes[0].timeline.audioClips?.find(clip => clip.id === `dialogue-clip-${cues[0].id}`)).toMatchObject({ durationMs: 3624, sourceDurationMs: 3624 });
+    expect(next.episodes[0].scenes[0].shots[0].durationMs).toBe(7000);
+    expect(fitMotionComicDialogueTiming(next, shot.id)).toEqual(next);
+  });
+
+  it('keeps the original timing when complete recordings cannot fit the shot', () => {
+    const { document, shot, cues } = fixture();
+    for (const cue of cues) {
+      cue.voiceAssetVersionId = `long-${cue.id}`;
+      document.assets.push({ id: cue.voiceAssetVersionId, assetId: cue.voiceAssetVersionId, kind: 'audio', localPath: 'I:/fixture/long.wav', durationMs: shot.durationMs, createdAt: document.createdAt });
+    }
+    const before = structuredClone(document);
+    expect(fitMotionComicDialogueTiming(document, shot.id)).toEqual(before);
+  });
+
+  it('moves complete recordings earlier when the last sentence reaches the shot boundary', () => {
+    const { document, shot, cues } = fixture();
+    const owner = document.episodes[0].timeline.clips.find(clip => clip.shotId === shot.id)!;
+    shot.durationMs = 7000; owner.durationMs = 7000;
+    cues[0].startMs = owner.startMs + 4000;
+    cues[0].endMs = owner.startMs + 4500;
+    cues[1].startMs = owner.startMs + 6000;
+    cues[1].endMs = owner.startMs + 6500;
+    for (const cue of cues) {
+      cue.voiceAssetVersionId = `voice-${cue.id}`;
+      document.assets.push({ id: cue.voiceAssetVersionId, assetId: cue.voiceAssetVersionId, kind: 'audio', localPath: 'I:/fixture/voice.wav', durationMs: 2000, createdAt: document.createdAt });
+    }
+    const next = fitMotionComicDialogueTiming(document, shot.id);
+    const fitted = next.episodes[0].dialogueCues.filter(cue => cue.shotId === shot.id);
+    expect(fitted.map(cue => [cue.startMs - owner.startMs, cue.endMs - owner.startMs])).toEqual([[2880, 4880], [5000, 7000]]);
+    expect(next.episodes[0].scenes[0].shots[0].durationMs).toBe(7000);
+  });
+});
+
+
+describe('motion comic export audio preparation', () => {
+  function voicedFixture() {
+    let { document, shot, cues } = fixture();
+    for (const cue of cues) document = applyMotionComicVoiceRecord(document, shot.id, record(motionComicDialogueInput(document, shot.id, cue.id, defaults)), 'm', cue.id);
+    return { document, shot: document.episodes[0].scenes.flatMap(scene => scene.shots).find(item => item.id === shot.id)!, cues };
+  }
+
+  it('measures legacy recordings and persists complete speech timing without changing the content or video', async () => {
+    const { document, shot, cues } = voicedFixture();
+    const owner = document.episodes[0].timeline.clips.find(clip => clip.shotId === shot.id)!;
+    shot.durationMs = 7000; owner.durationMs = 7000;
+    const episode = document.episodes[0];
+    Object.assign(episode.dialogueCues.find(cue => cue.id === cues[0].id)!, { startMs: owner.startMs + 629, endMs: owner.startMs + 3518 });
+    Object.assign(episode.dialogueCues.find(cue => cue.id === cues[1].id)!, { startMs: owner.startMs + 4148, endMs: owner.startMs + 6371 });
+    const before = structuredClone(document);
+    const prepared = await prepareMotionComicDialogueForRender(document, async path => path.includes(cues[0].id) ? 3624 : 2040);
+    expect(document).toEqual(before);
+    expect(prepared.episodes[0].dialogueCues.filter(cue => cue.shotId === shot.id).map(cue => [cue.startMs - owner.startMs, cue.endMs - owner.startMs])).toEqual([[629, 4253], [4373, 6413]]);
+    expect(prepared.episodes[0].scenes).toEqual(document.episodes[0].scenes);
+    expect(prepared.episodes[0].dialogueCues.map(cue => cue.text)).toEqual(document.episodes[0].dialogueCues.map(cue => cue.text));
+    expect(prepared.episodes[0].timeline.audioClips?.find(clip => clip.id === `dialogue-clip-${cues[0].id}`)).toMatchObject({ durationMs: 3624, sourceDurationMs: 3624, sourceMediaDurationMs: 3624 });
+    expect(await prepareMotionComicDialogueForRender(prepared, async path => path.includes(cues[0].id) ? 3624 : 2040)).toBe(prepared);
+  });
+
+  it('rejects unusable audio and speech that cannot fit instead of cutting it', async () => {
+    const { document } = voicedFixture();
+    await expect(prepareMotionComicDialogueForRender(document, async () => NaN)).rejects.toThrow('DURATION_INVALID');
+    await expect(prepareMotionComicDialogueForRender(document, async () => 60000)).rejects.toThrow('DOES_NOT_FIT');
+  });
+
+  it('does not probe native video speech or recordings from another episode', async () => {
+    let { document, shot } = voicedFixture();
+    document = appendMotionComicEpisode(document);
+    const selected = document.episodes[0].scenes.flatMap(scene => scene.shots).find(item => item.id === shot.id)!;
+    selected.renderStrategy = 'remote-video';
+    selected.videoProduction = { version: 1, referenceMode: 'frames', audioMode: 'native' };
+    let calls = 0;
+    expect(await prepareMotionComicDialogueForRender(document, async () => { calls++; return 1000; }, document.episodes[0].id)).toBe(document);
+    expect(calls).toBe(0);
   });
 });

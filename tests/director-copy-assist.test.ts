@@ -66,7 +66,8 @@ describe('Director create copy assistance', () => {
       targetLength: 90,
     });
     expect(request.extraRequirements).toContain('30 秒解释型视频');
-    expect(request.extraRequirements).toContain('钩子、背景、证据和结论');
+    expect(request.extraRequirements).toContain('按所选风格组织开场、信息推进和收束');
+    expect(request.extraRequirements).not.toContain('结构必须包含钩子、背景、证据和结论');
   });
 
   it('uses the current VOX draft as the only revision source', () => {

@@ -1,4 +1,8 @@
+import { buildDirectorCopyAssistRequest } from './director-copy-assist';
+import { EDITORIAL_WRITING_STYLES } from './editorial-writing-styles';
+import { workflowPrompt } from './workflow-prompt-runtime';
 import type { ConfiguredTextLlm } from './llm-provider';
+import { buildCopywritingGuidance, copywritingTrack } from './copywriting-tracks';
 import { targetWordCountRange } from './content-metrics';
 import { fetchWithNetworkPolicy, readJsonBounded, readTextBounded, type NetworkPurpose } from './network-policy';
 import type {
@@ -29,6 +33,7 @@ interface SearchProviderOutcome {
 }
 
 export interface StoryboundAiCreationSystemPromptInput {
+  channel?: import('./types').PromptChannel;
   trackName: string;
   trackTag: string;
   useAiKnowledge: boolean;
@@ -38,6 +43,7 @@ export interface StoryboundAiCreationSystemPromptInput {
 export interface StoryboundAiCreationUserPromptInput {
   keyword: string;
   extraRequirements?: string;
+  intent?: ResearchCopyComposeInput['intent'];
 }
 
 export interface StoryboundTrackInfo {
@@ -72,30 +78,22 @@ export const WEB_SEARCH_PROVIDER_LABELS: Record<WebSearchProvider, string> = {
   wikipedia: '维基百科',
 };
 
-const storyboundTrackMap: Record<string, StoryboundTrackInfo> = {
-  'character-story': { trackName: '人物故事', trackTag: '纪实人物' },
-  'health-book': { trackName: '健康图书', trackTag: '养生书单' },
-  'culture-knowledge': { trackName: '文化科普', trackTag: '华夏文化' },
-  'picture-book': { trackName: '绘本故事', trackTag: '儿童绘本' },
-  ecommerce: { trackName: '电商带货', trackTag: '种草带货' },
-  inspirational: { trackName: '心灵鸡汤', trackTag: '情绪共鸣' },
-  'folk-tale': { trackName: '民间故事', trackTag: '传奇叙事' },
-  general: { trackName: '通用故事', trackTag: '通用写实' },
-};
-
 export function resolveStoryboundTrackInfo(track: string | null | undefined): StoryboundTrackInfo {
-  const normalized = (track || '').trim();
-  return storyboundTrackMap[normalized] ?? { trackName: normalized || '通用故事', trackTag: normalized ? '通用写实' : '通用写实' };
+  const resolved = copywritingTrack(track);
+  return { trackName: resolved.label, trackTag: resolved.tag };
 }
 
 export function buildStoryboundAiCreationSystemPrompt(input: StoryboundAiCreationSystemPromptInput): string {
-  const strategy = input.hasReferenceMaterials
+  const storyCreation = ['folk-tale', 'picture-book'].includes(copywritingTrack(input.trackName).id);
+  const strategy = storyCreation
+    ? workflowPrompt("research-strategy-1", '保留素材中的故事设定、人物关系和关键因果。用户要求原创或改编故事时，可合理虚构情节和对话；真实人物、史料和现实常识仍须有依据，传说与虚构不能写成史实', {}, input.channel ?? 'shared')
+    : input.hasReferenceMaterials
     ? input.useAiKnowledge
-      ? '主要参考用户提供的参考素材，可适当结合你已知的可靠信息补全细节，但补充内容必须是确定的事实'
-      : '严格基于用户提供的参考素材进行创作，不要引入素材以外的信息，不要主观臆断或编造细节'
-    : '请基于你对该人物/主题的已知知识进行创作';
-  const noReferenceExtra = input.hasReferenceMaterials ? '' : ' - 本次无外部参考素材，请只输出确定的事实，对不确定的细节宁可省略也不要编造';
-  return [
+      ? workflowPrompt("research-strategy-2", '主要参考用户提供的参考素材，可适当结合你已知的可靠信息补全细节，但补充内容必须是确定的事实', {}, input.channel ?? 'shared')
+      : workflowPrompt("research-strategy-3", '严格基于用户提供的参考素材进行创作，不要引入素材以外的信息，不要主观臆断或编造细节', {}, input.channel ?? 'shared')
+    : workflowPrompt("research-strategy-4", '请基于你对该人物/主题的已知知识进行创作', {}, input.channel ?? 'shared');
+  const noReferenceExtra = input.hasReferenceMaterials || storyCreation ? '' : ' - 本次无外部参考素材，请只输出确定的事实，对不确定的细节宁可省略也不要编造';
+  return workflowPrompt("research-copy", [
     '你是一名资深短视频文案创作者，擅长创作原创短视频口播稿。',
     '',
     `【当前赛道】${input.trackName}（${input.trackTag}）`,
@@ -105,16 +103,18 @@ export function buildStoryboundAiCreationSystemPrompt(input: StoryboundAiCreatio
     '【创作要求】',
     '1. 必须是**原创口播文案**：不要直接复述参考素材的句子，要重新组织视角、节奏、叙事',
     `2. 风格匹配赛道："${input.trackName}"——按这个赛道的典型表达方式来写`,
-    '3. 结构紧凑：开头要钩子（3 秒内勾住注意力），中间有起伏，结尾留余味或转发动机',
+    '3. 结构紧凑：开头直接给观众一个具体的观看理由，中间持续推进，结尾回应主题；按赛道安排节奏，不强制反转、煽情或转发引导',
     '4. 口语化：避免书面语、长难句、生僻词；适合用配音朗读',
     '5. 不要标题、不要章节符号、不要 markdown，直接输出正文段落',
     '6. 不要使用「以下是」「我为你创作」之类的开场白，直接给文案',
+    '',
+    buildCopywritingGuidance(input.trackName, input.channel ?? 'shared'),
     '',
     '【硬约束】',
     '- 输出**仅文案正文**，不要任何解释、说明、问候语',
     '- 不要使用 emoji 表情符号',
     `- 不要出现"参考资料""根据上述""综合以上"等元描述${noReferenceExtra}`,
-  ].join('\n');
+  ].join('\n'), { input_trackName: (input.trackName), input_trackTag: (input.trackTag), strategy: (strategy), value4: (buildCopywritingGuidance(input.trackName, input.channel ?? 'shared')), noReferenceExtra: (noReferenceExtra) }, input.channel ?? 'shared');
 }
 
 export function buildStoryboundAiCreationUserPrompt(input: StoryboundAiCreationUserPromptInput, materials: StoryboundReferenceMaterial[]): string {
@@ -127,7 +127,8 @@ export function buildStoryboundAiCreationUserPrompt(input: StoryboundAiCreationU
     .filter((material) => compactText(material.content || material.snippet || '').trim())
     .map((material, index) => {
       const title = material.title?.trim() || '(无标题)';
-      const text = compactText(material.content || material.snippet || '').slice(0, STORYBOUND_REFERENCE_TEXT_LIMIT);
+      const sourceText = compactText(material.content || material.snippet || '');
+      const text = input.intent === 'refine' || input.intent === 'track' ? sourceText : sourceText.slice(0, STORYBOUND_REFERENCE_TEXT_LIMIT);
       return `--- 素材 ${index + 1}：${title} ---\n${text}`;
     });
   if (materialBlocks.length > 0) {
@@ -155,21 +156,24 @@ export function buildStoryboundReviewSystemPrompt(
 ): string {
   const track = resolveStoryboundTrackInfo(task.track);
   const useAiKnowledge = task.aiSources?.includes('builtin-knowledge') ?? false;
+  const storyCreation = ['folk-tale', 'picture-book'].includes(copywritingTrack(task.track).id);
   const targetRange = targetWordCountRange(task.targetLength);
-  const strategy = hasReferenceMaterials
+  const strategy = storyCreation
+    ? workflowPrompt("story-review-strategy-1", '按故事梗概整理素材，保留虚构设定、人物关系、伏笔与结局，不因情节属于传说或虚构而删去；涉及真实人物和史料时区分事实与传说，不补造史实')
+    : hasReferenceMaterials
     ? useAiKnowledge
-      ? '主要参考原文素材和搜索资料，可适当结合确定的可靠常识补齐必要背景'
-      : '严格基于原文素材和搜索资料整理，不要主观臆断或编造细节'
-    : '请只基于原文素材和你确定的已知事实整理，对不确定细节宁可省略也不要编造';
-  return [
-    '你是一名资深短视频文案预审策划者，擅长把原文、搜索资料和用户要求整理成适合后续创作原创短视频口播稿的事实底稿。',
+      ? workflowPrompt("story-review-strategy-2", '主要参考原文素材和搜索资料，可适当结合确定的可靠常识补齐必要背景')
+      : workflowPrompt("story-review-strategy-3", '严格基于原文素材和搜索资料整理，不要主观臆断或编造细节')
+    : workflowPrompt("story-review-strategy-4", '请只基于原文素材和你确定的已知事实整理，对不确定细节宁可省略也不要编造');
+  return workflowPrompt("story-review-system", [
+    storyCreation ? '你是一名短视频故事策划者，擅长把原文、参考素材和用户要求整理成适合后续创作的故事梗概。' : '你是一名资深短视频文案预审策划者，擅长把原文、搜索资料和用户要求整理成适合后续创作原创短视频口播稿的事实底稿。',
     '',
     `【当前赛道】${task.track || track.trackName}（${track.trackTag}）`,
     '',
     targetRange
       ? [
           `【目标字数参考】${targetRange.target} 字（区间 ${targetRange.min}-${targetRange.max}）`,
-          '预审时优先保留足够事实密度，不要为了压缩长度删掉后续改写需要的关键细节。',
+          storyCreation ? '保留后续改写需要的关键情节、伏笔和结局，不为压缩字数破坏故事因果。' : '预审时优先保留足够事实密度，不要为了压缩长度删掉后续改写需要的关键细节。',
           '',
         ].join('\n')
       : '',
@@ -177,15 +181,21 @@ export function buildStoryboundReviewSystemPrompt(
     '',
     '【预审要求】',
     '1. 清理重复、广告、无关口号、低价值引导语，保留事实顺序和关键因果',
-    '2. 不要直接复述参考素材的句子，要压缩整理为可继续改写的事实底稿',
-    '3. 保留人物、时间、地点、事件转折、结局和可验证细节，删除未经证实的猜测',
+    storyCreation ? '2. 整理成可继续改写的故事梗概，保留重要情节和故事世界中的因果，不把故事冒充纪实' : '2. 不要直接复述参考素材的句子，要压缩整理为可继续改写的事实底稿',
+    storyCreation ? '3. 保留人物、时空设定、事件转折、伏笔和结局；真实史料与虚构内容须有清楚边界' : '3. 保留人物、时间、地点、事件转折、结局和可验证细节，删除未经证实的猜测',
     '4. 口语化但不写成最终成片文案；后续 Writer 会再做原创口播稿',
     '5. 输出必须服务于原创短视频，不要出现“参考资料”“根据上述”“综合以上”等元描述',
     '',
     '【硬约束】',
     '- Return strict JSON only. Schema: {"reviewedText": string}.',
-    '- reviewedText 必须是中文事实简稿，不要标题、不要 markdown、不要解释。',
-  ].join('\n');
+    storyCreation ? '- reviewedText 必须是中文故事梗概，不要标题、不要 markdown、不要解释。' : '- reviewedText 必须是中文事实简稿，不要标题、不要 markdown、不要解释。',
+  ].join('\n'), { value1: (storyCreation ? '你是一名短视频故事策划者，擅长把原文、参考素材和用户要求整理成适合后续创作的故事梗概。' : '你是一名资深短视频文案预审策划者，擅长把原文、搜索资料和用户要求整理成适合后续创作原创短视频口播稿的事实底稿。'), value2: (task.track || track.trackName), track_trackTag: (track.trackTag), value4: (targetRange
+      ? [
+          `【目标字数参考】${targetRange.target} 字（区间 ${targetRange.min}-${targetRange.max}）`,
+          storyCreation ? '保留后续改写需要的关键情节、伏笔和结局，不为压缩字数破坏故事因果。' : '预审时优先保留足够事实密度，不要为了压缩长度删掉后续改写需要的关键细节。',
+          '',
+        ].join('\n')
+      : ''), strategy: (strategy), value6: (storyCreation ? '2. 整理成可继续改写的故事梗概，保留重要情节和故事世界中的因果，不把故事冒充纪实' : '2. 不要直接复述参考素材的句子，要压缩整理为可继续改写的事实底稿'), value7: (storyCreation ? '3. 保留人物、时空设定、事件转折、伏笔和结局；真实史料与虚构内容须有清楚边界' : '3. 保留人物、时间、地点、事件转折、结局和可验证细节，删除未经证实的猜测'), value8: (storyCreation ? '- reviewedText 必须是中文故事梗概，不要标题、不要 markdown、不要解释。' : '- reviewedText 必须是中文事实简稿，不要标题、不要 markdown、不要解释。') });
 }
 
 function storyboundAiCreationTimeoutMs(promptLength: number): number {
@@ -663,6 +673,7 @@ async function searchToutiaoHtml(query: string, fetchImpl: FetchLike): Promise<A
 }
 
 export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
+  if (input.directorCopyAssist) input = buildDirectorCopyAssistRequest(input.directorCopyAssist);
   const selectedSources = input.selectedSources
     .filter((source) => compactText(source.content || source.snippet || '').trim())
     .slice(0, 10);
@@ -670,8 +681,9 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
   if (!hasReferenceMaterials && !input.useBuiltinKnowledge) {
     throw new Error('请至少提供一个网页来源，或启用 AI 内置知识补全。');
   }
-  const track = resolveStoryboundTrackInfo('general');
+  const track = resolveStoryboundTrackInfo(input.track);
   const system = buildStoryboundAiCreationSystemPrompt({
+    channel: input.channel,
     trackName: track.trackName,
     trackTag: track.trackTag,
     useAiKnowledge: input.useBuiltinKnowledge,
@@ -680,7 +692,13 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
   const user = buildStoryboundAiCreationUserPrompt(
     {
       keyword: input.keyword,
-      extraRequirements: input.extraRequirements,
+      extraRequirements: [
+        input.intent === 'refine' || input.intent === 'track' ? '本次是对当前文案的修改，保留原有事实与核心意思，不重新另写一个选题；保留用户指定的固定表达。' : '',
+        input.writingStyleId ? workflowPrompt(`writing-style:${input.writingStyleId}`, EDITORIAL_WRITING_STYLES.find(style => style.id === input.writingStyleId)!.guidance, {}, input.channel ?? 'shared') : '',
+        EDITORIAL_WRITING_STYLES.reduce((text, style) => text.replaceAll(style.guidance,
+          workflowPrompt(`writing-style:${style.id}`, style.guidance, {}, input.channel ?? 'editorial-collage')), input.extraRequirements),
+      ].filter(Boolean).join('\n'),
+      intent: input.intent,
     },
     selectedSources,
   );

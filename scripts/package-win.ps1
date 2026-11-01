@@ -10,7 +10,7 @@ if (Invoke-Utf8Bootstrap -ScriptPath $PSCommandPath -ScriptArgs $args) {
 Write-Host "[package] Building renderer"
 node "scripts/check-license-config.mjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-node "node_modules/vite/bin/vite.js" build
+node "scripts/build-renderer.mjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[package] Building Electron main and preload"
@@ -31,8 +31,17 @@ Write-Host "[package] Creating Windows installer and unpacked package"
 node "node_modules/electron-builder/cli.js" --win nsis --x64 --publish=never
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$Version = (Get-Content -LiteralPath (Join-Path $Root "package.json") -Raw | ConvertFrom-Json).version
+$Version = (Get-Content -LiteralPath (Join-Path $Root "package.json") -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $ReleaseDir = Join-Path $Root "release"
+$InstallerPath = Join-Path $ReleaseDir "StoryDream-Setup-${Version}.exe"
+$BlockmapPath = "$InstallerPath.blockmap"
+foreach ($Artifact in @($InstallerPath, $BlockmapPath)) {
+  if (!(Test-Path -LiteralPath $Artifact -PathType Leaf) -or (Get-Item -LiteralPath $Artifact).Length -eq 0) {
+    throw "Expected update artifact was not created: $Artifact"
+  }
+}
+Write-Host "[package] Update installer: $InstallerPath"
+Write-Host "[package] Matching differential blockmap: $BlockmapPath"
 $UnpackedDir = Join-Path $ReleaseDir "win-unpacked"
 $PortableDir = Join-Path $Root "release\StoryDream-Portable"
 $ZipPath = Join-Path $ReleaseDir "StoryDream-Portable-${Version}.zip"

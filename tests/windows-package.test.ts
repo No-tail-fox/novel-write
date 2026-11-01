@@ -19,14 +19,21 @@ describe('windows packaging', () => {
       electronDist: 'node_modules/electron/dist',
       productName: 'StoryDream',
       directories: { output: 'release' },
-      extraResources: [{ from: 'vendor/python', to: 'python' }],
-      win: { target: ['dir'], signAndEditExecutable: false },
+      extraResources: expect.arrayContaining([{ from: 'vendor/python', to: 'python' }]),
+      asar: true,
+      electronFuses: {
+        enableEmbeddedAsarIntegrityValidation: true,
+        enableNodeCliInspectArguments: false,
+        enableNodeOptionsEnvironmentVariable: false,
+        onlyLoadAppFromAsar: true,
+      },
+      win: { target: ['nsis'], signAndEditExecutable: false },
     });
     expect(pkg.scripts.build).toContain('scripts/build.ps1');
     expect(packageScript).toContain('node_modules/electron-builder/cli.js');
     expect(packageScript).toContain('scripts\\prepare-python-runtime.ps1');
     expect(packageScript).toContain('--win');
-    expect(packageScript).toContain('--dir');
+    expect(packageScript).toContain('--win nsis');
     expect(packageScript).toContain('Compress-Archive');
     expect(packageScript).toContain('StoryDream-Portable-${Version}.zip');
     expect(packageScript).toContain('release\\StoryDream-Portable');

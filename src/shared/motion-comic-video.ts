@@ -3,7 +3,7 @@
  * previous-shot continuity prompt packing. Modified for remote-only providers.
  */
 import { invalidateMotionComicShotVideo, type MotionComicPipelineData, type MotionComicShot } from './motion-comic';
-import type { ProductionAssetVersion } from './production-workflow';
+import type { ProductionAssetVersion, ProductionProviderJob } from './production-workflow';
 import { videoModelLimits } from './video-models';
 import { selectVideoGenerationRoute } from './video-routing';
 import type { AppConfig } from './types';
@@ -228,7 +228,9 @@ export function motionComicVideoInputFingerprintSource(
     model,
     ...(shot.productionUnit ? {unit:shot.productionUnit} : {}),
     ...(shot.videoProduction ? {
-      production:{...shot.videoProduction,referenceAudioAssetVersionIds:submittedAudio.map(asset=>asset.id)},dialogue:motionComicVideoDialogue(document,shot),
+      production:{...shot.videoProduction,referenceAudioAssetVersionIds:submittedAudio.map(asset=>asset.id)},
+      // Post-mix speech is not submitted to the silent video provider.
+      ...(shot.videoProduction.audioMode !== 'post-mix' ? { dialogue: motionComicVideoDialogue(document, shot) } : {}),
       submittedReferences:shot.videoProduction.referenceMode==='references'?motionComicVideoReferences(document,shot).map(r=>({...r,sha256:document.assets.find(a=>a.id===r.assetVersionId)?.sha256})):[],
       referenceAudio:submittedAudio,
     } : {}),
@@ -267,6 +269,25 @@ export function motionComicVideoInputHash(
   return sha256Utf8(JSON.stringify(motionComicVideoInputFingerprintSource(document, shot, providerId, model)));
 }
 
+/** Reuse a verified legacy silent-video snapshot after the speech-only hash fix. */
+export function motionComicVideoJobInputsMatch(document: MotionComicPipelineData, shot: MotionComicShot, job: ProductionProviderJob): boolean {
+  const current = motionComicVideoInputFingerprintSource(document, shot, job.providerId, job.model);
+  if (job.inputHash === sha256Utf8(JSON.stringify(current))) return true;
+  if (shot.videoProduction?.audioMode !== 'post-mix' || !job.videoInputSnapshot
+    || sha256Utf8(job.videoInputSnapshot) !== job.inputHash) return false;
+  try {
+    const legacy = JSON.parse(job.videoInputSnapshot) as MotionComicVideoInputFingerprintSource;
+    if (legacy.production?.audioMode !== 'post-mix' || !legacy.dialogue) return false;
+    for (const cue of legacy.dialogue) {
+      const speech = `[${cue.startMs}–${cue.endMs}ms] ${cue.role === 'narrative' ? 'VO' : cue.role === 'monologue' ? 'OS' : '对白'} ${cue.speaker}：${cue.text}（${cue.emotion}）`;
+      legacy.prompt = legacy.prompt.replace(compact(speech, 6800), '');
+    }
+    delete legacy.dialogue;
+    legacy.prompt = compact(legacy.prompt, 6800);
+    return JSON.stringify(legacy) === JSON.stringify(current);
+  } catch { return false; }
+}
+
 export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: MotionComicShot): string {
   const episode = document.episodes.find((candidate) => candidate.id === shot.episodeId);
   if (!episode) throw new Error(`DIRECTOR_VIDEO_EPISODE_NOT_FOUND: ${shot.episodeId}`);
@@ -298,7 +319,7 @@ export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: 
     document.series.negativePrompt.trim() ? `必须避免：${compact(document.series.negativePrompt, 700)}` : '',
     ...(shot.videoProduction ? [
       `声音制作：${shot.videoProduction.audioMode === 'post-mix' ? '生成静音画面，之后混入已选对白；无需承诺口型同步' : shot.videoProduction.audioMode === 'audio-driven' ? '按照参考音频完整对白和节奏驱动表演，保留说话人；口型与音色须在样片中核验' : '由模型生成原生对白与环境声；说话人、台词与口型须在样片中核验'}`,
-      ...motionComicVideoDialogue(document,shot).map(c=>`[${c.startMs}–${c.endMs}ms] ${c.role==='narrative'?'VO':c.role==='monologue'?'OS':'对白'} ${c.speaker}：${c.text}（${c.emotion}）`),
+      ...(shot.videoProduction.audioMode === 'post-mix' ? [] : motionComicVideoDialogue(document,shot).map(c=>`[${c.startMs}–${c.endMs}ms] ${c.role==='narrative'?'VO':c.role==='monologue'?'OS':'对白'} ${c.speaker}：${c.text}（${c.emotion}）`)),
       ...(shot.videoProduction.referenceMode==='references'?['开场与结尾图片为构图参考，属于软约束；角色、场景、道具按提交顺序保持一致。']:[]),
     ] : []),
     '保持首帧中的人物身份、脸型、发型、服装、场景结构和光线方向。动作连续自然，不切镜，不换人，不新增文字或水印。',

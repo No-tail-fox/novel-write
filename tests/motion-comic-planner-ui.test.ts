@@ -128,7 +128,8 @@ describe('motion comic AI planning and remote video UI', () => {
       'videoEstimatedCost:',
       'onGenerateVideo=',
       'onRetryVideo=',
-      'onVideoProviderChange={selectVideoProvider}',
+      '<ProjectModelBar',
+      'useProjectModelConfig',
       'renderShotWorkflow=',
       '<MotionComicVideoReadiness',
       'remoteOnly={Boolean(document.sourceDocument)}',
@@ -136,6 +137,8 @@ describe('motion comic AI planning and remote video UI', () => {
       'invalidateMotionComicVideosForChangedInputs(current, update(current))',
       'invalidateMotionComicVideosForChangedInputs(latest, attachMotionComicReference(latest, target, asset))',
     ]) expect(page).toContain(marker);
+    expect(page).not.toContain('onVideoProviderChange=');
+    expect(readiness).toContain('项目视频模型：');
     expect(page).toContain('api.generateDirectorShotVideo');
     expect(page).toContain("if (sourceShot.renderStrategy !== 'remote-video')");
     expect(page).toContain('远程视频任务完成，但没有返回可播放的视频资产');

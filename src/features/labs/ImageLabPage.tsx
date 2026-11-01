@@ -1,3 +1,4 @@
+import { activeImageProfileId } from '../../shared/provider-profile-utils';
 import { useEffect, useState } from 'react';
 import { Copy, FolderOpen, Image as ImageIcon, ImagePlus, Loader2, Maximize2, RefreshCcw, RotateCcw, Save, Trash2, Wand2 } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
@@ -87,9 +88,9 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
   const [prompt, setPrompt] = useState(workspaceDraft ? workspaceDraft.prompt : defaultImageLabPrompt);
   const [selectedRatios, setSelectedRatios] = useState<string[]>(restoredRatios.length ? restoredRatios : ['9:16']);
   const [selectedStyles, setSelectedStyles] = useState<string[]>(restoredStyles.length ? restoredStyles : ['photo-real']);
-  const [provider, setProvider] = useState<ImageLabProviderChoice>(
-    workspaceDraft?.provider ?? (isImageLabProviderChoice(state.config.imageProvider) ? state.config.imageProvider : 'gpt_image'),
-  );
+  const [imageProfileId, setImageProfileId] = useState(() => workspaceDraft?.imageProfileId ?? activeImageProfileId(state.config));
+  const selectedImageProfile = state.config.imageProfiles.find(profile => profile.id === imageProfileId);
+  const provider: ImageLabProviderChoice = selectedImageProfile?.provider === 'custom' ? 'custom' : selectedImageProfile?.provider === 'jimeng' ? 'jimeng' : 'gpt_image';
   const [resolution, setResolution] = useState<ImageResolution>(workspaceDraft?.resolution ?? '1K');
   const [quality, setQuality] = useState<ImageGenerationQuality>(() => workspaceDraft?.quality ?? normalizeImageGenerationQuality(
     provider === 'custom'
@@ -137,6 +138,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
         selectedRatios,
         selectedStyles,
         provider,
+        imageProfileId,
         resolution,
         quality,
         referenceImagePath,
@@ -145,7 +147,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
     } catch {
       // The workbench remains usable when browser storage is unavailable.
     }
-  }, [imageLabOutputCount, prompt, provider, quality, referenceImagePath, resolution, selectedRatios, selectedStyles, smartMode, tab]);
+  }, [imageLabOutputCount, prompt, provider, imageProfileId, quality, referenceImagePath, resolution, selectedRatios, selectedStyles, smartMode, tab]);
 
   async function selectImageLabReferenceImage() {
     await imageLabAction.run(async () => {
@@ -200,6 +202,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
         styles: selectedStyles,
         quantity,
         provider,
+        imageProfileId,
         resolution,
         quality,
         smartMode: resolvedSmartMode,
@@ -458,7 +461,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
             </div>
             <Segmented label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={(value) => setResolution(value as ImageResolution)} />
             {supportsImageQuality ? <Segmented label="生成质量" value={quality} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => setQuality(value as ImageGenerationQuality)} /> : null}
-            <SelectField label="Provider" value={provider} onChange={(event) => setProvider(event.target.value as ImageLabProviderChoice)} options={imageLabProviderChoices.map(([value, label]) => ({ value, label }))} />
+            <SelectField label="生图模型" value={imageProfileId} onChange={(_, data) => setImageProfileId(data.value)} options={[...(!selectedImageProfile ? [{ value: imageProfileId, label: '原配置已删除，请重新选择' }] : []), ...state.config.imageProfiles.map(profile => ({ value: profile.id!, label: `${profile.name} · ${profile.provider === 'gpt_image' ? profile.gptImage?.model : profile.provider === 'custom' ? profile.customImage?.model : profile.provider}` }))]} />
             <div className="image-lab-batch-summary">
               <strong>{selectedRatios.length} 比例 × {selectedStyles.length} 风格 × {quantity} 张</strong>
               <span>共 {batchRequestCount} 个任务 · {supportsImageQuality ? `${imageGenerationQualityLabel(quality)}质量` : `${resolution} 分辨率`}</span>
@@ -467,7 +470,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               <Button icon={<ImagePlus size={17} />} onClick={importCompletedImage} disabled={generating || imageLabAction.busy || !prompt.trim()}>
                 导入成品
               </Button>
-              <Button variant="primary" icon={generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />} onClick={addRecord} disabled={generating || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
+              <Button variant="primary" icon={generating ? <Loader2 className="spin" size={17} /> : <Wand2 size={17} />} onClick={addRecord} disabled={generating || !selectedImageProfile || !prompt.trim() || (resolvedSmartMode === 'reference-edit' && references.length === 0)}>
                 {generating ? '生成中' : `智能生成 ${batchRequestCount} 项`}
               </Button>
               <div className="provider-line">{provider} · {smartImageModeLabel(resolvedSmartMode)}</div>
@@ -503,7 +506,7 @@ export function ImageLabPage({ api, state, applyState }: { api: StoryDreamApi; s
                 )}
               </div>
               <strong title={record.prompt}>{record.prompt}</strong>
-              <small>{record.provider} · {record.ratio} · {record.resolution}{record.provider === 'jimeng' ? '' : ` · ${imageGenerationQualityLabel(record.quality ?? 'medium')}质量`} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
+              <small>{state.config.imageProfiles.find(profile => profile.id === record.imageProfileId)?.name || record.provider}{record.modelName ? ` · ${record.modelName}` : ''} · {record.ratio} · {record.resolution}{record.provider === 'jimeng' ? '' : ` · ${imageGenerationQualityLabel(record.quality ?? 'medium')}质量`} · {smartImageModeLabel(record.smartMode)} · {formatDate(record.createdAt)}</small>
               {record.errorMessage ? <ErrorSummaryButton compact title="生图失败" fullMessage={record.errorMessage} /> : null}
               {record.status === 'generated' && record.originalImagePath ? (
                 <div className="image-record-cutout" aria-label="透明主体处理状态">

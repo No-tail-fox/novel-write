@@ -35,7 +35,7 @@ export function DirectorMotionInspector({ mode, shot, onUpdate, onEdit, busy, ti
   }
   return <div className="director-form-stack" data-director-motion-editor={shot.id}>
     {mode === 'vox' ? <DirectorTransitionField shot={shot} onUpdate={onUpdate} busy={busy} /> : null}
-    <TextAreaField fieldClassName="director-prompt-field" label="运动提示词" value={shot.motionPrompt} disabled={busy} onChange={(_, data) => onUpdate(shot.id, { motionPrompt: data.value })} resize="vertical" hint={mode === 'vox' && shot.renderStrategy !== 'living-poster' ? '此提示词供图生视频使用。本地动画请在生成面板选择叙事动作，或在下方编辑关键帧。' : undefined} />
+    {mode !== 'vox' || shot.renderStrategy === 'living-poster' ? <TextAreaField fieldClassName="director-prompt-field" label="运动提示词" value={shot.motionPrompt} disabled={busy} onChange={(_, data) => onUpdate(shot.id, { motionPrompt: data.value })} resize="vertical" /> : null}
     {shot.renderStrategy === 'living-poster' ? <div className="director-inspector-note"><Gauge size={14} /><span>图生视频直接播放模型生成的视频。切换到“本地拼贴动画”可编辑已保留的图层与相机；运动提示词在下次视频生成时生效。</span></div> : <>
       <PreviewSelectField label={mode === 'vox' ? '相机运动' : '运动控制'} hint="套用预设会替换相机关键帧" value={shot.motionPreset ?? DIRECTOR_CAMERA_OPTIONS[0]} options={DIRECTOR_CAMERA_OPTIONS.map(value => ({ value, label: value, preview: () => <DirectorOptionPreview kind="camera" value={value} /> }))} disabled={busy} onChange={(value) => onUpdate(shot.id, { motionPreset: value as DirectorMotionPreset })} />
       <div className="director-two-col"><TextField label="起始缩放" value={`${Math.round(start.zoom * 100)}%`} readOnly /><TextField label="结束缩放" value={`${Math.round(end.zoom * 100)}%`} readOnly /></div>

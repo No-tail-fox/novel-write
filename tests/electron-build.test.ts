@@ -13,12 +13,16 @@ describe('electron build', () => {
     expect(script).toMatch(/external:\s*\[[^\]]*['"]electron['"][^\]]*['"]sql\.js['"][^\]]*['"]undici['"][^\]]*\]/s);
     expect(script).toContain("import { createRequire as __storydreamCreateRequire } from 'node:module'");
     expect(script).toContain('const require = __storydreamCreateRequire(import.meta.url)');
+    expect(script).toContain("entryPoints: ['electron/lemo-upstream-renderer.ts']");
+    expect(script.match(/minify:\s*true/gu)).toHaveLength(5);
     expect(script).toContain("'node_modules/gsap/dist/gsap.min.js'");
     expect(script).toContain("'dist-electron/electron/gsap.min.js'");
     expect(packageJson.dependencies).toMatchObject({
       '@fluentui/react-components': '^9.74.5',
       '@modelcontextprotocol/sdk': '1.30.0',
       'agent-search-mcp': '3.2.1',
+      'builder-util-runtime': '9.7.0',
+      'electron-updater': '6.8.11',
       'sql.js': expect.any(String),
       undici: '^6.27.0',
       zod: '^4.4.3',
@@ -27,6 +31,8 @@ describe('electron build', () => {
       '@fluentui/react-components',
       '@modelcontextprotocol/sdk',
       'agent-search-mcp',
+      'builder-util-runtime',
+      'electron-updater',
       'sql.js',
       'undici',
       'zod',
@@ -35,6 +41,7 @@ describe('electron build', () => {
       concurrently: '^9.2.1',
       esbuild: '^0.28.1',
       gsap: '3.12.5',
+      three: '0.170.0',
       vite: '^8.1.4',
     });
     expect(packageJson.overrides).toMatchObject({ 'shell-quote': '1.9.0' });
@@ -48,9 +55,10 @@ describe('electron build', () => {
     expect(script).toContain("format: 'cjs'");
     expect(script).toContain("'import.meta.url': '__storydreamAgentSearchModuleUrl'");
     expect(script).toContain('agentSearchVersionPlugin');
-    expect(script).toContain('writeAgentSearchThirdPartyNotices(agentSearchBuild.metafile.inputs)');
+    expect(script).toContain("writeBundledThirdPartyNotices(agentSearchBuild.metafile.inputs, 'AGENT_SEARCH_THIRD_PARTY_NOTICES.txt'");
+    expect(script).toContain("writeBundledThirdPartyNotices(mainBuild.metafile.inputs, 'MAIN_THIRD_PARTY_NOTICES.txt'");
     expect(script).toContain("copyFile('node_modules/agent-search-mcp/LICENSE', 'dist-electron/electron/AGENT_SEARCH_LICENSE.txt')");
-    expect(script).toContain("'dist-electron/electron/AGENT_SEARCH_THIRD_PARTY_NOTICES.txt'");
+    expect(script).toContain("resolve('dist-electron/electron', outputName)");
   });
 
   it('keeps the smoke command on the npm-provided Node runtime', async () => {

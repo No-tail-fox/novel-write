@@ -1,6 +1,6 @@
 {
   "name": "storydream",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "main": "dist-electron/electron/main.js",
@@ -13,6 +13,7 @@
     "fetch:coze:feishu": "scripts\\run-npm-node.cmd scripts/fetch-feishu-coze-workflows.mjs",
     "smoke:electron": "scripts\\run-npm-powershell.cmd scripts/smoke-electron.ps1",
     "smoke:html-video": "scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/smoke-html-video.ts",
+    "smoke:music-mv-sync": "scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/smoke-music-mv-sync.ts",
     "qa:html-video-ui": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/qa-html-video-ui.mjs",
     "qa:editorial": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && scripts\\run-npm-node.cmd node_modules/tsx/dist/cli.mjs scripts/editorial-qa-electron.ts",
     "qa:motion-comic": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && vendor\\python\\python.exe scripts\\qa-motion-comic.py",
@@ -28,6 +29,8 @@
     "@fluentui/react-components": "^9.74.5",
     "@modelcontextprotocol/sdk": "1.30.0",
     "agent-search-mcp": "3.2.1",
+    "builder-util-runtime": "9.7.0",
+    "electron-updater": "6.8.11",
     "sql.js": "^1.14.1",
     "undici": "^6.27.0",
     "zod": "^4.4.3"
@@ -52,6 +55,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "remotion": "4.0.524",
+    "three": "0.170.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
     "uuid": "^14.0.0",
@@ -77,6 +81,8 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": "vendor/pixelle-upstream", "to": "pixelle-upstream" },
+      { "from": "services/pixelle-worker", "to": "pixelle-worker", "filter": ["**/*.py"] },
       {
         "from": "vendor/python",
         "to": "python"
@@ -88,10 +94,31 @@
       {
         "from": "THIRD_PARTY_LICENSES",
         "to": "THIRD_PARTY_LICENSES"
+      },
+      {
+        "from": "vendor/lemo-upstream",
+        "to": "lemo-upstream"
+      },
+      {
+        "from": "node_modules/three",
+        "to": "lemo-upstream-deps/three",
+        "filter": [
+          "build/**/*",
+          "examples/jsm/**/*",
+          "LICENSE",
+          "package.json"
+        ]
       }
     ],
     "extraMetadata": {
       "main": "dist-electron/electron/main.js"
+    },
+    "asar": true,
+    "electronFuses": {
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "enableNodeCliInspectArguments": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "onlyLoadAppFromAsar": true
     },
     "asarUnpack": [
       "node_modules/sql.js/dist/*.wasm"
@@ -104,6 +131,7 @@
     },
     "nsis": {
       "artifactName": "StoryDream-Setup-${version}.exe",
+      "differentialPackage": true,
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

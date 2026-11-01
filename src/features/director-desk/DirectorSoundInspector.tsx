@@ -43,6 +43,7 @@ export function DirectorSoundInspector({ clips, shotStartMs, durationMs, busy, o
     {clips.length === 0 ? <p className="director-sound-hint">当前镜头暂无音频。可导入本地声音，或到字幕页生成配音。</p> : <>
       <SelectField label="声音片段" value={selected?.id ?? ''} disabled={disabled} options={clips.map((clip, index) => ({ value: clip.id, label: `${index + 1}. ${DIRECTOR_AUDIO_LABELS[clip.trackType]} · ${clip.title}${clip.muted ? ' · 已静音' : ''}` }))} onChange={(event) => { setSelectedId(event.target.value); setError(''); }} />
       {selected ? <div key={selected.id} data-sound-clip-id={selected.id}>
+        {selected.previewUrl ? <audio className="director-sound-preview" aria-label={`试听声音：${selected.title}`} controls preload="metadata" src={selected.previewUrl} onError={() => setError('音频文件无法播放，请重新导入。')} /> : null}
         {!selected.available ? <p className="director-sound-error">音频文件不可用，请重新导入或生成。</p> : null}
         <CheckboxField label="静音此片段" checked={selected.muted === true} disabled={disabled} onChange={(_, data) => apply(selected.id, { muted: data.checked === true })} />
         {!speech ? <SelectField label="片段轨道" value={selected.trackType} disabled={disabled} options={DIRECTOR_SOUND_TRACKS.map((value) => ({ value, label: DIRECTOR_AUDIO_LABELS[value] }))} onChange={(event) => apply(selected.id, { trackType: event.target.value as typeof track })} /> : <p className="director-sound-hint">对白与旁白时间由字幕控制；可在这里调整音量、淡入淡出和静音。</p>}

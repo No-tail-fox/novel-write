@@ -3,7 +3,7 @@ import { Copy, GripVertical, Loader2, Palette, Play, Plus, Search, XCircle } fro
 import type { AppConfig, ImageGenerationQuality, ImageProviderProfile, MinimaxCloneVoice, ProviderModel, ProviderModelListRequest, TtsProviderProfile, VolcengineSpeaker, VolcengineTtsApiVersion } from "../../shared/types";
 import { ArtifactEmpty } from "../tasks/TaskArtifactPreview";
 import { activeImageProfileId, activeLlmProfileId, activeTtsProfileId, addImageProfile, addLlmProfile, addTtsProfile, copyImageProfile, copyLlmProfile, copyTtsProfile, editableLlmProfileProvider, imageProfileCustomImage, imageProfileGptImage, imageProfileJimeng, normalizedImageProfiles, normalizedTtsProfiles, removeImageProfile, removeLlmProfile, removeTtsProfile, saveImageProfile, saveLlmProfile, saveTtsProfile, ttsProfileMinimax, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
-import { defaultConfig } from "../../shared/config";
+import { DEFAULT_IMAGE_REQUEST_TIMEOUT_MS, defaultConfig } from "../../shared/config";
 import { LLM_PROTOCOL_OPTIONS, resolveLlmProtocol, type LlmProtocol } from '../../shared/llm-protocol';
 import { Button, IconButton, SelectField, SliderField } from '../../ui';
 import { ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
@@ -99,7 +99,7 @@ export function LlmProfileManager({
       <div className="profile-switcher-head">
         <div>
           <strong>配置档案</strong>
-          <span>{profiles.length} 个配置</span>
+          <span>{profiles.length} 个配置 · 默认仅用于新建项目，已有项目保持原选择</span>
         </div>
         <Button icon={<Plus size={15} />} onClick={addProfile}>
           新增配置
@@ -129,13 +129,13 @@ export function LlmProfileManager({
               </div>
               <div className="profile-actions">
                 {isActive ? (
-                  <span className="profile-active-badge">启用中</span>
+                  <span className="profile-active-badge">新项目默认</span>
                 ) : (
                   <Button
                     variant="primary"
                     density="compact"
                     icon={saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
-                    aria-label={`启用 LLM 配置 ${profile.name}`}
+                    aria-label={`设为新项目默认语言配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -143,12 +143,12 @@ export function LlmProfileManager({
                       void onActivate(profile.id!);
                     }}
                   >
-                    启用
+                    设为默认
                   </Button>
                 )}
                 <IconButton label="编辑" icon={<Palette size={14} />} onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }} />
                 <IconButton label="复制" icon={<Copy size={14} />} onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }} />
-                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
+                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先设置另一默认配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
               </div>
             </article>
           );
@@ -350,7 +350,7 @@ export function ImageProfileManager({
       <div className="profile-switcher-head">
         <div>
           <strong>绘图档案</strong>
-          <span>可保存 GPT Image、即梦和自定义图片接口，启用一个作为任务生图配置。</span>
+          <span>可保存多个生图模型，默认配置用于新建项目；已有项目继续使用各自的模型。</span>
         </div>
         <Button icon={<Plus size={15} />} onClick={addProfile}>
           新增配置
@@ -380,13 +380,13 @@ export function ImageProfileManager({
               </div>
               <div className="profile-actions">
                 {isActive ? (
-                  <span className="profile-active-badge">启用中</span>
+                  <span className="profile-active-badge">新项目默认</span>
                 ) : (
                   <Button
                     variant="primary"
                     density="compact"
                     icon={saving ? <Loader2 className="spin" size={14} /> : <Play size={14} />}
-                    aria-label={`启用绘图配置 ${profile.name}`}
+                    aria-label={`设为新项目默认生图配置 ${profile.name}`}
                     disabled={saving}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -394,12 +394,12 @@ export function ImageProfileManager({
                       void onActivate(profile.id!);
                     }}
                   >
-                    启用
+                    设为默认
                   </Button>
                 )}
                 <IconButton label="编辑" icon={<Palette size={14} />} onClick={(event) => { event.stopPropagation(); onSelectedProfileIdChange(profile.id!); }} />
                 <IconButton label="复制" icon={<Copy size={14} />} onClick={(event) => { event.stopPropagation(); duplicateProfile(profile); }} />
-                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先启用另一配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
+                <IconButton label="删除" icon={<XCircle size={14} />} title={isActive ? '请先设置另一默认配置，再删除此配置' : '删除'} disabled={saving || profiles.length <= 1 || isActive} onClick={(event) => { event.stopPropagation(); deleteProfile(profile); }} />
               </div>
             </article>
           );
@@ -441,6 +441,7 @@ export function ImageProfileManager({
             />
             <Segmented label="分辨率" value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
             <Segmented label="默认质量" value={gptImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, quality: value as ImageGenerationQuality } })} />
+            <ConfigNumberInput label="图片请求超时（秒）" value={(gptImage.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS) / 1000} min={30} step={30} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, timeoutMs: Math.max(30, value) * 1000 } })} />
             <SliderField label="并发" min={1} max={6} valueLabel={gptImage.concurrency} value={gptImage.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: data.value } })} />
           </>
         ) : null}
@@ -477,6 +478,7 @@ export function ImageProfileManager({
             />
             <Segmented label="分辨率" value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
             <Segmented label="默认质量" value={customImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, quality: value as ImageGenerationQuality } })} />
+            <ConfigNumberInput label="图片请求超时（秒）" value={(customImage.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS) / 1000} min={30} step={30} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, timeoutMs: Math.max(30, value) * 1000 } })} />
             <SliderField label="并发" min={1} max={6} valueLabel={customImage.concurrency} value={customImage.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: data.value } })} />
           </>
         ) : null}

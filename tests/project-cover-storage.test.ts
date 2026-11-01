@@ -1,15 +1,146 @@
 import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileDatabase } from '@shared/storage';
 import { readProjectCover } from '@shared/project-cover';
 import type { TaskSummary } from '@shared/types';
+import { generateProjectCoverImage } from '@shared/project-cover-generation';
+import { defaultConfig } from '@shared/config';
+import { resolveReferenceFfmpeg } from '@shared/viral-reference-media';
+import { runBoundedProcess } from '@shared/process-runner';
+import { ipcInputSchemas } from '@shared/ipc-contract';
 
 const directories: string[] = [];
 afterEach(async () => { for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true }); });
 
 describe('project cover summaries', () => {
+  it('keeps 上传封面 and 生成封面 overrides through workflow saves and reopening; 恢复自动封面 restores storyboard imagery', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-override-'));
+    directories.push(dir);
+    const file = join(dir, 'data.db');
+    let db = await FileDatabase.open(file);
+    try {
+      const task = await db.createTask({ title: '封面操作', inputText: 'test', taskType: 'editorial-collage' });
+      const workDir = join(dir, 'tasks', task.managedStorageKey!);
+      await mkdir(workDir, { recursive: true });
+      const frame = join(workDir, 'shot.png');
+      const override = join(workDir, 'custom.png');
+      await writeFile(frame, 'storyboard');
+      await writeFile(override, 'custom cover');
+      const pipeline = { assets: [{ id: 'a', kind: 'image', localPath: frame }], beats: [{ shots: [{ keyframeAssetVersionId: 'a' }] }] };
+      await db.updateTask(task.id, { pipelineData: JSON.stringify(pipeline) });
+      expect((await db.getTaskSummary(task.id))?.projectCover?.path).toBe(frame);
+      expect((await db.setProjectCover(task.id, override)).projectCover?.path).toBe(override);
+      await db.updateTask(task.id, { pipelineData: JSON.stringify({ ...pipeline, revision: 2 }) });
+      await db.close();
+      db = await FileDatabase.open(file);
+      expect((await db.getTaskSummary(task.id))?.projectCover?.path).toBe(override);
+      expect((await db.setProjectCover(task.id, null)).projectCover?.path).toBe(frame);
+      await db.updateTask(task.id, { status: 'draft' });
+      await db.archiveTask(task.id);
+      await expect(db.setProjectCover(task.id, override)).rejects.toThrow('HISTORY_ARCHIVED');
+    } finally { await db.close(); }
+  });
+
+  it('resolves motion-comic shot frames, HTML composition previews and ordinary storyboard images', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-workflows-'));
+    directories.push(dir);
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      for (const taskType of ['motion-comic', 'html-video', 'story'] as const) {
+        const task = await db.createTask({ title: taskType, taskType, inputText: 'test', referenceImagePath: join(dir, 'reference.png') });
+        const workDir = join(dir, 'tasks', task.managedStorageKey!);
+        await mkdir(workDir, { recursive: true });
+        const image = join(workDir, 'first.png');
+        await writeFile(image, taskType);
+        await writeFile(join(dir, 'reference.png'), 'reference');
+        const state = join(workDir, 'state.json');
+        await writeFile(state, JSON.stringify({ taskId: task.id, assets: { images: [{ sceneId: 2, path: 'missing.png' }, { sceneId: 1, path: image }] } }));
+        const pipeline = taskType === 'motion-comic'
+          ? { assets: [{ id: 'a', kind: 'image', localPath: image }], episodes: [{ scenes: [{ shots: [{ firstFrameAssetVersionId: 'a' }] }] }] }
+          : { compositions: [{ thumbnailPath: image }] };
+        await db.updateTask(task.id, { pipelineData: JSON.stringify(pipeline), ...(taskType === 'story' ? { artifactStatePath: state } : {}) });
+        const summary = await db.getTaskSummary(task.id);
+        expect(summary?.projectCover?.path).toBe(image);
+        expect(summary).not.toHaveProperty('pipelineData');
+      }
+    } finally { await db.close(); }
+  });
+
+  it('extracts and caches a real final-video first frame ahead of storyboard imagery and invalidates after replacement', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-video-'));
+    directories.push(dir);
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const task = await db.createTask({ title: '视频首帧', inputText: 'test', taskType: 'editorial-collage' });
+      const workDir = join(dir, 'tasks', task.managedStorageKey!);
+      await mkdir(workDir, { recursive: true });
+      const video = join(workDir, 'final.mp4');
+      const image = join(workDir, 'shot.png');
+      await writeFile(image, 'storyboard image');
+      const ffmpeg = await resolveReferenceFfmpeg();
+      async function makeVideo(color: string) {
+        const result = await runBoundedProcess(ffmpeg, ['-y', '-f', 'lavfi', '-i', `color=c=${color}:s=320x180:d=0.2`, '-threads', '1', '-pix_fmt', 'yuv420p', video],
+          { cwd: workDir, timeoutMs: 20_000, maxStdoutBytes: 4096, maxStderrBytes: 16_384 });
+        expect(result.code).toBe(0);
+      }
+      await makeVideo('red');
+      await db.updateTask(task.id, { pipelineData: JSON.stringify({
+        assets: [{ id: 's', kind: 'image', localPath: image }, { id: 'v', assetId: 'director-final-video', kind: 'video', localPath: video, selected: true }],
+        beats: [{ shots: [{ keyframeAssetVersionId: 's' }] }],
+      }) });
+      // A list read returns the existing shot while decoding runs in the background.
+      const ready = vi.fn();
+      db.onProjectCoverReady = ready;
+      const list = await db.listTaskSummaries();
+      expect(list.items[0].projectCover).toBeNull();
+      await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(task.id));
+      const [first, concurrent] = await Promise.all([db.getTaskSummary(task.id), db.getTaskSummary(task.id)]);
+      expect(first?.projectCover?.path).toMatch(/frame-.*\.jpg$/);
+      expect(concurrent?.projectCover).toEqual(first?.projectCover);
+      const bytes = await readFile(first!.projectCover!.path);
+      expect(bytes.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      expect((await db.getTaskSummary(task.id))?.projectCover).toEqual(first?.projectCover);
+      await makeVideo('blue');
+      expect((await db.getTaskSummary(task.id))?.projectCover?.path).not.toBe(first?.projectCover?.path);
+      await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(task.id));
+    } finally { await db.close(); }
+  }, 30_000);
+
+  it('journals failed cover generation without changing an existing override; accepts a later successful generation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-generate-'));
+    directories.push(dir);
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const task = await db.createTask({ title: '生成封面', inputText: 'test' });
+      const cover = join(dir, 'existing.png');
+      await writeFile(cover, 'cover');
+      await db.setProjectCover(task.id, cover);
+      const failed = vi.fn(async () => ({ status: 'failed', errorMessage: 'Image provider API error (400): no image' }) as never);
+      await expect(generateProjectCoverImage(defaultConfig, task, dir, '封面', failed)).rejects.toMatchObject({
+        code: 'PROJECT_COVER_GENERATION_FAILED', message: 'Image provider API error (400): no image', retryable: true,
+      });
+      expect(failed).toHaveBeenCalledTimes(1);
+      expect((await db.getTaskSummary(task.id))?.projectCover?.path).toBe(cover);
+      const generated = vi.fn(async (_config, directory) => {
+        const path = join(directory, 'generated.png');
+        await writeFile(path, 'generated image');
+        return { status: 'generated', imagePath: path } as never;
+      });
+      const path = await generateProjectCoverImage(defaultConfig, task, dir, '封面', generated);
+      expect((await db.setProjectCover(task.id, path)).projectCover?.path).toBe(path);
+      const journal = JSON.parse(await readFile(join(path, '..', 'request.json'), 'utf8'));
+      expect(journal.status).toBe('generated');
+    } finally { await db.close(); }
+  });
+
+  it('bounds project cover IPC prompts and never accepts renderer-supplied filesystem paths', () => {
+    expect(ipcInputSchemas['project-cover:generate'].parse({ id: 'task-1', prompt: '封面' })).toEqual({ id: 'task-1', prompt: '封面' });
+    expect(() => ipcInputSchemas['project-cover:generate'].parse({ id: 'task-1', prompt: 'x'.repeat(4001) })).toThrow();
+    expect(() => ipcInputSchemas['project-cover:import'].parse({ id: 'task-1', path: 'C:/private' })).toThrow();
+    expect(ipcInputSchemas['project-cover:reset'].parse('task-1')).toBe('task-1');
+  });
   it('loads existing auto covers, updates the revision, and keeps them after reopening the database', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'project-cover-'));
     directories.push(dir);
@@ -25,6 +156,7 @@ describe('project cover summaries', () => {
       await db.updateTask(task.id, { artifactStatePath: statePath, outputDir: join(dir, 'external-draft') });
       expect((await db.listTaskSummaries()).items[0].projectCover).toBeNull();
       await writeFile(cover, 'existing cover');
+      await vi.waitFor(async () => expect((await db.listTaskSummaries()).items[0].projectCover?.path).toBe(cover));
       const first = (await db.listTaskSummaries()).items[0];
       expect(first.projectCover?.path).toBe(cover);
       expect(first).not.toHaveProperty('pipelineData');

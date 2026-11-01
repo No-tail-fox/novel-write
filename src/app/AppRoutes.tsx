@@ -99,6 +99,7 @@ export function AppRoutes({
     <Suspense fallback={<RouteLoadingState />}>
       {activeView === 'projects' ? (
         <ProjectHomePage
+          config={state.config}
           session={projectHomeSession}
           api={api}
           applyState={applyState}
@@ -139,7 +140,7 @@ export function AppRoutes({
       {activeView === 'draft-templates' ? <DraftTemplatesPage api={api} state={state} applyState={applyState} /> : null}
       {activeView === 'settings' ? <SettingsPage api={api} state={state} applyState={applyState} synchronizeThemeState={synchronizeThemeState} navigate={navigate} initialSection={initialSettingsSection} initialVideoPreset={settingsReturnView === 'video-lab' ? videoSettingsPreset : undefined} returnView={settingsReturnView} onReturn={returnFromSettings} /> : null}
       {activeView === 'account' ? <AccountPage api={api} state={state} applyState={applyState} /> : null}
-      {activeView === 'activation' ? <ActivationPage api={api} state={state} applyState={applyState} /> : null}
+      {activeView === 'activation' ? <ActivationPage api={api} /> : null}
     </Suspense>
   );
 }

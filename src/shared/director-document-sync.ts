@@ -21,9 +21,10 @@ function mergeRecords<T extends { id: string }>(live: T[], submitted: T[], saved
   return [...merged, ...saved.filter((item) => !present.has(item.id) && !baseline.has(item.id)).map(append)];
 }
 
-export function mergeDirectorSavedDocument<T extends DirectorStoredDocument>(live: T, submitted: T, saved: T): T {
+export function mergeDirectorSavedDocument<T extends DirectorStoredDocument>(live: T, submitted: T, saved: T, knownSaved?: T): T {
   if (live.id !== submitted.id || saved.id !== submitted.id) return live;
-  if (live === submitted) return saved;
+  // Polling may replace the submitted object with another persisted snapshot while a save runs.
+  if (live === submitted || live === knownSaved) return saved;
   return {
     ...live,
     updatedAt: saved.updatedAt,

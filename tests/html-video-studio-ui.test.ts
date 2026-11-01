@@ -33,9 +33,9 @@ describe('HTML video editorial studio', () => {
     expect(styles).toContain('.hv-template-grid > button:hover:not(:disabled) .hv-template-swatch [data-motion]');
     expect(styles).toContain('.hv-template-grid > button:focus-visible .hv-template-swatch [data-motion]');
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.hv-template-swatch \[data-motion\]/u);
-    expect(styles).toContain('.hv-cover-workspace {\n  container-type: inline-size;');
+    expect(styles).toMatch(/\.hv-cover-workspace\s*\{\s*container-type:\s*inline-size;/u);
     expect(styles).toContain('@container (max-width: 650px)');
-    expect(styles).toContain('.hv-cover-editor-grid {\n  display: grid;\n  grid-template-columns: 1fr;');
+    expect(styles).toMatch(/\.hv-cover-editor-grid\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*1fr;/u);
 
     const addAssetHandler = main.slice(
       main.indexOf("trustedHandle('html-video:add-asset'"),

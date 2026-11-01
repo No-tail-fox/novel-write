@@ -15,6 +15,27 @@ describe('director document response reconciliation', () => {
     expect(mergeDirectorSavedDocument(submitted, submitted, saved)).toBe(saved);
   });
 
+  it('accepts a render result after polling has refreshed the persisted snapshot', () => {
+    const submitted = { ...draft(), providerJobs: [job] };
+    const refreshed = { ...submitted, updatedAt: '2026-09-06T00:00:30.000Z' };
+    const saved = { ...refreshed, assets: [asset('render')], providerJobs: [{ ...job, status: 'completed' as const }] };
+    const merged = mergeDirectorSavedDocument(refreshed, submitted, saved, refreshed);
+    expect(merged).toBe(saved);
+    expect(merged.assets[0].selected).toBe(true);
+  });
+
+  it('preserves typing after a persisted refresh while accepting the render artifacts', () => {
+    const submitted = { ...draft(), providerJobs: [job] };
+    const refreshed = { ...submitted, updatedAt: '2026-09-06T00:00:30.000Z' };
+    const live = { ...refreshed, title: 'Typed after polling' };
+    const saved = { ...refreshed, assets: [asset('render')], providerJobs: [{ ...job, status: 'completed' as const }] };
+    const merged = mergeDirectorSavedDocument(live, submitted, saved, refreshed);
+    expect(merged).not.toBe(saved);
+    expect(merged.title).toBe(live.title);
+    expect(merged.assets[0].selected).toBe(false);
+    expect(merged.providerJobs[0].status).toBe('completed');
+  });
+
   it('retains new editing and server artifacts through strict save/reopen', () => {
     const submitted = { ...draft(), providerJobs: [job] };
     const live = { ...submitted, title: 'New draft', assets: [asset('local-import')] };

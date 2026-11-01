@@ -46,6 +46,7 @@ describe('project activity summaries', () => {
     await enqueue(db, id);
     expect((await db.getTaskSummary(id))?.projectActivity?.status).toBe('pending');
     const claimed = (await db.motionComicScripts.claim(id))!;
+    await vi.waitFor(async () => expect((await db.listTaskSummaries()).items[0].projectActivity?.status).toBe('running'));
     const summary = (await db.listTaskSummaries()).items[0];
     expect(summary.status).toBe('draft');
     expect(summary.projectActivity).toMatchObject({ status: 'running', detail: '正在生成剧本 · 剧本 0/1 集' });

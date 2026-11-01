@@ -414,3 +414,29 @@ describe('history page store', () => {
     expect(unmountNotifications).toHaveBeenCalledTimes(notificationsBeforeUnmount);
   });
 });
+
+
+describe('project list background refresh', () => {
+  it('keeps the same query visible during refresh, applies tombstones immediately and ignores superseded responses', async () => {
+    const controller = createHistoryPageRequestController<'task', Item>('task', { keepPageOnRefresh: true });
+    const request = { family: 'task', filter: 'active' } as const;
+    controller.activate(request, 0);
+    await controller.load(async () => page('task', [item('kept'), item('deleted')]), () => false);
+    const old = deferred<HistoryPage<'task', Item>>();
+    const oldLoad = controller.load(() => old.promise, () => false);
+    const barrier = (_family: 'task', id: string) => id === 'deleted';
+    controller.activate(request, 1, barrier);
+    expect(controller.current().page?.items).toEqual([item('kept')]);
+    const fresh = deferred<HistoryPage<'task', Item>>();
+    const freshLoad = controller.load(() => fresh.promise, barrier);
+    expect(controller.current()).toMatchObject({ loading: true, page: { items: [item('kept')] } });
+    old.resolve(page('task', [item('stale')]));
+    await oldLoad;
+    expect(controller.current().page?.items).toEqual([item('kept')]);
+    fresh.resolve(page('task', [item('fresh'), item('deleted')]));
+    await freshLoad;
+    expect(controller.current().page?.items).toEqual([item('fresh')]);
+    controller.activate({ ...request, query: 'different' }, 2, barrier);
+    expect(controller.current().page).toBeNull();
+  });
+});

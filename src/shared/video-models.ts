@@ -12,6 +12,7 @@ export type VideoModelPreset = typeof VIDEO_MODEL_PRESETS[number]['id'];
 /** Explicit presets also identify providers whose model is an opaque deployment ID. */
 export function videoModelPreset(provider: Pick<VideoProviderConfig, 'model' | 'modelPreset'>): VideoModelPreset {
   if (provider.modelPreset && provider.modelPreset !== 'custom') return provider.modelPreset;
+  if (/^minimax_h3_(?:768p-15s|1080p-10s|736p-12s)$/u.test(provider.model)) return 'custom';
   if (/minimax[-_ ]?h3(?:\b|_)/iu.test(provider.model)) return /h3[-_ ]max(?:\b|_)/iu.test(provider.model) ? 'h3-max' : 'h3';
   if (/seedance.*2[._-]?5(?:\D|$)/iu.test(provider.model)) return 'seedance-2.5';
   if (/seedance.*2[._-]?0(?:\D|$)/iu.test(provider.model)) return 'seedance-2.0';
@@ -19,6 +20,13 @@ export function videoModelPreset(provider: Pick<VideoProviderConfig, 'model' | '
 }
 
 export function videoModelLimits(provider: Pick<VideoProviderConfig, 'model' | 'modelPreset' | 'maxDurationSec' | 'maxResolution'>) {
+  const relay = /^minimax_h3_(768p-15s|1080p-10s|736p-12s)$/u.exec(provider.model);
+  if (relay) {
+    const [, resolution, seconds] = /^(\d+p)-(\d+)s$/u.exec(relay[1])!;
+    return { preset: 'custom' as const, family: 'generic' as const, minDuration: 1,
+      maxDuration: Math.min(provider.maxDurationSec, Number(seconds)), resolutions: [resolution.toUpperCase()],
+      images: 9, videos: 0, audio: relay[1] === '736p-12s' ? 0 : 3 };
+  }
   const preset = videoModelPreset(provider);
   const h3 = preset === 'h3' || preset === 'h3-max';
   const seedance = preset === 'seedance-2.0' || preset === 'seedance-2.5';

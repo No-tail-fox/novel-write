@@ -49,8 +49,11 @@ export async function composeHtmlVideoResearchCopy(
   input: {
     keyword: string;
     extraRequirements: string;
+    llmProfileId?: string;
     selectedSources: AiSourceSection[];
     warnings?: string[];
+    track?: string;
+    writingStyleId?: import('../../shared/editorial-writing-styles').EditorialWritingStyleId;
   },
 ): Promise<HtmlVideoResearchResult> {
   const keyword = input.keyword.trim();
@@ -60,6 +63,10 @@ export async function composeHtmlVideoResearchCopy(
 
   const composed = await api.composeResearchCopy({
     keyword,
+    channel: 'html-video',
+    llmProfileId: input.llmProfileId,
+    track: input.track,
+    writingStyleId: input.writingStyleId,
     extraRequirements: input.extraRequirements.trim(),
     selectedSources,
     useBuiltinKnowledge: false,

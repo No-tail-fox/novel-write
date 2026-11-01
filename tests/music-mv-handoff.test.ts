@@ -57,7 +57,7 @@ describe('music creation to MV handoff', () => {
     expect(html).toContain('来自音乐创作：海边的风');
     expect(html).toContain('使用这首歌曲');
     expect(html).toContain('忽略');
-    expect(html).toContain('value="音乐MV"');
+    expect(html).toContain('value="音乐 MV"');
     expect(html).not.toContain('value="海边的风"');
     expect(html).not.toContain(music.audioPath);
     expect(onInitialMusicHandled).not.toHaveBeenCalled();

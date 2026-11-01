@@ -1,4 +1,5 @@
 import { tokenizeSubtitleText } from './audio-alignment';
+import { editorialScriptPlainText } from './editorial-script-markup';
 
 export const EDITORIAL_MAX_SOURCE_LENGTH = 1_000_000;
 export const EDITORIAL_MAX_DURATION_MS = 120 * 60_000;
@@ -19,6 +20,14 @@ export interface EditorialScriptPlan {
 }
 
 const graphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' });
+const words = new Intl.Segmenter('zh', { granularity: 'word' });
+const closingPunctuation = /^[\s，。！？、；：,.!?;:%％…）】》」』”’\])]/u;
+const openingPunctuation = /[（【《「『“‘\[(]$/u;
+
+/** Display boundaries are not speech pauses; retain authored punctuation and spaces. */
+export function joinEditorialNarration(parts: readonly string[]): string {
+  return parts.join('');
+}
 
 /** Reading estimate only; actual speech timestamps remain owned by audio alignment. */
 export function editorialCueReadingMs(text: string): number {
@@ -26,9 +35,12 @@ export function editorialCueReadingMs(text: string): number {
   return Math.max(1000, Math.ceil(units * 250));
 }
 
-export function splitEditorialScriptText(text: string, maxCharacters = 18): string[] {
+export function splitEditorialScriptText(text: string, maxCharacters = 16): string[] {
   if (!Number.isInteger(maxCharacters) || maxCharacters < 1) throw new Error('Invalid subtitle width.');
   const characters = Array.from(graphemes.segment(text), (part) => part.segment);
+  const wordEnds = new Set(Array.from(words.segment(text), part => part.index + part.segment.length));
+  const offsets = [0];
+  for (const character of characters) offsets.push(offsets.at(-1)! + character.length);
   const chunks: string[] = [];
   let start = 0;
   while (start < characters.length) {
@@ -38,9 +50,17 @@ export function splitEditorialScriptText(text: string, maxCharacters = 18): stri
       const remainder = characters.length - end;
       const minimumTail = Math.min(6, Math.ceil(maxCharacters / 3));
       if (remainder < minimumTail) end -= minimumTail - remainder;
-      for (let index = end - 1; index > start; index -= 1) {
-        if (/\s/u.test(characters[index]) || (index >= start + Math.floor(maxCharacters / 2) && /[。！？!?；;，,、:：]/u.test(characters[index]))) { end = index + 1; break; }
-      }
+      const minimum = start + Math.max(1, Math.floor((end - start) / 2));
+      const candidates = Array.from({ length: end - start }, (_, index) => start + index + 1)
+        .filter(index => !closingPunctuation.test(characters[index] ?? '') && !openingPunctuation.test(characters[index - 1]));
+      const natural = candidates.filter(index => index >= minimum);
+      const reversed = [...natural].reverse();
+      end = reversed.find(index => /[。！？!?；;]/u.test(characters.slice(start, index).join('').replace(/[”’」』）】》]+$/u, '').at(-1) ?? ''))
+        ?? reversed.find(index => /[，,、:：\s]/u.test(characters[index - 1]))
+        ?? reversed.find(index => wordEnds.has(offsets[index]))
+        ?? candidates.at(-1) ?? end;
+      // An unusually long punctuation run stays with its preceding phrase.
+      while (end < characters.length && closingPunctuation.test(characters[end])) end += 1;
     }
     const chunk = characters.slice(start, end).join('');
     if (chunk.trim()) chunks.push(chunk);
@@ -52,10 +72,11 @@ export function splitEditorialScriptText(text: string, maxCharacters = 18): stri
 
 export function planEditorialScript(sourceText: string, requested: EditorialScriptDuration = 30_000): EditorialScriptPlan {
   if (sourceText.length > EDITORIAL_MAX_SOURCE_LENGTH) throw new Error('EDITORIAL_SOURCE_TOO_LONG: 原稿最多 1,000,000 个字符。');
-  const normalized = sourceText.replace(/\s+/gu, ' ').trim();
+  const normalized = editorialScriptPlainText(sourceText);
   if (!normalized) throw new Error('EDITORIAL_SOURCE_EMPTY: 请填写原始文案。');
+  if (!/[\p{L}\p{N}\p{S}]/u.test(normalized)) throw new Error('EDITORIAL_SCRIPT_CAPACITY: 文案需要包含可朗读的内容。');
   if (normalized.length > 18 * (EDITORIAL_MAX_DURATION_MS / 1000)) throw new Error('EDITORIAL_SCRIPT_CAPACITY: 全文超过单项目 120 分钟容量，请按章节分别创建项目。');
-  const sentences = normalized.split(/(?<=[。！？!?；;])|(?<=[.!?])(?=\s|$)/u).filter((part) => part.trim());
+  const sentences = normalized.match(/(?:[^。！？!?；;.]|\.(?=\d))+(?:[。！？!?；;]+[”’」』）】》"]*|\.(?!\d)[”’」』）】》"]*)?|[。！？!?；;.]+[”’」』）】》"]*/gu) ?? [normalized];
   const sections = ['', '', '', ''];
   // Keep semantic sentences intact; a one-sentence script does not need four roles.
   sentences.forEach((sentence, index) => { sections[Math.floor(index * Math.min(4, sentences.length) / sentences.length)] += sentence; });
@@ -94,7 +115,20 @@ export function planEditorialScript(sourceText: string, requested: EditorialScri
     const shots: EditorialScriptShot[] = [];
     let shot: EditorialScriptShot = { durationMs: 0, cues: [] };
     for (const cue of cues) {
-      if (shot.durationMs + cue.durationMs > 15000 && shot.cues.length) { shots.push(shot); shot = { durationMs: 0, cues: [] }; }
+      if (shot.durationMs + cue.durationMs > 15000 && shot.cues.length) {
+        // Prefer a speech boundary when the frame budget splits a long sentence.
+        const boundary = shot.cues.map(item => /[。！？!?；;，,：:][”’」』）】》"]*\s*$/u.test(item.text)).lastIndexOf(true);
+        const carry = boundary >= 0 ? shot.cues.slice(boundary + 1) : [];
+        if (carry.length) {
+          shot.cues = shot.cues.slice(0, boundary + 1);
+          shot.durationMs = shot.cues.reduce((sum, item) => sum + item.durationMs, 0);
+        }
+        shots.push(shot);
+        shot = { durationMs: carry.reduce((sum, item) => sum + item.durationMs, 0), cues: carry };
+        if (shot.durationMs + cue.durationMs > 15000 && carry.length) {
+          shots.push(shot); shot = { durationMs: 0, cues: [] };
+        }
+      }
       if (cue.durationMs > 15000) throw new Error('EDITORIAL_SCRIPT_CAPACITY: 单句与所选时长不匹配，请选择按全文分配时长。');
       shot.cues.push(cue);
       shot.durationMs += cue.durationMs;

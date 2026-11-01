@@ -1,9 +1,16 @@
+import { rebindRegeneratedSplitNarration } from './editorial-narration-replacement';
 import { rebuildEditorialTimeline, type EditorialCollagePipelineData } from './editorial-collage';
 import { hashSubtitleAlignment, invalidateSubtitleAlignment, isSubtitleAlignmentValid } from './audio-alignment';
 import type { ProductionAudioClip } from './production-audio';
+import { PROJECT_MUSIC_PREFIX } from './editorial-music';
+import { splitLongEditorialNarration } from './editorial-narration-splitting';
 
 const speechTracks = new Set(['narration', 'dialogue']);
-const tailMs = 160;
+function narrationTailMs(text: string): number {
+  if (/[。！？.!?][”’」』）】》"]*\s*$/u.test(text)) return 160;
+  if (/[，,；;：:][”’」』）】》"]*\s*$/u.test(text)) return 100;
+  return 0;
+}
 
 /** Re-probe selected recordings before export so old projects can reuse their audio. */
 export async function prepareEditorialNarrationForRender(
@@ -26,6 +33,7 @@ export async function prepareEditorialNarrationForRender(
 /** Full-shot generated speech follows its recording; authored source trims remain edits. */
 export function fitEditorialNarrationTiming(document: EditorialCollagePipelineData, shotIds?: readonly string[]): EditorialCollagePipelineData {
   const selected = shotIds ? new Set(shotIds) : undefined;
+  document = rebindRegeneratedSplitNarration(document, selected);
   const assets = new Map(document.assets.map(asset => [asset.id, asset]));
   const oldStarts = new Map(document.timeline?.clips.map(clip => [clip.shotId, clip.startMs]));
   const nextStarts = new Map<string, number>();
@@ -51,16 +59,17 @@ export function fitEditorialNarrationTiming(document: EditorialCollagePipelineDa
         && (automaticClip.sourceDurationMs === undefined || automaticClip.sourceDurationMs === previouslyMeasured)
         && (automaticClip.durationMs === undefined || automaticClip.durationMs === previouslyMeasured || automaticClip.durationMs === Math.min(shot.durationMs, previouslyMeasured ?? 0));
       const shouldFit = (!selected || selected.has(shot.id)) && source?.kind === 'audio'
+        && source.id !== shot.narrationSplit?.sourceVoiceAssetVersionId
         && typeof measured === 'number' && Number.isFinite(measured) && measured > 0
         && (speech.length === 0 || fullSource);
       let durationMs = shot.durationMs;
       if (shouldFit) {
-        if (measured > 15_000) throw new Error(`EDITORIAL_NARRATION_TOO_LONG: 镜头“${shot.title || shot.id}”旁白长 ${Math.ceil(measured / 1000)} 秒，超过单镜 15 秒，请拆分镜头后再导出；不会截掉尾音。`);
-        const otherAudioEnd = owned.filter(clip => !speechTracks.has(clip.trackType)).reduce((end, clip) => Math.max(end, clip.startMs - oldStart + (clip.durationMs ?? clip.sourceDurationMs ?? shot.durationMs)), 0);
+        const otherAudioEnd = owned.filter(clip => !speechTracks.has(clip.trackType) && !clip.id.startsWith(PROJECT_MUSIC_PREFIX)).reduce((end, clip) => Math.max(end, clip.startMs - oldStart + (clip.durationMs ?? clip.sourceDurationMs ?? shot.durationMs)), 0);
         // Round down to integer milliseconds after choosing the covering frame,
         // so ceil(duration * fps) cannot accidentally request one extra frame.
-        const frameDuration = Math.floor(Math.ceil((measured + tailMs) * 24 / 1000) * 1000 / 24);
-        durationMs = Math.max(otherAudioEnd, Math.min(15_000, Math.max(800, frameDuration)));
+        const text = shot.subtitleCueIds.map(id => beat.subtitleCues.find(cue => cue.id === id)?.text ?? '').join('');
+        const frameDuration = Math.floor(Math.ceil((measured + narrationTailMs(text)) * 24 / 1000) * 1000 / 24);
+        durationMs = Math.max(otherAudioEnd, Math.max(800, frameDuration));
         fullRecordings.set(shot.id, { assetId: source.id, durationMs: Math.ceil(measured), oldClip: automaticClip });
       }
       const cues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
@@ -84,6 +93,7 @@ export function fitEditorialNarrationTiming(document: EditorialCollagePipelineDa
       if (durationMs === shot.durationMs) return shot;
       const scale = durationMs / shot.durationMs;
       return { ...shot, durationMs,
+        ...(shot.animation?.native ? { animation: { ...shot.animation, native: { ...shot.animation.native, durationMs, sourceDurationMs: shot.animation.native.sourceDurationMs ?? shot.animation.native.durationMs } } } : {}),
         camera: shot.camera.map(frame => ({ ...frame, atMs: Math.min(durationMs, Math.round(frame.atMs * scale)) })),
         layers: shot.layers.map(layer => ({ ...layer, motion: layer.motion.map(frame => ({ ...frame, atMs: Math.min(durationMs, Math.round(frame.atMs * scale)) })) })),
       };
@@ -97,7 +107,8 @@ export function fitEditorialNarrationTiming(document: EditorialCollagePipelineDa
     shotId, assetVersionId: recording.assetId, trackType: 'narration', startMs: nextStarts.get(shotId)!,
     sourceStartMs: 0, sourceDurationMs: recording.durationMs, sourceMediaDurationMs: recording.durationMs, durationMs: recording.durationMs, gainDb: recording.oldClip?.gainDb ?? 0,
   });
-  const next = rebuildEditorialTimeline({ ...document, beats, ...(document.timeline ? { timeline: { ...document.timeline, audioClips } } : {}) });
+  audioClips.sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+  const next = splitLongEditorialNarration(rebuildEditorialTimeline({ ...document, beats, timeline: { durationMs: 0, clips: [], audioAssetVersionIds: [], ...document.timeline, audioClips } }));
   if (JSON.stringify(next) === JSON.stringify(document)) return document;
   return { ...next, stage: 'assets', assets: next.assets.map(asset => asset.assetId === 'director-final-video' ? { ...asset, selected: false, pinned: false } : asset) };
 }

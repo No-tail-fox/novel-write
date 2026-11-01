@@ -1,3 +1,4 @@
+import type { ArtifactStorageLocation } from './artifact-storage';
 import type { VoxAnimationPayload, VoxGenerateRequest, VoxCompileResult, VoxSavedTemplate } from './vox-animation';
 import type { VoxProductionStart, VoxProductionControl, VoxProductionRun } from './vox-production';
 import type {
@@ -132,7 +133,11 @@ export const INVOKE_CHANNELS = Object.freeze([
   'app:get-bootstrap',
   'app:reconcile-deltas',
   'task:list',
+  'project:set-models',
   'task:set-favorite',
+  'project-cover:generate',
+  'project-cover:import',
+  'project-cover:reset',
   'task:archive',
   'task:restore',
   'task:delete',
@@ -211,6 +216,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'voice-lab:generate',
   'account:save',
   'activation:save',
+  'artifact-storage:get', 'artifact-storage:choose', 'artifact-storage:cancel',
   'license:status', 'license:activate', 'license:refresh', 'license:release',
   'update:status', 'update:check', 'update:download', 'update:install',
   'ui:save-preferences',
@@ -318,7 +324,9 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:media-url',
   'asset:read-data-url',
   'local-image:select',
+  'pixelle:catalog',
   'local-video:select',
+  'short-video-materials:select',
   'motion-comic-source:select',
   'local-audio:select',
   'local-subtitle-timestamps:select',
@@ -364,6 +372,9 @@ export interface PersonAssetReference {
 }
 
 export type StoryDreamApi = {
+  getArtifactStorage: () => Promise<ArtifactStorageLocation | null>;
+  chooseArtifactStorage: () => Promise<ArtifactStorageLocation>;
+  cancelArtifactStorageChange: () => Promise<ArtifactStorageLocation>;
   listLibraryAssets: (input?: LibraryListInput) => Promise<LibraryPage>;
   getLibraryAsset: (id: string) => Promise<LibraryAsset>;
   saveLibraryAsset: (input: LibrarySaveInput) => Promise<LibraryAsset>;
@@ -374,7 +385,11 @@ export type StoryDreamApi = {
   getBootstrap: () => Promise<BootstrapState>;
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;
   listTasks: (request?: HistoryListInput<'task'>) => Promise<HistoryPage<'task', TaskSummary>>;
+  setProjectModels: (id: string, models: import('./types').ProjectModels) => Promise<AppMutationResult>;
   setTaskFavorite: (id: string, isFavorite: boolean) => Promise<AppMutationResult>;
+  generateProjectCover: (input: { id: string; prompt: string }) => Promise<AppMutationResult>;
+  importProjectCover: (id: string) => Promise<AppMutationResult>;
+  resetProjectCover: (id: string) => Promise<AppMutationResult>;
   archiveTask: (id: string) => Promise<AppMutationResult>;
   restoreTask: (id: string) => Promise<AppMutationResult>;
   deleteTaskPermanently: (id: string) => Promise<AppMutationResult>;
@@ -545,7 +560,9 @@ export type StoryDreamApi = {
   getTaskMediaUrl: (id: string, path: string) => Promise<string>;
   readAssetDataUrl: (path: string) => Promise<string>;
   selectLocalImage: (purpose?: 'video-reference') => Promise<string | null>;
+  getPixelleCatalog: () => Promise<import('./pixelle').PixelleCatalog>;
   selectLocalVideo: () => Promise<string | null>;
+  selectShortVideoMaterials: () => Promise<string[]>;
   selectMotionComicSourceFile: () => Promise<LocalTextFile | null>;
   importBgmAudio: () => Promise<ManagedBgmImport | null>;
   selectLocalAudio: {

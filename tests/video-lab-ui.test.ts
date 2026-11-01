@@ -1,3 +1,4 @@
+import { deferred, productionHandler, sourceText } from './helpers/source-handler';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -42,5 +43,31 @@ describe('standalone video workbench initial UI', () => {
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?<span[^>]*>首尾帧<\/span>/u);
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*?<span[^>]*>多模态参考<\/span>/u);
     expect(api.selectLocalImage).not.toHaveBeenCalled();
+  });
+});
+
+describe('video and audio reference picker actions', () => {
+  it.each([
+    ['audio', 'selectLocalAudio', 'referenceAudioPaths', '添加音频'],
+    ['video', 'selectLocalVideo', 'referenceVideoPaths', '添加视频'],
+  ] as const)('%s picker routes to its own API and serializes double clicks', async (kind, method, field, label) => {
+    const pending = deferred<string>(), api = { selectLocalAudio: vi.fn(() => pending.promise), selectLocalVideo: vi.fn(() => pending.promise) };
+    const draft = { referenceAudioPaths: [] as string[], referenceVideoPaths: [] as string[] };
+    const lock = { current: false }, setDraft = vi.fn((update: any) => Object.assign(draft, update(draft))), picking = vi.fn();
+    const picker = productionHandler('src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', { imagePickerLock: lock, setPickingImage: picking, setSubmitError: vi.fn(), api, mounted: { current: true }, setDraft, referenceLimits: { audio: 3, videos: 3 }, errorMessage: (e: Error) => e.message });
+    const first = picker(kind); await picker(kind); expect(api[method]).toHaveBeenCalledTimes(1);
+    if (kind === 'audio') expect(api.selectLocalAudio).toHaveBeenCalledWith('video-reference');
+    else expect(api.selectLocalAudio).not.toHaveBeenCalled();
+    pending.resolve('C:/references/reference.media'); await first;
+    expect(draft[field]).toEqual(['C:/references/reference.media']); expect(lock.current).toBe(false); expect(picking).toHaveBeenLastCalledWith(false);
+    const line = sourceText('src/features/labs/VideoLabPage.tsx').split('\n').find(value => value.includes(`>${label}</Button>`));
+    expect(line).toContain(`selectReferenceMedia('${kind}')`); expect(line).toContain(`disabled={pickingImage || draft.${field}.length >= referenceLimits.`);
+  });
+  it('keeps selected references on picker error, unlocks and ignores late completion after unmount', async () => {
+    const pending = deferred<string>(), api = { selectLocalAudio: vi.fn(() => pending.promise) }, error = vi.fn(), update = vi.fn(), lock = { current: false }, mounted = { current: true };
+    const picker = productionHandler('src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', { imagePickerLock: lock, setPickingImage: vi.fn(), setSubmitError: error, api, mounted, setDraft: update, referenceLimits: { audio: 3 }, errorMessage: (e: Error) => e.message });
+    const first = picker('audio'); pending.reject(new Error('文件不可读')); await first;
+    expect(error).toHaveBeenLastCalledWith('文件不可读'); expect(lock.current).toBe(false); expect(update).not.toHaveBeenCalled();
+    api.selectLocalAudio.mockResolvedValue('late.wav'); mounted.current = false; await picker('audio'); expect(update).not.toHaveBeenCalled();
   });
 });

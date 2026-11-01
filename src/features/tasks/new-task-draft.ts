@@ -1,3 +1,4 @@
+import type { PixelleTaskOptions, PixelleVisualTemplateRef } from '../../shared/pixelle';
 import type {
   AiSourceContext,
   ContentPlatform,
@@ -5,6 +6,7 @@ import type {
   NarrativePov,
   OrdinaryTaskCoverSelection,
   PausePoint,
+  ProjectModels,
   PodcastSpeakerPair,
   ProcessingMode,
   RewriteIntensity,
@@ -32,9 +34,13 @@ export interface NewTaskDraftValues {
   track?: string;
   style?: string;
   templateId?: string;
+  visualTemplateRef?: PixelleVisualTemplateRef;
+  pixelleOptions?: PixelleTaskOptions;
+  shortVideoMaterials?: import('../../shared/short-video-materials').ShortVideoMaterials;
   ratio?: string;
   imageQuality?: 'default' | ImageGenerationQuality;
   selectedTaskLlmProfileId?: string;
+  projectModels?: ProjectModels;
   promptTemplateOverrideId?: string;
   promptTemplateManuallyOverridden?: boolean;
   styleManuallyOverridden?: boolean;
@@ -43,6 +49,7 @@ export interface NewTaskDraftValues {
   ttsProvider?: RuntimeTtsProvider;
   speaker?: string;
   bgmId?: string;
+  outputTargets?: import('../../shared/types').TaskOutputTarget[];
   referenceImagePath?: string;
   pausePoint?: PausePoint;
   processingMode?: ProcessingMode;
@@ -52,7 +59,7 @@ export interface NewTaskDraftValues {
   narrativePov?: NarrativePov;
   keepPromotion?: boolean;
   productInfo?: string | null;
-  materialSource?: 'ai' | 'local';
+  materialSource?: 'ai' | 'local' | 'video';
   materialPerson?: string;
   fixedIntro?: string;
   outroCta?: string;

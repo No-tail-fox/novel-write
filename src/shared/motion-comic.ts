@@ -1,3 +1,5 @@
+import { projectModelsSchema } from './project-models';
+import type { ProjectModels } from './types';
 import type { MotionComicSpeakerRole, MotionComicBubbleStyle, MotionComicBubblePosition } from "./motion-comic-dialogue";
 import { z } from 'zod';
 import { productionNarrationAlignmentEvidenceSchema } from './production-audio-alignment';
@@ -246,6 +248,7 @@ export interface MotionComicDraftInput {
 }
 
 export interface MotionComicCreateInput {
+  projectModels?: ProjectModels;
   title: string;
   premise: string;
   episodeTitle?: string;
@@ -708,6 +711,7 @@ export const motionComicPipelineSchema = z.object({
 }).strict();
 
 export const motionComicCreateInputSchema = z.object({
+  projectModels: projectModelsSchema.optional(),
   title: z.string().trim().min(1).max(512),
   premise: z.string().trim().min(1).max(MAX_TEXT),
   episodeTitle: z.string().trim().min(1).max(512).optional(),
@@ -805,7 +809,7 @@ export function splitMotionComicSourceEpisodes(
     // Chapter-based splitting is lossless and intentionally unbounded by a
     // product-level episode count. The source text size and per-episode size
     // guards remain the practical safety boundaries.
-    if (headed.length >= 2) {
+    if (headed.length >= 1) {
       if (preamble.join('\n').trim() && headed[0]) {
         headed[0].lines.unshift(...preamble);
       }
@@ -830,7 +834,7 @@ export function splitMotionComicSourceEpisodes(
           result.push({ title: ep.title, sourceText: epText });
         }
       }
-      if (result.length >= 2) {
+      if (result.length >= 1) {
         if (result.some((episode) => episode.sourceText.length > MAX_SOURCE_EPISODE_CHARACTERS)) {
           throw new Error(`MOTION_COMIC_SOURCE_EPISODE_TOO_LONG: 单个段落超过每集 ${MAX_SOURCE_EPISODE_CHARACTERS} 字上限，请补充分段后重新拆分。`);
         }

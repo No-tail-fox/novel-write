@@ -1,3 +1,5 @@
+import { narrationSpeechText } from './narration-speech-text';
+import { DEFAULT_IMAGE_REQUEST_TIMEOUT_MS } from './config';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
@@ -60,7 +62,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         resolution: config.customImage.resolution ?? '2K',
         quality: task.imageQuality ?? config.customImage.quality ?? 'medium',
         ratioMappingJson: config.customImage.ratioMappingJson,
-        timeoutMs: config.customImage.timeoutMs ?? 180_000,
+        timeoutMs: config.customImage.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS,
         asyncMode: config.customImage.asyncMode,
         pollIntervalMs: config.customImage.pollIntervalMs ?? 2000,
         signal,
@@ -79,7 +81,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
       resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
       quality: task.imageQuality ?? config.gptImage.quality ?? config.image.quality ?? 'medium',
       ratioMappingJson: undefined,
-      timeoutMs: config.gptImage.timeoutMs ?? config.image.timeoutMs ?? 180_000,
+      timeoutMs: config.gptImage.timeoutMs ?? config.image.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS,
       asyncMode: false,
       pollIntervalMs: 2000,
       signal,
@@ -408,6 +410,7 @@ async function generateOpenAiCompatibleImageSync(input: {
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const response = await fetchWithTimeout(`${input.baseUrl}/images/generations`, {
     generation: true,
+    retryConnectTimeout: true,
     method: 'POST',
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider request',
@@ -458,6 +461,7 @@ async function generateOpenAiCompatibleImageEdit(input: {
   });
   const response = await fetchWithTimeout(`${input.baseUrl}/images/edits`, {
     generation: true,
+    retryConnectTimeout: true,
     method: 'POST',
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider edit request',
@@ -494,6 +498,7 @@ async function generateOpenAiCompatibleImageAsync(input: {
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const response = await fetchWithTimeout(`${input.baseUrl}/images/generations?async=true`, {
     generation: true,
+    retryConnectTimeout: true,
     method: 'POST',
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider async submit',
@@ -792,6 +797,11 @@ async function synthesizeVolcengineV3Narration(input: {
   return assets;
 }
 
+interface VolcengineV3AudioState {
+  chunks: Buffer[];
+  completed: boolean;
+}
+
 async function decodeVolcengineV3Audio(response: Response): Promise<Buffer> {
   if (!response.body) {
     return parseVolcengineV3AudioLines(await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES));
@@ -799,49 +809,59 @@ async function decodeVolcengineV3Audio(response: Response): Promise<Buffer> {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = '';
-  let done = false;
-  const chunks: Buffer[] = [];
+  const state: VolcengineV3AudioState = { chunks: [], completed: false };
 
-  while (!done) {
-    const result = await reader.read();
-    done = result.done;
-    pending += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
-    let lineBreak = pending.indexOf('\n');
-    while (lineBreak >= 0) {
-      consumeVolcengineV3Line(pending.slice(0, lineBreak), chunks);
-      pending = pending.slice(lineBreak + 1);
-      lineBreak = pending.indexOf('\n');
+  try {
+    let done = false;
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
+      pending += decoder.decode(result.value ?? new Uint8Array(), { stream: !done });
+      let lineBreak = pending.indexOf('\n');
+      while (lineBreak >= 0) {
+        consumeVolcengineV3Line(pending.slice(0, lineBreak), state);
+        pending = pending.slice(lineBreak + 1);
+        lineBreak = pending.indexOf('\n');
+      }
     }
+    consumeVolcengineV3Line(pending, state);
+    return finishVolcengineV3Audio(state);
+  } finally {
+    reader.releaseLock();
   }
-  consumeVolcengineV3Line(pending, chunks);
-  if (!chunks.length) {
-    throw new Error('Volcengine TTS V3 response did not include audio data.');
-  }
-  return Buffer.concat(chunks);
 }
 
 function parseVolcengineV3AudioLines(text: string): Buffer {
-  const chunks: Buffer[] = [];
+  const state: VolcengineV3AudioState = { chunks: [], completed: false };
   for (const line of text.split(/\r?\n/)) {
-    consumeVolcengineV3Line(line, chunks);
+    consumeVolcengineV3Line(line, state);
   }
-  if (!chunks.length) {
-    throw new Error('Volcengine TTS V3 response did not include audio data.');
-  }
-  return Buffer.concat(chunks);
+  return finishVolcengineV3Audio(state);
 }
 
-function consumeVolcengineV3Line(line: string, chunks: Buffer[]): void {
+function finishVolcengineV3Audio(state: VolcengineV3AudioState): Buffer {
+  // A clean HTTP EOF is not proof that synthesis finished. Never persist a
+  // partial paid response as a completed voice asset or silently resubmit it.
+  if (!state.completed) {
+    throw new Error('TTS_RESPONSE_INCOMPLETE: Volcengine TTS V3 response ended without a completion frame; partial audio was not saved.');
+  }
+  if (!state.chunks.length) {
+    throw new Error('Volcengine TTS V3 response did not include audio data.');
+  }
+  return Buffer.concat(state.chunks);
+}
+
+function consumeVolcengineV3Line(line: string, state: VolcengineV3AudioState): void {
   const trimmed = line.trim();
   if (!trimmed) return;
   const jsonText = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
   const body = JSON.parse(jsonText) as { code?: number; message?: string; data?: string | null };
-  if (body.code === 0 && body.data) {
-    chunks.push(Buffer.from(body.data, 'base64'));
+  if (body.code === 0 || body.code === 20000000) {
+    if (body.data) state.chunks.push(Buffer.from(body.data, 'base64'));
+    if (body.code === 20000000) state.completed = true;
     return;
   }
-  if (body.code === 20000000) return;
-  if (body.code && body.code !== 0) {
+  if (body.code) {
     throw new Error(`Volcengine TTS V3 API error: ${body.message ?? body.code}`);
   }
 }
@@ -853,7 +873,7 @@ function volcengineSpeechRate(speed: number): number {
 
 function narrationTurnsForScene(scene: StoryboardScene, task: Task, defaultVoiceId: string, provider: RuntimeTtsProvider): TtsTurn[] {
   if (task.videoForm !== 'two-host-podcast') {
-    return [{ scene, text: scene.cap, voiceId: defaultVoiceId }];
+    return [{ scene, text: narrationSpeechText(scene.cap), voiceId: defaultVoiceId }];
   }
   const defaults = defaultPodcastSpeakersForProvider(provider, task.podcastSpeakers);
   const voiceA = task.podcastSpeakerA?.trim() || defaults.podcastSpeakerA;
@@ -861,7 +881,7 @@ function narrationTurnsForScene(scene: StoryboardScene, task: Task, defaultVoice
 
   return splitPodcastDialogue(scene).map((turn) => ({
     scene,
-    text: turn.text,
+    text: narrationSpeechText(turn.text),
     voiceId: turn.speaker === 'A' ? voiceA : voiceB,
     speaker: turn.speaker,
     turnIndex: turn.turnIndex,

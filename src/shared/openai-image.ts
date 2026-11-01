@@ -4,6 +4,8 @@ import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
 import type { ImageGenerationQuality } from './types';
 
 export { normalizeOpenAiImageBaseUrl } from './openai-image-config';
+export { formatOpenAiImageProviderError, type OpenAiImageProviderOperation } from './image-provider-error';
+import { formatOpenAiImageProviderError } from './image-provider-error';
 
 export type OpenAiImageResolution = '1K' | '2K' | '4K';
 export type OpenAiImageQuality = ImageGenerationQuality;
@@ -40,56 +42,6 @@ export interface OpenAiImageProbeInput {
 const IMAGE_PROBE_PROMPT = 'Configuration smoke test: a simple geometric icon on a plain background, no text.';
 const IMAGE_PROBE_RESPONSE_MAX_BYTES = 64 * 1024 * 1024;
 
-export type OpenAiImageProviderOperation = 'generation' | 'edit' | 'async-submit' | 'async-poll' | 'model-test';
-
-export function formatOpenAiImageProviderError(input: {
-  status: number;
-  bodyText: string;
-  model: string;
-  operation: OpenAiImageProviderOperation;
-}): string {
-  const prefix = input.operation === 'edit'
-    ? 'Image provider edit API error'
-    : input.operation === 'async-submit'
-      ? 'Image provider async submit error'
-      : input.operation === 'async-poll'
-        ? 'Image provider async poll error'
-        : input.operation === 'model-test'
-          ? 'Image model test error'
-          : 'Image provider API error';
-  const detail = extractImageProviderErrorDetail(input.bodyText);
-  if (input.status === 402) {
-    return `${prefix} (${input.status}): 远程图片服务账户余额不足或套餐额度不可用。此错误由图片服务供应商返回，不是本地参数校验错误；请充值供应商账户，或切换其他图片服务/模型。降低生成质量只能减少后续消耗，无法绕过已无余额的账户。上游信息: ${detail}`;
-  }
-  if (input.status === 503 && /no available compatible accounts/iu.test(detail)) {
-    return `${prefix} (${input.status}): 图片服务当前没有可用于模型 "${input.model}" 的上游账号或通道。API Key 和模型清单可能仍然正常；请稍后仅重试生图步骤，或切换其他图片服务/模型。上游信息: ${detail}`;
-  }
-  if (input.status === 503) {
-    return `${prefix} (${input.status}): 图片服务暂时不可用，请稍后仅重试生图步骤，或切换其他图片服务。上游信息: ${detail}`;
-  }
-  return `${prefix} (${input.status}): ${detail}`;
-}
-
-function extractImageProviderErrorDetail(bodyText: string): string {
-  const fallback = bodyText.replace(/\s+/gu, ' ').trim().slice(0, 600) || 'empty provider response';
-  try {
-    const parsed = JSON.parse(bodyText) as {
-      error?: string | { message?: unknown };
-      message?: unknown;
-    };
-    const message = typeof parsed.error === 'string'
-      ? parsed.error
-      : typeof parsed.error?.message === 'string'
-        ? parsed.error.message
-        : typeof parsed.message === 'string'
-          ? parsed.message
-          : '';
-    return message.replace(/\s+/gu, ' ').trim().slice(0, 600) || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export function buildOpenAiImageGenerationBody(input: {
   model: string;
   prompt: string;
@@ -102,7 +54,7 @@ export function buildOpenAiImageGenerationBody(input: {
   return {
     model: input.model,
     prompt: input.prompt,
-    size: resolveOpenAiImageSize(input.ratio),
+    size: resolveOpenAiImageSize(input.ratio, input),
     quality: input.quality ?? resolveOpenAiImageQuality(input.resolution),
     output_format: 'png',
     moderation: 'auto',
@@ -208,7 +160,17 @@ export function resolveOpenAiImageQuality(resolution: OpenAiImageResolution): Op
   return 'medium';
 }
 
-export function resolveOpenAiImageSize(ratio: string): string {
+export function resolveOpenAiImageSize(ratio: string, input?: { model: string; resolution: OpenAiImageResolution }): string {
+  // The second-generation family accepts explicit dimensions. Keep the fixed-size
+  // contract for older OpenAI-compatible models; custom ratio mappings still win.
+  if (input && /^gpt-image-2(?:[.\-]|$)/i.test(input.model)) {
+    const ratios: Record<string, [number, number]> = { '1:1': [1, 1], '16:9': [16, 9], '9:16': [9, 16], '4:3': [4, 3], '3:4': [3, 4], '3:2': [3, 2], '2:3': [2, 3], '21:9': [21, 9] };
+    const [width, height] = ratios[ratio] ?? ratios['1:1'];
+    const edge = input.resolution === '4K' ? (ratio === '16:9' || ratio === '9:16' ? 3840 : 4096) : input.resolution === '2K' ? 2048 : 1024;
+    const unit = edge / Math.max(width, height);
+    const pixels = (value: number) => Math.max(16, Math.round(value * unit / 16) * 16);
+    return pixels(width) + 'x' + pixels(height);
+  }
   if (ratio === '9:16' || ratio === '3:4' || ratio === '2:3') return '1024x1536';
   if (ratio === '16:9' || ratio === '4:3' || ratio === '3:2' || ratio === '21:9') return '1536x1024';
   return '1024x1024';

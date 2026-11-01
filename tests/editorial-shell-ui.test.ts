@@ -1,37 +1,43 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
+import { navigationItems, newTaskPrimaryAction, primaryNavGroups, primaryNavItems, productionNavItems, sidebarNavGroups, sidebarNavItems, utilityNavItems } from '../src/app/navigation';
+import { routeLoaders } from '../src/app/route-registry';
 
 describe('editorial workbench shell', () => {
-  it('keeps VOX and AI motion-comic in the main production navigation without a duplicate launcher row', async () => {
-    const [shell, navigation] = await Promise.all([
-      source('../src/app/AppShell.tsx'),
-      source('../src/app/navigation.ts'),
-    ]);
+  it('keeps creative animation and AI motion-comic in production without a duplicate launcher row', async () => {
+    const shell = await source('../src/app/AppShell.tsx');
     expect(shell).not.toContain('director-quick-launch');
-    expect(navigation).toContain("view: 'editorial-collage', label: 'VOX 视频'");
-    expect(navigation).toContain("view: 'motion-comic', label: 'AI 漫剧'");
+    expect(productionNavItems.map(({ view, label }) => [view, label])).toEqual([
+      ['editorial-collage', '创意动画'], ['motion-comic', 'AI 漫剧'],
+      ['html-video', 'HTML 动画'], ['music-mv', '音乐 MV'],
+    ]);
+    expect(primaryNavGroups.find((group) => group.id === 'projects')?.items.slice(1)).toEqual(productionNavItems);
   });
 
-  it('preserves the independent action and exact twenty-one-entry navigation declarations', async () => {
-    const navigation = await source('../src/app/navigation.ts');
-    const views = [...navigation.matchAll(/\{ view: '([^']+)', label:/gu)].map((match) => match[1]);
+  it('preserves the independent create action and every registered navigable route exactly once', () => {
+    const views = navigationItems.map((item) => item.view);
     expect(views).toEqual([
       'new-task', 'projects', 'editorial-collage', 'motion-comic', 'html-video', 'music-mv',
-      'image-lab', 'voice-lab', 'video-lab', 'person-assets',
+      'person-assets', 'copy-studio', 'conversation-workbench',
+      'image-lab', 'voice-lab', 'video-lab', 'music-lab',
       'hot-board', 'benchmark', 'book-selection', 'viral-analyzer',
       'prompt-templates', 'draft-templates', 'queue', 'history', 'settings', 'account', 'activation',
     ]);
-    expect(navigation).toContain('sidebarNavItems: NavigationItem[] = [...primaryNavItems, ...utilityNavItems]');
-    expect(navigation).toContain('navigationItems: NavigationItem[] = [newTaskPrimaryAction, ...sidebarNavItems]');
-    expect(navigation).toContain('export const sidebarNavGroups');
-    expect(navigation).not.toContain('export const contextualToolNavItems');
-    expect(navigation).not.toContain('generationNavigationGroup');
-    for (const label of ['项目', '素材库', '灵感', '模板', '任务', '设置']) expect(navigation).toContain(`label: '${label}'`);
+    expect(new Set(views).size).toBe(views.length);
+    expect([...views, 'task-detail'].sort()).toEqual(Object.keys(routeLoaders).sort());
+    expect(sidebarNavItems).toEqual([...primaryNavItems, ...utilityNavItems]);
+    expect(navigationItems).toEqual([newTaskPrimaryAction, ...sidebarNavItems]);
+    expect(sidebarNavItems.some((item) => item.view === newTaskPrimaryAction.view)).toBe(false);
+    expect(sidebarNavGroups).toBe(primaryNavGroups);
+    expect(primaryNavGroups.map(({ label }) => label)).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
+    for (const group of primaryNavGroups) {
+      expect(group.items.some((item) => item.view === group.defaultView)).toBe(true);
+    }
   });
 
-  it('keeps status, recent task, account, trial, and a real theme control in the shell', async () => {
+  it('keeps status, recent task, account, activation, and a real theme control in the shell', async () => {
     const shell = await source('../src/app/AppShell.tsx');
-    for (const value of ['最近任务', '工作区状态已同步', '剪映草稿目录', '试用剩余', '积分明细', '账户中心']) {
+    for (const value of ['最近任务', '工作区状态已同步', '剪映草稿目录', '软件授权', '积分明细', '账户中心']) {
       expect(shell).toContain(value);
     }
     expect(shell).toContain('toggleTheme');
@@ -56,6 +62,21 @@ describe('editorial workbench shell', () => {
     expect(css).toContain('width: 46px');
     expect(css).toContain('min-height: 38px');
     expect(css).not.toMatch(/gradient|bokeh|orb/iu);
+  });
+
+  it('keeps announcements reachable from the shell and updates actionable on narrow windows', async () => {
+    const [shell, dialog, css] = await Promise.all([
+      source('../src/app/AppShell.tsx'),
+      source('../src/app/AnnouncementsDialog.tsx'),
+      source('../src/styles/shell.css'),
+    ]);
+    expect(shell).toContain('className="announcement-entry"');
+    expect(shell).toContain('setAnnouncementsOpen(true)');
+    expect(dialog).toContain("label: '更新公告'");
+    expect(dialog).toContain("label: '问题公告'");
+    expect(dialog).toContain("{category === 'update' ? <div className=\"announcement-update-action\">");
+    expect(css).toContain('@media (max-width: 680px)');
+    expect(css).toContain('announcement-unread-count');
   });
 });
 

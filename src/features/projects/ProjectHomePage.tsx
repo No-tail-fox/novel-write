@@ -1,9 +1,13 @@
+import { ProjectModelsDialog } from './ProjectModelFields';
+import type { AppConfig } from '../../shared/types';
+import { Settings2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   ArrowUpRight,
   Grid2X2,
   Heart,
+  ImagePlus,
   LayoutList,
   Play,
   Plus,
@@ -29,6 +33,7 @@ import { Button, IconButton, SegmentedControl, SelectField, TextField, Toolbar, 
 import { createHistoryPageRequestController, useHistoryPage } from '../history/use-history-page';
 import { formatTaskOperationTime, projectCoverPaths, taskHistoryTypeLabel, toLocalImageUrl } from '../tasks/task-formatters';
 import { taskStatusDetail } from './project-task-status';
+import { ProjectCoverDialog } from './ProjectCoverDialog';
 import type { ProjectHomeSession, ProjectLayout, ProjectTaskType } from './project-home-session';
 import '../../styles/features/projects.css';
 
@@ -47,6 +52,7 @@ const projectTypeOptions = [
 
 export function ProjectHomePage({
   session,
+  config,
   api,
   applyState,
   openTaskDetail,
@@ -55,6 +61,7 @@ export function ProjectHomePage({
   familyEpochs,
 }: {
   session: ProjectHomeSession;
+  config: AppConfig;
   api: StoryDreamApi;
   applyState: (result: AppMutationResult | null) => void;
   openTaskDetail: (taskId: string) => void;
@@ -63,11 +70,13 @@ export function ProjectHomePage({
   familyEpochs: Partial<Record<HistoryFamily, number>>;
 }) {
   const [view, setView] = useState(session.view);
-  const [controller] = useState(() => session.controller ??= createHistoryPageRequestController<'task', TaskSummary>('task'));
+  const [controller] = useState(() => session.controller ??= createHistoryPageRequestController<'task', TaskSummary>('task', { keepPageOnRefresh: true }));
   const { archiveFilter, taskType, favoriteFilter, query, layout } = view;
   const [searchQuery, setSearchQuery] = useState(query.trim());
   const [composing, setComposing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TaskSummary | null>(null);
+  const [modelsTask, setModelsTask] = useState<TaskSummary | null>(null);
+  const [coverTask, setCoverTask] = useState<TaskSummary | null>(null);
   const projectAction = useAsyncAction();
   useEffect(() => { session.view = view; }, [session, view]);
   useEffect(() => {
@@ -237,11 +246,14 @@ export function ProjectHomePage({
               layout={layout}
               archived={archiveFilter === 'archived'}
               busy={busy}
+              openBusy={controlsBusy}
               onOpen={() => openTaskDetail(task.id)}
               onToggleFavorite={() => void toggleFavorite(task)}
               onArchive={() => void archiveProject(task)}
               onRestore={() => void restoreProject(task)}
               onDelete={() => { projectAction.clearFeedback(); setPendingDelete(task); }}
+              onCover={() => setCoverTask(task)}
+              onModels={() => setModelsTask(task)}
             />
           ))}
         </div>
@@ -267,6 +279,9 @@ export function ProjectHomePage({
       ) : null}
 
       <InlineActionFeedback feedback={projectAction.feedback} />
+      {modelsTask ? <ProjectModelsDialog task={tasks.find(task => task.id === modelsTask.id) ?? modelsTask} config={config} api={api} onClose={() => setModelsTask(null)} onUpdated={result => { applyState(result); projectPage.reload(); }} /> : null}
+      {coverTask ? <ProjectCoverDialog task={tasks.find((task) => task.id === coverTask.id) ?? coverTask} api={api}
+        onClose={() => setCoverTask(null)} onUpdated={(result) => { applyState(result); projectPage.reload(); }} /> : null}
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="永久删除项目"
@@ -288,21 +303,27 @@ function ProjectCard({
   layout,
   archived,
   busy,
+  openBusy,
   onOpen,
   onToggleFavorite,
   onArchive,
   onRestore,
   onDelete,
+  onCover,
+  onModels,
 }: {
   task: TaskSummary;
   layout: ProjectLayout;
   archived: boolean;
   busy: boolean;
+  openBusy: boolean;
   onOpen: () => void;
   onToggleFavorite: () => void;
   onArchive: () => void;
   onRestore: () => void;
   onDelete: () => void;
+  onCover: () => void;
+  onModels: () => void;
 }) {
   const generatedCoverPath = task.projectCover?.path?.trim();
   const ordinaryCoverPath = task.ordinaryCoverAsset?.path?.trim();
@@ -327,7 +348,7 @@ function ProjectCard({
         density="comfortable"
         type="button"
         aria-label={`打开项目：${task.title || '未命名任务'}`}
-        disabled={busy}
+        disabled={openBusy}
         onClick={onOpen}
       >
         <span className="project-card-cover" data-cover-source={cover?.source ?? (hasProjectCover ? 'cover' : 'empty')}>
@@ -352,6 +373,11 @@ function ProjectCard({
         </span>
       </Button>
       <div className="project-card-actions">
+        <Tooltip content="项目模型"><IconButton label="项目模型" variant="subtle" density="compact" icon={<Settings2 size={15} />} disabled={busy} onClick={onModels} /></Tooltip>
+        {!archived ? <Tooltip content="设置项目封面">
+          <IconButton label="设置项目封面" variant="subtle" density="compact" icon={<ImagePlus size={15} />}
+            disabled={busy || task.status === 'running' || task.projectActivity?.status === 'running'} onClick={onCover} />
+        </Tooltip> : null}
         <Tooltip content={task.isFavorite ? '取消收藏' : '收藏项目'}>
           <IconButton
             label={task.isFavorite ? '取消收藏' : '收藏项目'}
@@ -403,7 +429,7 @@ function ProjectCard({
             density="compact"
             icon={<ArrowUpRight size={15} />}
             type="button"
-            disabled={busy}
+            disabled={openBusy}
             onClick={onOpen}
             aria-label="继续编辑"
           >

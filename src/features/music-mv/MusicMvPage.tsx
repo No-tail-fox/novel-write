@@ -1,43 +1,20 @@
+import { ProjectModelFields } from '../projects/ProjectModelFields';
+import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
 import { useState } from 'react';
-import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { FolderOpen, Loader2, Music } from 'lucide-react';
-import { FormField as Field } from '../../components/FormField';
-import { OptionGroup as OptionCloud } from '../../components/OptionGroup';
+import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { SegmentedControl as Segmented } from '../../components/SegmentedControl';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
-import { AspectRatioSwatch } from '../../components/AspectRatioSwatch';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import type { PausePoint, ProcessingMode, Task } from '../../shared/types';
-import type { TemplateOption } from '../../shared/prompt-templates';
-import { pauseOptions, storyboardSceneCountOptions } from '../../shared/editorial-options';
-import { ImageStylePicker } from '../image-style-preview/ImageStylePreview';
+import type { Task } from '../../shared/types';
+import { CREATIVE_STYLES, creativeStyle } from '../../shared/creative-animation/styles';
 import { useAsyncAction } from '../../ui/async-action';
-import { Button } from '../../ui';
-import { addUploadedBgm, resolveDefaultBgmId, taskFromMutation, validBgmItems } from '../tasks/task-formatters';
+import { Button, TextField, TextAreaField, SelectField } from '../../ui';
+import { taskFromMutation } from '../tasks/task-formatters';
 import { applyMusicMvHandoff, type MusicMvHandoff } from './music-mv-handoff';
 
-const MUSIC_MV_RHYTHM_LABELS: Record<Task['musicMv']['rhythmMode'], string> = {
-  'lyric-sync': '歌词同步',
-  'fast-cut': '快切',
-  'slow-cinematic': '慢镜头',
-};
-const MUSIC_MV_CAPTION_LABELS: Record<Task['musicMv']['captionStyle'], string> = {
-  karaoke: '卡拉 OK',
-  minimal: '极简字幕',
-  none: '无字幕',
-};
-const MUSIC_MV_SCENE_LABELS = ['开场', '主歌', '副歌', '结尾'] as const;
-
-export function MusicMvPage({
-  api,
-  state,
-  applyState,
-  openTaskDetail,
-  isBrowserPreview,
-  initialMusic,
-  onInitialMusicHandled,
-}: {
+export function MusicMvPage({ api, state, applyState, openTaskDetail, isBrowserPreview, initialMusic, onInitialMusicHandled }: {
   api: StoryDreamApi;
   state: AppState;
   applyState: ApplyMutationResult;
@@ -46,50 +23,42 @@ export function MusicMvPage({
   initialMusic?: MusicMvHandoff;
   onInitialMusicHandled?: (id: string) => void;
 }) {
-  const defaultTemplateId = state.draftTemplates[0]?.id ?? 'default-portrait-9-16';
-  const [title, setTitle] = useState('音乐MV');
+  const [projectModels, setProjectModels] = useState(() => defaultProjectModels(state.config));
+  const [title, setTitle] = useState('音乐 MV');
   const [lyrics, setLyrics] = useState('雨落下第一句\n霓虹亮起第二句\n副歌把夜色唱亮');
-  const [style, setStyle] = useState('modern-film');
+  const [style, setStyle] = useState('cel-anime-80s');
   const [ratio, setRatio] = useState('16:9');
-  const [templateId, setTemplateId] = useState(defaultTemplateId);
   const [storyboardSceneCount, setStoryboardSceneCount] = useState(12);
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>('full-auto');
-  const [pausePoint, setPausePoint] = useState<PausePoint>('critical');
+  const [processingMode, setProcessingMode] = useState<'full-auto' | 'manual'>('full-auto');
   const [musicMvRhythmMode, setMusicMvRhythmMode] = useState<Task['musicMv']['rhythmMode']>('lyric-sync');
-  const [musicMvCaptionStyle, setMusicMvCaptionStyle] = useState<Task['musicMv']['captionStyle']>('karaoke');
+  const [musicMvCaptionStyle, setMusicMvCaptionStyle] = useState<Task['musicMv']['captionStyle']>('minimal');
   const [musicMvVisualMotif, setMusicMvVisualMotif] = useState('雨夜霓虹、孤独背影、慢镜头');
   const [musicMvAudioPath, setMusicMvAudioPath] = useState('');
-  const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState('');
   const [handledMusicId, setHandledMusicId] = useState('');
   const musicAction = useAsyncAction();
   const creationDraft = useWorkspaceDraft({
-    id: 'music-mv-create', label: '音乐 MV 草稿',
-    busy: running,
-    value: { title, lyrics, style, ratio, templateId, storyboardSceneCount, processingMode, pausePoint, musicMvRhythmMode, musicMvCaptionStyle, musicMvVisualMotif, musicMvAudioPath, bgmId },
-    restore: (draft) => {
-      setTitle(draft.title); setLyrics(draft.lyrics); setStyle(draft.style); setRatio(draft.ratio); setTemplateId(draft.templateId);
-      setStoryboardSceneCount(draft.storyboardSceneCount); setProcessingMode(draft.processingMode); setPausePoint(draft.pausePoint);
-      setMusicMvRhythmMode(draft.musicMvRhythmMode); setMusicMvCaptionStyle(draft.musicMvCaptionStyle); setMusicMvVisualMotif(draft.musicMvVisualMotif);
-      setMusicMvAudioPath(draft.musicMvAudioPath); setBgmId(draft.bgmId);
+    id: 'music-mv-create', label: '音乐 MV 草稿', busy: running,
+    value: { projectModelsJson: JSON.stringify(projectModels), title, lyrics, style, ratio, storyboardSceneCount, processingMode, musicMvRhythmMode, musicMvCaptionStyle, musicMvVisualMotif, musicMvAudioPath, bgmId: '' },
+    restore: draft => {
+      setProjectModels(current => readProjectModelsDraft(draft.projectModelsJson, current));
+      setTitle(draft.title); setLyrics(draft.lyrics); setStyle(creativeStyle(draft.style)?.slug ?? 'cel-anime-80s'); setRatio(draft.ratio);
+      setStoryboardSceneCount(draft.storyboardSceneCount); setProcessingMode(draft.processingMode === 'manual' ? 'manual' : 'full-auto');
+      setMusicMvRhythmMode(draft.musicMvRhythmMode); setMusicMvCaptionStyle(draft.musicMvCaptionStyle);
+      setMusicMvVisualMotif(draft.musicMvVisualMotif); setMusicMvAudioPath(draft.musicMvAudioPath);
     },
   });
   const pendingMusic = initialMusic && initialMusic.id !== handledMusicId ? initialMusic : undefined;
-  const bgmOptions = validBgmItems(state.config);
-  const lyricLines = lyrics.split(/\n/u).map((line) => line.trim()).filter(Boolean);
-  const musicMvDraftTemplateOptions = state.draftTemplates.map((template): TemplateOption => [template.id, template.name, `出图 ${template.image.ratio}`]);
+  const lyricLines = lyrics.split(/\n/u).map(line => line.trim()).filter(Boolean);
+  const hasLrcTimestamps = /\[\d{1,3}:[0-5]\d(?:\.\d{1,3})?\]/u.test(lyrics);
 
   function handleInitialMusic(useMusic: boolean) {
     if (!pendingMusic || running || musicAction.busy) return;
     if (useMusic) {
       if (!pendingMusic.audioPath.trim()) return;
-      // The draft restores in a layout effect before the user can accept this offer.
       const next = applyMusicMvHandoff(creationDraft.snapshot(), pendingMusic);
-      setTitle(next.title);
-      setLyrics(next.lyrics);
-      setMusicMvAudioPath(next.musicMvAudioPath);
-      setBgmId(next.bgmId);
+      setTitle(next.title); setLyrics(next.lyrics); setMusicMvAudioPath(next.musicMvAudioPath);
       setMessage('已使用歌曲，可继续设置画面并生成音乐 MV。');
     }
     setHandledMusicId(pendingMusic.id);
@@ -99,83 +68,42 @@ export function MusicMvPage({
   async function selectMusicMvAudio() {
     await musicAction.run(async () => {
       const imported = await api.importBgmAudio();
-      if (!imported) return;
-      setMusicMvAudioPath(imported.path);
-      setBgmId('');
-      const nextBgm = addUploadedBgm(state.config, imported);
-      const next = await api.saveConfig({ config: nextBgm.config, secretChanges: {} });
-      applyState(next);
+      if (imported) setMusicMvAudioPath(imported.path);
     });
   }
 
   async function runMusicMv() {
-    if (isBrowserPreview) {
-      setMessage('浏览器预览不能执行真实流水线，请在 Electron 应用中生成音乐 MV。');
-      return;
-    }
-    if (!lyrics.trim()) {
-      setMessage('请先输入歌词 / 文案。');
-      return;
-    }
-    if (!musicMvAudioPath.trim()) {
-      setMessage('请先选择主歌曲音频；BGM 只能作为辅助配乐，不能替代主歌曲。');
-      return;
-    }
+    if (isBrowserPreview) { setMessage('请在桌面应用中运行真实音乐 MV 制作。'); return; }
+    if (!lyrics.trim() || !musicMvAudioPath.trim()) { setMessage('请填写歌词并选择主歌曲。'); return; }
     await musicAction.run(async () => {
       setRunning(true);
       const submittedDraft = creationDraft.snapshot();
-      setMessage('');
+      setMessage('正在读取歌曲并创建 Lemo 项目…');
       try {
         const next = await api.createAndRunTask({
-          title,
-          inputText: lyrics,
-          taskKind: 'music-mv',
-          processingMode,
-          mode: 'paste',
-          track: 'music-mv',
-          style,
-          ratio,
-          templateId,
-          bgmId,
-          pausePoints: [pausePoint],
-          storyboardSceneCount,
-          musicMv: {
-            rhythmMode: musicMvRhythmMode,
-            captionStyle: musicMvCaptionStyle,
-            visualMotif: musicMvVisualMotif,
-            audioPath: musicMvAudioPath,
-          },
-        });
+        projectModels, title, inputText: lyrics, taskKind: 'music-mv', processingMode,
+          mode: 'paste', track: 'music-mv', style, ratio, bgmId: '', storyboardSceneCount,
+          musicMv: { rhythmMode: musicMvRhythmMode, captionStyle: musicMvCaptionStyle, visualMotif: musicMvVisualMotif, audioPath: musicMvAudioPath } });
         applyState(next);
-        const createdTask = taskFromMutation(next);
-        if (createdTask) {
-          creationDraft.complete(submittedDraft);
-          openTaskDetail(createdTask.id);
-        }
-      } finally {
-        setRunning(false);
-      }
-    }, { onError: (error) => setMessage(error.message) });
+        const task = taskFromMutation(next);
+        if (task) { creationDraft.complete(submittedDraft); openTaskDetail(task.id); }
+      } finally { setRunning(false); }
+    }, { onError: error => setMessage(error.message) });
   }
 
   return (
     <div className="music-mv-layout">
       <section className="task-card">
         <div className="panel-title-row">
-          <div>
-            <h2>音乐MV</h2>
-            <span>按歌词切分镜头、同步字幕节奏，并输出剪映草稿。</span>
-          </div>
-          <button className="primary-action slim" onClick={runMusicMv} disabled={running || !lyrics.trim() || !musicMvAudioPath.trim()}>
-            {running ? <Loader2 className="spin" size={15} /> : <Music size={15} />}
-            生成音乐 MV
-          </button>
+          <div><h2>音乐 MV</h2><span>主歌曲与完整歌词 → Lemo 自动制作 → 预览与 MP4 导出</span></div>
+          <Button variant="primary" onClick={runMusicMv} disabled={running || musicAction.busy || !lyrics.trim() || !musicMvAudioPath.trim()} icon={running ? <Loader2 className="spin" size={15} /> : <Music size={15} />}>
+            {processingMode === 'manual' ? '创建 MV 项目' : '生成音乐 MV'}
+          </Button>
         </div>
-
         {pendingMusic ? (
           <section className="local-note" aria-label="来自音乐创作的歌曲">
             <strong>来自音乐创作：{pendingMusic.title || '未命名歌曲'}</strong>
-            <p>使用后将更新当前 MV 的标题、歌词和主歌曲，并关闭背景音乐以避免叠加播放。画面设置会保留。</p>
+            <p>使用后将更新标题、歌词和主歌曲，保留画面设置。</p>
             {!pendingMusic.audioPath.trim() ? <p>这首歌曲尚未下载，请先在音乐创作中下载音频。</p> : null}
             <div className="chip-row">
               <Button variant="primary" disabled={running || musicAction.busy || !pendingMusic.audioPath.trim()} onClick={() => handleInitialMusic(true)}>使用这首歌曲</Button>
@@ -183,74 +111,37 @@ export function MusicMvPage({
             </div>
           </section>
         ) : null}
-
-        <Field label="标题">
-          <input value={title} onChange={(event) => setTitle(event.target.value)} />
-        </Field>
-        <Field label="歌词 / 文案">
-          <textarea className="source-textarea" value={lyrics} onChange={(event) => setLyrics(event.target.value)} />
-        </Field>
-
+        <TextField label="标题" value={title} onChange={event => setTitle(event.target.value)} disabled={running} />
+        <TextAreaField label="歌词 / LRC" className="source-textarea" value={lyrics} onChange={event => setLyrics(event.target.value)} disabled={running}
+          hint={hasLrcTimestamps
+            ? '检测到 LRC：字幕按句时间显示，镜头切点优先贴近歌词起点；逐字高亮暂不支持精准对齐。请确认时间戳已按实际演唱校准。'
+            : '未检测到 LRC 时间戳：创建时会尝试用已配置的语音转写逐句对齐；转写不可用或无法匹配时会退回时长均分估算，并在任务事件中说明，不代表实际演唱同步。卡拉 OK 不会伪造逐字高亮。也可直接提供校准后的逐句 LRC。'} />
+        <ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} />
         <div className="advanced-grid">
-          <Segmented label="节奏模式" value={musicMvRhythmMode} options={['lyric-sync', 'fast-cut', 'slow-cinematic']} labels={['歌词同步', '快切', '慢镜头']} onChange={(value) => setMusicMvRhythmMode(value as Task['musicMv']['rhythmMode'])} />
-          <Segmented label="歌词字幕" value={musicMvCaptionStyle} options={['karaoke', 'minimal', 'none']} labels={['卡拉 OK', '极简', '无字幕']} onChange={(value) => setMusicMvCaptionStyle(value as Task['musicMv']['captionStyle'])} />
-          <Segmented label="自动化模式" value={processingMode} options={['full-auto', 'milestone-review', 'scene-review', 'manual']} labels={['全自动', '里程碑审批', '逐场景审批', '手动']} onChange={(value) => setProcessingMode(value as ProcessingMode)} />
-          <Segmented label="暂停确认" value={pausePoint} options={pauseOptions.map(([id]) => id)} labels={pauseOptions.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
-          <Segmented label="分镜数量" value={String(storyboardSceneCount)} options={storyboardSceneCountOptions.map(String)} labels={storyboardSceneCountOptions.map((count) => `${count} 条`)} onChange={(value) => setStoryboardSceneCount(Number(value))} />
+          <Segmented label="节奏模式" value={musicMvRhythmMode} options={['lyric-sync', 'fast-cut', 'slow-cinematic']} labels={['歌词同步', '快切', '慢镜头']} onChange={value => setMusicMvRhythmMode(value as Task['musicMv']['rhythmMode'])} />
+          <Segmented label="歌词字幕" value={musicMvCaptionStyle} options={['minimal', 'karaoke', 'none']} labels={['极简', '卡拉 OK', '无字幕']} onChange={value => setMusicMvCaptionStyle(value as Task['musicMv']['captionStyle'])} />
+          <Segmented label="制作方式" value={processingMode} options={['full-auto', 'manual']} labels={['全自动制作', '先检查时间轴']} onChange={value => setProcessingMode(value as 'full-auto' | 'manual')} />
+          <SelectField label="目标分镜数量" value={String(storyboardSceneCount)} onChange={event => setStoryboardSceneCount(Number(event.target.value))}
+            hint="镜头数量不影响歌词完整性；长歌曲会自动增加镜头，保证单镜头不超过 15 秒。" options={[2, 4, 6, 8, 12, 16, 24, 32, 48, 64].map(value => ({ value: String(value), label: `${value} 个镜头` }))} />
+          <SelectField label="Lemo 视觉风格" value={style} onChange={event => setStyle(event.target.value)} options={CREATIVE_STYLES.map(item => ({ value: item.slug, label: item.cn }))} />
+          <SelectField label="成片画幅" value={ratio} onChange={event => setRatio(event.target.value)} options={['16:9', '9:16', '1:1', '4:3'].map(value => ({ value, label: value }))} />
         </div>
-
-        <ImageStylePicker styles={state.customStyles} value={style} onChange={setStyle} />
-        <div className="option-two-col">
-          <OptionCloud title="草稿模板" options={musicMvDraftTemplateOptions} value={templateId} onChange={setTemplateId} />
-          <div>
-            <span className="field-title">AI 出图比例</span>
-            <div className="ratio-grid">
-              {['9:16', '4:3', '1:1', '16:9'].map((item) => (
-                <button key={item} className={ratio === item ? 'chip active' : 'chip'} onClick={() => setRatio(item)}>
-                  <AspectRatioSwatch ratio={item} />
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
+        <TextField label="视觉母题" value={musicMvVisualMotif} onChange={event => setMusicMvVisualMotif(event.target.value)} disabled={running} />
+        <div className="upload-row">
+          <TextField label="主歌曲音频" value={musicMvAudioPath} onChange={event => setMusicMvAudioPath(event.target.value)} placeholder="选择本地歌曲，或粘贴文件路径" disabled={running} />
+          <Button disabled={running || musicAction.busy} icon={<FolderOpen size={15} />} onClick={selectMusicMvAudio}>选择音频</Button>
         </div>
-
-        <Field label="视觉母题">
-          <input value={musicMvVisualMotif} onChange={(event) => setMusicMvVisualMotif(event.target.value)} placeholder="例如：雨夜霓虹、孤独背影、慢镜头" />
-        </Field>
-        <Field label="音频文件">
-          <div className="upload-row">
-            <input value={musicMvAudioPath} onChange={(event) => setMusicMvAudioPath(event.target.value)} placeholder="可选择本地歌曲或伴奏" />
-            <button className="ghost-action" disabled={musicAction.busy} onClick={selectMusicMvAudio}><FolderOpen size={15} />选择音频</button>
-          </div>
-          {!musicMvAudioPath.trim() ? <small className="field-hint is-warning">必须选择主歌曲后才能生成；BGM 不会替代主歌曲。</small> : null}
-        </Field>
-
-        <span className="field-title">背景音乐</span>
-        <div className="chip-row">
-          <button className={bgmId === '' ? 'chip active' : 'chip'} onClick={() => setBgmId('')}>无 BGM</button>
-          {bgmOptions.map((bgm) => (
-            <button key={bgm.id} className={bgmId === bgm.id ? 'chip active' : 'chip'} onClick={() => setBgmId(bgm.id)}>{bgm.title}</button>
-          ))}
-        </div>
-
-        {message ? <span className="local-note">{message}</span> : null}
+        <p className="field-hint">成片保留主歌曲原声。创建后可在 Lemo 工作台查看进度、修复镜头并导出 MP4。</p>
+        {message ? <p className="local-note" role="status">{message}</p> : null}
         <InlineActionFeedback feedback={musicAction.feedback} />
       </section>
       <aside className="music-mv-preview panel" data-media-canvas="music-mv-timeline-audio">
-        <h3>MV 结构预览</h3>
-        <div className="task-metrics">
-          <div><small>歌词行</small><strong>{lyricLines.length}</strong></div>
-          <div><small>节奏模式</small><strong>{MUSIC_MV_RHYTHM_LABELS[musicMvRhythmMode]}</strong></div>
-          <div><small>字幕样式</small><strong>{MUSIC_MV_CAPTION_LABELS[musicMvCaptionStyle]}</strong></div>
-        </div>
+        <h3>歌词预览</h3>
+        <p>{lyricLines.length} 行输入 · 所有歌词均会进入时间轴</p>
+        <p>歌曲时长将在创建项目时读取。Lemo 按歌曲时间轴制作画面，无额外旁白。</p>
         <div className="artifact-scene-list">
-          {lyricLines.slice(0, 8).map((line, index) => (
-            <div key={`${line}-${index}`}>
-              <strong>{index + 1}. {index === 0 ? MUSIC_MV_SCENE_LABELS[0] : index === lyricLines.length - 1 ? MUSIC_MV_SCENE_LABELS[3] : index >= Math.floor(lyricLines.length / 2) ? MUSIC_MV_SCENE_LABELS[2] : MUSIC_MV_SCENE_LABELS[1]}</strong>
-              <p>{line}</p>
-            </div>
-          ))}
+          {lyricLines.slice(0, 8).map((line, index) => <div key={`${index}-${line}`}><strong>{index + 1}</strong><p>{line}</p></div>)}
+          {lyricLines.length > 8 ? <p>还有 {lyricLines.length - 8} 行，将完整保留。</p> : null}
         </div>
       </aside>
     </div>

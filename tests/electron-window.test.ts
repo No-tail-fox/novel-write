@@ -14,6 +14,7 @@ describe('electron window chrome', () => {
     expect(main).toContain('Menu.setApplicationMenu(null)');
     expect(main).toContain('autoHideMenuBar: true');
     expect(main).toContain('setMenuBarVisibility(false)');
+    expect(main).toContain('devTools: !app.isPackaged');
   });
 
   it('uses a frameless window controlled by the renderer dark title bar', async () => {

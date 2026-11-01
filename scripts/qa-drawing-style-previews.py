@@ -14,7 +14,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Handler, directory=str(OUT)))
 threading.Thread(target=server.serve_forever, daemon=True).start()
 base = f'http://127.0.0.1:{server.server_port}'
-report = {'checks': [], 'runtimeErrors': [], 'externalRequests': []}
+report = {'checks': [], 'dropdowns': [], 'runtimeErrors': [], 'externalRequests': []}
 try:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, executable_path='C:/Program Files/Google/Chrome/Application/chrome.exe')
@@ -40,8 +40,23 @@ try:
             image_ready(tip.locator('img'))
             assert tip.evaluate('(e)=>{const r=e.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}')
             return tip
+        def dropdown_position(field):
+            menu = page.get_by_role('listbox')
+            expect(menu).to_be_visible()
+            page.wait_for_function("document.querySelector('.sd-preview-select-list')?.hasAttribute('data-popper-placement')")
+            trigger = field.bounding_box()
+            popup = menu.bounding_box()
+            placement = menu.get_attribute('data-popper-placement')
+            viewport = page.viewport_size
+            assert placement in ['bottom-start', 'top-start'], (placement, trigger, popup)
+            assert abs(popup['x'] - trigger['x']) <= 2, (trigger, popup)
+            assert abs(popup['width'] - trigger['width']) <= 2, (trigger, popup)
+            assert popup['height'] <= min(340, viewport['height'] * .55) + 1, popup
+            assert popup['y'] >= 0 and popup['y'] + popup['height'] <= viewport['height'] + 1, popup
+            assert popup['y'] >= trigger['y'] + trigger['height'] - 1 or popup['y'] + popup['height'] <= trigger['y'] + 1, (trigger, popup)
+            report['dropdowns'].append({'page': page.url.split('?')[-1], 'viewport': viewport, 'placement': placement, 'trigger': trigger, 'popup': popup})
         for theme in ['dark', 'light']:
-            for width, height in [(1536, 1024), (1040, 720)]:
+            for width, height in [(1810, 984), (1536, 1024), (1040, 720)]:
                 page.set_viewport_size({'width': width, 'height': height})
                 load('new-task', theme)
                 page.locator('[data-task-creation-type="smart-video"]').click()
@@ -55,6 +70,7 @@ try:
                 page.keyboard.press('Escape')
                 expect(page.get_by_role('tooltip')).to_have_count(0)
                 field.click()
+                dropdown_position(field)
                 styles = page.evaluate('drawingPreviewQA.styles')
                 assert len(styles) == 15 and all(style.get('src') for style in styles)
                 expect(page.get_by_role('listbox').get_by_role('option')).to_have_count(15)
@@ -92,12 +108,13 @@ try:
                 page.get_by_role('button', name='查看', exact=True).first.click()
                 default_style = page.get_by_role('combobox', name='默认画风', exact=True)
                 default_style.click()
+                dropdown_position(default_style)
                 page.get_by_role('option', name='我的电影画风', exact=True).hover()
                 tooltip_image('我的电影画风')
                 page.get_by_role('option', name='我的电影画风', exact=True).click()
                 expect(default_style).to_contain_text('我的电影画风')
                 load('templates', theme)
-                page.get_by_role('button', name='图像模板', exact=True).click()
+                page.get_by_role('tab', name='图像模板', exact=True).click()
                 gallery = page.locator('.image-template-gallery')
                 expect(gallery.locator('.prompt-template-row')).to_have_count(15)
                 for image in gallery.locator('img').all():
@@ -109,6 +126,7 @@ try:
                 image_ready(page.locator('.prompt-template-detail-stack > .sd-hover-preview-anchor img'))
                 base_field = page.get_by_role('combobox', name='基于系统风格', exact=True)
                 base_field.click()
+                dropdown_position(base_field)
                 page.get_by_role('option', name=styles[-1]['name'], exact=True).hover()
                 tooltip_image(styles[-1]['name'])
                 page.keyboard.press('Escape'); page.keyboard.press('Escape')
@@ -118,19 +136,19 @@ try:
 
                 load('image-lab', theme)
                 grid = page.locator('.image-lab-style-grid')
-                expect(grid.locator('button')).to_have_count(15)
+                expect(grid.get_by_role('checkbox')).to_have_count(15)
                 for image in grid.locator('img').all():
                     image.scroll_into_view_if_needed(); image_ready(image)
-                item = grid.locator('button').first
-                before = grid.locator('[aria-pressed="true"]').count()
-                item.hover(); tooltip_image(item.locator('strong').inner_text())
-                assert grid.locator('[aria-pressed="true"]').count() == before
+                item = grid.locator('.sd-hover-preview-anchor').first
+                before = grid.get_by_role('checkbox', checked=True).count()
+                item.hover(); tooltip_image(styles[0]['name'])
+                assert grid.get_by_role('checkbox', checked=True).count() == before
                 page.screenshot(path=str(OUT / f'image-lab-{theme}-{width}.png'))
                 assert page.evaluate('drawingPreviewQA.calls') == []
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                custom_item = grid.locator('button').filter(has_text='我的电影画风')
-                custom_item.click()
-                assert custom_item.get_attribute('aria-pressed') == 'true'
+                custom_item = grid.get_by_role('checkbox', name='我的电影画风')
+                custom_item.check()
+                expect(custom_item).to_be_checked()
                 report['checks'].append(f'image-lab {theme} {width}: built-in + saved custom thumbnails, custom selection, hover isolation')
 
                 load('html-video', theme)
@@ -138,6 +156,7 @@ try:
                 field.scroll_into_view_if_needed()
                 image_ready(page.locator('.image-style-selected-preview img'))
                 field.click()
+                dropdown_position(field)
                 page.get_by_role('option', name=styles[-1]['name'], exact=True).hover()
                 tooltip_image(styles[-1]['name'])
                 page.screenshot(path=str(OUT / f'html-video-{theme}-{width}.png'))
@@ -152,6 +171,7 @@ try:
                 field.scroll_into_view_if_needed()
                 image_ready(page.locator('.image-style-selected-preview img'))
                 field.click()
+                dropdown_position(field)
                 page.get_by_role('option', name=styles[-1]['name'], exact=True).hover()
                 tooltip_image(styles[-1]['name'])
                 page.screenshot(path=str(OUT / f'html-workspace-{theme}-{width}.png'))
@@ -165,6 +185,7 @@ try:
                     if page_name == 'viral': page.get_by_role('tab', name='快速概览', exact=True).click()
                     field = page.get_by_role('combobox', name=field_name, exact=True)
                     field.scroll_into_view_if_needed(); field.click()
+                    dropdown_position(field)
                     page.get_by_role('option', name='我的电影画风', exact=True).click()
                     expect(field).to_contain_text('我的电影画风')
                     image_ready(page.locator('.image-style-selected-preview img'))

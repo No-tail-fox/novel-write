@@ -1,3 +1,7 @@
+import { lemoUpstreamFilmSchema, type LemoUpstreamFilm } from './creative-animation/upstream-agent';
+import { projectModelsSchema } from './project-models';
+import type { ProjectModels } from './types';
+import { lemoNativeFilmSchema, type LemoNativeFilm } from './creative-animation/native-film';
 import { createEditorialCuePlan, editorialCuePlanSchema, resolveEditorialCuePlan, compileEditorialCueLayers, type EditorialCuePlan } from './editorial-cue-plan';
 import { voxAnimationSchema, voxAnimationAssetIds, validateVoxAnimation, type VoxAnimation } from './vox-animation';
 import { z } from 'zod';
@@ -17,6 +21,7 @@ import { editorialContentTitle, editorialShotNarration, editorialShotTitle, norm
 import { directorTransitionSchema, type DirectorTransition } from './director-transitions';
 import { buildEditorialScenePrompt } from './editorial-image-prompts';
 import { voxProductionRunSchema, voxProductionSettingsSchema, type VoxProductionRun, type VoxProductionSettings } from './vox-production';
+import { editorialProjectMusicClips, PROJECT_MUSIC_PREFIX } from './editorial-music';
 
 export const EDITORIAL_COLLAGE_TASK_TYPE = 'editorial-collage' as const;
 export const EDITORIAL_COLLAGE_PIPELINE_VERSION = 1 as const;
@@ -114,6 +119,8 @@ export interface EditorialCollageShot {
   voiceLabel?: string;
   voiceSpeed?: number;
   voiceAssetVersionId?: string;
+  /** Source window retained by automatic narration repair, including visual/paid-result ownership. */
+  narrationSplit?: { sourceShotId: string; sourceStartMs: number; sourceDurationMs: number; sourceVoiceAssetVersionId?: string };
   layoutTemplate?: '对比拼贴 · 纸张撕裂' | '纪录片 · 纯画面' | '漫画分格 · 角色优先';
   motionPreset?: '平移 + 缓慢推进' | '轻微视差' | '固定机位';
   subtitleStyle?: string;
@@ -147,6 +154,8 @@ export interface EditorialCollagePipelineData extends Omit<ProductionDocumentBas
   sourceText?: string;
   productionSettings?: VoxProductionSettings;
   productionRun?: VoxProductionRun;
+  creativeFilms?: LemoNativeFilm[];
+  upstreamFilm?: LemoUpstreamFilm;
   writingStyleId?: EditorialWritingStyleId;
   writingRequirements?: string;
   stage: EditorialCollageStage;
@@ -171,6 +180,7 @@ export interface EditorialCollageDraftInput {
 }
 
 export interface EditorialCollageCreateInput {
+  projectModels?: ProjectModels;
   title: string;
   sourceText: string;
   ratio?: EditorialCollagePipelineData['ratio'];
@@ -321,6 +331,7 @@ const shotSchema = z.object({
   voiceLabel: z.string().max(512).optional(),
   voiceSpeed: finiteNumber.min(0.5).max(2).optional(),
   voiceAssetVersionId: idSchema.optional(),
+  narrationSplit: z.object({ sourceShotId: idSchema, sourceStartMs: nonNegativeNumber, sourceDurationMs: nonNegativeNumber, sourceVoiceAssetVersionId: idSchema.optional() }).strict().optional(),
   layoutTemplate: z.enum(['对比拼贴 · 纸张撕裂', '纪录片 · 纯画面', '漫画分格 · 角色优先']).optional(),
   motionPreset: z.enum(['平移 + 缓慢推进', '轻微视差', '固定机位']).optional(),
   subtitleStyle: z.string().max(256).optional(),
@@ -442,6 +453,8 @@ export const editorialCollagePipelineSchema = z.object({
   sourceText: boundedText().optional(),
   productionSettings: voxProductionSettingsSchema.optional(),
   productionRun: voxProductionRunSchema.optional(),
+  creativeFilms: z.array(lemoNativeFilmSchema).max(64).optional(),
+  upstreamFilm: lemoUpstreamFilmSchema.optional(),
   writingStyleId: z.enum(EDITORIAL_WRITING_STYLE_IDS).optional(),
   writingRequirements: boundedText(8_000).optional(),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS),
@@ -462,6 +475,7 @@ export const editorialCollagePipelineSchema = z.object({
 }).strict();
 
 export const editorialCollageCreateInputSchema = z.object({
+  projectModels: projectModelsSchema.optional(),
   title: z.string().trim().min(1).max(512),
   sourceText: z.string().min(1).max(MAX_TEXT).refine((value) => value.trim().length > 0, 'A source text is required.'),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS).optional(),
@@ -496,6 +510,21 @@ export function createEditorialCollageDraft(input: EditorialCollageDraftInput): 
     qualityReports: [],
     estimatedCost: 0,
   };
+}
+
+/** Read persisted projects with an outdated derived timeline without weakening editor/save validation. */
+export function restoreEditorialCollagePipelineData(input: unknown): EditorialCollagePipelineData {
+  try { return parseEditorialCollagePipelineData(input); } catch (error) {
+    let value: unknown;
+    try { value = typeof input === 'string' ? JSON.parse(input) : input; } catch { throw error; }
+    const parsed = editorialCollagePipelineSchema.safeParse(value);
+    if (!parsed.success) throw error;
+    const document = parsed.data as EditorialCollagePipelineData;
+    const issues = validateEditorialCollagePipeline(document);
+    // Never discard missing references, invalid audio, or other structural damage.
+    if (issues.length !== 1 || issues[0].path !== 'timeline') throw error;
+    return parseEditorialCollagePipelineData(rebuildEditorialTimeline(document));
+  }
 }
 
 export function parseEditorialCollagePipelineData(input: unknown): EditorialCollagePipelineData {
@@ -658,12 +687,21 @@ export function rebuildEditorialTimeline(data: EditorialCollagePipelineData): Ed
       startMs += shot.durationMs;
     }
   }
-  for (const clip of data.timeline?.audioClips ?? []) {
+  const music = data.productionSettings?.music;
+  const timeline = { durationMs: startMs, clips, audioAssetVersionIds };
+  const existingClips = (data.timeline?.audioClips ?? []).filter(clip => !clip.id.startsWith(PROJECT_MUSIC_PREFIX));
+  const audioClips = [...existingClips, ...(music ? editorialProjectMusicClips(timeline, music) : [])];
+  for (const clip of audioClips) {
     if (clip.assetVersionId && !audioAssetVersionIds.includes(clip.assetVersionId)) audioAssetVersionIds.push(clip.assetVersionId);
   }
-  const audioClips = data.timeline?.audioClips;
+  const musicAssetId = music ? `${PROJECT_MUSIC_PREFIX}${music.id}` : undefined;
+  const assets = music && !data.assets.some(asset => asset.id === musicAssetId)
+    ? [...data.assets, { id: musicAssetId!, assetId: musicAssetId!, kind: 'audio' as const, localPath: music.path,
+      prompt: music.title, durationMs: music.durationMs, provider: 'local-import', createdAt: data.createdAt, selected: false, pinned: false }]
+    : music ? data.assets.map(asset => asset.id === musicAssetId ? { ...asset, localPath: music.path, prompt: music.title, durationMs: music.durationMs } : asset) : data.assets;
   return {
     ...data,
+    assets,
     timeline: { durationMs: startMs, clips, audioAssetVersionIds, ...(audioClips?.length ? { audioClips: audioClips.map((clip) => ({ ...clip })) } : {}) },
   };
 }
@@ -820,7 +858,7 @@ export function editorialCameraPreset(durationMs: number, preset: NonNullable<Ed
 }
 
 /** Manual keyframes and structural edits operate on the resolved semantic motion. */
-function bakeEditorialSemanticMotion(data: EditorialCollagePipelineData, shotIds: string[]): EditorialCollagePipelineData {
+export function bakeEditorialSemanticMotion(data: EditorialCollagePipelineData, shotIds: string[]): EditorialCollagePipelineData {
   return { ...data, beats: data.beats.map(beat => ({ ...beat, shots: beat.shots.map(shot => {
     if (!shot.cuePlan || !shotIds.includes(shot.id)) return shot;
     const cues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
@@ -874,7 +912,7 @@ function sampleEditorialFrame<T extends EditorialCameraKeyframe | EditorialLayer
   return Object.fromEntries(Object.entries(before).map(([key, value]) => [key, key === 'atMs' ? atMs : value + ((after as unknown as Record<string, number>)[key] - value) * ratio])) as unknown as T;
 }
 
-function sliceEditorialFrames<T extends EditorialCameraKeyframe | EditorialLayerMotionKeyframe>(frames: readonly T[], startMs: number, endMs: number, fallback: T): T[] {
+export function sliceEditorialFrames<T extends EditorialCameraKeyframe | EditorialLayerMotionKeyframe>(frames: readonly T[], startMs: number, endMs: number, fallback: T): T[] {
   const retained = frames.filter((frame) => frame.atMs >= startMs && frame.atMs <= endMs);
   if (!retained.some((frame) => frame.atMs === startMs)) retained.unshift(sampleEditorialFrame(frames, startMs, fallback));
   if (!retained.some((frame) => frame.atMs === endMs)) retained.push(sampleEditorialFrame(frames, endMs, fallback));
@@ -1172,6 +1210,7 @@ function reflowEditorialStructure(data: EditorialCollagePipelineData, beats: Edi
   const oldStarts = new Map(data.timeline?.clips.map((clip) => [clip.shotId, clip.startMs]));
   const newStarts = new Map(rebuilt.timeline!.clips.map((clip) => [clip.shotId, clip.startMs]));
   if (rebuilt.timeline!.audioClips) rebuilt.timeline!.audioClips = rebuilt.timeline!.audioClips.map((clip) => {
+    if (clip.id.startsWith(PROJECT_MUSIC_PREFIX)) return clip;
     const previous = oldStarts.get(clip.shotId ?? '');
     const next = newStarts.get(clip.shotId ?? '');
     return previous === undefined || next === undefined ? clip : { ...clip, startMs: clip.startMs + next - previous };
@@ -1235,11 +1274,11 @@ export function validateEditorialCollagePipeline(
       if (shot.lastFrameAssetVersionId && (!lastFrame || lastFrame.kind !== 'image')) issues.push({ path: `${shotPath}.lastFrameAssetVersionId`, message: 'Shot last frame must reference an existing image.' });
       const voiceAsset = shot.voiceAssetVersionId ? assets.get(shot.voiceAssetVersionId) : undefined;
       if (shot.providerJobId && !imageJob) issues.push({ path: `${shotPath}.providerJobId`, message: 'Shot provider job does not exist.' });
-      if (imageJob && (imageJob.nodeId !== shot.id || imageJob.capability !== 'text-to-image')) {
+      if (imageJob && ((imageJob.nodeId !== shot.id && imageJob.nodeId !== shot.narrationSplit?.sourceShotId) || imageJob.capability !== 'text-to-image')) {
         issues.push({ path: `${shotPath}.providerJobId`, message: 'Shot image job must belong to the shot and use text-to-image.' });
       }
       if (shot.videoJobId && !videoJob) issues.push({ path: `${shotPath}.videoJobId`, message: 'Shot video job does not exist.' });
-      if (videoJob && (videoJob.nodeId !== shot.id || videoJob.capability !== 'image-to-video')) {
+      if (videoJob && ((videoJob.nodeId !== shot.id && videoJob.nodeId !== shot.narrationSplit?.sourceShotId) || videoJob.capability !== 'image-to-video')) {
         issues.push({ path: `${shotPath}.videoJobId`, message: 'Shot video job must belong to the shot and use image-to-video.' });
       }
       if (shot.videoAssetVersionId && !videoAsset) issues.push({ path: `${shotPath}.videoAssetVersionId`, message: 'Shot video asset does not exist.' });

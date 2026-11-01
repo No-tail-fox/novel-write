@@ -44,6 +44,19 @@ describe('segmented video render disk budget', () => {
     expect(() => estimateVideoRenderDiskBudget({ ...input, durations: [Number.MAX_VALUE] })).toThrow();
   });
 
+  it('bounds an entire 60fps film to 32 spool frames without reducing output quality or reserve', () => {
+    const params = { width: 1920, height: 1080, fps: 60, durations: [202.908], stagedMediaBytes: 98803872 };
+    const previous = estimateVideoRenderDiskBudget(params);
+    const streaming = estimateVideoRenderDiskBudget({ ...params, streamFrames: true, consumeOwnedSegments: true });
+    expect(streaming.totalFrames).toBe(12175);
+    expect(streaming.peakFrameBytes).toBe(Math.ceil(32 * 1920 * 1080 * .45));
+    expect(streaming.segmentBytes).toBe(previous.segmentBytes);
+    expect(streaming.outputCopyBytes).toBe(previous.outputCopyBytes);
+    expect(streaming.reserveBytes).toBe(previous.reserveBytes);
+    const subtotal = streaming.peakFrameBytes + streaming.peakMixBytes + streaming.compositionAudioBytes + streaming.segmentBytes + streaming.outputCopyBytes + streaming.stagedMediaBytes;
+    expect(streaming.requiredBytes).toBe(Math.ceil(subtotal * 1.2) + streaming.reserveBytes);
+    expect(streaming.requiredBytes).toBeLessThan(5178314752);
+  });
   it('checks the budget boundary and rejects unknown free space', async () => {
     const budget = estimateVideoRenderDiskBudget(input);
     for (const available of [budget.requiredBytes - 1, NaN, Infinity]) {

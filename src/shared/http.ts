@@ -4,7 +4,7 @@ import {
   type NetworkFetch,
   type NetworkPurpose,
 } from './network-policy';
-import { requireGenerationAuthorization } from './generation-authorization';
+import { requireGenerationAuthorization, markGenerationNotSubmitted } from './generation-authorization';
 
 export interface FetchWithTimeoutOptions extends RequestInit {
   generation?: boolean;
@@ -15,6 +15,8 @@ export interface FetchWithTimeoutOptions extends RequestInit {
   allowPrivateNetwork?: boolean;
   purpose?: NetworkPurpose;
   fetchImpl?: NetworkFetch;
+  retryConnectTimeout?: boolean;
+  onResponseChunk?: (chunk: Uint8Array, response: Response) => void;
 }
 
 export async function fetchWithTimeout(url: string | URL, options: FetchWithTimeoutOptions = {}): Promise<Response> {
@@ -27,9 +29,13 @@ export async function fetchWithTimeout(url: string | URL, options: FetchWithTime
     allowPrivateNetwork = false,
     purpose = 'provider-api',
     fetchImpl,
+    retryConnectTimeout,
     ...init
   } = options;
-  if (generation) await requireGenerationAuthorization();
+  if (generation) {
+    try { await requireGenerationAuthorization(); }
+    catch (error) { throw markGenerationNotSubmitted(error); }
+  }
   try {
     return await fetchWithNetworkPolicy(url, {
       ...init,
@@ -39,6 +45,7 @@ export async function fetchWithTimeout(url: string | URL, options: FetchWithTime
       maxRedirects,
       allowPrivate: allowPrivateNetwork,
       fetchImpl,
+      retryConnectTimeout,
     });
   } catch (error) {
     if (error instanceof NetworkPolicyError && error.code === 'NETWORK_TIMEOUT') {

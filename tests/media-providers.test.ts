@@ -31,6 +31,57 @@ afterEach(() => {
 });
 
 describe('configured media providers', () => {
+
+  it.each(['sync', 'edit', 'async'] as const)('recovers a pre-connection timeout in the real %s image path', async mode => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-connect-recovery-'));
+    const reference = join(dir, 'reference.png');
+    const config: AppConfig = { ...defaultConfig, imageProvider: mode === 'async' ? 'custom' : 'gpt_image',
+      gptImage: { ...defaultConfig.gptImage, apiKey: 'test', baseUrl: 'https://image.example' },
+      customImage: { ...defaultConfig.customImage, apiKey: 'test', baseUrl: 'https://image.example', asyncMode: true },
+    };
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (fetchMock.mock.calls.length === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect timed out'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+      if (mode === 'async' && init?.method === 'POST') return new Response('{"id":"accepted-once"}');
+      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('recovered-image').toString('base64') }] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await writeFile(reference, 'reference-image');
+      const result = await createConfiguredImageGenerator(config, dir)([scene], [mode === 'edit' ? { ...prompt, referenceImagePaths: [reference] } : prompt], task);
+      expect(await readFile(result[0].path, 'utf8')).toBe('recovered-image');
+      expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual(mode === 'async' ? ['POST', 'POST', 'GET'] : ['POST', 'POST']);
+      expect(fetchMock.mock.calls[0][1]?.body).toBe(fetchMock.mock.calls[1][1]?.body);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    ['gpt_image', undefined, undefined, 600_000],
+    ['gpt_image', 420_000, 90_000, 420_000],
+    ['gpt_image', undefined, 90_000, 90_000],
+    ['custom', undefined, undefined, 600_000],
+    ['custom', 240_000, undefined, 240_000],
+  ] as const)('uses the configured generation deadline for %s (%s, legacy %s)', async (provider, timeoutMs, legacyTimeoutMs, expected) => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-image-deadline-'));
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    const fetchMock = vi.fn(async () => new Response('{"error":{"message":"Invalid test input"}}', { status: 400 }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const config: AppConfig = {
+        ...defaultConfig,
+        imageProvider: provider,
+        image: { ...defaultConfig.image, timeoutMs: legacyTimeoutMs },
+        gptImage: { ...defaultConfig.gptImage, baseUrl: 'https://image.example/v1', apiKey: 'test', timeoutMs },
+        customImage: { ...defaultConfig.customImage, baseUrl: 'https://image.example/v1', apiKey: 'test', timeoutMs },
+      };
+      await expect(createConfiguredImageGenerator(config, dir)([scene], [prompt], task)).rejects.toThrow(/400/);
+      expect(timer.mock.calls.some(([, delay]) => delay === expected)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      timer.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('persists an allowlisted response before download and recovers it without another paid POST', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-image-recovery-'));
     const config: AppConfig = { ...defaultConfig, imageProvider: 'gpt_image', gptImage: { ...defaultConfig.gptImage, apiKey: 'secret-test-key', baseUrl: 'https://image.example', model: 'gpt-image-2' } };
@@ -108,7 +159,7 @@ describe('configured media providers', () => {
 
       expect(form.get('model')).toBe('gpt-image-2');
       expect(form.get('prompt')).toBe('Keep the face and change the background');
-      expect(form.get('size')).toBe('1536x1024');
+      expect(form.get('size')).toBe('2048x1152');
       expect(form.get('quality')).toBe('high');
       const images = form.getAll('image');
       expect(images).toHaveLength(2);
@@ -260,7 +311,7 @@ describe('configured media providers', () => {
       expect(requests[0].body).toMatchObject({
         model: 'gpt-image-2',
         prompt: 'visual prompt',
-        size: '1024x1536',
+        size: '1152x2048',
         quality: 'high',
         output_format: 'png',
         moderation: 'auto',

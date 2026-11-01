@@ -7,8 +7,9 @@ import { defaultConfig } from '../src/shared/config';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, editorialCollageSaveInputSchema, insertEditorialShot, parseEditorialCollagePipelineData, type EditorialCollagePipelineData } from '../src/shared/editorial-collage';
 import type { RendererAppState } from '../src/app/route-types';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
-import type { ImageLabGenerateInput, ImageLabRecord, Task } from '../src/shared/types';
+import type { AppDelta, ImageLabGenerateInput, ImageLabRecord, Task, TaskSummary } from '../src/shared/types';
 import { buildEditorialShotVideoRequest } from '../src/shared/editorial-media';
+import { buildVoxProductionNodes, voxProductionSettings, type VoxProductionControl } from '../src/shared/vox-production';
 import '../src/styles.css';
 import '../src/styles/features/editorial-collage.css';
 
@@ -18,6 +19,8 @@ const createSeed = () => createEditorialCollageStarterPlan(createEditorialCollag
 type Snapshot = { document: EditorialCollagePipelineData; requests: ImageLabGenerateInput[]; records: ImageLabRecord[]; saveCount: number; blockedCalls: string[]; videoRequests: ReturnType<typeof buildEditorialShotVideoRequest>[] };
 const emptySnapshot = (): Snapshot => ({ document: createSeed(), requests: [], records: [], saveCount: 0, blockedCalls: [], videoRequests: [] });
 let snapshot: Snapshot = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null') ?? emptySnapshot();
+let deltaRevision = 0;
+const appDeltaListeners = new Set<(delta: AppDelta) => void>();
 const store = () => sessionStorage.setItem(storageKey, JSON.stringify(snapshot));
 const clone = <T,>(value: T): T => structuredClone(value);
 const svgUrl = (content: string) => `data:image/svg+xml,${encodeURIComponent(content)}`;
@@ -25,6 +28,41 @@ const background = svgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="1920" 
 const subject = svgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="650"><circle cx="250" cy="160" r="95" fill="#db9672"/><path d="M95 620V350Q100 255 250 265Q400 255 405 350V620Z" fill="#bd543d"/><path d="M164 155Q158 60 245 55Q344 40 348 145L314 118L285 150L225 114L170 166Z" fill="#302e28"/></svg>');
 const keyframe = svgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><rect width="1920" height="1080" fill="#dcc999"/><path d="M0 790Q500 570 960 790T1920 760V1080H0Z" fill="#47745e"/><circle cx="750" cy="420" r="100" fill="#db9672"/><path d="M590 980V630Q580 520 750 530Q920 520 910 630V980Z" fill="#bd543d"/></svg>');
 const controls = {
+  productionCalls: [] as VoxProductionControl[],
+  holdProduction: false,
+  finishProductionControl: () => {},
+  productionFixture(scenario: 'rejected' | 'legacy' | 'unknown' | 'paused' | 'running' | 'completed') {
+    snapshot = emptySnapshot();
+    controls.productionCalls = []; controls.holdProduction = false;
+    const document = snapshot.document, settings = voxProductionSettings();
+    const nodes = buildVoxProductionNodes(document, settings);
+    const images = nodes.filter(n => n.kind === 'image');
+    const failed = images[1] ?? images[0];
+    for (const node of nodes.slice(0, nodes.indexOf(failed))) { node.status = 'completed'; node.attempt = 1; }
+    failed.status = scenario === 'legacy' || scenario === 'unknown' ? 'unknown' : 'failed';
+    failed.error = scenario === 'unknown' ? 'network closed after submit' : 'Image provider API error (400): I can create the bedroom background in the requested wax-crayon children’s picture-book style, but the image generation did not complete successfully. Please send the request again, and I’ll generate the 1536 × 1024 background-only illustration with warm paper texture, deep navy shadows, sparse coral accents, and generous empty space—without people, phones, text, or watermarks.';
+    failed.attempt = 1; failed.requestId = '8ce55c93-d9a4-4244-afa2-5b5c19dc7495';
+    if (scenario === 'completed') for (const node of nodes) { node.status = 'completed'; node.error = undefined; }
+    if (scenario === 'running') { failed.status = 'running'; failed.error = undefined; }
+    const status = ['paused', 'running', 'completed'].includes(scenario) ? scenario as 'paused' | 'running' | 'completed' : 'failed';
+    document.productionRun = { version: 1, id: 'qa-retry-run', status, settings, nodes, sourceHash: 'qa', runtimeIdentity: 'qa', createdAt: seedTime, updatedAt: seedTime, message: status === 'failed' ? failed.error : undefined };
+    store(); controls.remount();
+  },
+  advanceProduction() {
+    const run = snapshot.document.productionRun;
+    if (!run) throw new Error('QA_PRODUCTION_MISSING');
+    const current = run.nodes.find(node => node.status === 'running') ?? run.nodes.find(node => node.status === 'pending');
+    if (!current) throw new Error('QA_PRODUCTION_NO_ACTIVE_STEP');
+    current.status = 'completed'; current.attempt = Math.max(1, current.attempt);
+    const next = run.nodes.find(node => node.status === 'pending' && node.dependencies.every(dependency => run.nodes.some(parent => parent.id === dependency && parent.status === 'completed')));
+    if (next) { next.status = 'running'; next.attempt = Math.max(1, next.attempt); }
+    run.status = 'running';
+    const updatedAt = new Date(Date.parse(snapshot.document.updatedAt) + 1).toISOString();
+    snapshot.document.updatedAt = updatedAt; run.updatedAt = updatedAt;
+    store();
+    const task = { ...taskDetail(), inputPreview: (snapshot.document.sourceText ?? '').slice(0, 200) } as TaskSummary;
+    for (const listener of appDeltaListeners) listener({ kind: 'task-upsert', task, revision: ++deltaRevision });
+  },
   failNextSubject: false,
   remount: () => {},
   reset() { snapshot = emptySnapshot(); controls.failNextSubject = false; store(); controls.remount(); },
@@ -50,6 +88,19 @@ function taskDetail(): Task {
 }
 
 const localApi = {
+  onAppDelta(callback: (delta: AppDelta) => void) {
+    appDeltaListeners.add(callback);
+    return () => appDeltaListeners.delete(callback);
+  },
+  async controlVoxProduction(input: VoxProductionControl) {
+    controls.productionCalls.push(clone(input));
+    if (controls.holdProduction) await new Promise<void>(resolve => { controls.finishProductionControl = resolve; });
+    const run = snapshot.document.productionRun!;
+    run.status = input.action === 'resume' ? 'running' : 'paused';
+    run.message = undefined;
+    store();
+    return clone(run);
+  },
   async getTaskDetail(id: string) { return id === snapshot.document.id ? taskDetail() : null; },
   async saveEditorialCollage(input: Parameters<StoryDreamApi['saveEditorialCollage']>[0]) {
     const request = editorialCollageSaveInputSchema.parse(input);

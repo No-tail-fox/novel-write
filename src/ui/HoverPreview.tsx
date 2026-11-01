@@ -8,7 +8,7 @@ export interface HoverPreviewProps {
   title: string;
   description?: string;
   renderPreview: () => ReactNode;
-  /** Controlled focus for listboxes whose keyboard focus stays on the trigger. */
+  /** Controlled preview intent for listboxes whose keyboard focus stays on the trigger. */
   active?: boolean;
   disabled?: boolean;
 }
@@ -59,7 +59,7 @@ export function HoverPreview({ children, title, description, renderPreview, acti
     return () => { observer.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', close, true); document.removeEventListener('keydown', escape, true); };
   }, [open, close]);
   const trigger = children as ReactElement<{ 'aria-describedby'?: string }>;
-  return <span className="sd-hover-preview-anchor" ref={anchor} onPointerEnter={show} onPointerLeave={leave} onFocus={active === undefined ? show : undefined} onBlur={close} onClickCapture={close}>
+  return <span className="sd-hover-preview-anchor" ref={anchor} onPointerEnter={active === undefined ? show : undefined} onPointerLeave={active === undefined ? leave : undefined} onFocus={active === undefined ? show : undefined} onBlur={close} onClickCapture={close}>
     {cloneElement(trigger, { 'aria-describedby': [trigger.props['aria-describedby'], open ? id : undefined].filter(Boolean).join(' ') || undefined })}
     {open ? <Portal><div ref={popup} id={id} role="tooltip" className="sd-hover-preview" data-preview-side={position.side} style={{ left: position.left, top: position.top }} onPointerEnter={clearTimer} onPointerLeave={leave}>
       <div className="sd-hover-preview-media">{renderPreview()}</div>

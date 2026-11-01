@@ -514,6 +514,7 @@
 .director-media-preview > audio,
 .director-voice-preview audio { display: none; }
 .director-deterministic-stage { position: absolute; inset: -2%; z-index: 0; overflow: hidden; transform-origin: center; }
+.director-media-preview[data-render-strategy="living-poster"] .director-deterministic-stage { inset: 0; }
 .director-preview-layer { position: absolute; inset: 0; transform-origin: center; }
 .director-preview-layer > .director-media-image { position: absolute; inset: 0; overflow: visible; background: transparent; }
 .director-preview-layer[data-layer-fit='contain'] > .director-media-image > img { object-fit: contain; }

@@ -146,7 +146,7 @@ export interface PyJianYingBridgeInput {
       border: DraftTextBorder;
     };
   };
-  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string; captions?: string[]; captionDurationsUs?: number[] }>;
+  scenes?: Array<{ sceneId: number; startUs: number; durationUs: number; text: string; captions?: string[]; captionDurationsUs?: number[]; captionStartsUs?: number[] }>;
   images: Array<{ sceneId: number; path: string }>;
   videos?: Array<{
     sceneId: number;
@@ -321,6 +321,15 @@ try:
     import pyJianYingDraft as draft
 except ModuleNotFoundError:
     raise
+
+
+def add_track(script, track_type, name):
+    # New bundled pyJianYingDraft uses TrackSpec; retain old runtime support.
+    if callable(getattr(script, "append_track", None)) and hasattr(draft, "TrackSpec"):
+        return script.append_track(draft.TrackSpec(track_type, name=name))
+    if callable(getattr(script, "add_track", None)):
+        return script.add_track(track_type, name)
+    raise RuntimeError("Unsupported pyJianYingDraft track API: expected append_track/TrackSpec or add_track")
 
 
 def norm(path):
@@ -591,7 +600,7 @@ def resolve_image_layout(image_area, canvas, material):
 
 def resolve_enum(enum_name, name):
     name = str(name or "").strip()
-    if not name:
+    if not name or name.lower() == "none":
         return None
     enum_type = getattr(draft, enum_name, None)
     if enum_type is None:
@@ -793,7 +802,24 @@ def expand_timed_subtitles(timeline, caption_config=None, canvas_config=None):
         cue_texts = supplied_captions or split_caption_text(item.get("text"), chars_per_line)
         if not cue_texts:
             continue
-        supplied_durations = [max(1, int(value or 0)) for value in (item.get("captionDurationsUs") or [])]
+        raw_durations = item.get("captionDurationsUs") or []
+        supplied_durations = [max(1, int(value or 0)) for value in raw_durations]
+        # New callers send scene-relative starts. Do not stretch through pauses or
+        # trailing silence; old duration-only callers keep their original behavior.
+        supplied_starts = item.get("captionStartsUs")
+        if supplied_starts is not None:
+            if len(supplied_starts) != len(cue_texts) or len(supplied_durations) != len(cue_texts):
+                raise ValueError("Caption timing count mismatch")
+            previous_end = 0
+            for text, raw_start, raw_duration in zip(cue_texts, supplied_starts, raw_durations):
+                if any(isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value for value in (raw_start, raw_duration)):
+                    raise ValueError("Caption timing must use integer microseconds")
+                start, duration = int(raw_start), int(raw_duration)
+                if start < previous_end or duration <= 0 or start + duration > int(item["durationUs"]):
+                    raise ValueError("Caption timing outside scene or overlapping")
+                expanded.append({"startUs": int(item["startUs"]) + start, "durationUs": duration, "text": text})
+                previous_end = start + duration
+            continue
         if supplied_captions and len(supplied_durations) == len(cue_texts):
             durations = supplied_durations
             durations[-1] = max(1, durations[-1] + int(item["durationUs"]) - sum(durations))
@@ -888,7 +914,7 @@ def add_overlay_text(script, name, config, duration):
         return
     start = max(0, int(config.get("startUs") or 0))
     segment_duration = max(1, int(config.get("durationUs") or duration or 0))
-    script.add_track(draft.TrackType.text, name)
+    add_track(script, draft.TrackType.text, name)
     segment = text_segment_from_config(
         text,
         draft.Timerange(start, segment_duration),
@@ -938,11 +964,11 @@ def main():
         cover_page_path = copy_asset(cover_page["imagePath"], os.path.join(materials_dir, "cover"), "cover-page", ".png")
     frame_overlay_path = prepare_frame_overlay_asset(payload, materials_dir)
     background_track = "background_track"
-    script.add_track(draft.TrackType.video, background_track)
-    script.add_track(draft.TrackType.video, "images")
+    add_track(script, draft.TrackType.video, background_track)
+    add_track(script, draft.TrackType.video, "images")
     if frame_overlay_path:
-        script.add_track(draft.TrackType.video, "frame_overlay")
-    script.add_track(draft.TrackType.audio, "narration")
+        add_track(script, draft.TrackType.video, "frame_overlay")
+    add_track(script, draft.TrackType.audio, "narration")
 
     scenes = payload.get("scenes") or []
     durations = {int(scene["sceneId"]): int(scene["durationUs"]) for scene in scenes}
@@ -1001,6 +1027,7 @@ def main():
             "text": scene.get("text", ""),
             "captions": scene.get("captions") or [],
             "captionDurationsUs": scene.get("captionDurationsUs") or [],
+            "captionStartsUs": scene.get("captionStartsUs"),
         })
         cursor += scene_duration
     total_duration = max(cursor, int(payload.get("totalDurationUs") or 0))
@@ -1061,7 +1088,9 @@ def main():
         duration = int(scene["durationUs"])
         audio_duration = int(scene["audioDurationUs"])
         video_item = video_by_scene.get(scene_id)
-        image_item = image_by_scene[scene_id]
+        image_item = image_by_scene.get(scene_id)
+        if not video_item and not image_item:
+            raise RuntimeError(f"Missing visual asset for scene {scene_id}")
         visual_material = draft.VideoMaterial(video_item["path"] if video_item else image_item)
         audio_items = audio_items_by_scene[scene_id]
         image_height = clamp_number(image_area.get("height"), 1, 0, 1)
@@ -1135,22 +1164,39 @@ def main():
     bgm = payload.get("bgm")
     bgm_path = None
     if bgm and bgm.get("path"):
-        script.add_track(draft.TrackType.audio, "bgm")
+        add_track(script, draft.TrackType.audio, "bgm")
         bgm_path = copy_asset(bgm["path"], os.path.join(materials_dir, "bgm"), "bgm", ".mp3")
         bgm_material = draft.AudioMaterial(bgm_path)
-        bgm_source_duration = min(total_duration, int(bgm_material.duration))
-        bgm_segment = draft.AudioSegment(
-            bgm_material,
-            draft.Timerange(0, bgm_source_duration),
-            source_timerange=draft.Timerange(0, bgm_source_duration),
-            volume=float(volumes.get("bgm", bgm.get("volume", 0.3))),
-        )
-        if bgm_fade_in > 0 or bgm_fade_out > 0:
-            bgm_segment.add_fade(
-                clamp_effect_duration(bgm_fade_in, bgm_source_duration),
-                clamp_effect_duration(bgm_fade_out, bgm_source_duration),
+        source_duration = int(bgm_material.duration)
+        if source_duration <= 0:
+            raise ValueError("Background music duration must be positive")
+        bgm_volume = float(volumes.get("bgm", bgm.get("volume", 0.3)))
+        fade_in = min(total_duration, max(0, bgm_fade_in))
+        fade_out = min(total_duration, max(0, bgm_fade_out))
+        def gain_at(time):
+            gain = min(1.0, time / fade_in) if fade_in else 1.0
+            gain *= min(1.0, (total_duration - time) / fade_out) if fade_out else 1.0
+            return bgm_volume * max(0.0, gain)
+        cursor = 0
+        while cursor < total_duration:
+            length = min(source_duration, total_duration - cursor)
+            bgm_segment = draft.AudioSegment(
+                bgm_material, draft.Timerange(cursor, length),
+                source_timerange=draft.Timerange(0, length), volume=bgm_volume,
             )
-        script.add_segment(bgm_segment, "bgm")
+            if fade_in or fade_out:
+                # Use the project clock, never restart the fade on a source loop.
+                points = {cursor, cursor + length}
+                points.update(t for t in (fade_in, total_duration - fade_out) if cursor < t < cursor + length)
+                # Only overlapping fades are nonlinear. Sample that intersection at 30 fps.
+                overlap_start = max(cursor, total_duration - fade_out)
+                overlap_end = min(cursor + length, fade_in)
+                if fade_in and fade_out and overlap_end > overlap_start:
+                    points.update(range(overlap_start, overlap_end, 33333))
+                for time in sorted(points):
+                    bgm_segment.add_keyframe(time - cursor, gain_at(time))
+            script.add_segment(bgm_segment, "bgm")
+            cursor += length
 
     if caption.get("visible", True):
         caption_style = draft.TextStyle(
@@ -1193,7 +1239,7 @@ def main():
     script.save()
     content_path = os.path.join(draft_dir, "draft_content.json")
     meta_path = os.path.join(draft_dir, "draft_meta_info.json")
-    copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes]
+    copied_images = [image_by_scene[int(scene["sceneId"])] for scene in scenes if int(scene["sceneId"]) in image_by_scene]
     copied_videos = [video_by_scene[int(scene["sceneId"])]["path"] for scene in scenes if int(scene["sceneId"]) in video_by_scene]
     copied_visuals = [video_by_scene[int(scene["sceneId"])]["path"] if int(scene["sceneId"]) in video_by_scene else image_by_scene[int(scene["sceneId"])] for scene in scenes]
     copied_narration = [item["path"] for scene in scenes for item in audio_items_by_scene[int(scene["sceneId"])]]

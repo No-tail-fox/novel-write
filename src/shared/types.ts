@@ -39,8 +39,8 @@ export type ProcessingMode = AutomationMode | 'semi-auto' | 'clip-only';
 export type VideoGenerationFallback = 'dynamic-image' | 'html-video' | 'disabled';
 export type ContentPlatform = 'douyin' | 'xiaohongshu' | 'shipinhao' | 'bilibili' | 'kuaishou';
 export type VideoCapability = 't2v' | 'i2v' | 'first-last-frame' | 'reference-image' | 'reference-video' | 'reference-audio' | 'partial-redo' | 'synchronized-audio';
-export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task';
-export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task'>;
+export type PromptTemplateType = 'review' | 'rewrite' | 'cover' | 'storyboard' | 'image-prompt' | 'task' | 'workflow';
+export type PromptStepTemplateType = Exclude<PromptTemplateType, 'task' | 'workflow'>;
 export type ImageProvider = 'gpt_image' | 'jimeng' | 'custom' | 'mock';
 export type TtsProvider = 'volcengine' | 'minimax' | 'mock';
 export type VolcengineTtsApiVersion = 'v3' | 'legacy';
@@ -421,6 +421,22 @@ export interface AppConfig {
   };
 }
 
+export interface ProjectModels {
+  llmProfileId: string;
+  imageProfileId: string;
+  videoProviderId: string | null;
+}
+
+export type TaskOutputTarget = 'mp4' | 'jianying-draft';
+export interface TaskDeliverable {
+  fingerprint?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  path?: string;
+  error?: string;
+  updatedAt: string;
+}
+export type TaskDeliverables = Partial<Record<TaskOutputTarget, TaskDeliverable>>;
+
 export interface Task {
   id: string;
   archivedAt?: string | null;
@@ -443,6 +459,12 @@ export interface Task {
   bgmId: string;
   pausePoints: PausePoint[];
   outputDir: string;
+  visualTemplateRef?: import('./pixelle').PixelleVisualTemplateRef;
+  shortVideoMaterials?: import('./short-video-materials').ShortVideoMaterials;
+  pixelleOptions?: import('./pixelle').PixelleTaskOptions;
+  /** Absent on legacy tasks: retain draft-only behavior. */
+  outputTargets?: TaskOutputTarget[];
+  deliverables?: TaskDeliverables;
   errorMessage: string;
   createdAt: string;
   completedAt: string | null;
@@ -470,6 +492,7 @@ export interface Task {
   artifactStatePath: string;
   videoForm?: TaskVideoForm;
   llmProfileId?: string | null;
+  projectModels?: ProjectModels;
   materialSource?: string;
   productInfo?: string | null;
   materialPerson?: string | null;
@@ -1202,6 +1225,10 @@ export type CreateTaskInput = Partial<
     | 'speaker'
     | 'ratio'
     | 'imageQuality'
+    | 'visualTemplateRef'
+    | 'pixelleOptions'
+    | 'shortVideoMaterials'
+    | 'outputTargets'
     | 'templateId'
     | 'bgmId'
     | 'pausePoints'
@@ -1218,6 +1245,7 @@ export type CreateTaskInput = Partial<
     | 'musicMv'
     | 'videoForm'
     | 'llmProfileId'
+    | 'projectModels'
     | 'materialSource'
     | 'productInfo'
     | 'materialPerson'
@@ -1362,6 +1390,8 @@ export type TaskSummary = Omit<
   projectActivity?: ProjectActivity;
 };
 
+export type PromptChannel = 'shared' | 'story' | 'html-video' | 'editorial-collage' | 'motion-comic' | 'music-mv';
+
 export interface PromptTemplate {
   id: string;
   name: string;
@@ -1378,6 +1408,11 @@ export interface PromptTemplate {
   step3SkeletonModules?: string[];
   referenceKind?: 'none' | 'face' | 'product';
   stepPrompts?: Partial<Record<PromptStepTemplateType, string>>;
+  /** Workflow slot and channel are separate from story task/step templates. */
+  slot?: string;
+  channel?: PromptChannel;
+  enabled?: boolean;
+  builtinModified?: boolean;
   imageSeedPoolsJson?: string;
   origin?: 'system' | 'custom' | 'market';
   usedCount?: number;
@@ -1426,6 +1461,8 @@ export interface CustomStyleGenerateInput {
 }
 
 export interface ImageLabRecord {
+  imageProfileId?: string;
+  modelName?: string;
   id: string;
   archivedAt?: string | null;
   managedStorageKey?: string | null;
@@ -1474,7 +1511,7 @@ export interface ImageLabBackgroundRemovalInput {
 }
 
 export type ImageLabGenerateInput = Pick<ImageLabRecord, 'prompt' | 'ratio' | 'style'> &
-  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>> & {
+  Partial<Pick<ImageLabRecord, 'id' | 'provider' | 'imageProfileId' | 'resolution' | 'quality' | 'smartMode' | 'referenceImagePath' | 'referenceImagePaths' | 'upstreamTaskId' | 'createdAt'>> & {
     cutout?: 'green';
   };
 
@@ -1613,6 +1650,8 @@ export interface MusicPlan {
   visualMotif: string;
   audioPath: string;
   audioDurationMs: number;
+  /** Manual LRC timestamps are distinct from evenly distributed fallback timing. */
+  timingSource: 'manual' | 'provider' | 'estimated';
   segments: Array<{
     id: number;
     lyric: string;
@@ -1915,6 +1954,14 @@ export interface HotBoardArchiveStore {
 }
 
 export interface ResearchCopyComposeInput {
+  projectId?: string;
+  llmProfileId?: string;
+  directorCopyAssist?: import('./director-copy-assist').DirectorCopyAssistRequestInput;
+  writingStyleId?: import('./editorial-writing-styles').EditorialWritingStyleId;
+  channel?: PromptChannel;
+  /** Stable content genre; omitted by older clients. */
+  track?: string;
+  intent?: 'draft' | 'refine' | 'track';
   keyword: string;
   extraRequirements: string;
   selectedSources: AiSourceSection[];

@@ -1,11 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, editorialCollageCreateInputSchema, parseEditorialCollagePipelineData, validateEditorialCollagePipeline } from '../src/shared/editorial-collage';
-import { EDITORIAL_MAX_SOURCE_LENGTH, editorialCueReadingMs, planEditorialScript, splitEditorialScriptText } from '../src/shared/editorial-script';
+import { EDITORIAL_MAX_SOURCE_LENGTH, editorialCueReadingMs, joinEditorialNarration, planEditorialScript, splitEditorialScriptText } from '../src/shared/editorial-script';
 
 const now = '2026-09-08T00:00:00.000Z';
 const graphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' });
 
 describe('editorial full-text planning', () => {
+  it.each([
+    '城市道路吸收大量太阳辐射，到了夜里，这些热量才缓慢释放。',
+    '他说：“这座城市正在变化。”随后，人们开始重新思考生活。',
+    '温度升高了3.5度（相较于郊区），并不等于所有地区都一样。',
+    'Keep the original English words, spaces and numbers: 2026. 中文也要完整。',
+  ])('breaks readable phrases without stranding punctuation: %s', text => {
+    const chunks = splitEditorialScriptText(text);
+    expect(chunks.join('')).toBe(text);
+    expect(joinEditorialNarration(chunks)).toBe(text);
+    expect(chunks.every(chunk => !/^[，。！？、；：,.!?;:%％…）】》」』”’\])]/u.test(chunk.trimStart()))).toBe(true);
+    const strandedOpener = chunks.some(chunk => /[（【《「『“‘\[(]$/u.test(chunk.trimEnd()));
+    expect(strandedOpener).toBe(false);
+    expect(chunks.every(chunk => [...graphemes.segment(chunk)].length <= 16)).toBe(true);
+  });
+  it('keeps decimal values and closing quotes inside semantic sentences', () => {
+    const source = '他说：“温差是3.5度。”接着解释原因。English follows. A final sentence.';
+    const plan = planEditorialScript(source, 'auto');
+    expect(plan.beats[0].narration).toBe('他说：“温差是3.5度。”');
+    expect(plan.beats.map(beat => beat.narration).join('')).toBe(source);
+  });
   it('balances a short final subtitle without leaving punctuation as a spoken shot', () => {
     const text = '这些热量缓慢释放，街道就不容易凉下来。';
     const cues = splitEditorialScriptText(text);

@@ -32,3 +32,19 @@ export async function retryDirectorQueueItem(
   if (!handler) throw new Error(`${directorQueueRetryLabel(item)}尚未接入。`);
   await handler(kind === 'style-sample' ? item.shotId.replace(/^style-candidate:/, '') : item.shotId);
 }
+
+/** Reflect the request already started locally without rewriting unrelated job history. */
+export function applyDirectorQueueActivity<T extends DirectorRetryTarget & { status: string; progress: number }>(
+  jobs: readonly T[], imageActivity: Readonly<Record<string, 'running' | 'failed'>>, videoShotId: string,
+): T[] {
+  const seen = new Set<string>();
+  return jobs.map((item) => {
+    const kind = directorQueueKind(item);
+    if (kind !== 'shot-image' && kind !== 'shot-video') return item;
+    const key = `${kind}:${item.shotId}`;
+    if (seen.has(key)) return item;
+    seen.add(key);
+    const status = kind === 'shot-video' ? (videoShotId === item.shotId ? 'running' : undefined) : imageActivity[item.shotId];
+    return status ? { ...item, status: status as T['status'], progress: 0, error: undefined } : item;
+  });
+}

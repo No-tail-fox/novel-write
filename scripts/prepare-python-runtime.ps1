@@ -16,13 +16,15 @@ if ($Downloads.version -ne 1 -or $null -eq $Downloads.artifacts.pythonEmbed -or 
   throw "RUNTIME_DOWNLOAD_MANIFEST_INVALID: Expected versioned Python and get-pip artifacts."
 }
 $ManifestHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $DownloadManifestPath).Hash.ToLowerInvariant()
-$RuntimeId = "python-$PythonVersion-storydream-media-runtime-v6"
+$RuntimeId = "python-$PythonVersion-storydream-media-runtime-v7"
 $VendorDir = Join-Path $Root "vendor\python"
 $CacheDir = Join-Path $Root ".cache\python-runtime"
 $ZipPath = Join-Path $CacheDir "python-$PythonVersion-embed-amd64.zip"
 $GetPipPath = Join-Path $CacheDir "get-pip.py"
 $ReadyFile = Join-Path $VendorDir ".storydream-python-runtime"
 $PythonExe = Join-Path $VendorDir "python.exe"
+$PixelleRequirementsPath = Join-Path $PSScriptRoot "pixelle-runtime-requirements.txt"
+$PixelleRequirementsHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $PixelleRequirementsPath).Hash.ToLowerInvariant()
 $PlaywrightBrowsersPath = Join-Path $VendorDir "playwright-browsers"
 
 function Assert-UnderRoot([string]$Path) {
@@ -72,7 +74,7 @@ function Test-RuntimeMarkerCurrent {
   }
   try {
     $marker = Get-Content -LiteralPath $ReadyFile -Raw
-    return $marker.Contains("runtime=$RuntimeId") -and $marker.Contains("manifest_sha256=$ManifestHash")
+    return $marker.Contains("runtime=$RuntimeId") -and $marker.Contains("manifest_sha256=$ManifestHash") -and $marker.Contains("pixelle_sha256=$PixelleRequirementsHash")
   } catch {
     return $false
   }
@@ -83,7 +85,7 @@ function Test-RuntimeReady {
     return $false
   }
   try {
-    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import pydub, jieba; import Cryptodome; print('storydream media runtime ready')" | Out-Null
+    & $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import pydub, jieba; import Cryptodome, pydantic, loguru, ffmpeg, bs4, av; print('storydream media runtime ready')" | Out-Null
     return $LASTEXITCODE -eq 0
   } catch {
     return $false
@@ -144,6 +146,8 @@ Write-Host "[python-runtime] Installing Python packages"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $PythonExe -m pip install --no-warn-script-location @PackageNames --index-url $PipIndexUrl
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $PythonExe -m pip install --no-warn-script-location --only-binary=:all: --require-hashes -r $PixelleRequirementsPath --index-url $PipIndexUrl
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $PythonExe -m playwright install chromium
 if ($LASTEXITCODE -ne 0) {
   Write-Warning "[python-runtime] Playwright Chromium download failed; the viral worker will fall back to local Chrome/Edge when available."
@@ -153,8 +157,8 @@ if (Test-Path -LiteralPath $PthPath) {
   Set-Content -LiteralPath $PthPath -Value "python$PythonTag.zip`r`n.`r`nLib\site-packages" -Encoding ASCII
 }
 
-& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import pydub, jieba; import Cryptodome; print('storydream media runtime ready')"
+& $PythonExe -c "import pyJianYingDraft, faster_whisper, playwright, httpx, imageio_ffmpeg, browser_cookie3, yaml, gmssl, aiofiles; import pydub, jieba; import Cryptodome, pydantic, loguru, ffmpeg, bs4, av; print('storydream media runtime ready')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`nmanifest_sha256=$ManifestHash`npackages=$($PackageNames -join ',')" -Encoding ASCII
+Set-Content -LiteralPath $ReadyFile -Value "runtime=$RuntimeId`npython=$PythonVersion`nmanifest_sha256=$ManifestHash`npixelle_sha256=$PixelleRequirementsHash`npackages=$($PackageNames -join ',')" -Encoding ASCII
 Write-Host "[python-runtime] Ready: $VendorDir"

@@ -44,6 +44,17 @@ function ttsVolcengineProfile(id: string, enabled: boolean, apiKey: string, spea
 }
 
 describe('provider profile utilities', () => {
+
+  it('keeps the selected image deadline through save, normalization and activation', () => {
+    const config = normalizeAppConfig({ ...defaultConfig, imageProfiles: [gptImageProfile('first', true, 'test', 'image'), gptImageProfile('second', false, 'test', 'image')] });
+    const second = config.imageProfiles.find(profile => profile.id === 'second')!;
+    const saved = saveImageProfile(config, { ...second, gptImage: { ...second.gptImage!, timeoutMs: 540_000 } });
+    const active = normalizeAppConfig(enableImageProfile(saved, 'second'));
+    expect(active.gptImage.timeoutMs).toBe(540_000);
+    expect(active.image.timeoutMs).toBe(540_000);
+    expect(active.imageProfiles.find(profile => profile.id === 'second')?.gptImage?.timeoutMs).toBe(540_000);
+  });
+
   it('retains parameter edits and resets for the active image profile before credentials are configured', () => {
     const config = normalizeAppConfig(defaultConfig);
     const profile = config.imageProfiles.find((item) => item.id === config.activeImageProfileId)!;

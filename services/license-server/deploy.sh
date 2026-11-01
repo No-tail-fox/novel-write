@@ -15,6 +15,7 @@ command -v systemctl >/dev/null
 command -v python3 >/dev/null
 python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1]); assert sys.argv[2].isdigit() and 1 <= int(sys.argv[2]) <= 65535, "Invalid port"' "$public_ip" "$public_port"
 [[ -f $bundle/server.py && -f $bundle/requirements.txt && -f $bundle/storydream-license.service ]]
+[[ -f $bundle/admin-dist/index.html && -f $bundle/admin-dist/admin.js && -f $bundle/admin-dist/admin.css ]]
 for target in "$code" "$data" "$unit" "$wrapper"; do
   [[ ! -L $target ]] || { echo "Refusing symlink: $target" >&2; exit 1; }
 done
@@ -60,6 +61,10 @@ python3 -m venv "$code/venv"
 umask 077
 install -m 0644 "$bundle/server.py" "$code/server.py"
 install -m 0644 "$bundle/requirements.txt" "$code/requirements.txt"
+install -d -m 0755 "$code/admin-dist"
+install -m 0644 "$bundle/admin-dist/index.html" "$code/admin-dist/index.html"
+install -m 0644 "$bundle/admin-dist/admin.js" "$code/admin-dist/admin.js"
+install -m 0644 "$bundle/admin-dist/admin.css" "$code/admin-dist/admin.css"
 install -m 0644 "$bundle/storydream-license.service" "$unit"
 sed -i "s/--port 443$/--port $public_port/" "$unit"
 install -m 0755 "$bundle/licensectl" "$wrapper"

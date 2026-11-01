@@ -1,10 +1,15 @@
+import { resolveShortVideoMaterials } from './short-video-materials';
+import { pixelleUsesVideo, resolvePixelleTask } from './pixelle-task';
+import type { PixelleTemplateDescriptor } from './pixelle';
+import { planMusicMvLyrics } from './music-mv-plan';
+import { workflowPrompt } from './workflow-prompt-runtime';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { extname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import type { AiSourceContext, BgmItem, CharacterCard, ContentPlatformVariant, CoverMetadata, CustomCoverTemplate, DraftTemplate, ImagePrompt, MusicPlan, NarrativePlan, PipelineArtifact, PromptStepTemplateType, PromptTemplate, RewriteEvaluationResult, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactImageErrorPreview, TaskArtifactVideoPreview, TaskDagNode, TaskStepRerunMode } from './types';
 import { buildCoverMetadata, buildSubtitleTrack, groupStoryboardScenesToTarget, normalizeStoryboardSceneLengths } from './story';
 import { characterCoverDisplayRules, isCharacterStoryTrack, resolveCoverDisplayMetadata } from './cover-copy';
-import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions } from './draft';
+import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions, type WriteJianyingDraftInput } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 import type { FileDatabase } from './storage';
 import type { AnthropicMessagesJsonRequest, ConfiguredJsonLlm, LlmJsonResult, LlmMessage, OpenAiCompatibleJsonRequest } from './llm-provider';
@@ -13,15 +18,19 @@ import { countVisibleCharacters, normalizeStoryboardSceneCount, normalizeTargetL
 import { appendDraftImageCompositionGuidance, draftImageCompositionGuidance, normalizeDraftTemplate } from './templates';
 import { buildPromptRenderContext, renderPromptTemplate, selectStepPromptTemplate, selectTaskPromptTemplate, type PromptRenderContext } from './prompt-templates';
 import { defaultCustomStyles } from './config';
+import { buildCopywritingGuidance } from './copywriting-tracks';
 import { copyPersonMaterialsForScenes } from './person-assets';
 import { withPipelineStateLock } from './pipeline-cache';
 import { isOrdinaryTask, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import { taskTerminalStep } from './task-progress';
 import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, validateOrdinaryTaskCoverAsset } from './ordinary-task-cover';
+import { executeTaskOutputs, outputFingerprint } from './task-output-runner';
+import type { TaskDeliverables } from './types';
 import { ordinaryTaskPipelineOptions } from './ordinary-task-options';
 
 export interface RunTaskOptions {
   appDataDir: string;
+  artifactDataDir?: string;
   workDir: string;
   onEvent?: (event: SequencedTaskEvent) => void;
   signal?: AbortSignal;
@@ -32,6 +41,11 @@ export interface RunTaskOptions {
   generateImages?: (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
   imageConcurrency?: number;
   synthesizeNarration?: (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
+  prepareMaterialVideos?: (scenes: StoryboardScene[]) => Promise<TaskArtifactVideoPreview[]>;
+  pixelleTemplate?: PixelleTemplateDescriptor;
+  preparePixelleOutputs?: (input: WriteJianyingDraftInput, task: Task, signal?: AbortSignal) => Promise<WriteJianyingDraftInput>;
+  prepareShortVideoOutputs?: (input: WriteJianyingDraftInput, signal?: AbortSignal) => Promise<WriteJianyingDraftInput>;
+  renderShortVideo?: (input: WriteJianyingDraftInput, signal?: AbortSignal) => Promise<string>;
   draftWriterOptions?: WriteJianyingDraftOptions;
   mediaSidecar?: (input: StoryboundSidecarInput) => Promise<StoryboundSidecarResult>;
   customCoverTemplates?: CustomCoverTemplate[];
@@ -53,6 +67,7 @@ interface PipelineState {
     imageErrors: TaskArtifactImageErrorPreview[];
     narration: SceneAsset[];
   };
+  deliverables?: TaskDeliverables;
   draft?: {
     draftDir: string;
     draftContentPath: string;
@@ -398,6 +413,11 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
   };
 
   try {
+    if (resolveShortVideoMaterials(task) && !options.prepareMaterialVideos) throw new Error('素材混剪运行器未配置；不会调用生图模型代替');
+    if (task.visualTemplateRef) {
+      if (!options.pixelleTemplate || !options.preparePixelleOutputs) throw new Error('Pixelle 原模板运行器未配置');
+      resolvePixelleTask(task, { revision: options.pixelleTemplate.ref.revision, templates: [options.pixelleTemplate], paidRequests: 0 });
+    }
     throwIfAborted(options.signal);
     await heartbeat(activeStep ?? 0, 'task started');
     const musicMvAudioDurationMs = task.taskKind === 'music-mv'
@@ -419,7 +439,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
         lastHeartbeatAt: new Date().toISOString(),
       });
       await emit('step_complete', 3, 'Prompt', 'Clip-only task completed after content artifacts');
-      return { ...task, status: 'completed', currentStep: taskTerminalStep(task), completedAt, outputDir: workDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
+      return { ...task, ...(pipeline.deliverables ? { deliverables: pipeline.deliverables } : {}), draftDir: pipeline.draft?.draftDir ?? null, status: 'completed', currentStep: taskTerminalStep(task), completedAt, outputDir: workDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
     }
     pauseAtCheckpoint(task, initialStep, 4, 'Task paused for confirmation before image generation.');
     activeStep = 4;
@@ -441,7 +461,78 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     pauseAtCheckpoint(task, initialStep, 6, 'Task paused for confirmation before draft generation.');
     await heartbeat(6, 'draft step');
     await db.updateTask(task.id, { currentStep: 6, retryFromStep: 6 });
-    if (pipeline.steps['6']?.status !== 'completed') {
+    if (isOrdinaryTask(task) && task.outputTargets !== undefined) {
+      await markStep(6, 'running');
+      await emit('step_start', 6, 'Delivery', '生成所选交付物；共享已完成的素材、配音与时间轴');
+      const state = await db.getState();
+      const latestTask = state.tasks.find(item => item.id === task.id);
+      const draftTask = latestTask ? { ...task, templateId: latestTask.templateId, bgmId: latestTask.bgmId } : task;
+      const bgm = resolveBgm(state.config.jianying.bgmLibrary, draftTask.bgmId);
+      const template = state.draftTemplates.find(item => item.id === draftTask.templateId);
+      const normalizedTemplate = template ? normalizeDraftTemplate(template) : undefined;
+      let deliveryInput: WriteJianyingDraftInput = {
+              workDir,
+              draftRootDir: state.config.jianying.draftPath,
+              title: task.title || todayTitle(task.inputText),
+              cover: artifact.cover,
+              ratio: task.ratio,
+              templateId: draftTask.templateId,
+              template: normalizedTemplate,
+              scenes: artifact.scenes,
+              subtitles: artifact.subtitles,
+              imagePrompts: artifact.imagePrompts,
+              reviewedText: artifact.reviewedText,
+              rewrittenCopy: artifact.rewrittenCopy,
+              generatedImages: pipeline.assets.images,
+              generatedVideos: pipeline.assets.videos,
+              coverImagePath: pipeline.assets.cover[0]?.path,
+              coverPage: task.coverPageEnabled ? {
+                imagePath: requireOrdinaryCoverPageImage(task, pipeline.assets.cover[0]?.path),
+                text: task.coverPageText ?? '',
+                useGeneratedTitleFallback: task.coverImageMode !== 'auto',
+                durationMs: ORDINARY_TASK_COVER_PAGE_DURATION_MS,
+              } : undefined,
+              narrationAudio: pipeline.assets.narration,
+              bgm,
+            };
+      if (options.prepareShortVideoOutputs) deliveryInput = await options.prepareShortVideoOutputs(deliveryInput, options.signal);
+      if (task.visualTemplateRef) {
+        await emit('step_progress', 6, 'Pixelle', '使用原版模板合成画面；MP4 与草稿复用同一素材');
+        deliveryInput = await options.preparePixelleOutputs!(deliveryInput, task, options.signal);
+      }
+      artifact.scenes = deliveryInput.scenes;
+      artifact.subtitles = deliveryInput.subtitles ?? artifact.subtitles;
+      pipeline.artifact = { ...pipeline.artifact, scenes: artifact.scenes, subtitles: artifact.subtitles };
+      const fingerprint = await outputFingerprint(deliveryInput, [
+        ...deliveryInput.generatedImages.map(a => a.path), ...deliveryInput.narrationAudio.map(a => a.path),
+        ...(deliveryInput.generatedVideos ?? []).map(a => a.path), bgm?.path ?? '',
+        deliveryInput.coverPage?.imagePath ?? '', normalizedTemplate?.canvas.backgroundImage ?? '',
+      ]);
+      await executeTaskOutputs({
+        targets: task.outputTargets, previous: pipeline.deliverables, fingerprint, signal: options.signal,
+        onUpdate: async outputs => {
+          pipeline.deliverables = structuredClone(outputs);
+          await save();
+          const mp4 = outputs.mp4?.status === 'completed' ? outputs.mp4.path : undefined;
+          const draft = outputs['jianying-draft']?.status === 'completed' ? outputs['jianying-draft'].path : undefined;
+          await db.updateTask(task.id, { deliverables: outputs, draftDir: draft ?? null, outputDir: mp4 ? dirname(mp4) : draft ?? workDir });
+          await heartbeat(6, 'delivery state updated');
+        },
+        produce: async target => {
+          await emit('step_progress', 6, 'Delivery', target === 'mp4' ? '正在渲染并验收 MP4' : '正在生成可编辑剪映草稿');
+          if (target === 'mp4') {
+            if (!options.renderShortVideo) throw new Error('普通短片 MP4 渲染器尚未配置');
+            return options.renderShortVideo(deliveryInput, options.signal);
+          }
+          const draft = await writeJianyingDraft(deliveryInput, { ...(options.draftWriterOptions ?? {}), runSidecar: options.mediaSidecar ?? options.draftWriterOptions?.runSidecar });
+          pipeline.draft = { draftDir: draft.draftDir, draftContentPath: draft.draftContentPath, draftMetaPath: draft.draftMetaPath };
+          return draft.draftDir;
+        },
+      });
+      const output = pipeline.deliverables?.mp4?.path ?? pipeline.deliverables?.['jianying-draft']?.path;
+      await markStep(6, 'completed', { outputPath: output });
+      await emit('step_complete', 6, 'Delivery', '全部所选交付物已完成', pipeline.deliverables);
+    } else if (pipeline.steps['6']?.status !== 'completed') {
       await markStep(6, 'running');
       await heartbeat(6, 'draft running');
       await emit('step_start', 6, 'Draft', '写入剪映草稿目录');
@@ -507,7 +598,9 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       await emit('step_complete', 6, 'Draft', 'Jianying draft folder generated', draft);
     }
 
-    const draftDir = pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
+    const draftDir = pipeline.deliverables?.mp4?.status === 'completed' && pipeline.deliverables.mp4.path
+      ? dirname(pipeline.deliverables.mp4.path)
+      : pipeline.draft?.draftDir ?? pipeline.steps['6']?.outputPath ?? workDir;
     if (pipeline.rerun) {
       delete pipeline.rerun;
       await save();
@@ -524,7 +617,7 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       artifactStatePath: statePath,
       lastHeartbeatAt: new Date().toISOString(),
     });
-    return { ...task, status: 'completed', currentStep: taskTerminalStep(task), completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
+    return { ...task, ...(pipeline.deliverables ? { deliverables: pipeline.deliverables } : {}), draftDir: pipeline.draft?.draftDir ?? null, status: 'completed', currentStep: taskTerminalStep(task), completedAt, outputDir: draftDir, errorMessage: '', failedStep: null, retryFromStep: null, artifactStatePath: statePath, startedAt, lastHeartbeatAt: new Date().toISOString() };
   } catch (error) {
     if (error instanceof CheckpointPause) {
       await db.updateTask(task.id, {
@@ -824,7 +917,7 @@ async function ensureContentArtifact(input: {
           signal: options.signal,
           jsonRoot: 'array',
           messages: [
-            { role: 'system', content: storyboardTailAnchorSystemPrompt },
+            { role: 'system', content: workflowPrompt('story-tail-anchors', storyboardTailAnchorSystemPrompt) },
             {
               role: 'user',
               content: joinPromptBlocks([
@@ -882,7 +975,8 @@ async function ensureContentArtifact(input: {
     await emit('step_complete', 2, 'Storyboard', `分镜 ${pipeline.artifact.scenes.length} 个`, { requestId: storyboardRequestId });
   }
 
-  if (!pipeline.artifact.characterCard) {
+  const skipsSceneImages = Boolean(task.shortVideoMaterials) || Boolean(task.visualTemplateRef && options.pixelleTemplate && (options.pixelleTemplate.type === 'static' || pixelleUsesVideo(options.pixelleTemplate, task.pixelleOptions)));
+  if (!pipeline.artifact.characterCard && !skipsSceneImages) {
     pipeline.artifact.characterCard = await ensureCharacterCard({
       llm: options.llm,
       task,
@@ -894,6 +988,12 @@ async function ensureContentArtifact(input: {
     await writeFile(join(workDir, '02-character-card.json'), JSON.stringify(pipeline.artifact.characterCard, null, 2), 'utf8');
   }
 
+  if (skipsSceneImages && (!isStepCompleted(pipeline, 3) || !pipeline.artifact.imagePrompts)) {
+    pipeline.artifact.imagePrompts = (pipeline.artifact.scenes ?? []).map(scene => ({ sceneId: scene.id, cap: scene.cap,
+      prompt: '', negativePrompt: '', style: task.style, ratio: task.ratio, characterProfile: '' }));
+    await markStep(3, 'completed');
+    await emit('step_complete', 3, 'Prompt', '当前画面来源不需要生图提示词，跳过对应模型调用');
+  }
   if (!isStepCompleted(pipeline, 3) || !pipeline.artifact.imagePrompts) {
     await db.updateTask(task.id, { currentStep: 3, retryFromStep: 3 });
     await heartbeatTask(db, task.id, options, 3, 'LLM prompts');
@@ -919,7 +1019,7 @@ async function ensureContentArtifact(input: {
         signal: options.signal,
         anthropicToolInputSchema: imagePromptsOutputJsonSchema,
         messages: [
-          { role: 'system', content: 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.' },
+          { role: 'system', content: workflowPrompt("story-image-contract", 'Return strict JSON only. Schema: {"imagePrompts":[{"sceneId":number,"cap":string,"prompt":string,"negativePrompt":string,"style":string,"ratio":string,"characterProfile":string}]}.') },
           { role: 'user', content: batchSnapshots[index] },
         ],
       });
@@ -946,7 +1046,10 @@ function renderStepPromptDetails(templates: PromptTemplate[], type: PromptStepTe
   const template = selectStepPromptTemplate(templates, type, context.taskTemplate ?? null);
   return {
     template,
-    content: template ? renderPromptTemplate(template, context) : fallback,
+    content: joinPromptBlocks([
+      template ? renderPromptTemplate(template, context) : fallback,
+      type === 'rewrite' ? buildCopywritingGuidance(context.task?.track, 'story') : '',
+    ]),
   };
 }
 
@@ -1336,7 +1439,7 @@ async function generateNarrativePlan(
     messages: [
       {
         role: 'system',
-        content: '先做短视频叙事规划，不写成稿。只返回严格 JSON。证据必须来自输入材料；无法确认时明确标记“待核实”，不得编造事实。',
+        content: workflowPrompt("story-narrative", '先做短视频叙事规划，不写成稿。只返回严格 JSON。证据必须来自输入材料；无法确认时明确标记“待核实”，不得编造事实。'),
       },
       {
         role: 'user',
@@ -1379,7 +1482,7 @@ async function generateContentVariants(
       messages: [
         {
           role: 'system',
-          content: '将同一事实和观点适配到不同中文视频平台。不得改变事实、凭空新增证据或删掉核心结论。只返回严格 JSON。',
+          content: workflowPrompt("story-platform", '将同一事实和观点适配到不同中文视频平台。不得改变事实、凭空新增证据或删掉核心结论。只返回严格 JSON。'),
         },
         {
           role: 'user',
@@ -1496,7 +1599,7 @@ async function runRewriteRounds(
       signal: input.signal,
       anthropicToolInputSchema: rewriteOutputJsonSchema,
       messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string}.' },
+        { role: 'system', content: workflowPrompt("story-rewrite-contract-1", 'Return strict JSON only. Schema: {"rewrittenCopy": string}.') },
         {
           role: 'user',
           content: buildRewriteRoundPrompt(input, round, candidates[candidates.length - 1]?.rewrittenCopy),
@@ -1521,7 +1624,7 @@ async function runRewriteRounds(
     signal: input.signal,
     anthropicToolInputSchema: rewriteEvaluationOutputJsonSchema,
     messages: [
-      { role: 'system', content: 'Return strict JSON only. Schema: {"bestRound": number, "evaluations": [{"round": number, "score": number, "reason": string}], "wordCountWarning"?: string}.' },
+      { role: 'system', content: workflowPrompt("story-rewrite-contract-2", 'Return strict JSON only. Schema: {"bestRound": number, "evaluations": [{"round": number, "score": number, "reason": string}], "wordCountWarning"?: string}.') },
       {
         role: 'user',
         content: buildRewriteEvaluationPrompt(input, candidates),
@@ -1562,7 +1665,7 @@ async function generateCoverMetadata(
     signal: input.signal,
     anthropicToolInputSchema: coverMetadataOutputJsonSchema,
     messages: [
-      { role: 'system', content: 'Return strict JSON only. Schema: {"cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.' },
+      { role: 'system', content: workflowPrompt("story-cover-contract", 'Return strict JSON only. Schema: {"cover": {"title": string, "subtitle": string[], "summary": string, "tags": string[], "comments": string[]}}.') },
       {
         role: 'user',
         content: joinPromptBlocks([
@@ -1624,7 +1727,7 @@ async function repairRewriteToTargetLength(
       signal: input.signal,
       anthropicToolInputSchema: rewriteOutputJsonSchema,
       messages: [
-        { role: 'system', content: 'Return strict JSON only. Schema: {"rewrittenCopy": string}.' },
+        { role: 'system', content: workflowPrompt("story-length-repair", 'Return strict JSON only. Schema: {"rewrittenCopy": string}.') },
         {
           role: 'user',
           content: joinPromptBlocks([
@@ -1697,7 +1800,7 @@ async function repairStoryboardToTargetSceneCount(
       signal: input.signal,
       jsonRoot: 'array',
       messages: [
-        { role: 'system', content: storyboardTailAnchorSystemPrompt },
+        { role: 'system', content: workflowPrompt('story-tail-anchors', storyboardTailAnchorSystemPrompt) },
         {
           role: 'user',
           content: joinPromptBlocks([
@@ -1749,7 +1852,7 @@ async function ensureCharacterCard(input: {
         signal: input.signal,
         anthropicToolInputSchema: characterCardOutputJsonSchema,
         messages: [
-          { role: 'system', content: 'Return strict JSON only. Schema: {"characterCard":{"summary":string,"characters":[{"name":string,"appearance":string,"wardrobe":string,"role":string}],"consistencyRules":string[]}}.' },
+          { role: 'system', content: workflowPrompt("story-character", 'Return strict JSON only. Schema: {"characterCard":{"summary":string,"characters":[{"name":string,"appearance":string,"wardrobe":string,"role":string}],"consistencyRules":string[]}}.') },
           {
             role: 'user',
             content: joinPromptBlocks([
@@ -1812,7 +1915,7 @@ function buildMusicMvArtifact(task: Task, sourceContext?: AiSourceContext, audio
   const imagePrompts: ImagePrompt[] = scenes.map((scene, index) => ({
     sceneId: scene.id,
     cap: scene.cap,
-    prompt: `音乐MV，${task.style}，${musicPlan.visualMotif || '情绪化画面'}，${musicPlan.captionStyle} 字幕，${musicPlan.rhythmMode} 节奏，第 ${index + 1} 镜：${scene.descPrompt}`,
+    prompt: workflowPrompt("music-mv-image", `音乐MV，${task.style}，${musicPlan.visualMotif || '情绪化画面'}，${musicPlan.captionStyle} 字幕，${musicPlan.rhythmMode} 节奏，第 ${index + 1} 镜：${scene.descPrompt}`, { task_style: (task.style), value2: (musicPlan.visualMotif || '情绪化画面'), musicPlan_captionStyle: (musicPlan.captionStyle), musicPlan_rhythmMode: (musicPlan.rhythmMode), value5: (index + 1), scene_descPrompt: (scene.descPrompt) }),
     negativePrompt: '低质量，模糊，水印，乱码文字，多余字幕，变形人物',
     style: task.style,
     ratio: task.ratio,
@@ -1925,41 +2028,7 @@ async function writeMusicMvSidecarDraft(input: {
 }
 
 export function buildMusicMvPlan(task: Task, audioDurationMs = 0): MusicPlan {
-  const lines = task.inputText
-    .replace(/\r/g, '')
-    .split(/\n|(?<=[。！？!?；;])/u)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const requestedScenes = normalizeStoryboardSceneCount(task.targetScenes ?? task.storyboardSceneCount) ?? 60;
-  const parsed = (lines.length ? lines : [task.title || '音乐MV']).map((line) => {
-    const match = line.match(/^\[(\d{1,3}):(\d{2}(?:\.\d{1,3})?)\]\s*(.+)$/u);
-    return { lyric: match?.[3]?.trim() || line, startMs: match ? (Number(match[1]) * 60 + Number(match[2])) * 1000 : null };
-  }).slice(0, requestedScenes);
-  const lyrics = parsed.map((item) => item.lyric);
-  const durationByMode = task.musicMv.rhythmMode === 'fast-cut' ? 1600 : task.musicMv.rhythmMode === 'slow-cinematic' ? 3600 : 2400;
-  const effectiveDurationMs = audioDurationMs > 0 ? audioDurationMs : durationByMode * lyrics.length;
-  const timed = parsed.every((item) => item.startMs !== null);
-  return {
-    rhythmMode: task.musicMv.rhythmMode,
-    captionStyle: task.musicMv.captionStyle,
-    visualMotif: task.musicMv.visualMotif,
-    audioPath: task.musicMv.audioPath,
-    audioDurationMs: effectiveDurationMs,
-    segments: lyrics.map((lyric, index) => {
-      const startMs = timed ? Math.min(effectiveDurationMs, parsed[index].startMs ?? 0) : Math.round(effectiveDurationMs * index / lyrics.length);
-      const nextStartMs = timed && index + 1 < lyrics.length
-        ? Math.min(effectiveDurationMs, parsed[index + 1].startMs ?? effectiveDurationMs)
-        : timed ? effectiveDurationMs : Math.round(effectiveDurationMs * (index + 1) / lyrics.length);
-      return {
-      id: index + 1,
-      lyric,
-      section: musicSection(index, lyrics.length),
-      startMs,
-      durationMs: Math.max(1, nextStartMs - startMs),
-      visualHint: `${task.musicMv.visualMotif || '围绕歌词情绪'}，镜头跟随歌词 "${lyric}"`,
-      };
-    }),
-  };
+  return planMusicMvLyrics(task.inputText, task.musicMv, audioDurationMs);
 }
 
 async function probeMusicMvAudio(task: Task, options: RunTaskOptions, workDir: string): Promise<number> {
@@ -2062,6 +2131,21 @@ async function ensureImages(input: {
     pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
     await markStep(4, 'running', { outputPath: coverPath });
   }
+  if (task.shortVideoMaterials) {
+    await markStep(4, 'running');
+    await emit('step_start', 4, 'Producer', '使用已托管本地视频，按顺序分配素材；不调用生图模型');
+    pipeline.assets.videos = await options.prepareMaterialVideos!(artifact.scenes);
+    pipeline.assets.images = [];
+    pipeline.assets.imageErrors = [];
+    await markStep(4, 'completed', { outputPath: pipeline.assets.videos.map(video => video.path).join('\n') });
+    await emit('step_complete', 4, 'Producer', `素材混剪已分配 ${pipeline.assets.videos.length} 个镜头`);
+    return;
+  }
+  if (task.visualTemplateRef && options.pixelleTemplate && (options.pixelleTemplate.type === 'static'  || pixelleUsesVideo(options.pixelleTemplate, task.pixelleOptions))) {
+    await markStep(4, 'completed');
+    await emit('step_complete', 4, 'Pixelle', options.pixelleTemplate.type === 'static' ? '原版静态模板无需生成镜头图片' : '使用已选本地视频；不调用生图模型');
+    return;
+  }
   if (task.materialSource === 'local') {
     const person = task.materialPerson?.trim();
     if (!person) {
@@ -2072,7 +2156,7 @@ async function ensureImages(input: {
     await markStep(4, 'running');
     await emit('step_start', 4, 'Producer', '从人物素材库复制本地图片素材', { person, sceneIds: artifact.scenes.map((scene) => scene.id) });
     const copied = await copyPersonMaterialsForScenes({
-      rootDir: join(options.appDataDir, 'person-assets'),
+      rootDir: join(options.artifactDataDir ?? options.appDataDir, 'person-assets'),
       person,
       scenes: artifact.scenes,
       taskDir: input.workDir,

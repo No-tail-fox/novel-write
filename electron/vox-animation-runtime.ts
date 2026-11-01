@@ -1,3 +1,4 @@
+import { compileLemoNative } from './lemo-native-compiler';
 import ts from 'typescript';
 import { readFile, mkdir, writeFile, rename, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
@@ -6,6 +7,7 @@ import { z } from 'zod';
 import { buildVoxAnimationHtml, voxAnimationSchema, voxSavedTemplateSchema, type VoxCompileResult, type VoxAnimationPayload, type VoxSavedTemplate } from '../src/shared/vox-animation';
 
 export function compileVoxCode(source:string):VoxCompileResult {
+  if(/^\s*(?:```html\s*)?(?:<!doctype\s+html|<html[\s>])/i.test(source))return compileLemoNative(source);
   source=source.trim().replace(/^```(?:tsx|typescript|jsx|javascript)?\s*/i,'').replace(/\s*```$/,'');
   if(!source||source.length>100000)throw new Error('动画代码应为 1–100000 字符');
   const file=ts.createSourceFile('animation.tsx',source,ts.ScriptTarget.ES2020,true,ts.ScriptKind.TSX);
@@ -47,10 +49,10 @@ export async function readVoxAsset(path:string):Promise<string>{
   const info=await stat(path);if(!info.isFile()||info.size>48*1024*1024)throw new Error('单个动画素材不能超过 48 MB');
   return `data:${mime[extension]};base64,${(await readFile(path)).toString('base64')}`;
 }
-export async function prepareVoxHtml(runtimePath:string,payload:VoxAnimationPayload):Promise<string>{
+export async function prepareVoxHtml(runtimePath:string,payload:VoxAnimationPayload,localAssetUrls:readonly string[]=[]):Promise<string>{
   const animation=voxAnimationSchema.parse(payload.animation);
   if(animation.mode==='code')animation.code={...animation.code,...compileVoxCode(animation.code.source)};
-  return buildVoxAnimationHtml(await readFile(runtimePath,'utf8'),{...payload,animation});
+  return buildVoxAnimationHtml(await readFile(runtimePath,'utf8'),{...payload,animation},localAssetUrls);
 }
 export class VoxTemplateStore {
   private pending=Promise.resolve();

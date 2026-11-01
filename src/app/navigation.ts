@@ -209,7 +209,7 @@ export function pageSubtitle(view: ShellView): string {
     'voice-lab': '单独试听豆包与 MiniMax 音色，保存本地试听记录',
     'video-lab': '输入提示词或参考图，独立生成视频并保存本地记录',
     'music-lab': '从灵感到歌曲，试听、保存并用于视频创作',
-    'music-mv': '按歌词节奏生成音乐 MV 分镜、字幕和剪映草稿',
+    'music-mv': '用主歌曲和完整歌词驱动 Lemo 制作音乐 MV，预览并导出 MP4',
     'viral-analyzer': '拆解爆款短视频的开头、结构、结尾和爆点',
     'prompt-templates': '管理系统模板、克隆、导入 JSON 和本地编辑',
     'draft-templates': '调整画布、图片区域、字幕、免责声明和音频参数',

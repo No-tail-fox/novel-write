@@ -1,3 +1,6 @@
+import { editorialPresentationCues } from './editorial-script-markup';
+import { resolveLemoAnimation } from './creative-animation/native-film';
+import { buildCreativeTextSvg } from './creative-animation/text-layer';
 import { resolveEditorialCuePlan, compileEditorialCueLayers, type ResolvedEditorialBeat } from './editorial-cue-plan';
 import { validateVoxAnimation, voxAnimationAssetIds, type VoxAnimation } from './vox-animation';
 import { z } from 'zod';
@@ -12,7 +15,7 @@ import { directorSceneLayoutClass, directorSceneSubtitleClass } from './director
 import { evaluateDirectorVisualContinuity, type ProductionVisualContinuityEvidence } from './production-visual-continuity';
 import { measureProductionNarrationAlignment, type ProductionNarrationAlignmentEvidence } from './production-audio-alignment';
 import { resolveDirectorTransition, type DirectorTransition } from './director-transitions';
-import { motionComicVideoInputHash } from './motion-comic-video';
+import { motionComicVideoJobInputsMatch } from './motion-comic-video';
 import { isUsableBackgroundRemoval } from './background-removal';
 
 export interface DirectorRenderRequest {
@@ -96,19 +99,20 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
     : {
         workflowKind: document.workflowKind,
         ...(document.beats.some(beat => beat.shots.some(shot => shot.animation?.authoring)) ? { creativeRenderRevision: 2 } : {}),
+        ...(document.upstreamFilm ? { upstream: { runId: document.upstreamFilm.runId, sourceHash: document.upstreamFilm.sourceHash, compositionRevision: 4 } } : {}),
         id: document.id,
         ratio: document.ratio,
         title: document.title,
         beats: document.beats.map((beat) => ({
           title: beat.title, narration: beat.narration, startMs: beat.startMs,
           shots: beat.shots.map((shot) => ({
-            id: shot.id, title: shot.title, animation: shot.animation, motionStyle: shot.motionStyle, durationMs: shot.durationMs, renderStrategy: shot.renderStrategy,
+            id: shot.id, title: shot.title, animation: resolveLemoAnimation(shot.animation, document.creativeFilms), motionStyle: shot.motionStyle, durationMs: shot.durationMs, renderStrategy: shot.renderStrategy,
             transitionIn: editorialRenderTransition(shot),
             scenePrompt: shot.scenePrompt, motionPrompt: shot.motionPrompt,
             layers: shot.layers, camera: shot.camera, subtitleCueIds: shot.subtitleCueIds,
             keyframeAssetVersionId: shot.keyframeAssetVersionId,
             lastFrameAssetVersionId: shot.lastFrameAssetVersionId, productionRecipe: shot.productionRecipe,
-            videoAssetVersionId: shot.videoAssetVersionId, videoJobId: shot.videoJobId,
+            videoAssetVersionId: shot.videoAssetVersionId, videoJobId: shot.videoJobId, narrationSplit: shot.narrationSplit,
             voiceAssetVersionId: shot.voiceAssetVersionId, voiceId: shot.voiceId, voiceSpeed: shot.voiceSpeed,
             layoutTemplate: shot.layoutTemplate, motionPreset: shot.motionPreset, subtitleStyle: shot.subtitleStyle,
           })),
@@ -120,7 +124,7 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
           shot.videoAssetVersionId,
           shot.keyframeAssetVersionId,
           shot.lastFrameAssetVersionId,
-          ...(shot.animation ? voxAnimationAssetIds(shot.animation) : []),
+          ...(shot.animation ? voxAnimationAssetIds(resolveLemoAnimation(shot.animation, document.creativeFilms)!) : []),
           ...shot.layers.map((layer) => layer.assetVersionId),
           ...shot.subtitleCueIds.flatMap((id) => beat.subtitleCues.find((cue) => cue.id === id)?.audioAssetVersionId ?? []),
         ]).filter((id): id is string => Boolean(id))).concat((document.timeline?.audioClips ?? []).map((clip) => clip.assetVersionId))),
@@ -190,7 +194,7 @@ function motionComicRenderFingerprintSource(document: MotionComicPipelineData, e
     episodeId: episode.id,
     episode: {
       id: episode.id,
-      scenes: episode.scenes.map((scene) => ({ id: scene.id, title: scene.title, shots: scene.shots.map(({ voiceLabel: _label, videoJobId: _videoJob, ...shot }) => ({ ...shot, layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先' })) })),
+      scenes: episode.scenes.map((scene) => ({ id: scene.id, title: scene.title, shots: scene.shots.map(({ voiceLabel: _label, videoJobId: _videoJob, ...shot }) => ({ ...shot, layoutTemplate: shot.layoutTemplate ?? '纪录片 · 纯画面' })) })),
       dialogueCues: episode.dialogueCues.filter((cue) => shotIds.some((shot) => shot.dialogueCueIds.includes(cue.id))),
       timeline: renderTimelineInput(episode.timeline),
     },
@@ -440,7 +444,8 @@ export function directorNarrationAlignment(
     const speechDurations = authoredSpeech.length > 0
       ? authoredSpeech.map((clip) => clip.sourceDurationMs)
       : undefined;
-    return { id: scene.id, durationMs: scene.durationMs, subtitleCues: scene.subtitleCues, audioAssetVersionIds: speechIds,
+    const lyricsOnly = document.workflowKind === 'editorial-collage' && document.productionSettings?.narration === false && speechIds.length === 0;
+    return { id: scene.id, durationMs: scene.durationMs, subtitleCues: lyricsOnly ? [] : scene.subtitleCues, audioAssetVersionIds: speechIds,
       ...(authoredSpeech.length > 0 && authoredSpeech.every(clip => clip.muted) ? { checkSceneOverflow: false } : {}),
       ...(speechDurations ? { audioDurationsMs: speechDurations } : {}) };
   }), new Map(document.assets.map((asset) => [asset.id, asset])), measuredAt);
@@ -485,6 +490,9 @@ export interface DirectorRenderScene {
   layers: DirectorRenderLayer[];
   camera: EditorialCameraKeyframe[];
   videoPath?: string;
+  videoStartMs?: number;
+  /** Preserve authored picture; add captions/audio only, never legacy decorative overlays. */
+  preserveSourcePicture?: boolean;
   videoAssetVersionId?: string;
   videoJobId?: string;
   audioPath: string;
@@ -533,8 +541,11 @@ export function directorCanvasForRatio(ratio: string): { width: number; height: 
 export function buildDirectorRenderScenes(
   document: EditorialCollagePipelineData | MotionComicPipelineData,
   explicitEpisodeId?: string,
-  scope?: { shotIds?: readonly string[] },
+  scope?: { shotIds?: readonly string[]; upstreamVideoPath?: string },
 ): DirectorRenderScene[] {
+  if (document.workflowKind === 'editorial-collage' && document.productionRun?.authoringVersion === 3 && !scope?.upstreamVideoPath) {
+    throw new Error('LEMO_PICTURE_REQUIRED: 原生工程必须使用已验证的整片画面，不能回退到旧逐镜动画。');
+  }
   const assets = new Map(document.assets.map((asset) => [asset.id, asset]));
   const jobs = new Map(document.providerJobs.map((job) => [job.id, job]));
   const issues: string[] = [];
@@ -573,18 +584,22 @@ export function buildDirectorRenderScenes(
     }
 
     const selectedShotIds = scope?.shotIds ? new Set(scope.shotIds) : undefined;
+    const presentationCues = new Map(editorialPresentationCues(document.sourceText, document.beats.flatMap(beat => beat.subtitleCues)).map(cue => [cue.id, cue]));
     document.beats.forEach((beat) => beat.shots.forEach((shot) => {
       if (selectedShotIds && !selectedShotIds.has(shot.id)) return;
       const index = scenes.length + 1;
       const shotLabel = `镜头 ${index}`;
-      const subtitleCues = sceneSubtitleCues(shot.subtitleCueIds.flatMap((cueId) => beat.subtitleCues.find((cue) => cue.id === cueId) ?? []), document.timeline?.clips.find((clip) => clip.shotId === shot.id)?.startMs ?? beat.startMs);
+      const subtitleCues = sceneSubtitleCues(shot.subtitleCueIds.flatMap((cueId) => presentationCues.get(cueId) ?? []), document.timeline?.clips.find((clip) => clip.shotId === shot.id)?.startMs ?? beat.startMs);
       const caption = shot.subtitleCueIds
-        .map((cueId) => beat.subtitleCues.find((cue) => cue.id === cueId)?.text)
+        .map((cueId) => presentationCues.get(cueId)?.text)
         .filter((text): text is string => Boolean(text))
         .join(' ') || (beat.subtitleCues.length === 0 ? beat.narration : '');
-      const authoredAudio = document.productionRun?.settings.narration === false && !document.productionRun.settings.lockedShotIds.includes(shot.id)
-        ? (productionAudioClipsForShot(document.timeline, shot) ?? []).filter(c => !['narration', 'dialogue'].includes(c.trackType))
-        : productionAudioClipsForShot(document.timeline, shot);
+      const retainedAudio = productionAudioClipsForShot(document.timeline, shot);
+      const narrationDisabled = document.productionRun?.settings.narration === false;
+      // Locks retain existing speech, and also retain a deliberately silent shot.
+      const authoredAudio = narrationDisabled && !document.productionRun!.settings.lockedShotIds.includes(shot.id)
+        ? (retainedAudio ?? []).filter(c => !['narration', 'dialogue'].includes(c.trackType))
+        : retainedAudio ?? (narrationDisabled && !shot.voiceAssetVersionId ? [] : undefined);
       const audioClips = resolveProductionAudioClips(
         authoredAudio?.map((clip) => ({
           ...clip,
@@ -595,24 +610,41 @@ export function buildDirectorRenderScenes(
       );
       const audioPath = authoredAudio !== undefined ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
 
+      if (scope?.upstreamVideoPath) {
+        if (!document.upstreamFilm || document.upstreamFilm.status !== 'ready' || document.upstreamFilm.runId !== document.productionRun?.id) throw new Error('LEMO_AGENT_NOT_READY');
+        scenes.push({ id: shot.id, index, title: editorialShotTitle(document, beat, shot), caption, subtitleCues,
+          durationMs: shot.durationMs, renderStrategy: 'living-poster', preserveSourcePicture: true, transitionIn: { type: 'cut', durationMs: 0 },
+          layers: [], camera: [], videoPath: scope.upstreamVideoPath,
+          videoStartMs: document.timeline?.clips.find(c => c.shotId === shot.id)?.startMs ?? beat.startMs,
+          audioPath, ...(authoredAudio !== undefined ? { audioClips } : {}), subtitleStyle: shot.subtitleStyle });
+        return;
+      }
+      let animation = shot.animation;
+      try { animation = resolveLemoAnimation(animation, document.creativeFilms); } catch (error) { issues.push(`${shotLabel}：${error instanceof Error ? error.message : String(error)}`); return; }
+      const native = animation?.code.engine === 'lemo-native';
+      if (native && animation?.native) {
+        const canvas = directorCanvasForRatio(document.ratio);
+        if (animation.native.width !== canvas.width || animation.native.height !== canvas.height || Math.abs(animation.native.durationMs - shot.durationMs) > .01) issues.push(`${shotLabel}：LEMO_FILM_STALE 原生画布或旁白时长已变更，请重新制作。`);
+      }
       const sourceCues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
-      const semanticBeats = shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined;
-      const compiledLayers = semanticBeats ? compileEditorialCueLayers(shot.layers, semanticBeats, shot.durationMs) : shot.layers;
+      const semanticBeats = !native && shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined;
+      const creativeScene = !native && animation?.creativeStyle?.composition === 'scene';
+      const compiledLayers = semanticBeats && !creativeScene ? compileEditorialCueLayers(shot.layers, semanticBeats, shot.durationMs) : shot.layers;
       if (shot.renderStrategy === 'remotion') {
-        if (!shot.animation) { issues.push(`${shotLabel}缺少动画设置`); return; }
-        issues.push(...validateVoxAnimation(shot.animation, document.assets).map(x => `${shotLabel}：${x}`));
-        const animationAssets = voxAnimationAssetIds(shot.animation).flatMap(id => {
+        if (!animation) { issues.push(`${shotLabel}缺少动画设置`); return; }
+        issues.push(...validateVoxAnimation(animation, document.assets).map(x => `${shotLabel}：${x}`));
+        const animationAssets = voxAnimationAssetIds(animation).flatMap(id => {
           const asset = assets.get(id); if (!asset || (asset.kind !== 'image' && asset.kind !== 'audio')) return [];
           const path = resolveAssetPath(id, asset.kind, `${shotLabel}动画素材`); return [{id,kind:asset.kind as 'image'|'audio',path}];
         });
-        if (semanticBeats) for (const layer of compiledLayers) {
+        if (semanticBeats || creativeScene) for (const layer of compiledLayers) {
           if (layer.content || layer.visible === false || !layer.assetVersionId) continue;
           const asset = assets.get(layer.assetVersionId);
           if (!asset?.localPath) { issues.push(`${shotLabel}语义图层缺少素材`); continue; }
-          if (['subject','archival'].includes(layer.kind) && !isUsableBackgroundRemoval(asset.backgroundRemoval)) issues.push(`${shotLabel}语义图层需要通过去底质量检查`);
+          if (semanticBeats && ['subject','archival'].includes(layer.kind) && !isUsableBackgroundRemoval(asset.backgroundRemoval)) issues.push(`${shotLabel}语义图层需要通过去底质量检查`);
           if (!animationAssets.some(item => item.id === asset.id)) animationAssets.push({ id: asset.id, kind: 'image', path: asset.localPath });
         }
-        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',transitionIn:editorialRenderTransition(shot),animation:shot.animation,animationAssets, ...(semanticBeats ? { semanticBeats, layers: compiledLayers.map(layer => ({ ...layer, imagePath: document.assets.find(asset => asset.id === layer.assetVersionId)?.localPath })) } : { layers: [] }),camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
+        scenes.push({id:shot.id,index,title:editorialShotTitle(document,beat,shot),caption,subtitleCues,durationMs:shot.durationMs,renderStrategy:'remotion',transitionIn:editorialRenderTransition(shot),animation:animation,animationAssets, ...(semanticBeats || creativeScene ? { semanticBeats, layers: compiledLayers.map(layer => ({ ...layer, imagePath: document.assets.find(asset => asset.id === layer.assetVersionId)?.localPath })) } : { layers: [] }),camera:[],audioPath,...(authoredAudio !== undefined ? {audioClips} : {}),subtitleStyle:shot.subtitleStyle});
         return;
       }
 
@@ -626,7 +658,7 @@ export function buildDirectorRenderScenes(
         const videoAsset = shot.videoAssetVersionId ? assets.get(shot.videoAssetVersionId) : undefined;
         const videoJob = shot.videoJobId ? jobs.get(shot.videoJobId) : undefined;
         if (!shot.videoJobId || !videoJob) issues.push(`${shotLabel}缺少 AI 动态海报任务`);
-        else if (videoJob.nodeId !== shot.id || videoJob.capability !== 'image-to-video') issues.push(`${shotLabel}的 AI 视频任务归属或能力错误`);
+        else if ((videoJob.nodeId !== shot.id && videoJob.nodeId !== shot.narrationSplit?.sourceShotId) || videoJob.capability !== 'image-to-video') issues.push(`${shotLabel}的 AI 视频任务归属或能力错误`);
         else if (videoJob.status !== 'completed') issues.push(`${shotLabel}的 AI 动态海报任务尚未成功完成`);
         if (videoAsset && videoAsset.providerJobId !== shot.videoJobId) issues.push(`${shotLabel}的视频资产与生成任务不匹配`);
         scenes.push({
@@ -641,6 +673,7 @@ export function buildDirectorRenderScenes(
           layers: [],
           camera: [],
           videoPath,
+          ...(shot.narrationSplit ? { videoStartMs: shot.narrationSplit.sourceStartMs } : {}),
           videoAssetVersionId: shot.videoAssetVersionId,
           videoJobId: shot.videoJobId,
           audioPath,
@@ -722,6 +755,9 @@ export function buildDirectorRenderScenes(
       if (!nativeAudio && !shot.voiceAssetVersionId) {
         for (const cue of dialogue) {
           if (!cue.voiceAssetVersionId || !episode.timeline.audioClips?.some((clip) => clip.id === `dialogue-clip-${cue.id}` && clip.shotId === shot.id && clip.assetVersionId === cue.voiceAssetVersionId)) issues.push(`${shotLabel}的对白“${cue.text.slice(0, 18)}”尚未生成独立配音`);
+          const speech = episode.timeline.audioClips?.find(clip => clip.id === `dialogue-clip-${cue.id}`);
+          const measured = assets.get(cue.voiceAssetVersionId ?? cue.audioAssetVersionId ?? '')?.durationMs;
+          if (speech && measured && (speech.durationMs ?? 0) + 30 < measured) issues.push(`${shotLabel}的对白“${cue.text.slice(0, 18)}”被时间槽截断，请校准对白或增加镜头时长`);
         }
       }
       const authoredAudio = productionAudioClipsForShot(episode.timeline, shot)?.filter(clip=>!nativeAudio||!['dialogue','narration'].includes(clip.trackType));
@@ -748,7 +784,7 @@ export function buildDirectorRenderScenes(
         else if (videoJob.nodeId !== shot.id || videoJob.capability !== 'image-to-video' || videoJob.episodeId !== episode.id) issues.push(`${shotLabel}的远程视频任务归属或能力错误`);
         else if (videoJob.status !== 'completed') issues.push(`${shotLabel}的远程视频任务尚未成功完成`);
         if (videoAsset && videoAsset.providerJobId !== shot.videoJobId) issues.push(`${shotLabel}的视频资产与生成任务不匹配`);
-        if (videoJob && videoJob.inputHash !== motionComicVideoInputHash(document, shot, videoJob.providerId, videoJob.model)) issues.push(`${shotLabel}的远程视频输入已变化，请重新生成视频`);
+        if (videoJob && !motionComicVideoJobInputsMatch(document, shot, videoJob)) issues.push(`${shotLabel}的远程视频输入已变化，请重新生成视频`);
         scenes.push({
           id: shot.id,
           index,
@@ -764,7 +800,7 @@ export function buildDirectorRenderScenes(
           videoJobId: shot.videoJobId,
           audioPath,
           ...(nativeAudio ? {audioClips:[{id:`native-${shot.id}`,assetVersionId:shot.videoAssetVersionId!,path:audioPath,trackType:'dialogue',startMs:0,durationMs:shot.durationMs},...(audioClips??[]).filter(clip=>!['dialogue','narration'].includes(clip.trackType))]} : hasExplicitAudioMix ? { audioClips } : {}),
-          layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先',
+          layoutTemplate: shot.layoutTemplate ?? '纪录片 · 纯画面',
           motionPreset: shot.motionPreset,
           subtitleStyle: shot.subtitleStyle,
         });
@@ -789,7 +825,7 @@ export function buildDirectorRenderScenes(
         camera: [],
         audioPath,
         ...(hasExplicitAudioMix ? { audioClips } : {}),
-        layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先',
+        layoutTemplate: shot.layoutTemplate ?? '纪录片 · 纯画面',
         motionPreset: shot.motionPreset,
         subtitleStyle: shot.subtitleStyle,
       });
@@ -962,7 +998,7 @@ export function evaluateDirectorQuality(
     ...(narrationAlignment.status === 'failed' ? { detail: narrationAlignment.samples.filter((sample) => sample.status === 'mismatch').map((sample) => `${sample.shotId}：${sample.detail || '实测音频与规划时长不一致'}`).join('；') } : narrationAlignment.status === 'pending' ? { detail: '部分旁白资产缺少实测时长，当前语速仅能作为规划值。' } : {}),
   });
 
-  const expectedDurationMs = scenes.reduce((sum, scene) => sum + Math.max(800, scene.durationMs), 0);
+  const expectedDurationMs = scenes.reduce((sum, scene) => sum + scene.durationMs, 0);
   const durationToleranceMs = Math.max(160, Math.ceil(2_000 / 24));
   const expectedCanvas = directorCanvasForRatio(document.ratio);
   const mediaIssues = [
@@ -1072,6 +1108,9 @@ export function buildDirectorSceneHtml(input: {
   layers?: readonly DirectorSceneHtmlLayer[];
   camera?: readonly EditorialCameraKeyframe[];
   videoUrl?: string;
+  videoStartMs?: number;
+  /** Preserve authored picture; add captions/audio only, never legacy decorative overlays. */
+  preserveSourcePicture?: boolean;
   renderStrategy?: DirectorRenderableStrategy;
   durationMs: number;
   modeLabel: string;
@@ -1080,12 +1119,13 @@ export function buildDirectorSceneHtml(input: {
   motionPreset?: string;
   subtitleStyle?: string;
 }): string {
-  const durationSeconds = Math.max(0.8, input.durationMs / 1000);
+  const durationSeconds = Math.max(0.001, input.durationMs / 1000);
+  const comicFilm = input.modeLabel === 'AI 漫剧';
   const title = escapeHtml(input.title);
   const caption = escapeHtml(input.caption);
   const modeLabel = escapeHtml(input.modeLabel);
   const shotIndex = String(input.index).padStart(2, '0');
-  const layoutClass = directorSceneLayoutClass(input.layoutTemplate);
+  const layoutClass = input.preserveSourcePicture ? 'native-picture' : directorSceneLayoutClass(input.layoutTemplate);
   const subtitleClass = directorSceneSubtitleClass(input.subtitleStyle);
   const subtitleMarkup = input.subtitleCues === undefined ? (input.caption.trim() ? `<div class="caption ${subtitleClass}">${caption}</div>` : '') : input.subtitleCues.map((cue) => {
     if (!Number.isFinite(cue.startMs) || !Number.isFinite(cue.endMs) || cue.startMs < 0 || cue.endMs > input.durationMs || cue.endMs <= cue.startMs) throw new Error('DIRECTOR_RENDER_SUBTITLE_RANGE: 字幕时间超出镜头范围。');
@@ -1137,6 +1177,7 @@ export function buildDirectorSceneHtml(input: {
     .frame{position:relative;width:100%;height:100%;overflow:hidden;background:#090b0c}
     .frame.comic{inset:2%;width:96%;height:96%;border:8px solid #fff;box-sizing:border-box}
     .scene-stage{position:absolute;inset:-2%;overflow:hidden;transform-origin:center center}
+    .frame[data-render-strategy="living-poster"] .scene-stage{inset:0}
     .scene-layer,#scene-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:center center;will-change:transform,opacity}
     .scene-cutout{filter:drop-shadow(0 8px 6px rgba(0,0,0,.22))}
     .scene-native-text{box-sizing:border-box;display:grid;place-items:center;filter:drop-shadow(0 9px 0 rgba(0,0,0,.17))}
@@ -1159,14 +1200,15 @@ export function buildDirectorSceneHtml(input: {
 <body>
   <div class="frame ${layoutClass}" data-render-strategy="${renderStrategy}">
     <div id="scene-stage" class="scene-stage">${mediaMarkup}</div>
-    <div class="shade"></div>
-    ${input.modeLabel === 'VOX' ? '' : `<div class="meta"><b>${modeLabel}</b><span>SHOT ${shotIndex}</span></div>`}
-    <div class="copy">${input.title.trim() && !(input.modeLabel === 'VOX' && layers.some((layer) => layer.content?.text.trim() === input.title.trim())) ? `<div class="title">${title}</div>` : ''}${subtitleMarkup}</div>
+    ${comicFilm || input.preserveSourcePicture ? '' : '<div class="shade"></div>'}
+    ${input.modeLabel === 'VOX' || comicFilm || input.preserveSourcePicture ? '' : `<div class="meta"><b>${modeLabel}</b><span>SHOT ${shotIndex}</span></div>`}
+    <div class="copy">${!comicFilm && !input.preserveSourcePicture && input.title.trim() && !(input.modeLabel === 'VOX' && layers.some((layer) => layer.content?.text.trim() === input.title.trim())) ? `<div class="title">${title}</div>` : ''}${subtitleMarkup}</div>
   </div>
   <script nonce="director-render">
     (() => {
       const duration = ${JSON.stringify(durationSeconds)};
       const durationMs = ${JSON.stringify(Math.max(1, input.durationMs))};
+      const videoStart = ${JSON.stringify(Math.max(0, finiteNumber(input.videoStartMs ?? 0, 0)) / 1000)};
       const layers = ${safeScriptJson(normalizedLayers)};
       const camera = ${safeScriptJson(normalizedCamera)};
       const stage = document.getElementById('scene-stage');
@@ -1233,8 +1275,8 @@ export function buildDirectorSceneHtml(input: {
       };
       const seekVideo = (seconds) => {
         if (!video || video.readyState < 1) return Promise.resolve();
-        const maximum = Number.isFinite(video.duration) && video.duration > 0 ? Math.max(0, video.duration - .001) : duration;
-        const target = Math.max(0, Math.min(maximum, seconds));
+        const maximum = Number.isFinite(video.duration) && video.duration > 0 ? Math.max(0, video.duration - .001) : videoStart + duration;
+        const target = Math.max(0, Math.min(maximum, videoStart + seconds));
         if (Math.abs(video.currentTime - target) < .002) return Promise.resolve();
         return new Promise((resolve, reject) => {
           let settled = false;
@@ -1261,7 +1303,7 @@ export function buildDirectorSceneHtml(input: {
       };
       const tick = (now) => {
         if (!playing) return;
-        if (video) current = Math.min(duration, Math.max(0, video.currentTime));
+        if (video) current = Math.min(duration, Math.max(0, video.currentTime - videoStart));
         else current = Math.min(duration, Math.max(0, (now - startedAt) / 1000));
         applyFrame(current);
         if (current >= duration || (video && video.ended)) { playing = false; return; }
@@ -1277,7 +1319,7 @@ export function buildDirectorSceneHtml(input: {
       const pause = () => {
         playing = false;
         cancelAnimationFrame(frame);
-        if (video) { current = Math.min(duration, Math.max(0, video.currentTime)); video.pause(); }
+        if (video) { current = Math.min(duration, Math.max(0, video.currentTime - videoStart)); video.pause(); }
         applyFrame(current);
       };
       window.__tl = { seek, duration: () => duration, play, pause };
@@ -1285,7 +1327,8 @@ export function buildDirectorSceneHtml(input: {
         video?.pause();
         current = 0;
         applyFrame(0);
-        window.__ready = true;
+        if (!video || videoStart === 0) window.__ready = true;
+        else void seekVideo(0).then(() => { window.__ready = true; }, error => { window.__mediaError = error.message; });
       };
       if (!video) markReady();
       else if (video.readyState >= 2) markReady();
@@ -1301,9 +1344,10 @@ export function buildDirectorSceneHtml(input: {
 }
 
 /** Shared by browser preview and export; all copy is escaped and fitted as native SVG text. */
-export function buildDirectorTextLayerSvg(text: string, widthPx = 1000, heightPx = 280): string {
+export function buildDirectorTextLayerSvg(text: string, widthPx = 1000, heightPx = 280, styleId?: string): string {
   const width = clamp(finiteNumber(widthPx, 1000), 100, 4000);
   const height = clamp(finiteNumber(heightPx, 280), 60, 4000);
+  if (styleId) return buildCreativeTextSvg(text, width, height, styleId);
   const padding = Math.min(width, height) * 0.14;
   const measure = (value: string) => Array.from(value).reduce((sum, char) => sum + (/[^\u0000-\u00ff]/u.test(char) ? 1 : /\s/u.test(char) ? 0.34 : 0.62), 0);
   const wrap = (fontSize: number): string[] => text.split('\n').flatMap((paragraph) => {

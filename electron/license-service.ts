@@ -55,7 +55,7 @@ export class LicenseService {
 
   constructor(private readonly options: { config: unknown; vaultPath: string; encryption: Encryption; packaged: boolean; machineId?: () => Promise<string>; onChange?: (status: LicenseStatus) => Promise<void> | void }) {}
 
-  get enforced(): boolean { return this.options.packaged || !!this.config; }
+  get enforced(): boolean { return true; }
   now(): number { return Math.floor(Math.max(Date.now() / 1000, this.startWall + (performance.now() - this.startMono) / 1000, this.vault?.lastClock ?? 0)); }
 
   async initialize(): Promise<void> {

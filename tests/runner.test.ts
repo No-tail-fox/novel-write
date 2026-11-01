@@ -538,6 +538,8 @@ describe('task runner', () => {
       const renderedMessages = requests.map((request) => request.messages.map((message) => message.content).join('\n')).join('\n');
       expect(renderedMessages).toContain('预审模板标记');
       expect(renderedMessages).toContain('改写模板标记');
+      expect(requests.some(request => request.step === 1 && request.messages.some(message => message.content.includes('【赛道写作规则】人物故事')))).toBe(true);
+      expect(requests.filter(request => request.step !== 1).some(request => request.messages.some(message => message.content.includes('【赛道写作规则】')))).toBe(false);
       expect(renderedMessages).toContain('封面模板标记');
       expect(renderedMessages).toContain('分镜模板标记');
       expect(renderedMessages).toContain('绘图模板标记');
@@ -1987,6 +1989,8 @@ describe('task runner', () => {
       expect(await readFile(join(managedTaskWorkDir(dir, task), 'cover-image.png'))).toEqual(tinyPng);
       expect(draftPayloads[0].coverImagePath).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
       expect(draftMeta.draft_cover).toBe(join(managedTaskWorkDir(dir, task), 'cover-image.png'));
+      // List reads use the background cover cache; resolve its owner first.
+      await db.getTaskSummary(task.id);
       expect((await db.listTaskSummaries()).items[0].projectCover?.path).toBe(pipeline.assets.cover[0].path);
     } finally {
       await db.close();
@@ -4120,3 +4124,127 @@ function wavTone(durationMs: number): Buffer {
   }
   return buffer;
 }
+
+describe('ordinary task dual delivery integration', () => {
+  it('exports MP4 without a Jianying directory or invoking the draft bridge', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-mp4-only-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let bridgeCalls = 0;
+    try {
+      const state = await db.getState();
+      await db.upsertConfig({ ...state.config, jianying: { ...state.config.jianying, draftPath: '' } });
+      const task = await db.createTask({ inputText: sampleInput, outputTargets: ['mp4'] });
+      await runTask(db, task, {
+        appDataDir: dir, generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async scenes => writeSceneAssets(join(dir, 'media'), scenes, 'png', tinyPng),
+        synthesizeNarration: async scenes => writeSceneAssets(join(dir, 'media'), scenes, 'wav', wavTone(1200)),
+        draftWriterOptions: { runBridge: async () => { bridgeCalls++; throw new Error('Draft must not run for MP4-only'); } },
+        renderShortVideo: async input => { expect(input.draftRootDir).toBe(''); const file = join(input.workDir, 'film.mp4'); await writeFile(file, 'unit-test-mp4'); return file; },
+      });
+      const complete = (await db.getState()).tasks.find(t => t.id === task.id)!;
+      expect(complete.status).toBe('completed');
+      expect(complete.deliverables?.mp4?.status).toBe('completed');
+      expect(complete.deliverables?.['jianying-draft']).toBeUndefined();
+      expect(complete.draftDir).toBeNull();
+      expect(bridgeCalls).toBe(0);
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it('keeps a successful draft when MP4 fails and retries without regenerating media', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-dual-output-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    let imageCalls = 0, voiceCalls = 0, bridgeCalls = 0, renderCalls = 0;
+    try {
+      const state = await db.getState();
+      await db.upsertConfig({ ...state.config, jianying: { ...state.config.jianying, draftPath: join(dir, 'drafts') } });
+      const task = await db.createTask({ inputText: sampleInput, outputTargets: ['mp4', 'jianying-draft'] });
+      const options: Omit<RunTaskOptions, 'workDir'> = {
+        appDataDir: dir, generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async scenes => { imageCalls++; return writeSceneAssets(join(dir, 'media'), scenes, 'png', tinyPng); },
+        synthesizeNarration: async scenes => { voiceCalls++; return writeSceneAssets(join(dir, 'media'), scenes, 'wav', wavTone(1200)); },
+        draftWriterOptions: { runBridge: async payload => { bridgeCalls++; return fakeBridge(payload); } },
+        renderShortVideo: async input => { renderCalls++; if (renderCalls === 1) throw new Error('test encoder failure'); const file = join(input.workDir, 'film.mp4'); await writeFile(file, 'unit-test-mp4'); return file; },
+      };
+      await expect(runTask(db, task, options)).rejects.toThrow('test encoder failure');
+      const failed = (await db.getState()).tasks.find(t => t.id === task.id)!;
+      expect(failed.deliverables?.['jianying-draft']?.status).toBe('completed');
+      expect(failed.deliverables?.mp4?.status).toBe('failed');
+      expect(failed.status).toBe('paused');
+      expect(failed.failedStep).toBe(6);
+      expect(failed.retryFromStep).toBe(6);
+      const before = [imageCalls, voiceCalls];
+      await runTask(db, failed, options);
+      const complete = (await db.getState()).tasks.find(t => t.id === task.id)!;
+      expect(complete.status).toBe('completed');
+      expect(complete.deliverables?.mp4?.status).toBe('completed');
+      expect([imageCalls, voiceCalls]).toEqual(before);
+      expect(bridgeCalls).toBe(1);
+      expect(renderCalls).toBe(2);
+      expect(complete.outputTargets).toEqual(['mp4', 'jianying-draft']);
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('Pixelle ordinary task runner integration', () => {
+  it.each(['static_default.html', 'video_default.html', 'asset_default.html'])('skips paid scene image generation for %s and transforms once before delivery', async name => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-pixelle-runner-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const { runPixelleWorker } = await import('../src/shared/pixelle-worker');
+      const catalog = await runPixelleWorker({ mode: 'catalog', workDir: join(dir, 'catalog') }, { appRoot: process.cwd() });
+      const template = catalog.templates.find(t => t.ref.path === '1080x1920/' + name)!;
+      const task = await db.createTask({ inputText: sampleInput, outputTargets: ['mp4'], visualTemplateRef: template.ref, pixelleOptions: { subtitleMode: 'template', ...(template.type === 'static' ? {} : { mediaKind: 'video', videoPath: 'contract-only.mp4' }) }, coverImageMode: 'off' });
+      let imageCalls = 0, transforms = 0;
+      await runTask(db, task, {
+        appDataDir: dir, pixelleTemplate: template,
+        generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async () => { imageCalls++; throw new Error('Must not call paid image provider'); },
+        synthesizeNarration: async scenes => writeSceneAssets(join(dir, 'media'), scenes, 'wav', wavTone(1200)),
+        preparePixelleOutputs: async input => { transforms++; expect(input.generatedImages).toHaveLength(0); return input; },
+        renderShortVideo: async input => { expect(transforms).toBe(1); const output = join(input.workDir, 'contract.mp4'); await writeFile(output, 'runner contract only; not a real MP4'); return output; },
+      });
+      const complete = (await db.getState()).tasks.find(t => t.id === task.id)!;
+      expect(complete.status).toBe('completed'); expect(imageCalls).toBe(0); expect(transforms).toBe(1);
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+  }, 30000);
+  it('rejects an unconfigured Pixelle host before calling a paid provider', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-pixelle-preflight-'));
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const { runPixelleWorker } = await import('../src/shared/pixelle-worker');
+      const catalog = await runPixelleWorker({ mode: 'catalog', workDir: dir }, { appRoot: process.cwd() });
+      const task = await db.createTask({ inputText: sampleInput, visualTemplateRef: catalog.templates[0].ref });
+      let calls = 0;
+      await expect(runTask(db, task, { appDataDir: dir, generatePipelineArtifact: async () => { calls++; return makeArtifact(); } })).rejects.toThrow('运行器未配置');
+      expect(calls).toBe(0);
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+});
+
+
+describe('short-video material pool runtime', () => {
+  it('feeds the MP4 output from local videos without calling the scene image provider', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runner-material-pool-')), db = await FileDatabase.open(join(dir, 'db.sqlite'));
+    try {
+      const task = await db.createTask({ inputText: sampleInput, outputTargets: ['mp4'], shortVideoMaterials: { files: ['external.mp4'], fit: 'cover' } });
+      let imageCalls = 0, materialCalls = 0;
+      await runTask(db, task, { appDataDir: dir, generatePipelineArtifact: async () => makeArtifact(),
+        generateImages: async () => { imageCalls++; throw new Error('must not generate images'); },
+        prepareMaterialVideos: async scenes => { materialCalls++; const path = join(dir, 'owned.mp4'); await writeFile(path, 'unit-video'); return scenes.map(scene => ({ sceneId: scene.id, path, originalName: 'owned.mp4', durationMs: 5000, width: 320, height: 180, source: 'local-upload' as const, trimStartMs: 0, fit: 'cover' as const, muted: true as const })); },
+        synthesizeNarration: async scenes => writeSceneAssets(join(dir, 'media'), scenes, 'wav', wavTone(1200)),
+        renderShortVideo: async input => { expect(input.generatedImages).toEqual([]); expect(input.generatedVideos?.length).toBe(input.scenes.length); const path = join(dir, 'unit-output.mp4'); await writeFile(path, 'unit-mp4'); return path; },
+      });
+      expect(imageCalls).toBe(0); expect(materialCalls).toBe(1);
+      expect((await db.getState()).tasks.find(t => t.id === task.id)?.status).toBe('completed');
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+  it('fails before content generation when the managed-material runtime is unavailable', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runner-material-preflight-')), db = await FileDatabase.open(join(dir, 'db.sqlite'));
+    try {
+      const task = await db.createTask({ inputText: sampleInput, shortVideoMaterials: { files: ['external.mp4'], fit: 'cover' } });
+      let calls = 0;
+      await expect(runTask(db, task, { appDataDir: dir, generatePipelineArtifact: async () => { calls++; return makeArtifact(); } })).rejects.toThrow('素材混剪运行器未配置');
+      expect(calls).toBe(0);
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+});

@@ -138,12 +138,12 @@ export function resolveMotionComicStageState(
       detail: `${readiness.storyboardReadyCount}/${readiness.shotCount} 镜头图已就绪`,
     },
     video: {
-      ready: readiness.storyboardComplete,
+      ready: readiness.storyboardReadyCount > 0,
       complete: readiness.videoComplete,
       detail: `${readiness.videoReadyCount}/${readiness.shotCount} 远程视频已就绪`,
     },
     audio: {
-      ready: readiness.videoComplete,
+      ready: scenesReady && readiness.shotCount > 0,
       complete: audioStageComplete,
       detail: `${readiness.audioReadyCount}/${readiness.cueCount} 句已配音`,
     },

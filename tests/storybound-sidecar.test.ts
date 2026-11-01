@@ -380,7 +380,7 @@ print(json.dumps(cases))
       expect(script).toContain('"-filter_complex"');
       expect(script).toContain('xfade=transition=');
       expect(script).toContain('acrossfade=d=');
-      expect(script).toContain('cover_fps = str(first_scene.get("fps") or 24)');
+      expect(script).toContain('cover_fps = str(fps)');
       expect(script).toContain('"-framerate",\n            cover_fps');
       expect(script).toContain('def _compose_hard_cut_groups');
       expect(script).not.toContain('"concat.txt"');

@@ -29,7 +29,7 @@ export interface HistoryPageRequestState<F extends HistoryFamily, T extends { id
 }
 
 export interface HistoryPageRequestController<F extends HistoryFamily, T extends { id: string }> {
-  activate: (request: FamilyHistoryRequest<F>, epoch: number) => boolean;
+  activate: (request: FamilyHistoryRequest<F>, epoch: number, isTombstoned?: HistoryTombstoneBarrier<F>) => boolean;
   load: (loadPage: HistoryPageLoader<F, T>, isTombstoned: HistoryTombstoneBarrier<F>) => Promise<void>;
   next: (expectedKey?: string) => HistoryPageNavigation | null;
   previous: (expectedKey?: string) => HistoryPageNavigation | null;
@@ -88,6 +88,7 @@ function stateFromSnapshot<F extends HistoryFamily, T extends { id: string }>(
 
 export function createHistoryPageRequestController<F extends HistoryFamily, T extends { id: string }>(
   family: F,
+  options: { keepPageOnRefresh?: boolean } = {},
 ): HistoryPageRequestController<F, T> {
   const store = createHistoryPageStore<F, T>(family);
   const listeners = new Set<() => void>();
@@ -132,7 +133,7 @@ export function createHistoryPageRequestController<F extends HistoryFamily, T ex
   };
 
   const controller: HistoryPageRequestController<F, T> = {
-    activate(incoming, incomingEpoch) {
+    activate(incoming, incomingEpoch, isTombstoned) {
       const request = canonicalHistoryPageRequest(family, incoming);
       const key = historyPageRequestKey(family, request);
       const transportSignature = historyPageTransportSignature(family, request);
@@ -142,7 +143,7 @@ export function createHistoryPageRequestController<F extends HistoryFamily, T ex
       const transportChanged = state.transportSignature !== transportSignature;
       if (!keyChanged && !epochChanged && !transportChanged) return false;
       generation += 1;
-      if (epochChanged) store.invalidateFamily();
+      if (epochChanged) store.invalidateFamily(Boolean(options.keepPageOnRefresh && !keyChanged && !transportChanged), isTombstoned);
       store.begin(request);
       publish(stateFromSnapshot(store.current(), epoch, transportSignature, false, null));
       return true;
@@ -224,8 +225,8 @@ export function useHistoryPage<F extends HistoryFamily, T extends { id: string }
 
   useLayoutEffect(() => {
     committedKeyRef.current = key;
-    controller.activate(options.request, epoch);
-  }, [controller, epoch, key, options.request, transportSignature]);
+    controller.activate(options.request, epoch, options.isTombstoned);
+  }, [controller, epoch, key, options.request, options.isTombstoned, transportSignature]);
 
   useLayoutEffect(() => {
     controller.mount();

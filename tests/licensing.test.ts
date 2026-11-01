@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import { LicenseService } from '../electron/license-service';
 import { compareVersions, LicenseTransport, verifyEnvelope, verifyRelease, type LicensePublicConfig } from '../electron/license-security';
 import { UpdateService } from '../electron/update-service';
-import { setGenerationAuthorization } from '../src/shared/generation-authorization';
+import { resetGenerationAuthorization, setGenerationAuthorization } from '../src/shared/generation-authorization';
 import { fetchWithTimeout } from '../src/shared/http';
 import { needsLicense } from '../electron/license-policy';
 import { defaultConfig } from '../src/shared/config';
@@ -68,10 +68,13 @@ describe('real TLS licensing and signed updates', () => {
     const content = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(32768, 37)]);
     await writeFile(source, content);
     command('publish', '--file', source, '--version', '2.0.0', '--minimum-version', '1.5.0', '--notes', 'test');
+    operate('announce', '--title', '服务问题公告', '--body', '服务临时维护说明');
     const updates = join(directory, 'updates');
     const service = new UpdateService({ license, version: '1.0.0', directory: updates, packaged: false, canInstall: () => true, quit: vi.fn() });
     const state = await service.check();
     expect(state.required).toBe(true);
+    expect(state.announcements.map(({ category }) => category)).toEqual(['problem', 'update']);
+    expect(state.announcements.find(({ category }) => category === 'update')).toMatchObject({ version: '2.0.0', body: 'test' });
     expect(() => service.assertVersionAllowed()).toThrow();
     await mkdir(updates);
     const partial = join(updates, `${state.release!.filename}.part`);
@@ -118,16 +121,31 @@ it('verifies Ed25519 signatures and rejects tampered/expired manifests', () => {
   expect(compareVersions('10.0.0', '2.9.9')).toBe(1);
 });
 
+it('fails closed when the generation authorization hook has not been initialized', async () => {
+  const fetchImpl = vi.fn(async () => new Response('should not dispatch'));
+  resetGenerationAuthorization();
+  try {
+    await expect(fetchWithTimeout('https://provider.example/v1/generate', { generation: true, fetchImpl }))
+      .rejects.toMatchObject({ code: 'LICENSE_NOT_READY' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  } finally { setGenerationAuthorization(async () => undefined); }
+});
+
 it('denies generation at dispatch while preserving non-generating requests', async () => {
   const fetchImpl = vi.fn(async () => new Response('ok'));
   setGenerationAuthorization(async () => { throw new Error('locked'); });
   try {
     await expect(fetchWithTimeout('https://example.com', { generation: true, fetchImpl })).rejects.toThrow('locked');
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(needsLicense('task:update-status', { status: 'running' })).toBe(true);
-    expect(needsLicense('task:update-status', { status: 'paused' })).toBe(false);
-    expect(needsLicense('task:rerun-step', { step: 6, mode: 'regenerate' })).toBe(false);
-    expect(needsLicense('task:rerun-step', { step: 4, mode: 'regenerate' })).toBe(true);
+    expect(needsLicense('app:get-bootstrap')).toBe(true);
+    expect(needsLicense('task:update-status')).toBe(true);
+    expect(needsLicense('task:rerun-step')).toBe(true);
+    expect(needsLicense('vox-production:control')).toBe(true);
+    expect(needsLicense('llm:test-config')).toBe(true);
+    expect(needsLicense('config:test')).toBe(true);
+    for (const channel of ['license:status', 'license:activate', 'license:refresh', 'license:release', 'window:control', 'update:status', 'update:check', 'update:download', 'update:install'] as const) {
+      expect(needsLicense(channel)).toBe(false);
+    }
   } finally { setGenerationAuthorization(async () => undefined); }
 });
 

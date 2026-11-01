@@ -1,0 +1,5 @@
+config/providers.json
+data/catalog.json
+data/health.json
+data/.tmp-*
+logs/

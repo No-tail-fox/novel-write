@@ -9,6 +9,7 @@ export type ImageLabProviderChoice = 'gpt_image' | 'jimeng' | 'custom';
 export type ImageLabResolution = '1K' | '2K' | '4K';
 
 export interface ImageLabWorkspaceDraft {
+  imageProfileId?: string;
   version: 1;
   savedAt: string;
   tab: ImageLabTab;
@@ -74,6 +75,7 @@ export function readImageLabWorkspaceDraft(storage: Pick<Storage, 'getItem'>): I
       selectedRatios: normalizeStringList(value.selectedRatios, 12),
       selectedStyles: normalizeStringList(value.selectedStyles, 24),
       provider: value.provider as ImageLabProviderChoice,
+      imageProfileId: typeof value.imageProfileId === 'string' ? value.imageProfileId : undefined,
       resolution: value.resolution as ImageLabResolution,
       quality: value.quality as ImageGenerationQuality,
       referenceImagePath: normalizeBoundedText(value.referenceImagePath, 20_000),

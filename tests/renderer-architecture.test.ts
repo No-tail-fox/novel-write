@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RouteErrorBoundary } from '../src/app/RouteErrorBoundary';
 import { styleLabel } from '../src/features/tasks/task-formatters';
 import { styleOptions } from '../src/shared/editorial-options';
+import { approvedEditorialInventories } from './fixtures/editorial-workbench-parity';
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(`../${path}`, import.meta.url), 'utf8').catch(() => '');
@@ -213,13 +214,17 @@ describe('renderer application ownership architecture', () => {
     expect(composition).not.toContain('function makeFallbackApi(');
   });
 
-  it('owns one new-task action and every sidebar entry with three generation workbenches', async () => {
+  it('owns one new-task action and every sidebar entry with four generation workbenches', async () => {
     const navigation = await import('../src/app/navigation');
     expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
-    expect(navigation.sidebarNavItems).toHaveLength(22);
-    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(22);
-    expect(navigation.navigationItems).toHaveLength(23);
-    expect(navigation.generationNavItems.map((item) => item.view)).toEqual(['image-lab', 'voice-lab', 'video-lab']);
+    const sidebarViews = ['projects', 'editorial-collage', 'motion-comic', 'html-video', 'music-mv',
+      'person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab', 'music-lab',
+      'hot-board', 'benchmark', 'book-selection', 'viral-analyzer', 'prompt-templates', 'draft-templates',
+      'queue', 'history', 'settings', 'account', 'activation'];
+    expect(navigation.sidebarNavItems.map((item) => item.view)).toEqual(sidebarViews);
+    expect(new Set(navigation.sidebarNavItems.map((item) => item.view)).size).toBe(sidebarViews.length);
+    expect(navigation.navigationItems.map((item) => item.view)).toEqual(['new-task', ...sidebarViews]);
+    expect(navigation.generationNavItems.map((item) => item.view)).toEqual(['image-lab', 'voice-lab', 'video-lab', 'music-lab']);
     expect(navigation.navigationItemForView('task-detail')).toMatchObject({ label: '任务详情', hint: '单任务流水线' });
   });
 
@@ -298,7 +303,8 @@ describe('task feature ownership architecture', () => {
     ]);
     const createInput = types.slice(types.indexOf('export type CreateTaskInput'), types.indexOf('export interface TaskEvent'));
     const fields = [...createInput.matchAll(/^\s*\| '([^']+)'/gmu)].map((match) => match[1]);
-    expect(fields).toHaveLength(56);
+    expect([...fields].sort()).toEqual([...approvedEditorialInventories.createTaskInputFields.values].sort());
+    expect(fields).toContain('projectModels');
     expect(builder).toContain('...input');
     const explicitlyOwned = fields.filter((field) => page.includes(field));
     expect(explicitlyOwned.length).toBeGreaterThanOrEqual(35);
@@ -598,9 +604,14 @@ describe('renderer application composition architecture', () => {
     expect(registry).toContain("import { lazy } from 'react'");
     expect(routes).toContain('<Suspense fallback={<RouteLoadingState />}>');
     expect(routes).toContain('</Suspense>');
-    expect(dynamicRoutes).toHaveLength(24);
-    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(24);
-    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(24);
+    const expectedPages = ['ProjectHomePage', 'ConversationWorkbenchPage', 'NewTaskPage', 'HotBoardPage',
+      'QueuePage', 'HistoryPage', 'TaskDetailPage', 'EditorialCollagePage', 'MotionComicPage', 'HtmlVideoPage',
+      'ImageLabPage', 'VoiceLabPage', 'VideoLabPage', 'MusicLabPage', 'MusicMvPage', 'BookSelectionPage',
+      'BenchmarkImportPage', 'AssetLibraryPage', 'CopyStudioPage', 'ViralAnalyzerPage', 'PromptTemplatesPage',
+      'DraftTemplatesPage', 'SettingsPage', 'AccountPage', 'ActivationPage'];
+    expect(dynamicRoutes.map((match) => match[2]).sort()).toEqual([...expectedPages].sort());
+    expect(new Set(dynamicRoutes.map((match) => match[1])).size).toBe(expectedPages.length);
+    expect(new Set(dynamicRoutes.map((match) => match[2])).size).toBe(expectedPages.length);
     expect(`${routes}\n${registry}`).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
 

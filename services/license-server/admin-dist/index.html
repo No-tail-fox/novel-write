@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f6f8">
+    <title>StoryDream 管理后台</title>
+    <link rel="stylesheet" href="/admin/admin.css">
+    <script src="/admin/admin.js" defer></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <section id="login-view" class="login-view" hidden>
+        <div class="login-panel">
+          <div class="brand-mark" aria-hidden="true">SD</div>
+          <p class="eyebrow">STORYDREAM · ADMIN</p>
+          <h1>管理后台</h1>
+          <p class="muted">授权 · 设备 · 版本 · 公告</p>
+          <form id="login-form">
+            <label for="login-password">管理员密码</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" autofocus>
+            <button class="button button-primary button-wide" type="submit">登录</button>
+          </form>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+        </div>
+      </section>
+
+      <section id="admin-view" hidden>
+        <header class="topbar">
+          <a class="brand" href="/admin/" aria-label="StoryDream 管理后台首页">
+            <span class="brand-mark" aria-hidden="true">SD</span>
+            <span><strong>StoryDream</strong><small>管理后台</small></span>
+          </a>
+          <div class="topbar-actions">
+            <span class="connection-state"><span class="state-dot"></span>服务已连接</span>
+            <button id="logout-button" class="button button-quiet" type="button">退出登录</button>
+          </div>
+        </header>
+
+        <div class="content-wrap">
+          <nav class="module-nav" aria-label="后台功能">
+            <button type="button" data-view="announcements" aria-pressed="true">公告</button>
+            <button type="button" data-view="releases" aria-pressed="false">版本更新</button>
+            <button type="button" data-view="licenses" aria-pressed="false">授权码</button>
+            <button type="button" data-view="devices" aria-pressed="false">设备</button>
+            <button type="button" data-view="audit" aria-pressed="false">操作记录</button>
+          </nav>
+          <div id="summary-strip" class="summary-strip" aria-label="服务概况"></div>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">STORYDREAM CONTROL</p>
+              <h1 id="view-title">公告</h1>
+              <p id="view-subtitle" class="muted">问题公告与版本更新公告</p>
+            </div>
+            <button id="refresh-button" class="button button-secondary" type="button">刷新列表</button>
+          </div>
+
+          <div class="workspace module-view" id="view-announcements">
+            <section class="list-panel" aria-labelledby="list-heading">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="list-heading">公告列表</h2>
+                  <p id="list-count" class="muted">正在加载</p>
+                </div>
+                <label class="filter-label" for="category-filter">分类
+                  <select id="category-filter">
+                    <option value="all">全部</option>
+                    <option value="problem">问题公告</option>
+                    <option value="update">更新公告</option>
+                  </select>
+                </label>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead><tr><th>公告</th><th>分类</th><th>发布时间</th><th>状态</th><th></th></tr></thead>
+                  <tbody id="announcement-rows"></tbody>
+                </table>
+              </div>
+              <div id="list-empty" class="empty-state" hidden>暂无公告</div>
+              <p id="list-error" class="form-error panel-error" role="alert" hidden></p>
+            </section>
+
+            <aside class="compose-panel" aria-labelledby="compose-heading">
+              <div class="panel-heading compose-heading">
+                <div>
+                  <h2 id="compose-heading">发布问题公告</h2>
+                  <p class="muted">面向所有已安装客户端</p>
+                </div>
+                <span class="audience-tag">全体用户</span>
+              </div>
+              <form id="announcement-form">
+                <label for="announcement-title">标题 <span class="field-count"><span id="title-count">0</span> / 120</span></label>
+                <input id="announcement-title" name="title" type="text" maxlength="120" required placeholder="例如：图片生成服务维护通知">
+                <label for="announcement-body">公告内容 <span class="field-count"><span id="body-count">0</span> / 2000</span></label>
+                <textarea id="announcement-body" name="body" maxlength="2000" rows="8" required placeholder="说明受影响的服务、开始时间、预计恢复时间及处理进展。"></textarea>
+                <p id="publish-error" class="form-error" role="alert" hidden></p>
+                <p id="publish-success" class="form-success" role="status" hidden>公告已发布，客户端将在下次检查时收到。</p>
+                <button id="publish-button" class="button button-primary button-wide" type="submit">发布公告</button>
+              </form>
+              <p class="compose-note">公告会使用服务端密钥签名。已撤回的公告不会再下发。</p>
+            </aside>
+          </div>
+          <section id="view-releases" class="workspace module-view" hidden>
+            <div class="list-panel">
+              <div class="panel-heading"><h2>版本记录</h2><form class="search-form" data-kind="releases"><input name="q" aria-label="搜索版本" placeholder="版本号" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
+              <div class="table-scroll"><table><thead><tr><th>版本</th><th>安装包</th><th>发布时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="releases-rows"></tbody></table></div>
+              <div id="releases-pager" class="pager"></div>
+            </div>
+            <aside class="compose-panel"><div class="panel-heading"><h2>发布新版本</h2></div>
+              <form id="release-form" class="editor-form">
+                <label for="release-version">版本号</label><input id="release-version" placeholder="1.0.4" pattern="(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)" required>
+                <label for="release-minimum">最低可用版本</label><input id="release-minimum" value="0.0.0" pattern="(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)" required>
+                <p class="field-hint">低于最低版本的客户端将被要求升级。</p>
+                <label for="release-file">Windows 安装包</label><input id="release-file" type="file" accept=".exe" required>
+                <label for="release-blockmap">差分索引（可选 · .exe.blockmap）</label><input id="release-blockmap" type="file" accept=".blockmap">
+                <label for="release-notes">更新说明</label><textarea id="release-notes" maxlength="8000" rows="5" required></textarea>
+                <progress id="upload-progress" max="100" value="0" hidden></progress><p id="upload-status" class="muted" role="status"></p>
+                <p id="release-error" class="form-error" role="alert" hidden></p>
+                <button id="release-submit" class="button button-primary button-wide" type="submit">上传并发布</button>
+              </form>
+            </aside>
+          </section>
+          <section id="view-licenses" class="workspace module-view" hidden>
+            <div class="list-panel">
+              <div class="panel-heading"><h2>授权记录</h2><form class="search-form" data-kind="licenses"><input name="q" aria-label="搜索授权" placeholder="客户、授权 ID 或尾号" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
+              <div class="table-scroll"><table><thead><tr><th>客户 / 授权</th><th>设备名额</th><th>有效期</th><th>状态</th><th>操作</th></tr></thead><tbody id="licenses-rows"></tbody></table></div>
+              <div id="licenses-pager" class="pager"></div>
+            </div>
+            <aside class="compose-panel"><div class="panel-heading"><h2>签发授权码</h2></div>
+              <form id="license-form" class="editor-form">
+                <label for="license-label">客户 / 备注</label><input id="license-label" maxlength="200">
+                <label for="license-days">有效天数</label><input id="license-days" type="number" min="1" max="36500" value="365" required>
+                <label for="license-seats">设备名额</label><input id="license-seats" type="number" min="1" max="100" value="1" required>
+                <p class="field-hint">首次激活开始计时；完整授权码仅在签发时显示。</p>
+                <p id="license-error" class="form-error" role="alert" hidden></p>
+                <button class="button button-primary button-wide" type="submit">签发授权码</button>
+              </form>
+              <div id="license-result" class="code-result" hidden><label for="issued-code">新授权码</label><input id="issued-code" readonly><button id="copy-code" class="button button-secondary" type="button">复制授权码</button><button id="dismiss-code" class="button button-quiet" type="button">已保存，隐藏</button></div>
+            </aside>
+          </section>
+          <section id="view-devices" class="module-view list-panel" hidden>
+            <div class="panel-heading"><h2>机器绑定记录</h2><form class="search-form" data-kind="devices"><input name="q" aria-label="搜索设备" placeholder="设备名、机器 ID 或客户" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
+            <div class="table-scroll"><table><thead><tr><th>设备</th><th>授权客户</th><th>最近验证</th><th>状态</th><th>操作</th></tr></thead><tbody id="devices-rows"></tbody></table></div>
+            <div id="devices-pager" class="pager"></div>
+          </section>
+          <section id="view-audit" class="module-view list-panel" hidden>
+            <div class="panel-heading"><h2>管理操作记录</h2><form class="search-form" data-kind="audit"><input name="q" aria-label="搜索操作记录" placeholder="操作、目标 ID 或备注" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
+            <div class="table-scroll"><table><thead><tr><th>时间</th><th>操作</th><th>目标</th><th>详情</th></tr></thead><tbody id="audit-rows"></tbody></table></div>
+            <div id="audit-pager" class="pager"></div>
+          </section>
+          <footer class="page-footer">生产环境 · 更新与公告签名下发 · 设备状态以最近一次授权验证为准</footer>
+        </div>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

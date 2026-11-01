@@ -35,6 +35,7 @@ export const motionComicEpisodeBoundaryPlanSchema = z.object({
 export type MotionComicEpisodeBoundaryPlan = z.infer<typeof motionComicEpisodeBoundaryPlanSchema>;
 
 export const motionComicEpisodePlanInputSchema = z.object({
+  llmProfileId: z.string().trim().min(1).max(256).optional(),
   sourceText: z.string().trim().min(1).max(MOTION_COMIC_EPISODE_PLAN_MAX_SOURCE_LENGTH),
   sourceKind: z.enum(['script', 'novel']),
   adaptationMode: z.enum(['faithful-script', 'novel-adaptation']),

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { fetchWithTimeout } from './http';
 import { normalizeAppConfig } from './config-utils';
 import type { AppConfig, VideoCapability, VideoProviderConfig } from './types';
@@ -169,7 +169,12 @@ async function generateVideo(
   const customParams = parseRequestParams(provider.requestParamsJson);
   const references = request.referenceImages ?? (request.referenceImagePaths ?? []).map((path) => ({ path, kind: 'style' as const, description: '' }));
   const family = videoModelLimits(provider).family;
-  const generatedBody: Record<string, unknown> = family !== 'generic'
+  const getezoRelay = isGetezoRelayVideoApi(provider);
+  const generatedBody: Record<string, unknown> = getezoRelay
+    ? { model: provider.model, prompt: guidedReferencePrompt(prompt, references, request, provider), duration: durationSec, resolution: getezoRelayResolution(provider, request) }
+    : isGeekAiVideoApi(provider)
+    ? await geekAiVideoBody(provider, request, prompt, durationSec, references)
+    : family !== 'generic'
     ? await multimodalVideoBody(provider, request, prompt, durationSec, references)
     : await legacyVideoBody(provider, request, prompt, durationSec, references);
   const body: Record<string, unknown> = { ...customParams, ...generatedBody };
@@ -181,10 +186,11 @@ async function generateVideo(
   const retryCount = submitRetryCount === undefined
     ? config.video.automation.retryCount
     : normalizedSubmitRetryCount(submitRetryCount);
+  const form = getezoRelay ? await getezoRelayForm(body, request, references) : undefined;
   const submit = await requestJsonWithRetries(submitUrl, {
     method: 'POST',
-    headers: providerHeaders(provider),
-    body: JSON.stringify(body),
+    headers: form ? { authorization: `Bearer ${provider.apiKey}` } : providerHeaders(provider),
+    body: form ?? JSON.stringify(body),
     signal: request.signal,
   }, provider, retryCount, '云端视频提交');
   const remoteTaskId = responseTaskId(submit);
@@ -241,7 +247,9 @@ async function persistVideoResult(
   remoteTaskId: string | undefined,
   signal?: AbortSignal,
 ): Promise<VideoGenerationResult> {
-  const payload = responseVideoPayload(finalResponse);
+  const payload = responseVideoPayload(finalResponse) ?? (isGetezoRelayVideoApi(provider) && remoteTaskId
+    ? { url: providerUrl(provider, `${provider.statusPathTemplate.replaceAll('{id}', encodeURIComponent(remoteTaskId))}/content`) }
+    : null);
   if (!payload) throw new Error('VIDEO_PROVIDER_INVALID_OUTPUT: 云端视频 API 没有返回视频 URL 或 base64 视频。');
 
   const outputDir = join(workDir, 'generated-videos');
@@ -367,7 +375,7 @@ async function pollVideoJob(provider: VideoProviderConfig, taskId: string, signa
       signal,
     }, provider, 1, '云端视频轮询');
     const status = responseStatus(response);
-    if (responseVideoPayload(response) || ['succeeded', 'success', 'completed', 'done', 'finished'].includes(status)) return response;
+    if (responseVideoPayload(response) || ['succeeded', 'succeed', 'success', 'completed', 'done', 'finished'].includes(status)) return response;
     if (['failed', 'error', 'cancelled', 'canceled', 'rejected', 'expired'].includes(status)) {
       throw new Error(`VIDEO_PROVIDER_JOB_FAILED: ${responseError(response) || `任务 ${taskId} 失败。`}`);
     }
@@ -413,8 +421,11 @@ async function requestJsonWithRetries(
 }
 
 async function downloadVideo(url: string, provider: VideoProviderConfig, signal?: AbortSignal): Promise<Buffer> {
+  const proxyDownload = isGetezoRelayVideoApi(provider)
+    && url === providerUrl(provider, `${provider.statusPathTemplate.replaceAll('{id}', encodeURIComponent(responseTaskIdFromContentUrl(url)))}/content`);
   const response = await fetchWithTimeout(url, {
     method: 'GET',
+    ...(proxyDownload ? { headers: providerHeaders(provider) } : {}),
     signal,
     timeoutMs: provider.timeoutMs,
     timeoutLabel: '云端视频下载',
@@ -499,7 +510,7 @@ function responseRecords(value: unknown, depth = 0): Record<string, unknown>[] {
   if (depth > 4 || !value || typeof value !== 'object') return [];
   if (Array.isArray(value)) return value.flatMap((item) => responseRecords(item, depth + 1));
   const record = value as Record<string, unknown>;
-  const nested = ['data', 'output', 'result', 'video', 'task', 'content']
+  const nested = ['data', 'output', 'result', 'video', 'video_result', 'task', 'content', 'metadata']
     .flatMap((key) => responseRecords(record[key], depth + 1));
   return [record, ...nested];
 }
@@ -513,6 +524,81 @@ async function imageDataUrl(path: string): Promise<string> {
   const mime = imageMimeType(extname(path));
   const bytes = await readFile(path);
   return `data:${mime};base64,${bytes.toString('base64')}`;
+}
+
+/** Getezo's priced H3 relay variants use indexed multipart references, not the native H3 content schema. */
+function isGetezoRelayVideoApi(provider: VideoProviderConfig): boolean {
+  try {
+    return ['getezo.com', 'video.getezo.com', '1.cnmz.de'].includes(new URL(provider.baseUrl).hostname)
+      && /^(?:minimax_h3_768p-15s|minimax_h3_1080p-10s|minimax_h3_736p-12s)$/u.test(provider.model)
+      && /\/videos\/?$/u.test(provider.submitPath);
+  } catch { return false; }
+}
+
+function getezoRelayResolution(provider: VideoProviderConfig, request: VideoGenerationRequest): string {
+  const [width, height] = request.ratio.split(':').map(Number);
+  if (!width || !height || width === height) {
+    throw new Error('VIDEO_PROVIDER_RATIO_UNSUPPORTED: Getezo 海螺此版本需要选择横屏或竖屏比例。');
+  }
+  const resolution = (request.resolution || provider.maxResolution).replace(/[横竖]$/u, '').toLowerCase();
+  return `${resolution}${width > height ? '横' : '竖'}`;
+}
+
+async function getezoRelayForm(body: Record<string, unknown>, request: VideoGenerationRequest, references: VideoReferenceImage[]): Promise<FormData> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(body)) form.set(key, String(value));
+  const images = request.firstFramePath ? [request.firstFramePath] : references.map((reference) => reference.path);
+  const append = async (key: string, path: string, kind: 'image' | 'audio') => {
+    if (/^https:\/\//iu.test(path)) { form.set(key, path); return; }
+    if (/^[a-z][a-z0-9+.-]*:/iu.test(path) && !/^[a-z]:[\\/]/iu.test(path)) {
+      throw new Error('VIDEO_PROVIDER_REFERENCE_INVALID: Getezo 参考素材需要本地文件或公开 HTTPS 地址。');
+    }
+    const metadata = await stat(path);
+    if (!metadata.isFile() || metadata.size <= 0 || metadata.size > MAX_REFERENCE_IMAGE_BYTES) {
+      throw new Error('VIDEO_PROVIDER_REFERENCE_INVALID: Getezo 参考素材必须是 24 MB 以内的普通文件。');
+    }
+    const mime = kind === 'image' ? imageMimeType(extname(path)) : 'audio/' + (extname(path).toLowerCase() === '.mp3' ? 'mpeg' : 'wav');
+    form.set(key, new Blob([new Uint8Array(await readFile(path))], { type: mime }), basename(path));
+  };
+  for (const [index, path] of images.entries()) await append(`ref_image_${index}`, path, 'image');
+  for (const [index, path] of (request.referenceAudioPaths ?? []).entries()) await append(`ref_audio_${index}`, path, 'audio');
+  return form;
+}
+
+function responseTaskIdFromContentUrl(url: string): string {
+  return decodeURIComponent(new URL(url).pathname.split('/').at(-2) ?? '');
+}
+
+/** GeekAI exposes a unified video API rather than the model vendor's native schema. */
+function isGeekAiVideoApi(provider: VideoProviderConfig): boolean {
+  try {
+    return ['geekai.co', 'geekai.dev'].includes(new URL(provider.baseUrl).hostname)
+      && /\/videos\/generations\/?$/u.test(provider.submitPath);
+  } catch { return false; }
+}
+
+async function geekAiVideoBody(
+  provider: VideoProviderConfig,
+  request: VideoGenerationRequest,
+  prompt: string,
+  durationSec: number,
+  references: VideoReferenceImage[],
+): Promise<Record<string, unknown>> {
+  const body: Record<string, unknown> = {
+    model: provider.model,
+    prompt: guidedReferencePrompt(prompt, references, request, provider),
+    duration: durationSec,
+    aspect_ratio: request.ratio,
+    resolution: (request.resolution || provider.maxResolution).toLowerCase(),
+    async: true,
+  };
+  if (request.generateAudio !== undefined) body.with_audio = request.generateAudio;
+  if (request.firstFramePath) body.image = await imageDataUrl(request.firstFramePath);
+  if (request.lastFramePath) body.image_tail = await imageDataUrl(request.lastFramePath);
+  if (references.length) body.images = await Promise.all(references.map((reference) => imageDataUrl(reference.path)));
+  if (request.referenceVideoPaths?.length) body.video = await Promise.all(request.referenceVideoPaths.map((path) => mediaDataUrl(path, 'video')));
+  if (request.referenceAudioPaths?.length) body.audio = await Promise.all(request.referenceAudioPaths.map((path) => mediaDataUrl(path, 'audio')));
+  return body;
 }
 
 async function legacyVideoBody(
@@ -579,7 +665,9 @@ function guidedReferencePrompt(prompt: string, references: VideoReferenceImage[]
   const kinds: Record<VideoReferenceImage['kind'], string> = {
     character: '人物', scene: '场景', object: '物体', style: '风格', opening: '开场画面', transition: '中段画面', ending: '结尾画面',
   };
-  const token = (type: 'Image' | 'Video' | 'Audio', index: number) => videoReferenceToken(provider, type, index);
+  const token = (type: 'Image' | 'Video' | 'Audio', index: number) => isGeekAiVideoApi(provider)
+    ? `@${type === 'Image' ? '图' : type === 'Video' ? '视频' : '音频'}${index + 1}`
+    : videoReferenceToken(provider, type, index);
   const guidance = references.map((reference, index) => `${token('Image', index)} 用于${kinds[reference.kind]}${reference.description ? `：${reference.description}` : ''}。`);
   (request.referenceVideoPaths ?? []).forEach((_path, index) => guidance.push(`${token('Video', index)} 的动作、运镜或节奏，以正文描述为准。`));
   (request.referenceAudioPaths ?? []).forEach((_path, index) => guidance.push(`${token('Audio', index)} 的声音、节奏或氛围，以正文描述为准。`));

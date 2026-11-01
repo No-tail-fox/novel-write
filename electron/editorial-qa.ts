@@ -1327,21 +1327,25 @@ function qaScenarioScript(id: string, view: string, theme: string, stage?: strin
           .some((row) => row.textContent?.includes('武则天：权力之路 HTML 动画')), 'returned from HTML workspace');
     }
     if (targetView === 'voice-lab') {
+      // The catalog is a native select after the Fluent migration. Exclude a
+      // preserved current selection that is outside the active search results.
+      const voiceCatalogCount = () => [...document.querySelectorAll('select[aria-label="音色"] option')]
+        .filter((option) => !option.textContent?.includes('（当前已选）')).length;
       const providerGroup = document.querySelector('[role="tablist"][aria-label="配音模型"]');
       const minimaxButton = [...(providerGroup?.querySelectorAll('button') ?? [])]
         .find((button) => controlText(button) === 'MiniMax');
       ready = ready && minimaxButton instanceof HTMLButtonElement;
       if (minimaxButton instanceof HTMLButtonElement) minimaxButton.click();
-      ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 18);
+      ready = ready && await waitFor(() => voiceCatalogCount() === 18);
       const searchInput = document.querySelector('input[aria-label="搜索音色"]');
       if (searchInput instanceof HTMLInputElement) {
         const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
         valueSetter?.call(searchInput, '有声书');
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 4);
+        ready = ready && await waitFor(() => voiceCatalogCount() === 4);
         valueSetter?.call(searchInput, '');
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        ready = ready && await waitFor(() => document.querySelectorAll('.voice-lab-voice-list .chip').length === 18);
+        ready = ready && await waitFor(() => voiceCatalogCount() === 18);
       } else {
         ready = false;
       }

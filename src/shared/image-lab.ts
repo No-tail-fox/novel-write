@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { defaultConfig, defaultCustomStyles } from './config';
 import { normalizeImageGenerationQuality } from './image-quality';
 import { createConfiguredImageGenerator } from './media-providers';
-import { enableImageProfile, normalizedImageProfiles } from './provider-profile-utils';
+import { selectImageLabProfileConfig } from './image-lab-profile';
+export { selectImageLabProfileConfig, selectImageLabProviderConfig } from './image-lab-profile';
 import type { AppConfig, CustomStyle, ImageGenerationQuality, ImageLabGenerateInput, ImageLabRecord, ImageLabSmartMode, ImagePrompt, StoryboardScene, Task } from './types';
 
 export async function generateImageLabRecord(config: AppConfig, workDir: string, input: ImageLabGenerateInput, signal?: AbortSignal, customStyle?: CustomStyle | null, options: { recoveryOnly?: boolean } = {}): Promise<ImageLabRecord> {
-  const providerConfig = selectImageLabProviderConfig(config, input.provider);
+  const providerConfig = selectImageLabProfileConfig(config, input);
   const id = input.id ?? randomUUID();
   const createdAt = input.createdAt ?? new Date().toISOString();
   const baseRecord = createBaseRecord(providerConfig, input, id, createdAt);
@@ -58,16 +59,6 @@ export async function generateImageLabRecord(config: AppConfig, workDir: string,
   }
 }
 
-export function selectImageLabProviderConfig(config: AppConfig, requestedProvider: ImageLabGenerateInput['provider']): AppConfig {
-  if (!requestedProvider || requestedProvider === config.imageProvider) return config;
-  if (requestedProvider !== 'gpt_image' && requestedProvider !== 'jimeng' && requestedProvider !== 'custom') {
-    throw new Error(`Unsupported image lab provider: ${requestedProvider}`);
-  }
-  const profile = normalizedImageProfiles(config).find((candidate) => candidate.provider === requestedProvider);
-  if (profile?.id) return enableImageProfile(config, profile.id);
-  return { ...config, imageProvider: requestedProvider };
-}
-
 function createBaseRecord(config: AppConfig, input: ImageLabGenerateInput, id: string, createdAt: string): ImageLabRecord {
   return {
     id,
@@ -75,6 +66,8 @@ function createBaseRecord(config: AppConfig, input: ImageLabGenerateInput, id: s
     ratio: input.ratio,
     style: input.style,
     provider: config.imageProvider,
+    imageProfileId: config.activeImageProfileId,
+    modelName: config.imageProvider === 'gpt_image' ? config.gptImage.model : config.imageProvider === 'custom' ? config.customImage.model : config.jimeng.model,
     imagePath: '',
     status: 'failed',
     errorMessage: '',

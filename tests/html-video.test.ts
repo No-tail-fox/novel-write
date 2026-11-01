@@ -549,6 +549,24 @@ describe('HTML video pipeline V2 contract', () => {
     expect(next.revision).toBe(pipeline.revision + 1);
   });
 
+  it('recomposes v2 geometry and beats when choosing a different template without regenerating media', () => {
+    const pipeline = createHtmlVideoPipelineData('第一句。第二句。');
+    pipeline.scenes[0].compositionVersion = 2;
+    pipeline.scenes[0].elements = [0, 1].map((slot) => ({ slot, prompt: `前景 ${slot}`,
+      layout: { role: 'subject', landscape: { x: 23, y: 24, width: 54, height: 56, fit: 'contain', anchor: 'center bottom', zIndex: 3 },
+        portrait: { x: 8, y: 24, width: 84, height: 55, fit: 'contain', anchor: 'center bottom', zIndex: 3 } } }));
+    pipeline.assets = [{ sceneIndex: 1, kind: 'bg', slot: 0, src: 'D:/paid-bg.png' }];
+    pipeline.voices = [validVoice(1)];
+    const titleOnly = applyHtmlVideoSceneChanges(pipeline, 1, [{ field: 'title', value: '新标题' }]);
+    expect(titleOnly.scenes[0].elements).toEqual(pipeline.scenes[0].elements);
+    const next = applyHtmlVideoSceneChanges(pipeline, 1, [{ field: 'sceneTemplate', value: 'split-compare' }]);
+    expect(next.scenes[0].elements[0].layout?.portrait.x).toBe(3);
+    expect(next.scenes[0].elements[1].layout?.portrait.x).toBe(51);
+    expect(next.scenes[0].beats?.[0].purpose).toBe('compare');
+    expect(next.assets).toEqual(pipeline.assets);
+    expect(next.voices).toEqual(pipeline.voices);
+  });
+
   it('adds the next available foreground slot and enforces the four-slot limit', () => {
     const pipeline = createHtmlVideoPipelineData('场景。');
     pipeline.scenes[0].elements = [{ slot: 1, prompt: '前景 2' }];
@@ -1447,7 +1465,8 @@ describe('Electron HTML video capture contract', () => {
       const pending = createElectronHtmlVideoRenderer({ inspectScene: async (window, scene) => {
         expect(window.isDestroyed()).toBe(false);
         expect(scene).toBe(input.scenes[inspected.length]);
-        expect(electronHarness.state.captureCalls).toBe(inspected.length * 2);
+        // Cumulative 1fps boundaries for 1.2s + 1.6s allocate [1, 2] frames.
+        expect(electronHarness.state.captureCalls).toBe([0, 1][inspected.length]);
         inspected.push(scene.sceneId);
         if (inspected.length === 1) {
           inspectionStarted.resolve();
@@ -1541,7 +1560,7 @@ describe('Electron HTML video capture contract', () => {
       const then = vi.spyOn(timeline, 'then').mockImplementation(() => { throw new Error('Must not await timeline playback'); });
       const ready = createReadyScriptExecutor([]);
       electronHarness.state.scriptExecutor = (script) => script.includes('timeline.seek(') || script.includes('window.__tl.seek(')
-        ? vm.runInNewContext(script, { window: { __tl: timeline }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) })
+        ? vm.runInNewContext(script, { document: { querySelectorAll: () => [] }, window: { __tl: timeline }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) })
         : ready(script);
       try {
         await expect(createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'gsap'))).resolves.toContain('gsap.jpg');
@@ -1559,7 +1578,7 @@ describe('Electron HTML video capture contract', () => {
       electronHarness.state.scriptExecutor = (script) => {
         if (!script.includes('timeline.seek(') && !script.includes('window.__tl.seek(')) return ready(script);
         started.resolve();
-        return vm.runInNewContext(script, { window: { __tl: { seek: () => seek.promise } }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) });
+        return vm.runInNewContext(script, { document: { querySelectorAll: () => [] }, window: { __tl: { seek: () => seek.promise } }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) });
       };
       const pending = createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'async-seek'));
       await started.promise;
@@ -1583,6 +1602,42 @@ describe('Electron HTML video capture contract', () => {
         useContentSize: true,
         webPreferences: { offscreen: true },
       });
+    });
+  });
+
+  it('recreates a hidden preview window after a compositor crash', async () => {
+    await withRendererTestDir(async workDir => {
+      electronHarness.state.scriptExecutor = createReadyScriptExecutor([]);
+      electronHarness.state.capturePlans.push(async () => { throw Error('UnknownVizError'); });
+      await expect(createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'recovered'))).resolves.toContain('recovered.jpg');
+      expect(electronHarness.state.instances).toHaveLength(2);
+      expect(electronHarness.state.captureCalls).toBe(2);
+      expect(electronHarness.state.maxActiveWindows).toBe(1);
+      expect(electronHarness.state.activeWindows).toBe(0);
+    });
+  });
+
+  it('resumes the exact failed export frame after reopening and reruns inspection', async () => {
+    await withRendererTestDir(async workDir => {
+      const seekTimes: number[] = [], ready = createReadyScriptExecutor([]);
+      electronHarness.state.scriptExecutor = async script => {
+        const seek = /player\.renderSeek\(([0-9.]+)/.exec(script);
+        if (seek) seekTimes.push(Number(seek[1]));
+        return ready(script);
+      };
+      electronHarness.state.capturePlans.push(async () => electronHarness.captureImage, async () => { throw Error('UnknownVizError'); });
+      const input = rendererInput(workDir);
+      input.scenes = [{ ...input.scenes[0], duration: 3 }]; input.totalDurationS = 3;
+      const inspectScene = vi.fn(async () => undefined);
+      await expect(createElectronHtmlVideoRenderer({ inspectScene }).render(input)).resolves.toMatchObject({ outputPath: 'final.mp4' });
+      expect(seekTimes).toEqual([0, 1, 1, 2]);
+      expect(inspectScene).toHaveBeenCalledTimes(2);
+      expect(electronHarness.state.captureCalls).toBe(4);
+      expect(electronHarness.state.instances).toHaveLength(2);
+      expect(electronHarness.state.maxActiveWindows).toBe(1);
+      expect(electronHarness.state.activeWindows).toBe(0);
+      expect(sidecarHarness.run).toHaveBeenCalledTimes(2);
+      await expectFrameDirectoriesMissing(workDir, [1]);
     });
   });
 
@@ -1630,8 +1685,10 @@ describe('Electron HTML video capture contract', () => {
         if (input.mode === 'encode_render_scene') {
           encodeCalls += 1;
           expect(electronHarness.state.activeWindows).toBe(0);
-          expect(electronHarness.state.captureCalls).toBe(encodeCalls * 2);
-          await expect(access(join(input.scene.frames_dir, 'frame_0002.jpg'))).resolves.toBeUndefined();
+          expect(electronHarness.state.captureCalls).toBe([1, 3][encodeCalls - 1]);
+          expect(input.scene.video_frame_count).toBe([1, 2][encodeCalls - 1]);
+          expect((await readdir(input.scene.frames_dir)).sort()).toEqual(encodeCalls === 1
+            ? ['frame_0001.jpg'] : ['frame_0001.jpg', 'frame_0002.jpg']);
           if (previousSceneDir) await expect(access(previousSceneDir)).rejects.toMatchObject({ code: 'ENOENT' });
           previousSceneDir = input.work_dir;
           await writeFile(join(input.work_dir, 'scene-00-mix.wav'), 'temporary mix');
@@ -1649,7 +1706,6 @@ describe('Electron HTML video capture contract', () => {
         return renderSidecarFixture(input);
       });
       electronHarness.state.capturePlans.push(
-        async () => electronHarness.captureImage,
         async () => electronHarness.captureImage,
         async () => {
           expect(encodeCalls).toBe(1);
@@ -1673,7 +1729,7 @@ describe('Electron HTML video capture contract', () => {
         throw failure;
       });
       await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir))).rejects.toBe(failure);
-      expect(electronHarness.state.captureCalls).toBe(2);
+      expect(electronHarness.state.captureCalls).toBe(1);
       expect(electronHarness.state.activeWindows).toBe(0);
       expect(sidecarHarness.run).toHaveBeenCalledTimes(1);
       await expectFrameDirectoriesMissing(workDir, [1, 2]);
@@ -1689,7 +1745,7 @@ describe('Electron HTML video capture contract', () => {
         return { success: true };
       });
       await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir))).rejects.toThrow('encoding produced no video');
-      expect(electronHarness.state.captureCalls).toBe(2);
+      expect(electronHarness.state.captureCalls).toBe(1);
       await expectFrameDirectoriesMissing(workDir, [1]);
     });
   });
@@ -1727,7 +1783,7 @@ describe('Electron HTML video capture contract', () => {
       });
       await expect(createElectronHtmlVideoRenderer().render(rendererInput(workDir), { signal: controller.signal })).rejects.toBe(reason);
       expect(electronHarness.state.activeWindows).toBe(0);
-      expect(electronHarness.state.captureCalls).toBe(mode === 'compose_render' ? 4 : 2);
+      expect(electronHarness.state.captureCalls).toBe(mode === 'compose_render' ? 3 : 1);
       await expectFrameDirectoriesMissing(workDir, [1, 2]);
     });
   });

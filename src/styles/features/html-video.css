@@ -1367,6 +1367,9 @@
 }
 
 .hv-authoring-clip-label {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
   overflow: hidden;
   padding: 0 3px;
   font-size: 9px;
@@ -3036,9 +3039,12 @@
 }
 
 .hv-reference-asset-frame img {
+  position: absolute;
+  inset: 0;
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .hv-reference-asset-card > strong,
@@ -4194,6 +4200,10 @@
 
 .hv-studio[data-has-task="true"] .hv-studio-run-rail .hv-step.failed > span:not([class*="fui-"]):not(.sd-button__content):not(.sd-field-label-row) {
   color: #fff;
+}
+
+.hv-studio[data-has-task="true"] .hv-authoring-workspace {
+  min-height: 0;
 }
 
 .hv-studio[data-has-task="true"] .hv-authoring-main {

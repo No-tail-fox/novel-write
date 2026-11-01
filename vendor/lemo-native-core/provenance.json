@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+  "revision": "3961ddb3d24d8876e0e2754f7790d66908acee51",
+  "files": [
+    {
+      "source": "core/lib.js",
+      "sha256": "f6aafa10a156d52b066a39b9445b4d23f3261b326042a92b95bdea4ba71bac24"
+    },
+    {
+      "source": "LICENSE",
+      "sha256": "14c9ff6f14bfb2391e74fedb01c256891d2a3bba1c2acf5789901bdf77e54e33"
+    }
+  ]
+}

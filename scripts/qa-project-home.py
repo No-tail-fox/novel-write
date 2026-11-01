@@ -62,10 +62,8 @@ def main():
             child = subprocess.Popen([str(base.ELECTRON), f'--remote-debugging-port={port}', '--remote-debugging-address=127.0.0.1', f'--user-data-dir={profile}', str(ROOT / 'scripts/qa-project-home.cjs')], cwd=ROOT, env=env, stdout=log, stderr=log, creationflags=subprocess.CREATE_NO_WINDOW)
         try:
             connected = playwright.chromium.connect_over_cdp(base.wait_cdp(port, child))
-            deadline = time.monotonic() + 30
-            while not connected.contexts[0].pages and time.monotonic() < deadline:
-                time.sleep(.1)
-            current = connected.contexts[0].pages[0]
+            context = connected.contexts[0]
+            current = context.pages[0] if context.pages else context.wait_for_event('page', timeout=30000)
             current.on('pageerror', lambda error: report['runtimeErrors'].append(str(error)))
             base.wait_app(current)
             current.wait_for_selector('[data-project-home]')
@@ -77,7 +75,7 @@ def main():
 
     def capture(name, width, height):
         base.set_size(page, width, height)
-        page.locator('.project-home').evaluate('(node) => node.closest(".content-area")?.scrollTo(0, 0)')
+        page.locator('.project-home').evaluate('(node) => { node.scrollTo(0, 0); node.closest(".content-area")?.scrollTo(0, 0); }')
         metrics = page.evaluate('''() => {
           const boxes = [...document.querySelectorAll('.project-card')].map(n => n.getBoundingClientRect());
           const badButtons = [...document.querySelectorAll('.project-card-actions button')].filter(n => n.scrollWidth > n.clientWidth + 1);
@@ -134,6 +132,20 @@ def main():
             expect(page.locator('[data-project-layout]')).to_have_attribute('data-project-layout', 'list')
             expect(page.get_by_role('button', name='上一页', exact=True)).to_be_enabled()
             passed('keyboard open and return restore second page and list layout')
+
+            controls(delayList=True)
+            page.get_by_role('button', name='重新加载', exact=True).click()
+            expect(page.get_by_role('button', name='重新加载', exact=True)).to_be_disabled()
+            expect(page.locator('.project-card')).to_have_count(50)
+            expect(page.locator('.project-card-open').first).to_be_enabled()
+            expect(page.get_by_role('button', name='继续编辑', exact=True).first).to_be_enabled()
+            expect(page.get_by_role('button', name='收藏项目', exact=True).first).to_be_disabled()
+            page.locator('.project-card-open').first.click()
+            page.wait_for_selector('.app-shell[data-shell-view="task-detail"]')
+            controls()
+            page.get_by_role('button', name='返回项目', exact=True).click()
+            ready()
+            passed('delayed background reload keeps 50 cards visible and both open actions enabled')
 
             search = page.get_by_role('textbox', name='搜索项目', exact=True)
             controls(delayQuery='分页')
@@ -240,12 +252,17 @@ def main():
                 ready()
                 page.locator('.project-card-open').click()
                 page.wait_for_selector(f'.app-shell[data-shell-view="{target}"]')
-                if target in ['editorial-collage', 'motion-comic']:
+                if target == 'motion-comic':
+                    page.wait_for_selector('[data-motion-comic-production]')
+                    expect(page.locator('[data-motion-comic-production]')).to_contain_text(title)
+                elif target == 'editorial-collage':
                     page.wait_for_selector('.director-desk')
                     expect(page.locator('.director-desk')).to_contain_text(title)
                 else:
                     expect(page.locator('.app-shell')).to_contain_text(title)
-                if target in ['editorial-collage', 'motion-comic', 'task-detail']:
+                if target == 'motion-comic':
+                    page.get_by_role('button', name='返回项目列表', exact=True).click()
+                elif target in ['editorial-collage', 'task-detail']:
                     page.get_by_role('button', name='返回项目', exact=True).click()
                 else:
                     page.locator('[data-nav-view="projects"]').first.click()

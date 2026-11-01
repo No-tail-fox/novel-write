@@ -1,3 +1,4 @@
+import * as storageModule from '../src/shared/storage';
 import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -28,7 +29,7 @@ interface ReliabilityStorageModule {
   FileDatabase: {
     open: (file: string, dependencies?: Partial<StorageDependencies>) => Promise<ReliableDatabase>;
   };
-  atomicWriteDatabase?: (
+  atomicWriteDatabase: (
     file: string,
     data: Uint8Array,
     dependencies?: Partial<StorageDependencies>,
@@ -36,7 +37,7 @@ interface ReliabilityStorageModule {
 }
 
 async function loadStorageModule(): Promise<ReliabilityStorageModule> {
-  return import('../src/shared/storage') as unknown as Promise<ReliabilityStorageModule>;
+  return storageModule as unknown as ReliabilityStorageModule;
 }
 
 function errno(code: string, message = code): NodeJS.ErrnoException {
@@ -57,7 +58,6 @@ describe('file database reliability', () => {
 
   it('serializes delayed concurrent mutations without losing an older or newer snapshot', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-concurrent-'));
     const file = join(dir, 'app.db');
     let writeIndex = 0;
@@ -90,7 +90,6 @@ describe('file database reliability', () => {
 
   it('retries transient replace failures and removes the committed temp file', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-replace-retry-'));
     const file = join(dir, 'app.db');
     let attempts = 0;
@@ -115,7 +114,6 @@ describe('file database reliability', () => {
 
   it('recovers a valid crash temp when the primary database is missing', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-temp-recovery-'));
     const file = join(dir, 'app.db');
     const tempFile = `${file}.999-recovery.tmp`;
@@ -139,7 +137,6 @@ describe('file database reliability', () => {
 
   it('preserves a valid crash temp when recovery replacement fails', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-temp-recovery-failure-'));
     const file = join(dir, 'app.db');
     const tempFile = `${file}.999-recovery.tmp`;
@@ -171,7 +168,6 @@ describe('file database reliability', () => {
 
   it('creates on ENOENT but propagates EACCES instead of silently replacing the database', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-open-errors-'));
     const file = join(dir, 'app.db');
     try {
@@ -193,7 +189,6 @@ describe('file database reliability', () => {
 
   it('quarantines malformed SQLite and starts a valid replacement', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-malformed-'));
     const file = join(dir, 'app.db');
     try {
@@ -212,7 +207,6 @@ describe('file database reliability', () => {
 
   it('rolls back a failed snapshot before allowing the next queued mutation', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-failed-commit-'));
     const file = join(dir, 'app.db');
     let failNextReplace = false;
@@ -245,7 +239,6 @@ describe('file database reliability', () => {
 
   it('waits for accepted commits during close, rejects new writes, and closes only once', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-close-'));
     const file = join(dir, 'app.db');
     let blockNextReplace = false;
@@ -291,7 +284,6 @@ describe('file database reliability', () => {
 
   it('does not expose an in-memory mutation before its snapshot is committed', async () => {
     const storage = await loadStorageModule();
-    if (!storage.atomicWriteDatabase) return;
     const dir = await mkdtemp(join(tmpdir(), 'storydream-db-read-barrier-'));
     const file = join(dir, 'app.db');
     let blockNextReplace = false;

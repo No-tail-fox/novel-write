@@ -2,7 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QueuePage } from '../src/features/tasks/QueuePage';
+import { initialState } from '../src/app/app-state';
+import { StoryDreamProvider } from '../src/ui';
+import type { StoryDreamApi } from '../src/shared/storydream-api';
 import {
   ORDINARY_TASK_STAGES,
   assertTaskLifecycleAction,
@@ -102,7 +108,7 @@ describe('task operation contracts', () => {
 
   it('formats history task types without hiding specialized workflows behind story tracks', () => {
     expect(taskHistoryTypeLabel(task({ taskType: 'html-video', track: 'character-story' }))).toBe('HTML 动画');
-    expect(taskHistoryTypeLabel(task({ taskType: 'editorial-collage', track: 'editorial-explainer' }))).toBe('VOX 视觉');
+    expect(taskHistoryTypeLabel(task({ taskType: 'editorial-collage', track: 'editorial-explainer' }))).toBe('创意动画');
     expect(taskHistoryTypeLabel(task({ taskType: 'motion-comic', track: 'motion-comic' }))).toBe('AI 漫剧');
     expect(taskHistoryTypeLabel(task({ taskType: 'music-mv', track: 'music-mv' }))).toBe('音乐 MV');
     expect(taskHistoryTypeLabel(task({ taskType: 'story', track: 'character-story' }))).toBe('人物故事');
@@ -181,8 +187,24 @@ describe('task operation contracts', () => {
     expect(queue).toContain("api.updateTaskStatus(task.id, 'running')");
     expect(queue).toContain('retryFailedTask');
     expect(queue).toContain('api.retryTask(task.id)');
-    expect(queue.match(/aria-label="继续任务"/gu)).toHaveLength(1);
-    expect(queue.match(/aria-label="重试任务"/gu)).toHaveLength(1);
+    // Assert the accessible controls emitted by IconButton, including absence in
+    // ineligible states, rather than requiring aria-label at the feature callsite.
+    const cases: [Task['status'], number, number][] = [
+      ['draft', 0, 0], ['pending', 0, 0], ['running', 0, 0],
+      ['paused', 1, 1], ['failed', 0, 1], ['cancelled', 0, 1], ['completed', 0, 0],
+    ];
+    for (const [status, continueCount, retryCount] of cases) {
+      const html = renderToStaticMarkup(createElement(StoryDreamProvider, { theme: 'dark',
+        children: createElement(QueuePage, {
+          api: {} as StoryDreamApi,
+          state: { ...initialState, tasks: [task({ status })] },
+          applyState: vi.fn(), openNewTask: vi.fn(), openTaskDetail: vi.fn(),
+          isBrowserPreview: false,
+        }),
+      }));
+      expect(html.match(/<button\b[^>]*aria-label="继续任务"/gu) ?? [], status).toHaveLength(continueCount);
+      expect(html.match(/<button\b[^>]*aria-label="重试任务"/gu) ?? [], status).toHaveLength(retryCount);
+    }
     expect(queue).toContain("task.status === 'paused'");
     expect(queue).toContain("task.status === 'paused' || task.status === 'failed' || task.status === 'cancelled'");
     expect(queue).toContain("task.status === 'completed' && task.outputDir");
