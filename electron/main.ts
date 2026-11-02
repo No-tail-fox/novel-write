@@ -32,7 +32,6 @@ import { createLemoOfficialOperations } from './lemo-official-production';
 import { StockMediaService } from './stock-media-service';
 import { LemoProviderCapabilityService, createLemoCapabilityHandlers } from './lemo-provider-capability-service';
 import { lemoOfficialSessionLimits, resolveLemoOfficialRuntimeConfig } from './lemo-official-runtime-config';
-import { assertLemoSdkProviderProtocol } from '../src/shared/lemo-agent-sdk';
 import { llmEndpoint, resolveLlmProtocol } from '../src/shared/llm-protocol';
 import { prepareLemoUpstreamPicture } from './lemo-upstream-picture';
 import { listVoxProductionProjects } from './vox-production-projects';
@@ -3305,13 +3304,12 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
     const styleReferences = new Map<string, string>();
     const upstreamLibrary = lemoProductionLibrary();
     const native = voxProductionEngine(productionSettings) === LEMO_NATIVE_ENGINE;
-    if (native) assertLemoSdkProviderProtocol(resolveLlmProtocol(config.llm));
     const officialLocation = native ? await resolveLemoOfficialRuntimeConfig({
       isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath, electronExecutable: process.execPath,
     }) : undefined;
     const officialOperations = officialLocation ? createLemoOfficialOperations({ library: upstreamLibrary, work, session: {
       nodeExecutable: officialLocation.nodeExecutable, workerPath: officialLocation.workerPath,
-      provider: { protocol: 'anthropic', messagesUrl: llmEndpoint(config.llm), auth: 'x-api-key', apiKey: config.llm.apiKey, model: config.llm.model },
+      provider: { protocol: resolveLlmProtocol(config.llm), messagesUrl: llmEndpoint(config.llm), auth: resolveLlmProtocol(config.llm) === 'anthropic' ? 'x-api-key' : 'bearer', apiKey: config.llm.apiKey, model: config.llm.model },
       ...lemoOfficialSessionLimits(config.llm, productionSettings.lemoBudget),
     } }) : undefined;
     return createVoxProductionRuntime({
@@ -3329,7 +3327,6 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
         if (nodes.some(n => n.kind === 'voice') && !voice.connected) throw new Error(voice.unavailableReason);
         // Validate local references before claiming a paid request.
         if (native) {
-          assertLemoSdkProviderProtocol(resolveLlmProtocol(config.llm));
           await getLemoProviderCapabilities().assertReady(config.llm, lemoOfficialSessionLimits(config.llm, settings.lemoBudget).maxOutputTokens);
           if (!officialOperations) throw new Error('LEMO_OFFICIAL_UNAVAILABLE: 官方 SDK 制作运行时不可用。');
           if (settings.lockedShotIds.length) throw new Error('LEMO_LOCKED_SHOTS: 官方整片工程暂不支持混合锁定镜头，请解除镜头锁定后制作。');

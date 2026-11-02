@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { link, lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { verifyMessagesReceipt } from './message-receipt';
+import { verifyLemoProviderReceipt } from './provider-receipt';
+import { LLM_PROTOCOLS, type LlmProtocol } from '../../src/shared/llm-protocol';
 import type { LemoRequestLedger } from './request-ledger';
 
 const ID = /^[A-Za-z0-9_-]{1,160}$/;
@@ -11,10 +12,12 @@ const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest(
 interface ResponseLimits { version: 1; maxBytes: number }
 interface ResponseManifest {
   version: 1; requestId: string; fingerprint: string; stream: boolean;
+  protocol?: LlmProtocol;
   byteLength: number; sha256: string; createdAt: string;
 }
 export interface StoredLemoResponse {
   requestId: string; fingerprint: string; stream: boolean; response: Buffer;
+  protocol?: LlmProtocol;
 }
 async function rejectLinks(path: string) {
   let current = resolve(path);
@@ -101,17 +104,18 @@ export class LemoResponseStore {
     const final = this.destination(input.requestId);
     if (!HASH.test(input.fingerprint) || typeof input.stream !== 'boolean' || !Buffer.isBuffer(input.response)
       || input.response.length < 1 || input.response.length > this.maxBytes) throw new Error('LEMO_RESPONSE_INPUT');
-    verifyMessagesReceipt(input.response, input.stream);
+    if (input.protocol !== undefined && !LLM_PROTOCOLS.includes(input.protocol)) throw new Error('LEMO_RESPONSE_INPUT');
+    verifyLemoProviderReceipt(input.protocol ?? 'anthropic', input.response, input.stream);
     await rejectLinks(final);
     const existing = await this.load(input.requestId, input.fingerprint);
     if (existing) {
-      if (existing.stream !== input.stream || !existing.response.equals(input.response)) throw new Error('LEMO_RESPONSE_CONFLICT');
+      if ((existing.protocol ?? 'anthropic') !== (input.protocol ?? 'anthropic') || existing.stream !== input.stream || !existing.response.equals(input.response)) throw new Error('LEMO_RESPONSE_CONFLICT');
       return;
     }
     const staging = join(this.directory, `.${input.requestId}-${randomUUID()}.pending`);
     await mkdir(staging, { mode: 0o700 });
     const manifest: ResponseManifest = { version: 1, requestId: input.requestId, fingerprint: input.fingerprint,
-      stream: input.stream, byteLength: input.response.length, sha256: sha256(input.response), createdAt: new Date().toISOString() };
+      stream: input.stream, byteLength: input.response.length, sha256: sha256(input.response), createdAt: new Date().toISOString(), ...(input.protocol ? { protocol: input.protocol } : {}) };
     await writeExclusive(join(staging, 'response.bin'), input.response);
     await writeExclusive(join(staging, 'manifest.json'), Buffer.from(JSON.stringify(manifest), 'utf8'));
     await rejectLinks(final);
@@ -130,11 +134,12 @@ export class LemoResponseStore {
     if (!manifest || manifest.version !== 1 || manifest.requestId !== requestId || manifest.fingerprint !== fingerprint
       || typeof manifest.stream !== 'boolean' || !Number.isSafeInteger(manifest.byteLength) || manifest.byteLength < 1 || manifest.byteLength > this.maxBytes
       || typeof manifest.sha256 !== 'string' || !HASH.test(manifest.sha256) || typeof manifest.createdAt !== 'string' || !Number.isFinite(Date.parse(manifest.createdAt))
-      || Object.keys(manifest).sort().join(',') !== 'byteLength,createdAt,fingerprint,requestId,sha256,stream,version') throw new Error('LEMO_RESPONSE_MANIFEST');
+      || (manifest.protocol !== undefined && !LLM_PROTOCOLS.includes(manifest.protocol))
+      || Object.keys(manifest).filter(k => k !== 'protocol').sort().join(',') !== 'byteLength,createdAt,fingerprint,requestId,sha256,stream,version') throw new Error('LEMO_RESPONSE_MANIFEST');
     const response = await readRegular(join(final, 'response.bin'), this.maxBytes);
     if (response.length !== manifest.byteLength || sha256(response) !== manifest.sha256) throw new Error('LEMO_RESPONSE_CHECKSUM');
-    verifyMessagesReceipt(response, manifest.stream);
-    return { requestId, fingerprint, stream: manifest.stream, response };
+    verifyLemoProviderReceipt(manifest.protocol ?? 'anthropic', response, manifest.stream);
+    return { requestId, fingerprint, stream: manifest.stream, response, ...(manifest.protocol ? { protocol: manifest.protocol } : {}) };
   }
 }
 /** Explicit local recovery. No model call and no tool replay is performed here.
@@ -148,7 +153,7 @@ export async function recoverStoredLemoResponse(ledger: LemoRequestLedger, finge
   const store = await LemoResponseStore.open(ledger.responseDirectory, legacyMaxBytes);
   const artifact = await store.load(entry.requestId, fingerprint);
   if (!artifact) throw new Error('LEMO_RECOVERY_RESPONSE_MISSING');
-  const receipt = { outcome: 'received' as const, httpStatus: 200, ...verifyMessagesReceipt(artifact.response, artifact.stream) };
+  const receipt = { outcome: 'received' as const, httpStatus: 200, ...verifyLemoProviderReceipt(artifact.protocol ?? 'anthropic', artifact.response, artifact.stream) };
   await ledger.recordRecoveredResponse(entry.requestId, fingerprint, receipt);
   return artifact;
 }

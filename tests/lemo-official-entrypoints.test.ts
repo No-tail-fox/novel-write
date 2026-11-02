@@ -8,14 +8,15 @@ const start = main.indexOf('async (id, productionSettings) => {');
 const production = main.slice(start, main.indexOf('compileCode: compileVoxCode', start));
 
 describe('official native production wiring', () => {
-  it('chooses the official worker with external Node and native-only Anthropic messages', () => {
+  it('chooses the external worker and passes the actual saved protocol and endpoint', () => {
     expect(start).toBeGreaterThan(0);
-    expect(production).toContain('if (native) assertLemoSdkProviderProtocol(resolveLlmProtocol(config.llm))');
+    expect(production).not.toContain('assertLemoSdkProviderProtocol(');
     expect(production).toContain('native ? await resolveLemoOfficialRuntimeConfig(');
     expect(production).toContain('electronExecutable: process.execPath');
     expect(production).toContain('nodeExecutable: officialLocation.nodeExecutable');
     expect(production).not.toContain('nodeExecutable: process.execPath');
-    expect(production).toContain("messagesUrl: llmEndpoint(config.llm), auth: 'x-api-key'");
+    expect(production).toContain("protocol: resolveLlmProtocol(config.llm), messagesUrl: llmEndpoint(config.llm)");
+    expect(production).toContain("resolveLlmProtocol(config.llm) === 'anthropic' ? 'x-api-key' : 'bearer'");
     expect(production).toContain('createLemoOfficialOperations(');
     expect(production).toContain('...officialOperations');
     for (const retired of ['upstreamStep:', 'recoverUpstreamStep:', 'planFilm:', 'editFilmFile:', 'authorFilmFile:', 'generateFilm:']) expect(production).not.toContain(retired);
@@ -41,7 +42,7 @@ describe('official native production wiring', () => {
     const progress = source('src/features/editorial-collage/VoxProductionProgress.tsx');
     const page = source('src/features/editorial-collage/EditorialCollagePage.tsx');
     expect(progress).toContain("run?.authoringVersion === 4 && node.kind === 'film-edit'");
-    expect(progress).toContain('官方 SDK · 整片创作与审片');
+    expect(progress).toContain('创意动画 · 整片创作与审片');
     expect(progress).toContain('不会通过新建会话绕过');
     expect(progress).toContain("officialTarget ? '继续官方步骤'");
     expect(progress).not.toContain("onControl('recheck-code')");

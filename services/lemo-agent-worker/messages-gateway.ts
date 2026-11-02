@@ -1,11 +1,12 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { LemoRequestLedger, requestFingerprint } from './request-ledger';
-import { assertLemoSdkProviderProtocol } from '../../src/shared/lemo-agent-sdk';
+import { LLM_PROTOCOLS, type LlmProtocol } from '../../src/shared/llm-protocol';
+import { verifyLemoProviderReceipt } from './provider-receipt';
 
 export interface MessagesGatewayOptions {
   ledger: LemoRequestLedger;
-  provider: { protocol: 'anthropic'; messagesUrl: string; apiKey: string; auth: 'bearer' | 'x-api-key'; model: string };
+  provider: { protocol: LlmProtocol; messagesUrl: string; apiKey: string; auth: 'bearer' | 'x-api-key'; model: string };
   maxOutputTokens: number;
   timeoutMs: number;
   maxRequestBytes?: number;
@@ -13,7 +14,6 @@ export interface MessagesGatewayOptions {
   /** Protocol tests only: only 127.0.0.1 is permitted, never arbitrary HTTP. */
   allowLoopbackTestProvider?: boolean;
 }
-import { verifyMessagesReceipt } from './message-receipt';
 import { LemoResponseStore } from './response-store';
 export { verifyMessagesReceipt } from './message-receipt';
 function object(v: unknown): v is Record<string, unknown> { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -38,10 +38,12 @@ async function readRequest(req: IncomingMessage, limit: number) {
 export async function startLemoMessagesGateway(options: MessagesGatewayOptions) {
   // Pin this stage's provider/model configuration; later settings edits must not reroute in-flight work.
   options = { ...options, provider: { ...options.provider } };
-  assertLemoSdkProviderProtocol(options.provider.protocol);
+  const protocol = options.provider.protocol;
+  const route = protocol === 'anthropic' ? '/messages' : protocol === 'responses' ? '/responses' : '/chat/completions';
   const endpoint = new URL(options.provider.messagesUrl);
   if ((endpoint.protocol !== 'https:' && !(options.allowLoopbackTestProvider && endpoint.protocol === 'http:' && endpoint.hostname === '127.0.0.1'))
-    || endpoint.username || endpoint.password || endpoint.hash || endpoint.search || !endpoint.pathname.endsWith('/messages')
+    || !LLM_PROTOCOLS.includes(protocol) || endpoint.username || endpoint.password || endpoint.hash || endpoint.search || !endpoint.pathname.endsWith(route)
+    || (protocol !== 'anthropic' && options.provider.auth !== 'bearer')
     || !options.provider.apiKey || /[\r\n]/.test(options.provider.apiKey) || !['bearer','x-api-key'].includes(options.provider.auth)
     || !options.provider.model || !Number.isInteger(options.maxOutputTokens) || options.maxOutputTokens < 1
     || !Number.isInteger(options.timeoutMs) || options.timeoutMs < 1) throw new Error('LEMO_GATEWAY_OPTIONS');
@@ -56,7 +58,7 @@ export async function startLemoMessagesGateway(options: MessagesGatewayOptions) 
     const supplied = req.headers['x-api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '');
     if (typeof supplied !== 'string' || Buffer.byteLength(supplied) !== Buffer.byteLength(localToken)
       || !timingSafeEqual(Buffer.from(supplied), Buffer.from(localToken))) { blockedRequests++; reply(res, 403, 'LEMO_GATEWAY_AUTH'); return; }
-    if (closing || req.method !== 'POST' || !/^\/v1\/messages(?:\?beta=true)?$/.test(req.url ?? '')
+    if (closing || req.method !== 'POST' || !(req.url === '/v1' + route || (protocol === 'anthropic' && req.url === '/v1/messages?beta=true'))
       || !req.headers['content-type']?.startsWith('application/json') || req.headers['content-encoding']) {
       blockedRequests++; reply(res, 400, 'LEMO_GATEWAY_ROUTE'); return;
     }
@@ -72,9 +74,14 @@ export async function startLemoMessagesGateway(options: MessagesGatewayOptions) 
     try {
       const bytes = await readRequest(req, requestLimit);
       const body: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-      if (!object(body) || body.model !== options.provider.model || !Array.isArray(body.messages) || !body.messages.length
-        || (body.stream !== undefined && typeof body.stream !== 'boolean') || !Number.isInteger(body.max_tokens)
-        || (body.max_tokens as number) < 1 || (body.max_tokens as number) > options.maxOutputTokens) throw new Error('LEMO_GATEWAY_REQUEST');
+      if (!object(body)) throw new Error('LEMO_GATEWAY_REQUEST');
+      const messages = protocol === 'responses' ? body.input : body.messages;
+      const budget = protocol === 'responses' ? body.max_output_tokens : protocol === 'openai' ? body.max_completion_tokens ?? body.max_tokens : body.max_tokens;
+      if (body.model !== options.provider.model || !Array.isArray(messages) || !messages.length
+        || (body.stream !== undefined && typeof body.stream !== 'boolean') || !Number.isInteger(budget)
+        || (budget as number) < 1 || (budget as number) > options.maxOutputTokens
+        || (protocol === 'openai' && body.max_tokens !== undefined && body.max_completion_tokens !== undefined)
+        || (protocol === 'responses' && (body.store !== false || body.background === true || body.previous_response_id !== undefined))) throw new Error('LEMO_GATEWAY_REQUEST');
       if (controller.signal.aborted) throw new Error('LEMO_GATEWAY_CANCELLED');
       // SDK retry metadata is not a new creative instruction and cannot bypass deduplication.
       const { metadata: _metadata, ...semanticBody } = body;
@@ -83,11 +90,11 @@ export async function startLemoMessagesGateway(options: MessagesGatewayOptions) 
       if (controller.signal.aborted) {
         await options.ledger.settle(id, { outcome: 'rejected' }); id = undefined; throw new Error('LEMO_GATEWAY_CANCELLED');
       }
-      const headers: Record<string, string> = { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' };
+      const headers: Record<string, string> = { 'content-type': 'application/json', ...(protocol === 'anthropic' ? { 'anthropic-version': '2023-06-01' } : {}) };
       if (options.provider.auth === 'bearer') headers.authorization = `Bearer ${options.provider.apiKey}`;
       else headers['x-api-key'] = options.provider.apiKey;
       const beta = req.headers['anthropic-beta'];
-      if (typeof beta === 'string' && beta.length <= 4096) headers['anthropic-beta'] = beta;
+      if (protocol === 'anthropic' && typeof beta === 'string' && beta.length <= 4096) headers['anthropic-beta'] = beta;
       forwardedRequests++;
       const upstream = await fetch(endpoint, { method: 'POST', body: bytes, headers, redirect: 'manual', signal: controller.signal });
       status = upstream.status;
@@ -106,10 +113,10 @@ export async function startLemoMessagesGateway(options: MessagesGatewayOptions) 
           if (size > responseLimit) throw new Error('LEMO_GATEWAY_RESPONSE_SIZE'); chunks.push(part.value); }
       } finally { await reader.cancel().catch(() => {}); }
       const response = Buffer.concat(chunks);
-      const receipt = verifyMessagesReceipt(response, body.stream === true);
+      const receipt = verifyLemoProviderReceipt(protocol, response, body.stream === true);
       // Persist the complete private result BEFORE its receipt or delivery to the SDK.
       // A crash here is recovered explicitly from local evidence, never by recharging.
-      await responseStore.save({ requestId: id, fingerprint, stream: body.stream === true, response });
+      await responseStore.save({ requestId: id, fingerprint, stream: body.stream === true, response, ...(protocol === 'anthropic' ? {} : { protocol }) });
       await options.ledger.settle(id, { outcome: 'received', httpStatus: 200, ...receipt }); id = undefined;
       res.writeHead(200, { 'content-type': body.stream ? 'text/event-stream; charset=utf-8' : 'application/json', 'cache-control': 'no-store' });
       res.end(response);

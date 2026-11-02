@@ -1,4 +1,33 @@
-# Lemo 官方 Agent SDK 独立 worker（受控文件会话已接通，影片生产未开放）
+# Lemo 独立 worker（多协议试用版）
+
+## 2026-11-03：当前行为
+
+创意动画生产入口支持按已保存的模型配置选择三个协议：Anthropic Messages 使用 Claude Agent SDK 0.3.314；OpenAI Chat Completions 和 Responses 使用 AI SDK 7.0.159 与 @ai-sdk/openai 4.0.106。依赖版本在 worker 自己的 package-lock.json 固定，不修改 Lemo 上游插件。
+
+AI SDK 负责原生请求、工具参数和多轮消息的协议转换。宿主按轮次先保存完整供应商回执和会话状态，再执行原有受控工具；没有开放 Shell、任意联网、自动安装或 SDK 自动工具执行。工具整批验证通过后才开始执行，审片图片必须进入下一轮，才能接受 finish_film。
+
+- 三种协议均须先通过设置页的 Lemo 能力验证。只支持协议名并不意味着任意模型均能创作；模型和渠道还必须支持工具、图片输入、多轮反馈、取消与足够输出额度。能力验证会真实调用所选渠道，须由用户主动发起。
+- 新后端保存协议、版本、会话身份、配置指纹、消息和审片状态。未完成请求、未结算工具和不匹配身份会阻断恢复，不自动重试未知结果。
+- Chat / Responses 按总请求数、每阶段轮数、单次输出 Token 和固定总时限控制；暂停不会重置时限。没有可信渠道价格，故不提供美元费用上限。Messages 继续使用 SDK 的估算费用限制。
+- 素材、旁白、字幕、渲染、镜头修复和成片登记继续由原有宿主流程负责。执行器返回成功仍不代表成片质量已验收。
+
+## 当前构建与本地验证
+
+使用独立 Node.js 22+，先在仓库根目录安装根依赖，再运行：
+
+```text
+npm ci --prefix services/lemo-agent-worker --ignore-scripts --no-audit --no-fund
+npm run build:lemo-worker
+npm run typecheck
+npm run build
+node node_modules/vitest/vitest.mjs run tests/lemo-native-provider.test.ts tests/lemo-native-session.test.ts
+```
+
+本地整片 QA 使用 scripts/run-lemo-official-production-qa.mjs；通过环境变量 STORYDREAM_LEMO_QA_PROTOCOL 选择 openai、responses 或 anthropic。模型响应由本机夹具提供，真实执行文件工具、Electron 审片、配音合成、MP4 导出和镜头修复。不会调用真实模型服务，也不能据此宣称真实渠道或审美质量已通过。
+
+实际试用：保存模型及协议 → 在设置中执行该模型的 Lemo 能力验证 → 在项目中选择同一模型 → 按此风格创作全片。启动失败会保留设置并在弹窗内展示错误。
+
+## 历史记录（2026-11-02，以下阶段状态不代表当前限制）
 
 固定 `@anthropic-ai/claude-agent-sdk@0.3.314` 和 Lemo 上游提交 `f17136060781a0068a7951245a3aa7835a7230de`。这里使用官方 SDK，不是旧六工具循环，也不修改上游插件。
 

@@ -273,9 +273,9 @@ async function readyFilm(p: Prepared) {
 export function createLemoOfficialOperations(options: LemoOfficialProductionOptions) {
   const preflightOfficial = async (styleId?: string) => {
     const s = options.session;
-    if (s.provider.protocol !== 'anthropic') throw new Error('LEMO_SDK_PROTOCOL: 请为创意动画选择 Anthropic Messages 文本模型。');
+    const route = s.provider.protocol === 'anthropic' ? '/messages' : s.provider.protocol === 'responses' ? '/responses' : '/chat/completions';
     const url = new URL(s.provider.messagesUrl);
-    if ((url.protocol !== 'https:' && !(s.allowLoopbackTestProvider && url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.search || url.hash || url.username || url.password || !url.pathname.endsWith('/messages')
+    if ((url.protocol !== 'https:' && !(s.allowLoopbackTestProvider && url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.search || url.hash || url.username || url.password || !url.pathname.endsWith(route)
       || !s.provider.apiKey || !s.provider.model) throw new Error('LEMO_OFFICIAL_PROVIDER_CONFIG');
     for (const path of [s.nodeExecutable, s.workerPath]) if (!isAbsolute(path) || !existsSync(path)) throw new Error('LEMO_OFFICIAL_RUNTIME_MISSING: 请安装 Node.js 20+ 并构建官方 SDK worker。');
     await verifyPinnedLemoPlugin(options.library.upstreamRoot);

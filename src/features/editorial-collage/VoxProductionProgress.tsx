@@ -14,7 +14,7 @@ export function voxProductionNodeLabel(run: VoxProductionRun | undefined, node: 
     if (node.id === 'official-voice-lock') return '锁定旁白与时序';
     if (node.id.startsWith('official-repair:')) return '修复指定镜头';
   }
-  if (run?.authoringVersion === 4 && node.kind === 'film-edit') return '官方 SDK · 整片创作与审片';
+  if (run?.authoringVersion === 4 && node.kind === 'film-edit') return '创意动画 · 整片创作与审片';
   if (run?.authoringVersion === 4 && node.kind === 'film-finalize') return '校验官方工程与审片凭据';
   return voxProductionNodeLabels[node.kind];
 }
@@ -84,7 +84,7 @@ export function VoxProductionProgress({ open = true, run, shots = [], busy, onCl
         {repairCount >= repairLimit ? <p role="status">已达到本次制作的镜头修复次数上限。</p> : null}
       </section> : null}
       {target ? <section className="vox-production-recovery">
-        <h3>请求结果不确定：{officialTarget ? '官方 SDK · 整片创作与审片' : target.kind === 'plan' && run.planningVersion === 1 ? '全局创意大纲' : voxProductionNodeLabels[target.kind]}</h3>
+        <h3>请求结果不确定：{officialTarget ? '创意动画 · 整片创作与审片' : target.kind === 'plan' && run.planningVersion === 1 ? '全局创意大纲' : voxProductionNodeLabels[target.kind]}</h3>
         <p role="alert">{officialTarget ? '继续时会沿用本次制作的官方会话，先核对已保存结果；尚未确认的请求会阻止继续，不会通过新建会话绕过。' : '直接重试会重新提交此步骤。如果原请求仍在服务商处理中，可能重复计费。'}</p>
         <details>
           <summary>其他恢复选项</summary>

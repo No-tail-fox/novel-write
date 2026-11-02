@@ -11,6 +11,33 @@ const run = async (operation: () => Promise<unknown>) => operation();
 function tokens(source: string, required: string[]) { for (const value of required) expect(source, value).toContain(value); }
 
 describe('creative production command behavior', () => {
+  it('clears previous action feedback before reopening production settings', async () => {
+    const clear = vi.fn(), open = vi.fn();
+    const show = productionHandler(editorial, 'openProductionSettings', { projectAction: { clearFeedback: clear }, setProductionOpen: open });
+    await show();
+    expect(clear).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledExactlyOnceWith(true);
+    expect(clear.mock.invocationCallOrder[0]).toBeLessThan(open.mock.invocationCallOrder[0]);
+  });
+
+  it.each(['save', 'start'])('keeps the production dialog open when %s fails and routes its feedback into the dialog', async failure => {
+    const error = new Error(failure === 'start' ? 'LEMO_SDK_PROTOCOL: 需要 Anthropic Messages。' : '项目保存失败。');
+    const feedback = vi.fn(), close = vi.fn();
+    const guardedRun = async (operation: () => Promise<unknown>) => {
+      try { return { ok: true, value: await operation() }; }
+      catch (cause) { feedback(cause); return { ok: false }; }
+    };
+    const save = vi.fn(async () => { if (failure === 'save') throw error; return { id: 'project', updatedAt: 'revision-2' }; });
+    const api = { startVoxProduction: vi.fn(async () => { throw error; }), getTaskDetail: vi.fn() };
+    const start = productionHandler(editorial, 'startProduction', { documentRef: { current: { id: 'project' } }, projectAction: { run: guardedRun }, enqueueProjectMutation: save, api, setProductionOpen: close });
+    await start({ authoring: { mode: 'ai-code', styleId: 'caption-news' } });
+    expect(feedback).toHaveBeenCalledExactlyOnceWith(error);
+    expect(close).not.toHaveBeenCalled();
+    expect(api.getTaskDetail).not.toHaveBeenCalled();
+    expect(api.startVoxProduction).toHaveBeenCalledTimes(failure === 'start' ? 1 : 0);
+    expect(sourceText(editorial).match(/<VoxProductionDialog[^>]+>/)?.[0]).toContain('feedback={projectAction.feedback}');
+  });
+
   it('startVoxProduction saves first and submits the saved revision and settings', async () => {
     const saved = { id: 'project', updatedAt: 'revision-2' }, settings = { mode: 'film' };
     const api = { startVoxProduction: vi.fn(async () => undefined), getTaskDetail: vi.fn(async () => null) };

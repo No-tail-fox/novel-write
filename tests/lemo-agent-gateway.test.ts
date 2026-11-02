@@ -107,7 +107,7 @@ describe('official Messages gateway with local upstream', () => {
     const base: MessagesGatewayOptions = { ledger: value, provider: { protocol: 'anthropic', messagesUrl: 'https://provider.invalid/v1/messages', apiKey: 'not-real', auth: 'bearer', model: 'm' }, maxOutputTokens: 32768, timeoutMs: 1000 };
     for (const url of ['http://provider.invalid/v1/messages','http://127.0.0.1/v1/messages','https://user:secret@provider.invalid/v1/messages','https://provider.invalid/v1/messages?token=secret'])
       await expect(startLemoMessagesGateway({ ...base, provider: { ...base.provider, messagesUrl: url } })).rejects.toThrow('OPTIONS');
-    await expect(startLemoMessagesGateway({ ...base, provider: { ...base.provider, protocol: 'openai' as 'anthropic' } })).rejects.toThrow('PROTOCOL');
+    await expect(startLemoMessagesGateway({ ...base, provider: { ...base.provider, protocol: 'openai' } })).rejects.toThrow('OPTIONS');
     await expect(startLemoMessagesGateway({ ...base, maxOutputTokens: 0 })).rejects.toThrow('OPTIONS');
   });
   it('does not forward requests without the random loopback token or on a different route', async () => {

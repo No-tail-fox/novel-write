@@ -137,6 +137,9 @@
 .creative-style-film-copy > .sd-button { justify-self: start; }
 .sd-dialog-surface:has(.vox-production-form) .fui-DialogActions { display: flex; grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-end; }
 .sd-dialog-surface:has(.vox-production-form) .fui-DialogActions > .sd-button { flex: 0 0 auto; white-space: nowrap; }
+.vox-production-feedback { flex: 1 0 100%; min-width: 0; display: grid; gap: 8px; }
+.vox-production-feedback .inline-action-feedback { margin: 0; }
+.vox-production-feedback p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
 .vox-settings-disclosure { min-width: 0; border-top: 1px solid var(--shell-border); }
 .vox-settings-disclosure > summary { padding-block: 12px; cursor: pointer; color: var(--shell-text); font-size: 13px; font-weight: 500; }
 .vox-settings-disclosure > summary:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 2px; }

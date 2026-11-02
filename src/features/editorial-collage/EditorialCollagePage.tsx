@@ -789,6 +789,11 @@ export function EditorialCollagePage({
     return result.ok && documentRef.current === result.value;
   }
 
+  function openProductionSettings() {
+    projectAction.clearFeedback();
+    setProductionOpen(true);
+  }
+
   async function saveProductionSettings(settings: VoxProductionSettings) {
     const current = documentRef.current;
     if (!current) return;
@@ -1200,7 +1205,7 @@ export function EditorialCollagePage({
           : productionRun?.status === 'paused' ? '已暂停' : undefined;
   return <div data-editorial-collage-workbench="true">
     <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} />
-    {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} musicLibrary={state.config.jianying.bgmLibrary} api={api} /> : null}
+    <VoxProductionDialog key={document.id} open={productionOpen} document={document} busy={projectAction.busy} feedback={projectAction.feedback} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} musicLibrary={state.config.jianying.bgmLibrary} api={api} />
     {musicOpen && musicSettings ? <Dialog key={document.id} open title="整片背景音乐" onOpenChange={open => { if (!projectAction.busy) setMusicOpen(open); }} actions={<>
       <Button disabled={projectAction.busy} onClick={() => setMusicOpen(false)}>取消</Button>
       <Button variant="primary" disabled={projectAction.busy || productionRunning} onClick={() => void saveProductionSettings(musicSettings)}>保存音乐</Button>
@@ -1236,8 +1241,8 @@ export function EditorialCollagePage({
         summary: productionIntent || (productionRun ? `${productionRun.nodes.filter(n => n.status === 'completed').length}/${productionRun.nodes.length} 步 · ${activeNode ? voxProductionNodeLabel(productionRun, activeNode) : productionRun.status === 'completed' ? '已完成' : productionRun.status === 'paused' ? '已暂停' : '制作任务'}${productionRun.message ? ` · ${productionRun.status === 'failed' ? summarizeErrorMessage(productionRun.message) : productionRun.message}` : ' · 应用保持打开时可离开页面继续执行'}` : '选择预设后自动制作；高级设置可保留自定义镜头'),
         label: productionUnknown ? '查看失败与恢复' : productionIntent ? '等待当前步骤…' : productionRunning ? '暂停制作' : productionResume ? productionRun.status === 'failed' ? '重试失败步骤' : '继续自动制作' : productionRun?.status === 'completed' ? '重新制作…' : '自动制作…',
         disabled: !shots.length || projectAction.busy || providerAction.busy || Boolean(productionIntent),
-        onAction: () => productionUnknown ? setProductionDetailsOpen(true) : productionResume ? void controlProduction('resume') : setProductionOpen(true),
-        onPause: () => void controlProduction('pause'), onCancel: () => void controlProduction('cancel'), onSettings: () => setProductionOpen(true),
+        onAction: () => productionUnknown ? setProductionDetailsOpen(true) : productionResume ? void controlProduction('resume') : openProductionSettings(),
+        onPause: () => void controlProduction('pause'), onCancel: () => void controlProduction('cancel'), onSettings: openProductionSettings,
         onMusic: () => { setMusicSettings(documentRef.current?.productionSettings ?? voxProductionSettings()); setMusicOpen(true); },
         onDetails: productionRun ? () => setProductionDetailsOpen(true) : undefined,
       }}

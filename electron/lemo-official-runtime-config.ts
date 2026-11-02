@@ -59,13 +59,13 @@ export async function resolveLemoOfficialRuntimeConfig(input: LemoOfficialRuntim
       if (normalize(canonical) === electron) continue;
       const version = (await dependencies.execute(canonical, ['--version'], env)).trim();
       const match = /^v(\d+)\.(\d+)\.(\d+)(?:-[A-Za-z0-9.-]+)?$/.exec(version);
-      if (!match || Number(match[1]) < 20) continue;
+      if (!match || Number(match[1]) < 22) continue;
       const runtime = JSON.parse(await dependencies.execute(canonical, ['-p', 'JSON.stringify({name:process.release.name,node:process.versions.node,electron:process.versions.electron||null})'], env));
       if (runtime.name !== 'node' || runtime.electron !== null || runtime.node !== version.slice(1)) continue;
       return { nodeExecutable: canonical, workerPath: await dependencies.realpath(workerPath), nodeVersion: version };
     } catch { /* Try another installed genuine Node runtime; never dispatch a worker here. */ }
   }
-  throw new Error('LEMO_OFFICIAL_NODE_REQUIRED: 未找到可用的独立 Node.js 20+。请安装 Node.js 20 或更新版本并加入 PATH；Electron 不能替代此运行时。');
+  throw new Error('LEMO_OFFICIAL_NODE_REQUIRED: 未找到可用的独立 Node.js 22+。请安装 Node.js 22 或更新版本并加入 PATH；Electron 不能替代此运行时。');
 }
 
 export function lemoOfficialSessionLimits(config: Pick<LlmConfig, 'requestParamsJson' | 'timeoutMs'>, budget?: LemoProductionBudget) {

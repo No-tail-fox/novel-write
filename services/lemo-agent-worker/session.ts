@@ -16,7 +16,9 @@ import { createLemoProductionTools } from './production-tools';
 export function validateLemoSessionRequest(raw: unknown): LemoAgentSessionRequest {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('LEMO_SESSION_REQUEST');
   const v = raw as Record<string, unknown>;
-  if (Object.keys(v).filter(key => !['capability', 'maxBudgetUsd'].includes(key)).sort().join(',') !== 'action,configFingerprint,gateway,inputFingerprint,maxOutputTokens,maxTurns,model,prompt,runId,runRoot,stageId,upstreamRoot,version'
+  if (Object.keys(v).filter(key => !['capability', 'maxBudgetUsd', 'protocol'].includes(key)).sort().join(',') !== 'action,configFingerprint,gateway,inputFingerprint,maxOutputTokens,maxTurns,model,prompt,runId,runRoot,stageId,upstreamRoot,version'
+    || (v.protocol !== undefined && !['openai', 'responses'].includes(String(v.protocol)))
+    || (v.protocol !== undefined && v.maxBudgetUsd !== undefined)
     || (v.maxBudgetUsd !== undefined && (typeof v.maxBudgetUsd !== 'number' || !Number.isFinite(v.maxBudgetUsd) || v.maxBudgetUsd <= 0 || v.maxBudgetUsd > 1000))
     || (v.capability !== undefined && v.capability !== 'film-authoring-v1')
     || v.version !== 1 || !['start', 'resume'].includes(String(v.action))
@@ -36,7 +38,7 @@ export function validateLemoSessionRequest(raw: unknown): LemoAgentSessionReques
   return structuredClone(raw) as LemoAgentSessionRequest;
 }
 
-async function artifactPaths(root: string): Promise<string[]> {
+export async function artifactPaths(root: string): Promise<string[]> {
   const found: string[] = [];
   async function walk(directory: string, prefix: string) {
     for (const name of await readdir(directory)) {
@@ -60,6 +62,7 @@ export async function runLemoAgentSession(raw: unknown, options: {
   invokeHostTool?: (request: LemoAgentHostToolRequest) => Promise<LemoAgentHostToolResult>;
 } = {}): Promise<LemoAgentSessionReceipt> {
   const request = validateLemoSessionRequest(raw);
+  if (request.protocol) return (await import('./native-session')).runLemoNativeSession(request, options);
   const filmCapability = request.capability === 'film-authoring-v1';
   if (filmCapability && !options.invokeHostTool) throw new Error('LEMO_SESSION_HOST_TOOLS_REQUIRED');
   if (options.signal?.aborted) throw new Error('LEMO_SESSION_CANCELLED');

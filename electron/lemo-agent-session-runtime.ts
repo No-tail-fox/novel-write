@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { validateLemoAgentHostToolResult, type LemoAgentHostToolRequest, type LemoAgentHostToolResult, type LemoAgentSessionEvent, type LemoAgentSessionReceipt, type LemoAgentSessionRequest } from '../src/shared/lemo-agent-session';
+import { LEMO_NATIVE_AGENT_VERSION, validateLemoAgentHostToolResult, type LemoAgentHostToolRequest, type LemoAgentHostToolResult, type LemoAgentSessionEvent, type LemoAgentSessionReceipt, type LemoAgentSessionRequest } from '../src/shared/lemo-agent-session';
 import { LEMO_AGENT_SDK_VERSION } from '../src/shared/lemo-agent-sdk';
 import { LemoRequestLedger, requestFingerprint } from '../services/lemo-agent-worker/request-ledger';
 import { startLemoMessagesGateway, type MessagesGatewayOptions } from '../services/lemo-agent-worker/messages-gateway';
@@ -9,6 +9,7 @@ import { prepareLemoStateDirectory } from '../services/lemo-agent-worker/paths';
 import { lemoWorkerEnvironment } from '../services/lemo-agent-worker/environment';
 import { stopWorkerTree } from './lemo-agent-runtime';
 import { openLemoExecutionBudget } from './lemo-execution-budget';
+import { openLemoNativeBudget } from './lemo-native-budget';
 
 export interface OfficialLemoSessionOptions {
   action: 'start' | 'resume';
@@ -32,9 +33,10 @@ export interface OfficialLemoSessionOptions {
 export function lemoSessionFingerprints(options: OfficialLemoSessionOptions) {
   return { inputFingerprint: requestFingerprint({ runId: options.runId, stageId: options.stageId, prompt: options.prompt }),
     configFingerprint: requestFingerprint({ version: 1, capability: options.capability ?? 'audited-project-files-v1',
+      ...(options.provider.protocol === 'anthropic' ? {} : { backend: LEMO_NATIVE_AGENT_VERSION }),
       provider: { ...options.provider, apiKey: createHash('sha256').update(options.provider.apiKey).digest('hex') },
       maxOutputTokens: options.maxOutputTokens, maxRequests: options.maxRequests, maxTurns: options.maxTurns,
-      ...(options.maxEstimatedCostUsd === undefined ? {} : { maxEstimatedCostUsd: options.maxEstimatedCostUsd, timeoutMs: options.timeoutMs, maxRepairRounds: options.maxRepairRounds }) }) };
+      ...(options.maxEstimatedCostUsd === undefined ? {} : { maxEstimatedCostUsd: options.maxEstimatedCostUsd, timeoutMs: options.timeoutMs, maxRepairRounds: options.maxRepairRounds ?? 3 }) }) };
 }
 
 export function sessionTransport(options: OfficialLemoSessionOptions, request: LemoAgentSessionRequest, env: NodeJS.ProcessEnv) {
@@ -102,7 +104,7 @@ export function sessionTransport(options: OfficialLemoSessionOptions, request: L
       if (data.ok !== true) { failure ??= typeof data.code === 'string' && /^LEMO_[A-Z_]+$/.test(data.code) ? data.code : 'LEMO_SESSION_WORKER_FAILED'; return; }
       const r = data.result;
       if (pending.size || receipt || !r || r.version !== 1 || r.runId !== request.runId || r.stageId !== request.stageId
-        || r.sdkVersion !== LEMO_AGENT_SDK_VERSION || typeof r.cliVersion !== 'string' || !/^[a-f0-9-]{36}$/.test(r.sessionId)
+        || r.sdkVersion !== (request.protocol ? LEMO_NATIVE_AGENT_VERSION : LEMO_AGENT_SDK_VERSION) || typeof r.cliVersion !== 'string' || !/^[a-f0-9-]{36}$/.test(r.sessionId)
         || !['completed', 'failed', 'cancelled', 'unknown'].includes(r.status) || r.deliveryStatus !== 'unverified' || !Array.isArray(r.artifacts)) {
         finish(new Error('LEMO_SESSION_WORKER_OUTPUT')); return;
       }
@@ -148,7 +150,10 @@ export async function runOfficialLemoAgentSession(options: OfficialLemoSessionOp
   const cancelGateway = () => { void closeGateway(); };
   try {
     if (ledger.summary().blocked) throw new Error('LEMO_LEDGER_BLOCKED');
-    const budget = options.maxEstimatedCostUsd === undefined ? undefined : await openLemoExecutionBudget(executionRoot,
+    const native = options.provider.protocol !== 'anthropic';
+    const nativeBudget = native ? await openLemoNativeBudget(executionRoot, { protocol: options.provider.protocol as 'openai' | 'responses',
+      maxRequests: options.maxRequests, maxOutputTokens: options.maxOutputTokens, timeoutMs: options.timeoutMs }, options.action === 'resume' || sharedExecution || ledger.summary().requests > 0) : undefined;
+    const budget = native || options.maxEstimatedCostUsd === undefined ? undefined : await openLemoExecutionBudget(executionRoot,
       { timeoutMs: options.timeoutMs, maxEstimatedCostUsd: options.maxEstimatedCostUsd }, options.action === 'resume' || sharedExecution || ledger.summary().requests > 0);
     gateway = await startLemoMessagesGateway({ ledger, provider: options.provider, maxOutputTokens: options.maxOutputTokens,
       timeoutMs: options.requestTimeoutMs, allowLoopbackTestProvider: options.allowLoopbackTestProvider,
@@ -156,11 +161,12 @@ export async function runOfficialLemoAgentSession(options: OfficialLemoSessionOp
     options.signal?.addEventListener('abort', cancelGateway, { once: true });
     if (options.signal?.aborted) { await closeGateway(); throw new Error('LEMO_SESSION_CANCELLED'); }
     const request: LemoAgentSessionRequest = { version: 1, action: options.action, runRoot: options.runRoot, upstreamRoot: options.upstreamRoot,
+      ...(options.provider.protocol === 'anthropic' ? {} : { protocol: options.provider.protocol }),
       runId: options.runId, stageId: options.stageId, prompt: options.prompt, ...(options.capability ? { capability: options.capability } : {}), ...lemoSessionFingerprints(options),
       gateway: { baseUrl: gateway.baseUrl, token: gateway.localToken }, model: options.provider.model, maxOutputTokens: options.maxOutputTokens, maxTurns: options.maxTurns };
     const remaining = await budget?.claim(options.stageId);
     if (remaining) request.maxBudgetUsd = remaining.remainingCostUsd;
-    const receipt = await sessionTransport({ ...options, timeoutMs: remaining?.remainingMs ?? options.timeoutMs }, request, lemoWorkerEnvironment(process.env, state));
+    const receipt = await sessionTransport({ ...options, timeoutMs: nativeBudget?.remainingMs ?? remaining?.remainingMs ?? options.timeoutMs }, request, lemoWorkerEnvironment(process.env, state));
     await budget?.settle(options.stageId, receipt.estimatedCostUsd);
     await closeGateway();
     return { receipt, ledger: gateway.summary() };

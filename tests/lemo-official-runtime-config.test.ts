@@ -23,7 +23,7 @@ function fixture(patch: Partial<LemoOfficialRuntimeLocation> = {}) {
 }
 
 describe('official worker external Node locator', () => {
-  it('locates the development worker and verifies a genuine external Node 20+', async () => {
+  it('locates the development worker and verifies a genuine external Node 22+', async () => {
     const f = fixture();
     await expect(f.run()).resolves.toEqual({ nodeExecutable: f.node, workerPath: f.worker, nodeVersion: 'v22.14.0' });
     expect(f.execute.mock.calls.map(call => call[1][0])).toEqual(['--version', '-p']);
@@ -50,7 +50,7 @@ describe('official worker external Node locator', () => {
     await expect(f.run()).rejects.toThrow('LEMO_RELEASE_SDK_PREPARATION_FAILED');
     expect(f.execute).not.toHaveBeenCalled();
   });
-  it.each(['v18.20.0', '20.0.0', 'v20.invalid'])('rejects an unsupported version %s', async version => {
+  it.each(['v18.20.0', 'v20.19.0', '20.0.0', 'v20.invalid'])('rejects an unsupported version %s', async version => {
     const f = fixture(); f.execute.mockResolvedValue(version);
     await expect(f.run()).rejects.toThrow('LEMO_OFFICIAL_NODE_REQUIRED');
     expect(f.execute).toHaveBeenCalledTimes(1);
@@ -77,7 +77,7 @@ describe('official worker external Node locator', () => {
   it('falls back to a genuine Node on PATH after an unusable explicit executable', async () => {
     const f = fixture(); const pathNode = join(root, 'path-node', f.nodeName); f.files.add(pathNode);
     f.input.environment!.PATH = join(root, 'path-node');
-    f.execute.mockImplementation(async (path, args) => path === f.node ? 'v18.20.0' : args[0] === '--version' ? 'v20.19.0' : JSON.stringify({ name: 'node', node: '20.19.0', electron: null }));
+    f.execute.mockImplementation(async (path, args) => path === f.node ? 'v18.20.0' : args[0] === '--version' ? 'v22.14.0' : JSON.stringify({ name: 'node', node: '22.14.0', electron: null }));
     expect((await f.run()).nodeExecutable).toBe(pathNode);
   });
   it('rejects relative input paths before a worker probe', async () => {

@@ -11,6 +11,7 @@ import { rejectLedgerLinks } from '../services/lemo-agent-worker/ledger-owner';
 import { prepareLemoStateDirectory } from '../services/lemo-agent-worker/paths';
 import { lemoSessionFingerprints, runOfficialLemoAgentSession, type OfficialLemoSessionOptions } from './lemo-agent-session-runtime';
 import { openLemoExecutionBudget } from './lemo-execution-budget';
+import { openLemoNativeBudget } from './lemo-native-budget';
 
 export const officialStageHash = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
 export async function readOfficialStageFile(path: string, maximum = 1024 * 1024) {
@@ -34,7 +35,7 @@ export function officialVoiceLockInput(d: EditorialCollagePipelineData) {
     clips: d.timeline?.clips.map(c => ({ shotId: c.shotId, startMs: c.startMs, durationMs: c.durationMs })),
     voices: d.assets.filter(a => voices.has(a.id)).map(a => ({ id: a.id, path: a.localPath, sha256: a.sha256, durationMs: a.durationMs })) };
 }
-export async function ensureOfficialCreativeWorkflow(root: string, runId: string, session: Pick<OfficialLemoSessionOptions, 'maxRequests' | 'timeoutMs' | 'maxEstimatedCostUsd'>) {
+export async function ensureOfficialCreativeWorkflow(root: string, runId: string, session: Pick<OfficialLemoSessionOptions, 'maxRequests' | 'timeoutMs' | 'maxEstimatedCostUsd'> & Partial<Pick<OfficialLemoSessionOptions, 'provider' | 'maxOutputTokens'>>) {
   const path = join(root, 'creative-workflow.json');
   if (!existsSync(path)) {
     if (existsSync(join(root, 'ledger', 'requests.jsonl')) || existsSync(join(root, 'execution-intent.json'))) throw new Error('LEMO_CREATIVE_WORKFLOW_RECEIPT_MISSING');
@@ -45,7 +46,9 @@ export async function ensureOfficialCreativeWorkflow(root: string, runId: string
   const ledger = await LemoRequestLedger.open(join(root, 'ledger'), session.maxRequests, { existingOnly: state.ledgerInitialized });
   try {
     if (ledger.summary().blocked) throw new Error('LEMO_LEDGER_BLOCKED');
-    if (session.maxEstimatedCostUsd !== undefined) await openLemoExecutionBudget(root,
+    if (session.provider && session.provider.protocol !== 'anthropic') await openLemoNativeBudget(root, { protocol: session.provider.protocol,
+      timeoutMs: session.timeoutMs, maxRequests: session.maxRequests, maxOutputTokens: session.maxOutputTokens! }, state.ledgerInitialized);
+    else if (session.maxEstimatedCostUsd !== undefined) await openLemoExecutionBudget(root,
       { timeoutMs: session.timeoutMs, maxEstimatedCostUsd: session.maxEstimatedCostUsd }, state.ledgerInitialized);
   } finally { await ledger.close(); }
   if (!state.ledgerInitialized) await writeOfficialStageJson(path, { ...state, ledgerInitialized: true });

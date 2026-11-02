@@ -284,5 +284,5 @@ export async function createLemoCreativeTools(options: LemoCreativeToolsOptions)
   const server = createSdkMcpServer({ name: 'storydream', version: '1.0.0', tools: definitions,
     instructions: 'Operate only on this project workspace. These host file tools are not an OS sandbox. No shell, network or dynamic execution is available. Never automatically replay a failed write; inspect its operation receipt.' });
   const allowedToolNames = toolNames.map((name): LemoCreativeToolName => `mcp__storydream__${name}`);
-  return { server, allowedToolNames };
+  return { server, allowedToolNames, definitions };
 }

@@ -57,7 +57,7 @@ describe('Lemo configured channel identity and zero-charge preflight', () => {
   it.each(['https://user:password@example.test', 'https://example.test?api_key=secret', 'http://example.test', 'http://127.0.0.1:99'])('rejects unsafe endpoint %s', baseUrl => expect(() => lemoCapabilityIdentity({ ...config, baseUrl })).toThrow('LEMO_CAPABILITY_ENDPOINT'));
   it('never infers Messages from a Claude name or dispatches during preflight', async () => {
     const f = await fixture(); const p = await f.service.preflight({ ...config, protocol: 'openai', model: 'claude-any-name' }, 1024);
-    expect(p.staticReady).toBe(false); expect(p.blockers).toContain('LEMO_CAPABILITY_MESSAGES_REQUIRED'); expect(f.transport).not.toHaveBeenCalled();
+    expect(p.staticReady).toBe(true); expect(p.protocol).toBe('openai'); expect(p.endpoint).toMatch(/chat\/completions$/); expect(f.transport).not.toHaveBeenCalled();
     expect(p.profile).toBeNull(); expect(p.testPlan).toEqual({ maxRequests: 6, outputBudget: 1024, maxOutputTokensTotal: 1472 });
   });
   it('requires explicit fixture bypass and confines it to loopback Messages', async () => {

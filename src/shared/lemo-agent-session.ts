@@ -1,5 +1,7 @@
 /** Host-owned SDK execution contract. Credentials here authenticate loopback only. */
 export interface LemoAgentSessionRequest {
+  /** Absent retains existing Claude SDK sessions; native backends never reuse their resume IDs. */
+  protocol?: 'openai' | 'responses';
   version: 1;
   action: 'start' | 'resume';
   runRoot: string;
@@ -16,6 +18,7 @@ export interface LemoAgentSessionRequest {
   maxBudgetUsd?: number;
   capability?: 'film-authoring-v1';
 }
+export const LEMO_NATIVE_AGENT_VERSION = 'ai-7.0.159-native-v1';
 export const LEMO_AGENT_HOST_TOOL_MAX_BYTES = 16 * 1024 * 1024;
 export interface LemoAgentHostToolRequest {
   version: 1; action: 'host-tool'; runId: string; stageId: string; operationId: string;

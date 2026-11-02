@@ -52,7 +52,8 @@ describe('Lemo controlVoxProduction budget and repair UI', () => {
     const value = lemoUiRun().settings.lemoBudget!; const onChange = vi.fn();
     const tree = nodes(LemoBudgetFields({ value, onChange })); expect(tree.filter(n => n.type === 'TextField')).toHaveLength(6);
     find(tree, 'TextField', '整片最多模型请求').props.onChange({}, { value: '12' }); expect(onChange).toHaveBeenLastCalledWith({ ...value, maxRequests: 12 });
-    find(tree, 'TextField', 'SDK 估算费用上限（美元）').props.onChange({}, { value: '' }); expect(Number.isNaN(onChange.mock.calls.at(-1)![0].maxEstimatedCostUsd)).toBe(true);
+    find(tree, 'TextField', 'Messages SDK 估算费用上限（美元）').props.onChange({}, { value: '' }); expect(Number.isNaN(onChange.mock.calls.at(-1)![0].maxEstimatedCostUsd)).toBe(true);
+    expect(tree.some(n => n.type === 'p' && text(n.props.children).includes('不提供美元费用上限'))).toBe(true);
     expect(nodes(LemoBudgetFields({ value, onChange, disabled: true })).filter(n => n.type === 'TextField').every(n => n.props.disabled)).toBe(true);
   });
 });

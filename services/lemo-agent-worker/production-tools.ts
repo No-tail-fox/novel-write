@@ -170,6 +170,12 @@ export async function createLemoProductionTools(options: LemoProductionToolsOpti
   ];
   const server = createSdkMcpServer({ name: 'storydream_film', version: '1.0.0', tools: definitions,
     instructions: 'Read pinned library text and author original project files using the separate storydream file tools. Review actual host-rendered images, repair sources if needed, and only then call finish_film. No shell, network, dynamic script execution or fabricated ready state is available.' });
-  return { server, allowedToolNames: names.map(name => ('mcp__storydream_film__' + name) as LemoProductionToolName),
+  return { server, definitions, allowedToolNames: names.map(name => ('mcp__storydream_film__' + name) as LemoProductionToolName),
+    reviewState() { return { assistantTurn, ...(reviewedAt === undefined ? {} : { reviewedAt }) }; },
+    restoreReviewState(value: { assistantTurn: number; reviewedAt?: number }) {
+      if (!value || !Number.isSafeInteger(value.assistantTurn) || value.assistantTurn < 0 || value.assistantTurn > 1000
+        || (value.reviewedAt !== undefined && (!Number.isSafeInteger(value.reviewedAt) || value.reviewedAt < 0 || value.reviewedAt > value.assistantTurn))) fail('REVIEW_STATE');
+      assistantTurn = value.assistantTurn; reviewedAt = value.reviewedAt;
+    },
     noteAssistantTurn(id: string) { if (id && !turns.has(id)) { turns.add(id); assistantTurn++; } } };
 }

@@ -3,7 +3,8 @@ import { deflateSync } from 'node:zlib';
 import type { LlmConfig } from '../src/shared/types';
 import { fetchWithTimeout, type FetchWithTimeoutOptions } from '../src/shared/http';
 import { requireGenerationAuthorization, wasGenerationNotSubmitted } from '../src/shared/generation-authorization';
-import { verifyMessagesReceipt } from '../services/lemo-agent-worker/message-receipt';
+import { inspectLemoProviderResponse, verifyLemoProviderReceipt } from '../services/lemo-agent-worker/provider-receipt';
+import { isLemoCapabilityStreamStart, lemoCapabilityWireBody } from './lemo-capability-protocol';
 import { decideLemoProviderCapability, LEMO_PROVIDER_CAPABILITIES, lemoCapabilityTestPlan, lemoCapabilityTestRequestSchema,
   type LemoCapabilityPreflight, type LemoCapabilityProfile, type LemoCapabilityTestRequest, type LemoProviderCapability } from '../src/shared/lemo-provider-capabilities';
 import { capabilityHash, lemoCapabilityIdentity, LemoCapabilityStore } from './lemo-capability-store';
@@ -54,10 +55,9 @@ export class LemoProviderCapabilityService {
   async preflight(config: LlmConfig, maxOutputTokens: number): Promise<LemoCapabilityPreflight> {
     const identity = lemoCapabilityIdentity(config);
     const blockers: string[] = [];
-    if (identity.protocol !== 'anthropic') blockers.push('LEMO_CAPABILITY_MESSAGES_REQUIRED');
     if (!config.apiKey.trim()) blockers.push('LEMO_CAPABILITY_CREDENTIAL_REQUIRED');
     if (config.enabled === false) blockers.push('LEMO_CAPABILITY_PROFILE_DISABLED');
-    return { fingerprint: identity.fingerprint, endpoint: identity.endpoint, model: identity.model, staticReady: !blockers.length, blockers,
+    return { fingerprint: identity.fingerprint, endpoint: identity.endpoint, model: identity.model, protocol: identity.protocol, staticReady: !blockers.length, blockers,
       profile: await this.store.latest(identity.fingerprint), testPlan: lemoCapabilityTestPlan(maxOutputTokens) };
   }
   async decision(config: LlmConfig, maxOutputTokens: number) {
@@ -70,9 +70,9 @@ export class LemoProviderCapabilityService {
     if (options.allowLoopbackTestProvider === true) {
       const identity = lemoCapabilityIdentity(config, true);
       const url = new URL(identity.endpoint);
-      if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || identity.protocol !== 'anthropic') fail('LEMO_CAPABILITY_FIXTURE_BYPASS');
+      if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') fail('LEMO_CAPABILITY_FIXTURE_BYPASS');
       lemoCapabilityTestPlan(maxOutputTokens);
-      return { ready: true, protocol: 'anthropic' as const, blockers: [], maxOutputTokens, fingerprint: identity.fingerprint };
+      return { ready: true, protocol: identity.protocol, blockers: [], maxOutputTokens, fingerprint: identity.fingerprint };
     }
     const result = await this.decision(config, maxOutputTokens);
     if (!result.ready) throw new Error(result.blockers.join('; '));
@@ -93,7 +93,7 @@ export class LemoProviderCapabilityService {
     try {
       const duplicate = await this.store.read(preflight.fingerprint, request.testId); if (duplicate) return duplicate;
       const identity = lemoCapabilityIdentity(config);
-      const p: LemoCapabilityProfile = { version: 1, fingerprint: identity.fingerprint, configurationHash: identity.configurationHash, endpoint: identity.endpoint, model: identity.model, protocol: 'anthropic',
+      const p: LemoCapabilityProfile = { version: 1, fingerprint: identity.fingerprint, configurationHash: identity.configurationHash, endpoint: identity.endpoint, model: identity.model, protocol: identity.protocol,
         testId: request.testId, evidenceSource: this.options.evidenceSource ?? (this.options.transport ? 'local-fixture' : 'live-provider'),
         startedAt: new Date(this.now()).toISOString(), updatedAt: new Date(this.now()).toISOString(), status: 'running', acceptedMaxOutputTokens: 0,
         approvedMaxRequests: request.maxRequests, approvedMaxOutputTokens: request.maxOutputTokensTotal, reservedOutputTokens: 0, requests: [],
@@ -104,7 +104,7 @@ export class LemoProviderCapabilityService {
         signal?.throwIfAborted(); await requireGenerationAuthorization();
         const max = body.max_tokens as number;
         if (p.requests.length >= p.approvedMaxRequests || p.reservedOutputTokens + max > p.approvedMaxOutputTokens) fail('LEMO_CAPABILITY_BUDGET_EXHAUSTED');
-        const bytes = JSON.stringify({ ...body, model: identity.model });
+        const bytes = JSON.stringify({ ...lemoCapabilityWireBody(identity.protocol, body), model: identity.model });
         const record: LemoCapabilityProfile['requests'][number] = { index: p.requests.length, capability, state: 'sent', maxOutputTokens: max, requestHash: capabilityHash(bytes) };
         p.requests.push(record); p.reservedOutputTokens += max; p.checks[capability].requestIndexes.push(record.index);
         await save(); // Durable intent precedes the only network dispatch. No transport retries.
@@ -115,7 +115,8 @@ export class LemoProviderCapabilityService {
         let cancellationObserved = false; let transportReturned = false; let beginning = '';
         try {
           const response = await this.transport(identity.endpoint, { method: 'POST', generation: true, redirect: 'manual', maxRedirects: 0, retryConnectTimeout: false,
-            timeoutMs, maxBytes: 256 * 1024, signal: controller.signal, headers: { 'content-type': 'application/json', 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }, body: bytes,
+            timeoutMs, maxBytes: 256 * 1024, signal: controller.signal, headers: { 'content-type': 'application/json',
+              ...(identity.protocol === 'anthropic' ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' } : { authorization: 'Bearer ' + config.apiKey }) }, body: bytes,
             ...(cancel ? { onResponseChunk: (chunk: Uint8Array, upstream: Response) => {
               if (upstream.status !== 200 || !upstream.headers.get('content-type')?.startsWith('text/event-stream')) return;
               beginning += new TextDecoder().decode(chunk);
@@ -123,7 +124,7 @@ export class LemoProviderCapabilityService {
               for (const frame of beginning.replaceAll('\r\n', '\n').split('\n\n').slice(0, -1)) {
                 const data = frame.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n');
                 if (!data) continue;
-                try { const event = JSON.parse(data); if (event.type === 'message_start' && event.message?.type === 'message' && event.message?.role === 'assistant') { cancellationObserved = true; controller.abort(); return; } } catch { /* Only a complete real Messages start qualifies. */ }
+                try { const event = JSON.parse(data); if (isLemoCapabilityStreamStart(identity.protocol, event)) { cancellationObserved = true; controller.abort(); return; } } catch { /* Only a complete protocol start qualifies. */ }
               }
             } } : {}) });
           transportReturned = true; record.httpStatus = response.status;
@@ -136,13 +137,13 @@ export class LemoProviderCapabilityService {
           if (!response.headers.get('content-type')?.startsWith(stream ? 'text/event-stream' : 'application/json')) fail('LEMO_CAPABILITY_CONTENT_TYPE');
           const received = new Uint8Array(await response.arrayBuffer());
           if (received.byteLength > 256 * 1024) fail('LEMO_CAPABILITY_RESPONSE_TOO_LARGE');
-          const receipt = verifyMessagesReceipt(received, stream);
+          const receipt = verifyLemoProviderReceipt(identity.protocol, received, stream);
           record.responseHash = receipt.responseSha256; record.messageId = receipt.messageId; record.stopReason = receipt.stopReason; record.state = 'received';
           if (stream) { if (receipt.stopReason !== 'end_turn') fail('LEMO_CAPABILITY_STREAM_TRUNCATED'); return { receipt }; }
-          const message: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(received));
+          const message: unknown = inspectLemoProviderResponse(identity.protocol, received, false);
           if (!object(message)) return fail('LEMO_CAPABILITY_MESSAGE');
           Object.assign(record, usage(message.usage));
-          return message;
+          return { ...message, ...(identity.protocol === 'responses' ? { rawResponse: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(received)) } : {}) };
         } catch (e) {
           if (cancel && !transportReturned && cancellationObserved && controller.signal.aborted && !signal?.aborted) {
             record.state = 'cancelled-locally'; return { cancelled: true };
@@ -164,7 +165,7 @@ export class LemoProviderCapabilityService {
           const call = calls[0];
           if (first.stop_reason !== 'tool_use' || calls.length !== 1 || !object(call) || call.name !== toolName || !object(call.input) || call.input.token !== nonce || typeof call.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(call.id)) fail('LEMO_CAPABILITY_TOOL_MISMATCH');
           const final = await send('tool-roundtrip', { max_tokens: 64, stream: false, tools: [tool], tool_choice: { type: 'auto' },
-            messages: [...messages, { role: 'assistant', content }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: nonce }] }] });
+            messages: [...messages, { role: 'assistant', content, ...(first.rawResponse ? { rawResponse: first.rawResponse } : {}) }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: nonce }] }] });
           checkMessage(final, nonce);
         },
         'image-input': async () => {

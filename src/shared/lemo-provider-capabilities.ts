@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LLM_PROTOCOLS, type LlmProtocol } from './llm-protocol';
 
 /** Capability evidence is separate from SDK installation and connection tests. */
 export const LEMO_CAPABILITY_VERSION = 1 as const;
@@ -12,7 +13,7 @@ const evidence = z.object({
 }).strict();
 export const lemoCapabilityProfileSchema = z.object({
   version: z.literal(1), fingerprint: hash, endpoint: z.string().url(), model: z.string().min(1).max(256),
-  protocol: z.literal('anthropic'), configurationHash: hash,
+  protocol: z.enum(LLM_PROTOCOLS), configurationHash: hash,
   testId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/),
   evidenceSource: z.enum(['live-provider', 'local-fixture']),
   startedAt: z.string().datetime(), updatedAt: z.string().datetime(),
@@ -49,12 +50,13 @@ export interface LemoCapabilityApi {
 }
 
 export interface LemoCapabilityPreflight {
+  protocol?: LlmProtocol;
   fingerprint: string; endpoint: string; model: string;
   staticReady: boolean; blockers: string[]; profile: LemoCapabilityProfile | null;
   testPlan: { maxRequests: 6; maxOutputTokensTotal: number; outputBudget: number };
 }
 export interface LemoCapabilityDecision {
-  ready: boolean; protocol: 'anthropic'; blockers: string[];
+  ready: boolean; protocol: string; blockers: string[];
   /** Never silently lower the configured budget or switch channels. */
   maxOutputTokens: number; fingerprint: string;
 }
@@ -68,9 +70,10 @@ export function decideLemoProviderCapability(input: {
 }): LemoCapabilityDecision {
   const blockers: string[] = [];
   const profile = input.profile;
-  if (input.protocol !== 'anthropic') blockers.push('LEMO_CAPABILITY_MESSAGES_REQUIRED');
+  if (!LLM_PROTOCOLS.includes(input.protocol as LlmProtocol)) blockers.push('LEMO_CAPABILITY_PROTOCOL_UNSUPPORTED');
   if (!profile || profile.fingerprint !== input.fingerprint) blockers.push('LEMO_CAPABILITY_NOT_TESTED');
   else {
+    if (profile.protocol !== input.protocol) blockers.push('LEMO_CAPABILITY_PROTOCOL_MISMATCH');
     if (profile.status !== 'complete') blockers.push('LEMO_CAPABILITY_TEST_INCOMPLETE');
     if (profile.evidenceSource !== 'live-provider') blockers.push('LEMO_CAPABILITY_FIXTURE_ONLY');
     const age = (input.now ?? Date.now()) - Date.parse(profile.updatedAt);
@@ -78,5 +81,5 @@ export function decideLemoProviderCapability(input: {
     for (const capability of LEMO_PROVIDER_CAPABILITIES) if (profile.checks[capability].status !== 'pass') blockers.push(`LEMO_CAPABILITY_${capability.replaceAll('-', '_').toUpperCase()}`);
     if (profile.acceptedMaxOutputTokens < input.maxOutputTokens) blockers.push('LEMO_CAPABILITY_OUTPUT_BUDGET_UNVERIFIED');
   }
-  return { ready: blockers.length === 0, protocol: 'anthropic', blockers, maxOutputTokens: input.maxOutputTokens, fingerprint: input.fingerprint };
+  return { ready: blockers.length === 0, protocol: input.protocol, blockers, maxOutputTokens: input.maxOutputTokens, fingerprint: input.fingerprint };
 }

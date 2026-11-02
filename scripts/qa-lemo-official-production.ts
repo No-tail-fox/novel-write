@@ -1,5 +1,5 @@
-/** Zero-paid official SDK -> Electron review -> voiced MP4 acceptance.
- * The Messages responder is a deterministic local fixture, not a real aesthetic reviewer.
+/** Zero-paid Lemo execution -> Electron review -> voiced MP4 acceptance.
+ * Protocol responders are deterministic local fixtures, not real aesthetic reviewers.
  */
 import assert from 'node:assert/strict';
 import { app, BrowserWindow, nativeImage } from 'electron';
@@ -24,6 +24,8 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import type { ImageLabRecord, VoiceLabRecord } from '../src/shared/types';
 import { voxProductionSettings } from '../src/shared/vox-production';
 import { prepareQaNarration } from './qa-animation-media';
+import { nativeReply } from '../tests/fixtures/lemo-native-wire';
+import { LEMO_NATIVE_AGENT_VERSION } from '../src/shared/lemo-agent-session';
 
 type JsonObject = Record<string, unknown>;
 interface FilmContext {
@@ -33,15 +35,23 @@ interface FilmContext {
   materials: Array<{ id: string; path: string; sha256: string; bytes: number; description: string }>;
 }
 const root = resolve(process.env.STORYDREAM_LEMO_ROOT || process.cwd());
+const protocol = process.env.STORYDREAM_LEMO_QA_PROTOCOL || 'anthropic';
+assert(['anthropic', 'openai', 'responses'].includes(protocol));
+const native = protocol !== 'anthropic';
+const budgetFile = native ? 'native-execution-budget.json' : 'execution-budget.json';
+const initialRequestCount = native ? 12 : 14;
+const finalRequestCount = native ? 15 : 18;
 const artifacts = join(root, '.artifacts/lemo-official-production-20261102');
 const output = resolve(process.env.STORYDREAM_LEMO_OFFICIAL_QA_OUTPUT || join(artifacts, 'run-' + Date.now()));
 app.setPath('userData', join(output, 'electron-profile'));
+app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('force-device-scale-factor', '1');
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.on('window-all-closed', () => {});
 const sentences = ['雨水落进花园。', '树叶慢慢舒展。'];
 const report: JsonObject = { version: 1, status: 'running', paidRequests: 0, realProviderVerified: false,
+  protocol, backend: native ? LEMO_NATIVE_AGENT_VERSION : LEMO_AGENT_SDK_VERSION,
   aestheticReview: 'deterministic offline fixture; no model aesthetic approval claimed',
   scope: 'official SDK, real frame-image round trip, measured SAPI speech, host subtitles, MP4 quality and project registration', output };
 const requests: JsonObject[] = [], mediaOperations: JsonObject[] = [];
@@ -120,12 +130,28 @@ function frameImages(body: JsonObject) {
   });
 }
 const stageTurns = new Map<string, number>();
+function inspectNativeRequest(raw: JsonObject): JsonObject {
+  if (!native) return raw;
+  function normalize(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(normalize);
+    if (!value || typeof value !== 'object') return value;
+    const v = value as JsonObject;
+    if (v.type === 'image_url' || v.type === 'input_image') {
+      const url = typeof v.image_url === 'string' ? v.image_url : (v.image_url as JsonObject)?.url;
+      assert(typeof url === 'string' && url.startsWith('data:image/png;base64,'));
+      return { type: 'image', source: { data: url.split(',')[1] } };
+    }
+    return Object.fromEntries(Object.entries(v).map(([key, item]) => [key, normalize(item)]));
+  }
+  return { ...raw, messages: normalize(protocol === 'responses' ? raw.input : raw.messages),
+    tools: (raw.tools as JsonObject[]).map(t => protocol === 'openai' ? t.function : t) };
+}
 const fixture = createServer(async (request, response) => {
   try {
-    assert.equal(request.method, 'POST'); assert(request.url?.startsWith('/v1/messages'));
+    assert.equal(request.method, 'POST'); assert(request.url?.startsWith(protocol === 'anthropic' ? '/v1/messages' : protocol === 'openai' ? '/v1/chat/completions' : '/v1/responses'));
     const chunks: Buffer[] = []; let bytes = 0;
     for await (const chunk of request) { bytes += chunk.length; assert(bytes <= 32 * 1024 * 1024); chunks.push(chunk); }
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as JsonObject;
+    const body = inspectNativeRequest(JSON.parse(Buffer.concat(chunks).toString('utf8')) as JsonObject);
     const available = (body.tools as Array<{ name: string }>).map(item => item.name);
     const lines = messageLines(body), stage = lines.find(line => line.startsWith('STORYDREAM_CREATIVE_STAGE='))?.slice('STORYDREAM_CREATIVE_STAGE='.length);
     assert(stage && ['treatment', 'style-frame', 'film', 'repair-shot'].includes(stage), 'Explicit creative stage is required');
@@ -151,6 +177,10 @@ const fixture = createServer(async (request, response) => {
       tool = { name: 'mcp__storydream__write_text', input: turn === writeCount ? { path: 'index.html', content: filmHtml(context!) } : { path: officialScenePath(context!.shots[turn - 1].id), content: sceneModule(turn === 2) } };
     } else if (stage !== 'treatment' && turn === writeCount + 1) tool = { name: 'mcp__storydream_film__review_film', input: {} };
     else if (stage !== 'treatment' && turn === writeCount + 2) tool = { name: 'mcp__storydream_film__finish_film', input: { notes: 'Offline deterministic fixture received actual current-source frames. Imported panels and changing rain/plants appear at the requested canvas. This exercises the review protocol only; no real model aesthetic approval is claimed.' } };
+    if (native) {
+      const reply = nativeReply(protocol as 'openai' | 'responses', 'The host remains responsible for media export and quality checks.', tool ? [tool] : [], requests.length);
+      reply.model = 'offline-official-film'; response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify(reply)); return;
+    }
     const event = (type: string, fields: JsonObject = {}) => 'event: ' + type + '\ndata: ' + JSON.stringify({ type, ...fields }) + '\n\n';
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     response.write(event('message_start', { message: { id: 'msg_official_film_' + turn, type: 'message', role: 'assistant', model: 'offline-official-film', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 40, output_tokens: 0 } } }));
@@ -195,7 +225,7 @@ async function main() {
   const library = { upstreamRoot: join(root, 'vendor/lemo-upstream'), threeRoot: join(root, 'node_modules/three') };
   const nodeExecutable = process.env.STORYDREAM_LEMO_QA_NODE; assert(nodeExecutable && existsSync(nodeExecutable), 'Runner must provide standalone Node, not Electron');
   const official = createLemoOfficialOperations({ library, work: output, session: { nodeExecutable, workerPath: join(root, 'services/lemo-agent-worker/dist/worker.mjs'),
-    provider: { protocol: 'anthropic', messagesUrl: 'http://127.0.0.1:' + address.port + '/v1/messages', apiKey: 'offline-fixture-no-secret', auth: 'bearer', model: 'offline-official-film' },
+    provider: { protocol: protocol as 'anthropic' | 'openai' | 'responses', messagesUrl: 'http://127.0.0.1:' + address.port + (protocol === 'anthropic' ? '/v1/messages' : protocol === 'openai' ? '/v1/chat/completions' : '/v1/responses'), apiKey: 'offline-fixture-no-secret', auth: 'bearer', model: 'offline-official-film' },
     maxOutputTokens: 16384, maxRequests: 24, maxTurns: 10, timeoutMs: 600000, requestTimeoutMs: 90000, maxEstimatedCostUsd: 1, maxRepairRounds: 2, allowLoopbackTestProvider: true } });
   const never = async (): Promise<never> => { throw new Error('Unexpected operation outside offline official-film fixture'); };
   const runtime = createVoxProductionRuntime({ ...official, identity: 'official-sdk-offline-film-v1', imageModel: 'offline-local-image-fixture', voiceModel: 'offline-Windows-SAPI',
@@ -250,7 +280,7 @@ async function main() {
   await service.idle(document.id); assert(!fixtureFailure, fixtureFailure);
   assert.equal(document.productionRun?.status, 'completed', document.productionRun?.message);
   assert(document.productionRun);
-  assert.equal(document.productionRun.authoringVersion, 4); assert.equal(document.stage, 'completed'); assert.equal(document.upstreamFilm?.status, 'ready'); assert.equal(requests.length, 14);
+  assert.equal(document.productionRun.authoringVersion, 4); assert.equal(document.stage, 'completed'); assert.equal(document.upstreamFilm?.status, 'ready'); assert.equal(requests.length, initialRequestCount);
   assert.deepEqual(['official-treatment', 'official-style-frame', 'official-voice-lock', 'official-authoring'].map(id => document.productionRun!.nodes.find(n => n.id === id)?.status), ['completed', 'completed', 'completed', 'completed']);
   assert(document.upstreamFilm && document.upstreamFilm.review?.technicalPassed);
   const capturedFrames = document.upstreamFilm.review.frames; assert(capturedFrames.length >= 3);
@@ -270,14 +300,17 @@ async function main() {
   const filmRoot = join(output, 'lemo-official', document.productionRun.id, 'film');
   const receiptPath = join(filmRoot, 'session-receipt.json');
   const sessionEvidence = JSON.parse(await readFile(receiptPath, 'utf8')) as { receipt: JsonObject; ledger: JsonObject };
-  assert.equal(sessionEvidence.receipt.sdkVersion, LEMO_AGENT_SDK_VERSION);
+  assert.equal(sessionEvidence.receipt.sdkVersion, native ? LEMO_NATIVE_AGENT_VERSION : LEMO_AGENT_SDK_VERSION);
   assert.equal(sessionEvidence.receipt.status, 'completed');
   assert.equal(sessionEvidence.receipt.deliveryStatus, 'unverified');
-  assert(typeof sessionEvidence.receipt.estimatedCostUsd === 'number' && sessionEvidence.receipt.estimatedCostUsd >= 0, 'Fresh worker must return the actual SDK estimate');
+  if (native) assert.equal(sessionEvidence.receipt.estimatedCostUsd, undefined);
+  else assert(typeof sessionEvidence.receipt.estimatedCostUsd === 'number' && sessionEvidence.receipt.estimatedCostUsd >= 0, 'Fresh worker must return the actual SDK estimate');
   assert(/^[a-f0-9-]{36}$/.test(String(sessionEvidence.receipt.sessionId)));
   assert.equal(sessionEvidence.ledger.blocked, false);
-  const initialBudget = JSON.parse(await readFile(join(filmRoot, 'execution-budget.json'), 'utf8'));
-  assert.equal(initialBudget.pendingStage, undefined); assert.equal(Object.keys(initialBudget.costs).length, 3);
+  const initialBudget = JSON.parse(await readFile(join(filmRoot, budgetFile), 'utf8'));
+  assert.equal(initialBudget.pendingStage, undefined);
+  if (native) { assert.equal(initialBudget.backend, LEMO_NATIVE_AGENT_VERSION); assert.equal(initialBudget.policy.protocol, protocol); }
+  else assert.equal(Object.keys(initialBudget.costs).length, 3);
   const tamperChecks: JsonObject[] = [];
   async function rejectsMissingReceipt(label: string, path: string, expected: RegExp) {
     const hidden = path + '.qa-hidden', before = requests.length; let rejection = '';
@@ -320,14 +353,14 @@ async function main() {
   await rejectsMissingReceipt('request ledger', join(filmRoot, 'ledger', 'requests.jsonl'), /ENOENT/);
   await rejectsMissingReceipt('stage receipt', join(filmRoot, 'stage', 'stage.json'), /LEMO_OFFICIAL_STAGE_RECEIPT_MISSING/);
   await rejectsMissingReceipt('stage identity', join(filmRoot, 'stage', 'stage-identity.json'), /LEMO_OFFICIAL_STAGE_RECEIPT_MISSING/);
-  await rejectsMissingReceipt('shared execution budget', join(filmRoot, 'execution-budget.json'), /LEMO_BUDGET_RECEIPT_MISSING/);
+  await rejectsMissingReceipt('shared execution budget', join(filmRoot, budgetFile), /LEMO_BUDGET_RECEIPT_MISSING/);
   await save('tamper-recovery-evidence.json', tamperChecks);
   const beforeRepair = { film: structuredClone(document.upstreamFilm), input: await readFile(join(document.upstreamFilm.directory, 'index.html')), operations: mediaOperations.length, runId: document.productionRun.id, requests: requests.length };
   await service.control({ id: document.id, runId: document.productionRun.id, action: 'repair-shot', shotId: 'shot-1', instructions: 'Add a small warm yellow circular highlight to the first garden shot. Preserve all other shots, images, voice and timing.' });
   await service.idle(document.id); assert(!fixtureFailure, fixtureFailure);
   assert.equal(document.productionRun!.status, 'completed', document.productionRun!.message);
   assert.equal(document.productionRun!.id, beforeRepair.runId); assert.equal(mediaOperations.length, beforeRepair.operations);
-  assert.equal(requests.length, 18); assert.notEqual(document.upstreamFilm!.sourceHash, beforeRepair.film.sourceHash);
+  assert.equal(requests.length, finalRequestCount); assert.notEqual(document.upstreamFilm!.sourceHash, beforeRepair.film.sourceHash);
   assert.deepEqual(await readFile(join(beforeRepair.film.directory, 'index.html')), beforeRepair.input);
   assert.deepEqual(await readFile(join(document.upstreamFilm!.directory, 'index.html')), beforeRepair.input);
   const repair = document.productionRun!.nodes.find(n => n.id.startsWith('official-repair:')); assert(repair?.status === 'completed');
@@ -335,19 +368,20 @@ async function main() {
   const repairReview = JSON.parse(await readFile(join(repairRoot, 'review.json'), 'utf8'));
   assert.equal(repairReview.preservedFrames.length, 3);
   const repaired = await official.recoverOfficialStep(structuredClone(document), repair);
-  assert.equal(repaired?.upstreamFilm?.sourceHash, document.upstreamFilm!.sourceHash); assert.equal(requests.length, 18);
+  assert.equal(repaired?.upstreamFilm?.sourceHash, document.upstreamFilm!.sourceHash); assert.equal(requests.length, finalRequestCount);
   registered = directorRenderOutputs(document).current; assert(registered?.localPath && registered.sha256); assert.equal(digest(await readFile(registered.localPath)), registered.sha256);
   await save('local-repair-evidence.json', { selectedShot: 'shot-1', originalFilm: beforeRepair.film, repairedFilm: document.upstreamFilm, sameRunId: true, sameLedger: true,
     unchangedMediaOperationCount: mediaOperations.length, providerRequestsBefore: beforeRepair.requests, providerRequestsAfter: requests.length, review: repairReview, outputAsset: registered });
-  const executionBudget = JSON.parse(await readFile(join(filmRoot, 'execution-budget.json'), 'utf8'));
+  const executionBudget = JSON.parse(await readFile(join(filmRoot, budgetFile), 'utf8'));
   assert.equal(executionBudget.startedAt, initialBudget.startedAt); assert.equal(executionBudget.pendingStage, undefined);
-  assert.equal(Object.keys(executionBudget.costs).length, 4);
-  assert(Object.values(executionBudget.costs).every(cost => typeof cost === 'number' && cost >= 0));
+  if (!native) { assert.equal(Object.keys(executionBudget.costs).length, 4);
+    assert(Object.values(executionBudget.costs).every(cost => typeof cost === 'number' && cost >= 0)); }
+  else { assert.equal(executionBudget.backend, LEMO_NATIVE_AGENT_VERSION); assert.equal(executionBudget.policy.protocol, protocol); }
   await save('execution-budget-evidence.json', { initial: initialBudget, final: executionBudget, sameDeadlineOrigin: true, interpretation: 'Conservative sum of real SDK invocation estimates; no real provider charge occurred in this loopback fixture.' });
   assert.equal(externalFetchAttempts, 0);
-  Object.assign(report, { status: 'passed', sdkVersion: LEMO_AGENT_SDK_VERSION, receiptPath, sessionEvidence, requests, mediaOperations, durationMs: document.timeline!.durationMs, context, outputAsset: registered,
-    recovery: { readyRecovered: true, providerRequestsBefore: requestsBeforeRecovery, providerRequestsAfter: requestsBeforeRecovery, tamperChecks }, executionBudget, localShotRepair: { requests: 4, unchangedSampledFrames: repairReview.preservedFrames.length, originalFilmPreserved: true }, externalFetchAttempts,
-    limits: ['Local deterministic Messages fixture; no live provider acceptance.', 'Repository image and Windows SAPI are local fixtures, not paid generation.', 'Actual frame delivery verified; model aesthetic quality remains unverified.'] });
+  Object.assign(report, { status: 'passed', sdkVersion: native ? LEMO_NATIVE_AGENT_VERSION : LEMO_AGENT_SDK_VERSION, receiptPath, sessionEvidence, requests, mediaOperations, durationMs: document.timeline!.durationMs, context, outputAsset: registered,
+    recovery: { readyRecovered: true, providerRequestsBefore: requestsBeforeRecovery, providerRequestsAfter: requestsBeforeRecovery, tamperChecks }, executionBudget, localShotRepair: { requests: finalRequestCount - initialRequestCount, unchangedSampledFrames: repairReview.preservedFrames.length, originalFilmPreserved: true }, externalFetchAttempts,
+    limits: ['Local deterministic ' + protocol + ' fixture; no live provider acceptance.', 'Repository image and Windows SAPI are local fixtures, not paid generation.', 'Actual frame delivery verified; model aesthetic quality remains unverified.'] });
 }
 main().catch(error => { report.status = 'failed'; report.error = error instanceof Error ? error.stack || error.message : String(error); report.fixtureFailure = fixtureFailure; report.requests = requests; console.error(report.error); }).finally(async () => {
   await mkdir(output, { recursive: true }); await save('report.json', report); fixture.closeAllConnections(); if (fixture.listening) await new Promise<void>(done => fixture.close(() => done()));

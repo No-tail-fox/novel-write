@@ -41,11 +41,13 @@ it('does not retry a rejected plan or accept a malformed successful response', a
  await expect(provider.run(lemoPlanRequest('ref', prompt, provider.protocol))).rejects.toThrow('did not return valid JSON');
  expect(invalid).toHaveBeenCalledOnce();
 });
-it('routes desktop native production to the official SDK instead of the retired plan adapter', () => {
+it('routes desktop native production with the configured protocol instead of the retired plan adapter', () => {
  const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8');
  expect(source).toContain('createLemoOfficialOperations({ library: upstreamLibrary, work, session:');
  expect(source).toContain('...officialOperations');
- expect(source).toContain('assertLemoSdkProviderProtocol(resolveLlmProtocol(config.llm))');
+ expect(source).toContain('provider: { protocol: resolveLlmProtocol(config.llm), messagesUrl: llmEndpoint(config.llm)');
+ expect(source).toContain('await getLemoProviderCapabilities().assertReady(config.llm');
+ expect(source).not.toContain('assertLemoSdkProviderProtocol(resolveLlmProtocol(config.llm))');
  expect(source).not.toContain('planFilm: async');
  expect(source).not.toContain('editFilmFile: async');
  expect(source).not.toContain('createLemoUpstreamOperations');

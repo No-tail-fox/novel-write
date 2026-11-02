@@ -2,14 +2,17 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 const root = process.cwd();
 const artifacts = resolve(root, '.artifacts/lemo-official-production-20261102');
-const output = resolve(artifacts, 'run-' + Date.now());
+// Windows cannot spawn the encoder when a nested worktree makes cwd too long.
+// Allow a short evidence root while preserving the normal repository default.
+let output = resolve(process.env.STORYDREAM_LEMO_OFFICIAL_QA_OUTPUT || join(artifacts, 'run-' + Date.now()));
 const temp = join(artifacts, 'tmp');
 await mkdir(temp, { recursive: true }); await mkdir(output, { recursive: true });
+output = await realpath(output);
 const bundle = join(artifacts, 'qa.mjs');
 const { buildLemoAgentWorker } = await import('./build-lemo-agent-worker.mjs');
 await buildLemoAgentWorker();

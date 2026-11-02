@@ -1,5 +1,12 @@
 # Third-Party Notices
 
+## Vercel AI SDK (Lemo multi-protocol worker)
+
+- Source: https://github.com/vercel/ai
+- Direct dependencies: ai 7.0.159 and @ai-sdk/openai 4.0.106, pinned in the independent worker lockfile.
+- Copyright 2023 Vercel, Inc.; Apache License 2.0. See THIRD_PARTY_LICENSES/Apache-2.0.txt and the unmodified package LICENSE files distributed with the worker dependencies.
+- StoryDream uses native Chat Completions / Responses conversion and controls each persisted tool turn. Package source is unmodified. This integration does not use the hosted Vercel AI Gateway.
+
 StoryDream includes modified TypeScript adaptations of selected workflow rules
 from the following projects. StoryDream does not bundle either project's
 service stack, model weights, sample media, or generated content.

@@ -7,7 +7,7 @@ import '../../styles/features/vox-process-workspace.css';
 const labels = { 'tool-roundtrip': '工具调用与结果返回', 'image-input': '图像理解', sse: '完整流式响应', 'client-cancel': '本机取消', 'output-budget': '输出额度参数' };
 const statuses = { 'not-tested': '未测试', pass: '通过', fail: '失败', unknown: '结果待核对' };
 const blockerLabels: Record<string, string> = {
-  LEMO_CAPABILITY_MESSAGES_REQUIRED: '当前配置不使用 Messages 协议，请选择支持 Messages 的已保存配置。',
+  LEMO_CAPABILITY_PROTOCOL_UNSUPPORTED: '请选择 Chat Completions、Responses 或 Anthropic Messages 协议。',
   LEMO_CAPABILITY_CREDENTIAL_REQUIRED: '当前已保存配置缺少密钥，请补充并保存后再检查。',
   LEMO_CAPABILITY_PROFILE_DISABLED: '当前模型配置未启用，请启用并保存后再检查。',
 };
@@ -44,10 +44,10 @@ export function LemoCapabilityPanel({ api, profileId, disabled = false }: { api:
     catch (e) { if (alive.current && currentSelection.current.profileId === profileId && currentSelection.current.tokens === tokens) setError(formatAppErrorMessage(normalizeAppError(e))); }
   }
   const validTokens = Number.isSafeInteger(tokens) && tokens >= 256 && tokens <= 1000000;
-  const ready = preflight && decideLemoProviderCapability({ fingerprint: preflight.fingerprint, protocol: 'anthropic', maxOutputTokens: tokens, profile }).ready;
+  const ready = preflight && decideLemoProviderCapability({ fingerprint: preflight.fingerprint, protocol: preflight.protocol ?? profile?.protocol ?? 'anthropic', maxOutputTokens: tokens, profile }).ready;
   return <section className="vox-production-fields" aria-label="Lemo 模型能力验证">
     <h3>Lemo 模型能力验证</h3>
-    <p className="vox-hint">使用当前选中的已保存配置。修改模型或密钥后请先保存，再检查；只有能力验证通过的 Messages 通道可以开始创意动画。</p>
+    <p className="vox-hint">使用当前选中的已保存配置。支持 Chat Completions、Responses 和 Anthropic Messages；修改协议、模型或密钥后请先保存，再验证渠道能力。Chat / Responses 使用多协议试用执行器，Messages 保留原执行器。</p>
     <TextField label="需要验证的最大输出 Token" type="number" min={256} max={1000000} disabled={disabled || Boolean(busy)}
       value={Number.isFinite(tokens) ? String(tokens) : ''} onChange={(_, event) => setTokens(event.value.trim() ? Number(event.value) : NaN)} />
     <Button disabled={disabled || Boolean(busy) || !validTokens} onClick={refreshCapabilities}>免费检查已保存配置</Button>
