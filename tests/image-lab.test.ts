@@ -84,7 +84,7 @@ describe('image lab generation', () => {
       expect(requests[0].body).toMatchObject({
         model: 'gpt-image-2',
         prompt: expect.stringContaining('Tang palace portrait'),
-        size: '1024x1024',
+        size: '2048x2048',
         quality: 'high',
       });
     } finally {
@@ -243,7 +243,7 @@ describe('image lab generation', () => {
       const form = requests[0].body as FormData;
       expect(form.get('model')).toBe('gpt-image-2');
       expect(form.get('prompt')).toContain('Keep the host identity');
-      expect(form.get('size')).toBe('1536x1024');
+      expect(form.get('size')).toBe('2048x1152');
       expect(form.get('quality')).toBe('low');
       expect(form.getAll('image')).toHaveLength(2);
     } finally {

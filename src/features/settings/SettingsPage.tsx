@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { version } from '../../../package.json';
 import { ArtifactStorageSettings } from './ArtifactStorageSettings';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Eye, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Music2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
@@ -24,6 +25,7 @@ import { siliconFlowSpeechToTextBaseUrl, siliconFlowSpeechToTextModels } from ".
 import { ImageProfileManager, LlmProfileManager, TtsProfileManager } from './ProviderProfileManagers';
 import { MinimaxCloneVoiceManager } from './MinimaxCloneVoiceManager';
 import { ProviderPortalLinks } from './ProviderPortalLinks';
+import { LemoCapabilityPanel } from './LemoCapabilityPanel';
 import { MusicProfileManager, ProfileSecretField, TranscriptionVisionProfileSwitcher, VideoProfileSwitcher, VisionProfileManager } from './MusicVideoProfileManagers';
 import { providerKeyPortals } from '../../shared/provider-portals';
 import { createVideoModelProfile } from '../../shared/video-model-presets';
@@ -47,7 +49,7 @@ import {
   type SecretEditor,
 } from './settings-controls';
 
-export type SettingsSection = 'storage' | 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'about';
+export type SettingsSection = 'storage' | 'appearance' | 'llm' | 'image' | 'video' | 'music' | 'tts' | 'speechToText' | 'vision' | 'jianying' | 'activation' | 'creative' | 'webSearch' | 'stockMedia' | 'about';
 
 export function SettingsPage({ api, state, applyState, synchronizeThemeState, navigate, initialSection, initialVideoPreset, returnView, onReturn }: { api: StoryDreamApi; state: AppState; applyState: ApplyMutationResult; synchronizeThemeState: RuntimeThemeStateSynchronizer; navigate: (view: ShellView) => void; initialSection?: SettingsSection; initialVideoPreset?: VideoModelPreset; returnView?: ShellView; onReturn?: () => void }) {
   const [section, setSection] = useState<SettingsSection>(initialSection ?? 'llm');
@@ -477,6 +479,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     ['activation', KeyRound, '激活与订阅', '试用 · 激活码', state.activation.status],
     ['creative', Wand2, 'AI 创作', 'IMA 知识库', settingsStatusLabel(configTargetStatus('creative', draftWithCredentialStatus))],
     ['webSearch', Globe2, '联网搜索', 'Agent Search · SearXNG · Tavily · 兼容源', settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))],
+    ['stockMedia', Film, '网络素材', 'Pexels · 视频素材池', secrets.configured('stockMedia/pexels/apiKey') ? '已配置' : '待配置'],
     ['about', Info, '关于 · 诊断', '日志 · 重置', '已配置'],
   ] as const;
   const returnLabel = returnView === 'video-lab' ? '返回视频生成' : returnView === 'music-lab' ? '返回音乐创作' : returnView === 'editorial-collage' ? '返回 创意动画' : returnView === 'motion-comic' ? '返回 AI 漫剧' : '返回创作首页';
@@ -506,9 +509,9 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
                 仅测试当前 LLM
               </Button>
             ) : null}
-            <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
+            {section !== 'stockMedia' ? <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>
               保存并测试
-            </Button>
+            </Button> : null}
             <Button variant="primary" icon={savingConfig ? <Loader2 className="spin" size={15} /> : <Save size={15} />} disabled={savingConfig || saveAction.busy} onClick={save}>
               保存配置
             </Button>
@@ -551,6 +554,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               }}
             />
             <ProviderPortalLinks links={providerKeyPortals('llm', selectedLlmTestConfig)} onOpen={api.openProviderPortal} />
+            <LemoCapabilityPanel key={selectedLlmProfileId} api={api} profileId={selectedLlmProfileId} disabled={savingConfig || testingConfig || selectedLlmSecretPending || !selectedLlmProfilePersisted} />
           </SettingsCard>
         ) : null}
         {section === 'image' ? (
@@ -844,6 +848,12 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             ) : null}
           </SettingsCard>
         ) : null}
+        {section === 'stockMedia' ? <SettingsCard title="Pexels 视频素材" status={secrets.configured('stockMedia/pexels/apiKey') ? '已配置' : '待配置'}>
+          <SecretInput label="Pexels 专用 API Key" value={secrets.value('stockMedia/pexels/apiKey')} configured={secrets.configured('stockMedia/pexels/apiKey')} onChange={value => secrets.change('stockMedia/pexels/apiKey', value)} onClear={() => secrets.change('stockMedia/pexels/apiKey', null)} />
+          <p className="settings-help-text">密钥通过现有凭据库加密保存，不使用 LLM 或绘图服务的密钥。保存后，在新建任务的「素材混剪 → 网络视频素材」中搜索、选择并下载。</p>
+          <p className="settings-help-text">支持普通短片和 Pixelle 素材池。视频下载到产物存储目录，来源与许可记录随素材和任务保留。每个文件最多 512 MB；检索无结果时可修改关键词或添加本地视频。</p>
+          <p><a href="https://www.pexels.com/api/" target="_blank" rel="noreferrer">申请 Pexels API Key</a> · <a href="https://www.pexels.com/api/documentation/" target="_blank" rel="noreferrer">API 文档</a> · <a href="https://www.pexels.com/license/" target="_blank" rel="noreferrer">素材许可</a></p>
+        </SettingsCard> : null}
         {section === 'webSearch' ? (
           <SettingsCard title="联网搜索" status={settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))}>
             <SwitchField
@@ -873,7 +883,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         ) : null}
         {section === 'about' ? (
           <div className="diagnostics-card">
-            <LocalInfo title="视频故事创作助手" value="V1.0.0 · Windows · 本地数据目录" />
+            <LocalInfo title="视频故事创作助手" value={`V${version} · Windows · 本地数据目录`} />
             <div className="button-row">
               <Button disabled={settingsAction.busy} onClick={runDiagnostics}>检查诊断</Button>
               <Button icon={<Copy size={15} />} onClick={() => navigator.clipboard?.writeText(diagnostics)}>

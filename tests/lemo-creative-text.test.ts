@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LLM_RESPONSE_MAX_BYTES } from '../src/shared/llm-response-limits';
 import { lemoCreativeTextSchema, lemoResponseTextSchema } from '../src/shared/creative-animation/creative-text';
 import { lemoOutlineSchema, lemoPlanningMaterialsSchema, lemoScenePlanSchema } from '../src/shared/creative-animation/native-planning';
@@ -74,17 +74,17 @@ describe('creative prose guidance versus resource and structural limits', () => 
     expect(() => applyLemoEdits('return {};', baseHash, 'I will add both in one batch, then mark the shared factory done.')).toThrow('LEMO_EDIT_NO_ACTION');
   });
 
-  it.each([false, true])('accepts long plans at the legacy entry point (project=%s) without changing the original', async projectMode => {
+  it.each([false, true])('rejects the retired plan entry point (project=%s) without changing the original prose', async projectMode => {
     const treatment = '  完整保留创意细节'.repeat(7000) + '  ';
     expect(treatment.length).toBeGreaterThan(60000);
     const sourceFor = (id: string) => id === 'shared' ? 'return {};' : 'return {render(t){},texts(t){return [];}};';
-    const h = nativeHarness({ planFilm: async () => ({ treatment, fps: 24, ...(projectMode ? { materials: [] } : {}) }),
+    const planFilm = vi.fn(async () => ({ treatment, fps: 24, ...(projectMode ? { materials: [] } : {}) }));
+    const h = nativeHarness({ planFilm,
       ...(projectMode ? { authorFilmFile: async (_prompt: string, _style: string, id: string) => ({ text: sourceFor(id), raw: sourceFor(id), finishReason: 'stop', requestId: 'offline-legacy-' + id }) } : { generateFilm: async (prompt: string) => nativeHtml(JSON.parse(prompt).durationMs) }) });
     const original = h.get().sourceText;
-    await h.start(); await h.idle();
-    expect(h.get().productionRun?.status, h.get().productionRun?.message).toBe('completed');
-    const film = h.get().creativeFilms!.find(item => item.id === h.get().productionRun!.filmId)!;
-    expect(film.treatment).toBe(treatment);
+    await expect(h.start()).rejects.toThrow('LEMO_OFFICIAL_UNAVAILABLE');
+    expect(planFilm).not.toHaveBeenCalled(); expect(h.get().productionRun).toBeUndefined();
+    expect(lemoOutlineSchema.parse({ treatment, fps: 24 }).treatment).toBe(treatment);
     expect(h.get().sourceText).toBe(original);
   });
 });

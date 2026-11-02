@@ -144,6 +144,23 @@ print(json.dumps(cases))
       expect(probe.black_intervals![0].start_ms).toBe(trailing ? 900 : 0);
       expect(probe.black_intervals![0].end_ms).toBeGreaterThanOrEqual(trailing ? 1700 : 900);
       expect(probe.black_intervals![0].end_ms).toBeLessThanOrEqual(trailing ? 1800 : 1000);
+      const script = await writeStoryboundSidecarScript(dir);
+      const clock = await runBoundedProcess(resolvePythonRuntimeInfo().command, ['-c', String.raw`
+import json, os, re, runpy, sys
+namespace = runpy.run_path(sys.argv[1])
+decoded = namespace['run_bounded_subprocess']([
+    namespace['ffmpeg_exe'](), '-hide_banner', '-i', sys.argv[2], '-map', '0:v:0',
+    '-vf', 'showinfo', '-an', '-fps_mode', 'passthrough', '-f', 'null', os.devnull],
+    timeout_seconds=10, max_stdout_bytes=65536, max_stderr_bytes=65536)
+if decoded.returncode != 0:
+    raise RuntimeError(decoded.stderr[-2000:])
+times = [float(value) for value in re.findall(r'pts_time:([0-9.eE+\-]+)', decoded.stderr)]
+print(json.dumps({'fps': 1 / (times[1] - times[0]), 'frame_times': times}))
+`, script, output], { cwd: dir, timeoutMs: 15000, maxStdoutBytes: 65536, maxStderrBytes: 65536 });
+      expect(clock.code, clock.stderr).toBe(0);
+      const decoded = JSON.parse(clock.stdout) as { fps: number; frame_times: number[] };
+      expect(decoded.fps).toBe(scenes[0].fps);
+      expect(decoded.frame_times).toEqual(Array.from({ length: 18 }, (_, frame) => frame / scenes[0].fps));
     } finally { await rm(dir, { recursive: true, force: true }); }
   }, 30_000);
 

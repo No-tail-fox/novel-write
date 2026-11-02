@@ -1,9 +1,12 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runBoundedProcess } from '../src/shared/process-runner';
-import { resolvePythonRuntimeInfo } from '../src/shared/python-runtime';
+import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
+
+beforeAll(() => setDefaultPythonRuntimeAppRoot(process.cwd()));
+afterAll(() => setDefaultPythonRuntimeAppRoot(undefined));
 import { writeStoryboundSidecarScript } from '../src/shared/storybound-sidecar';
 
 describe('large sidecar compositions', () => {

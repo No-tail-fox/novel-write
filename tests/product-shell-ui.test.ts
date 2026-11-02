@@ -1030,7 +1030,7 @@ describe('product shell ui', () => {
       "sessionStorage.removeItem('book_product_info')",
       "sessionStorage.removeItem('benchmark_search')",
       'const selectedMaterialAsset = personAssets.find((asset) => asset.name === materialPerson) ?? null;',
-      'const isLocalMaterialInvalid = materialSource === \'local\' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);',
+      'const isLocalMaterialInvalid = !pixelleSkipsImages && materialSource === \'local\' && (!materialPerson || !selectedMaterialAsset || selectedMaterialAsset.count <= 0);',
       'api.createAndRunTask',
       '请先选择人物素材。',
       '所选人物素材至少导入 1 张图片后才能创建任务。',

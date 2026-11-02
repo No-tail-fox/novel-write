@@ -17,7 +17,7 @@ import { EDITORIAL_IMAGE_REQUEST_OPTIONS } from '../../shared/editorial-image-pr
 import { applyEditorialRecipe, setEditorialLastFrame, setEditorialRecipeKeyframe } from '../../shared/editorial-recipes';
 import { EditorialRecipeInspector } from './EditorialRecipeInspector';
 import { VoxProductionDialog } from './VoxProductionDialog';
-import { VoxProductionProgress, voxProductionNodeLabels } from './VoxProductionProgress';
+import { VoxProductionProgress, voxProductionNodeLabel } from './VoxProductionProgress';
 import { summarizeErrorMessage } from '../../components/ErrorDetails';
 import { voxProductionNodeStatus, voxProductionSettings, voxProductionSettingsSchema, type VoxProductionControl, type VoxProductionSettings } from '../../shared/vox-production';
 import { editorialShotTitle } from '../../shared/editorial-storytelling';
@@ -820,7 +820,7 @@ export function EditorialCollagePage({
     });
   }
 
-  async function controlProduction(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence'>) {
+  async function controlProduction(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence' | 'shotId' | 'instructions'>) {
     const current = documentRef.current;
     if (!current?.productionRun) return;
     await projectAction.run(async () => {
@@ -1191,12 +1191,12 @@ export function EditorialCollagePage({
     total: productionRun.nodes.length,
   } : undefined;
   const productionPhase = productionIntent
-    ? `正在提交 · ${activeNode ? voxProductionNodeLabels[activeNode.kind] : '当前步骤'}`
+    ? `正在提交 · ${activeNode ? voxProductionNodeLabel(productionRun, activeNode) : '当前步骤'}`
     : productionRunning
-      ? runningNode ? `执行中 · ${voxProductionNodeLabels[runningNode.kind]}` : '准备执行'
+      ? runningNode ? `执行中 · ${voxProductionNodeLabel(productionRun, runningNode)}` : '准备执行'
     : productionRun?.status === 'completed' ? '制作完成'
       : productionRun?.status === 'cancelled' ? '已取消'
-        : productionRun && activeNode ? voxProductionNodeStatus(activeNode) === 'unknown' ? `等待核对 · ${voxProductionNodeLabels[activeNode.kind]}` : `失败 · ${voxProductionNodeLabels[activeNode.kind]}`
+        : productionRun && activeNode ? voxProductionNodeStatus(activeNode) === 'unknown' ? `等待核对 · ${voxProductionNodeLabel(productionRun, activeNode)}` : `失败 · ${voxProductionNodeLabel(productionRun, activeNode)}`
           : productionRun?.status === 'paused' ? '已暂停' : undefined;
   return <div data-editorial-collage-workbench="true">
     <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} />
@@ -1205,7 +1205,7 @@ export function EditorialCollagePage({
       <Button disabled={projectAction.busy} onClick={() => setMusicOpen(false)}>取消</Button>
       <Button variant="primary" disabled={projectAction.busy || productionRunning} onClick={() => void saveProductionSettings(musicSettings)}>保存音乐</Button>
     </>}><ProjectMusicFields value={musicSettings.music} library={state.config.jianying.bgmLibrary} api={api} busy={projectAction.busy || productionRunning} onChange={music => setMusicSettings({ ...musicSettings, music })} /></Dialog> : null}
-    {productionDetailsOpen && productionRun ? <VoxProductionProgress key={productionRun.id} run={productionRun} shots={document.beats.flatMap(beat => beat.shots)} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} /> : null}
+    {productionRun ? <VoxProductionProgress key={productionRun.id} open={productionDetailsOpen} run={productionRun} shots={document.beats.flatMap(beat => beat.shots)} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} /> : null}
     <DirectorDeskWorkspace
       mode="vox"
       musicVideo={isMusicVideo}
@@ -1233,7 +1233,7 @@ export function EditorialCollagePage({
         running: productionRunning,
         phase: productionPhase,
         progress: productionProgress,
-        summary: productionIntent || (productionRun ? `${productionRun.nodes.filter(n => n.status === 'completed').length}/${productionRun.nodes.length} 步 · ${activeNode ? voxProductionNodeLabels[activeNode.kind] : productionRun.status === 'completed' ? '已完成' : productionRun.status === 'paused' ? '已暂停' : '制作任务'}${productionRun.message ? ` · ${productionRun.status === 'failed' ? summarizeErrorMessage(productionRun.message) : productionRun.message}` : ' · 应用保持打开时可离开页面继续执行'}` : '选择预设后自动制作；高级设置可保留自定义镜头'),
+        summary: productionIntent || (productionRun ? `${productionRun.nodes.filter(n => n.status === 'completed').length}/${productionRun.nodes.length} 步 · ${activeNode ? voxProductionNodeLabel(productionRun, activeNode) : productionRun.status === 'completed' ? '已完成' : productionRun.status === 'paused' ? '已暂停' : '制作任务'}${productionRun.message ? ` · ${productionRun.status === 'failed' ? summarizeErrorMessage(productionRun.message) : productionRun.message}` : ' · 应用保持打开时可离开页面继续执行'}` : '选择预设后自动制作；高级设置可保留自定义镜头'),
         label: productionUnknown ? '查看失败与恢复' : productionIntent ? '等待当前步骤…' : productionRunning ? '暂停制作' : productionResume ? productionRun.status === 'failed' ? '重试失败步骤' : '继续自动制作' : productionRun?.status === 'completed' ? '重新制作…' : '自动制作…',
         disabled: !shots.length || projectAction.busy || providerAction.busy || Boolean(productionIntent),
         onAction: () => productionUnknown ? setProductionDetailsOpen(true) : productionResume ? void controlProduction('resume') : setProductionOpen(true),
@@ -1352,7 +1352,7 @@ function formatScriptDuration(durationMs: number): string {
 function directorShotFromEditorial(document: EditorialCollagePipelineData, beat: EditorialCollageBeat, shot: EditorialCollageBeat['shots'][number], videoProviderStatus?: DirectorVideoProviderStatus): DirectorShot {
   const linkedAssetId = shot.renderStrategy === 'living-poster' ? editorialKeyframeAssetId(shot) : shot.layers.find((layer) => layer.assetVersionId)?.assetVersionId;
   const asset = linkedAssetId ? document.assets.find((candidate) => candidate.id === linkedAssetId) : undefined;
-  const upstream = document.productionRun?.authoringVersion === 3;
+  const upstream = document.productionRun?.authoringVersion === 4;
   const film = upstream && document.upstreamFilm?.runId === document.productionRun?.id ? document.upstreamFilm : undefined;
   const upstreamReady = Boolean(film?.status === 'ready' && film.review?.technicalPassed && film.review.sourceHash === film.sourceHash && film.visualReview?.sourceHash === film.sourceHash);
   const nativePreviewPath = upstream ? undefined : lemoShotPreviewPath(shot.animation, shot.id, document.creativeFilms);

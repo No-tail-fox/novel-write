@@ -242,6 +242,24 @@ describe('project cover summaries', () => {
     } finally { await db.close(); }
   });
 
+  it('falls back to the first generated story image when no cover was generated', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'project-cover-fallback-'));
+    directories.push(dir);
+    const db = await FileDatabase.open(join(dir, 'data.db'));
+    try {
+      const task = await db.createTask({ title: '分镜回退封面', taskType: 'story', inputText: '分镜回退封面验证' });
+      const workDir = join(dir, 'tasks', task.managedStorageKey!);
+      await mkdir(join(workDir, 'pipeline'), { recursive: true });
+      const image = join(workDir, 'provider-images', '001.png');
+      const statePath = join(workDir, 'pipeline', 'state.json');
+      await mkdir(join(workDir, 'provider-images'), { recursive: true });
+      await writeFile(image, 'generated image');
+      await writeFile(statePath, JSON.stringify({ taskId: task.id, assets: { cover: [], images: [{ sceneId: 1, path: image }] } }));
+      await db.updateTask(task.id, { artifactStatePath: statePath });
+      await vi.waitFor(async () => expect((await db.listTaskSummaries()).items[0].projectCover?.path).toBe(image));
+    } finally { await db.close(); }
+  });
+
   it('ignores malformed, foreign-task and oversized state without blocking the list', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'project-cover-invalid-'));
     directories.push(dir);

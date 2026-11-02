@@ -372,14 +372,22 @@ async function openHiddenHtmlWindow(input: {
     await waitForHiddenHtmlSceneReady(window);
     return window;
   } catch (error) {
-    let readiness = '';
+    let readiness: unknown;
     if (!input.signal?.aborted && !window.isDestroyed()) {
       try {
-        readiness = await withRendererTimeout(window.webContents.executeJavaScript(          'JSON.stringify({ready:window.__ready,mediaError:window.__mediaError,playerReady:!!window.__playerReady,renderReady:window.__renderReady,timeline:!!window.__tl,images:Array.from(document.images).map(i=>({complete:i.complete,width:i.naturalWidth})),videos:Array.from(document.querySelectorAll("video")).map(v=>({state:v.readyState,error:v.error?.code,time:v.currentTime,seeking:v.seeking}))})'), 1500, 'HTML readiness diagnostics');
+        readiness = await withRendererTimeout(window.webContents.executeJavaScript(
+          'JSON.stringify({ready:window.__ready,mediaError:window.__mediaError,playerReady:!!window.__playerReady,renderReady:window.__renderReady,timeline:!!window.__tl,images:Array.from(document.images).map(i=>({complete:i.complete,width:i.naturalWidth})),videos:Array.from(document.querySelectorAll("video")).map(v=>({state:v.readyState,error:v.error?.code,time:v.currentTime,seeking:v.seeking}))})'),
+        1500, 'HTML readiness diagnostics');
       } catch { /* Preserve the original failure when the renderer is unresponsive. */ }
     }
     if (!window.isDestroyed()) window.destroy();
-    if (readiness) throw new Error(      `${error instanceof Error ? error.message : String(error)} [${input.htmlPath}] ${readiness}`, { cause: error });
+    if (typeof readiness === 'string' && readiness) {
+      // Renderer errors may belong to another JS realm. Keep their message
+      // intact and retain local paths/diagnostics in the cause for debugging.
+      const message = error !== null && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        ? error.message : String(error);
+      throw new Error(message, { cause: { error, htmlPath: input.htmlPath, readiness } });
+    }
     throw error;
   }
 }

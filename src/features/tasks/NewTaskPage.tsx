@@ -1228,7 +1228,7 @@ export function NewTaskPage({
               {pixelleSkipsImages ? <p>当前 Pixelle 模板不生成镜头图片；如需封面，仍按封面设置单独处理。</p> : null}
               <div className="new-task-material-options">
                 <Segmented label="素材来源" value={materialSource} options={['ai', 'local', 'video']} labels={['AI 生图', '本地人物素材', '素材混剪']} onChange={(value) => setMaterialSource(value as 'ai' | 'local' | 'video')} />
-                {materialSource === 'video' ? <ShortVideoMaterialFields templateControlsFit={Boolean(visualTemplateRef)} value={shortVideoMaterials} onChange={setShortVideoMaterials} onAdd={addShortVideoMaterials} /> : null}
+                {materialSource === 'video' ? <ShortVideoMaterialFields api={api} templateControlsFit={Boolean(visualTemplateRef)} value={shortVideoMaterials} onChange={setShortVideoMaterials} onAdd={addShortVideoMaterials} /> : null}
                 {materialSource === 'local' && !pixelleSkipsImages ? (
                   <SelectField label="本地人物素材" value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)} options={[
                     { value: '', label: '请选择人物' },

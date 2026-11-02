@@ -304,7 +304,7 @@ describe('editorial Electron QA configuration', () => {
     }
     expect(iconButton).toContain('title = label');
     expect(iconButton).toContain('aria-label={label} title={title}');
-    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button:not\(\.fui-Button\),[\s\S]*?\.primary-action:not\(\.fui-Button\) \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button,[\s\S]*?\.primary-action \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.trial-activation-bar strong \{[\s\S]*?color: var\(--shell-text\);/u);
     expect(theme).toContain("colorNeutralForegroundOnBrand: '#101214'");
     expect(theme).toContain("colorNeutralForegroundOnBrand: '#ffffff'");

@@ -27,6 +27,7 @@ export interface PixelleTemplateDescriptor {
 }
 export interface PixelleCatalog { revision: typeof PIXELLE_REVISION; templates: PixelleTemplateDescriptor[]; paidRequests: 0 }
 export interface PixelleFrameResult {
+  layoutValidation?: { originalFontSize: number; fontSize: number; textFits: true; box: { top: number; bottom: number }; ink: { top: number; bottom: number } };
   path: string;
   width: number;
   height: number;

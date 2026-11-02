@@ -3,7 +3,9 @@ import importlib.util, json, os, shutil, subprocess, tempfile, traceback
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=ROOT/'.artifacts/pixelle-ui'
+OUT=Path(os.environ.get('STORYDREAM_QA_OUTPUT', str(ROOT/'.artifacts/pixelle-ui'))).resolve()
+NODE=os.environ.get('STORYDREAM_QA_NODE') or shutil.which('node')
+if not NODE: raise RuntimeError('Node.js executable was not found; set STORYDREAM_QA_NODE')
 PARAMETER_LABELS={'author':'作者','describe':'简介','brand':'品牌','subtitle':'副标题','signature':'署名','accent_color':'强调色','title_font_size':'标题字号','background':'背景图片地址'}
 spec=importlib.util.spec_from_file_location('qa_base',ROOT/'scripts/qa-director-desk.py')
 base=importlib.util.module_from_spec(spec); spec.loader.exec_module(base)
@@ -12,10 +14,10 @@ def main():
  profile=Path(tempfile.mkdtemp(prefix='profile-',dir=OUT))
  env={**os.environ,'NODE_ENV':'production','STORYDREAM_PROJECT_QA_DIR':str(profile),'PYTHONIOENCODING':'utf-8'}
  for key in ['NODE_OPTIONS','VITE_DEV_SERVER_URL','ELECTRON_RUN_AS_NODE']:env.pop(key,None)
- subprocess.run(['I:/nodejs/node.exe',str(ROOT/'node_modules/tsx/dist/cli.mjs'),str(ROOT/'scripts/qa-short-video-output-seed.ts'),str(profile)],check=True,cwd=ROOT,env=env)
- subprocess.run(['I:/nodejs/node.exe',str(ROOT/'scripts/qa-short-video-output-build.mjs')],check=True,cwd=ROOT,env=env)
+ subprocess.run([NODE,str(ROOT/'node_modules/tsx/dist/cli.mjs'),str(ROOT/'scripts/qa-short-video-output-seed.ts'),str(profile)],check=True,cwd=ROOT,env=env)
+ subprocess.run([NODE,str(ROOT/'scripts/qa-short-video-output-build.mjs')],check=True,cwd=ROOT,env=env)
  env['STORYDREAM_PROJECT_QA_MAIN']=str(ROOT/'.artifacts/short-video-output-ui/main.mjs')
- shutil.copy2(ROOT/'.artifacts/pixelle-clips-smoke/motion-source.mp4',profile/'pixelle-video.mp4')
+ shutil.copy2(Path(os.environ.get('STORYDREAM_PIXELLE_QA_VIDEO', str(ROOT/'.artifacts/pixelle-clips-smoke/motion-source.mp4'))),profile/'pixelle-video.mp4')
  (profile/'controls.json').write_text(json.dumps({'pixelleVideo':True}),encoding='utf-8')
  report={'checks':[],'captures':[],'runtimeErrors':[],'profile':str(profile),'paidRequests':0,'licenseFixture':True}
  process=browser=pw=None

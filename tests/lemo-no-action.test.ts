@@ -1,94 +1,79 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { nativeHarness } from './lemo-native.fixture';
+import { applyLemoEdits } from '../src/shared/creative-animation/lemo-edits';
+import { lemoTruncationDiagnostic } from '../electron/lemo-file-validation';
 import { LlmTextInterruptedError } from '../src/shared/llm-text-stream';
 import type { LlmTextResult } from '../src/shared/llm-provider';
+import type { EditorialCollagePipelineData } from '../src/shared/editorial-collage';
 
 const announcement = 'Reading the current factory source. I will add the remaining painter next.';
 const response = (text: string): LlmTextResult => ({ text, raw: text, finishReason: 'end_turn', requestId: 'offline-no-action' });
-const reply = (prompt: string) => {
-  const p = JSON.parse(prompt);
-  const source = p.file.id === 'shared' ? 'return {calls: []};' : p.file.id === 'director'
-    ? 'return {render(t){for(const s of Object.values(scenes)) s.render(t);},texts(t){return Object.values(scenes).flatMap(s=>s.texts(t));}};'
-    : 'return {render(t){shared.calls.push(t);},texts(t){return [];}};';
-  return response(JSON.stringify({ baseHash: p.batch.baseHash, edits: [{ search: '', replace: source }], done: true, summary: '交付实际代码' }));
-};
-const sharedFile = (h: ReturnType<typeof nativeHarness>) => h.get().creativeFilms!.find(f => f.id === h.get().productionRun!.filmId)!.project!.files.find(f => f.id === 'shared')!;
+const source = 'return {palette: 1};';
+const hash = createHash('sha256').update(source).digest('hex');
 
-describe('durable bounded correction of prose-only authoring', () => {
-  it('checkpoints the rejected receipt, sends corrective context, then continues without changing the original', async () => {
-    let h: ReturnType<typeof nativeHarness>;
-    const editFilmFile = vi.fn(async (prompt: string) => {
-      const p = JSON.parse(prompt);
-      expect(p.execution).toContain('Deliver the actual JSON edit transaction NOW');
-      if (editFilmFile.mock.calls.length === 1) return response(announcement);
-      if (p.file.id === 'shared') {
-        const rejected = sharedFile(h).attempts.at(-1)!;
-        expect(rejected).toMatchObject({ applied: false, rawResponse: announcement });
-        expect(h.receipts.has(rejected.requestId)).toBe(true);
-        expect(p.batch.lastRejectedBatch).toMatchObject({ applied: false, responseExcerpt: announcement });
-        expect(p.batch.lastRejectedBatch.diagnostic).toContain('LEMO_EDIT_NO_ACTION');
-        expect(p.batch.round).toBe(1);
-        expect(p.batch.source).toBe('');
-      }
-      return reply(prompt);
-    });
-    h = nativeHarness({ editFilmFile });
-    const original = h.get().sourceText;
-    await h.start(); await h.idle();
-    expect(h.get().productionRun?.status).toBe('completed');
-    expect(h.get().sourceText).toBe(original);
-    const file = sharedFile(h);
-    expect(file.attempts.map(a => a.applied)).toEqual([false, true]);
-    expect(new Set(file.attempts.map(a => a.requestId)).size).toBe(2);
-    expect(h.get().productionRun!.nodes.find(n => n.id === 'film-code:shared:edit:1')).toMatchObject({ attempt: 2, status: 'completed' });
+describe('retained no-action and interrupted-text diagnostics', () => {
+  it.each([announcement, '下一步将读取文件并补充绘制代码。'])('rejects a prose-only announcement without fabricating source: %s', text => {
+    expect(() => applyLemoEdits(source, hash, text)).toThrow('LEMO_EDIT_NO_ACTION');
+    expect(source).toBe('return {palette: 1};');
   });
-
-  it('stops after three attempts with every paid receipt retained and no invented code', async () => {
-    const editFilmFile = vi.fn(async () => response(announcement));
-    const h = nativeHarness({ editFilmFile });
-    await h.start(); await h.idle();
-    expect(editFilmFile).toHaveBeenCalledTimes(3);
-    expect(h.get().productionRun?.status).toBe('failed');
-    expect(h.get().productionRun?.message).toContain('LEMO_EDIT_NO_ACTION');
-    const file = sharedFile(h);
-    expect(file.source).toBe('');
-    expect(file.attempts).toHaveLength(3);
-    expect(new Set(file.attempts.map(a => a.requestId)).size).toBe(3);
-    for (const a of file.attempts) {
-      expect(a).toMatchObject({ rawResponse: announcement, applied: false });
-      expect(h.receipts.has(a.requestId)).toBe(true);
-    }
+  it.each(['{', '{"baseHash":', '', '\x60\x60\x60json\n{'])('distinguishes incomplete JSON from prose-only delivery: %s', text => {
+    expect(() => applyLemoEdits(source, hash, text)).toThrow('LEMO_EDIT_INVALID');
   });
+  it('accepts an explicit completion only when existing source is present', () => {
+    const raw = JSON.stringify({ baseHash: hash, edits: [], done: true, summary: '现有完整源码已检查。' });
+    expect(applyLemoEdits(source, hash, raw)).toMatchObject({ source, done: true });
+    expect(() => applyLemoEdits('', hash, raw)).toThrow('LEMO_EDIT_EMPTY');
+  });
+  it('retains the actual interrupted receipt and distinguishes truncation evidence', () => {
+    const result = { ...response(announcement), finishReason: null, usage: { completion_tokens: 18 } };
+    const cause = new Error('offline interruption'), error = new LlmTextInterruptedError(result, cause);
+    expect(error.result).toBe(result); expect(error.cause).toBe(cause);
+    expect(error.message).toContain('LLM_STREAM_INTERRUPTED'); expect(error.message).toContain('offline-no-action');
+    expect(error.message).toContain('云端最终结果仍待核对');
+    expect(lemoTruncationDiagnostic({ ...result, finishReason: 'max_tokens' })).toContain('LEMO_FILE_TRUNCATED');
+    expect(result.text).toBe(announcement); expect(result.raw).toBe(announcement);
+  });
+});
 
-  it('honors pause before purchasing a corrective turn', async () => {
-    let h: ReturnType<typeof nativeHarness>;
+describe('official-only authoring never invokes a retired corrective loop', () => {
+  it.each(['prose', 'malformed', 'truncated', 'interrupted'] as const)('fails preflight instead of using the old %s provider as a fallback', async kind => {
     const editFilmFile = vi.fn(async () => {
-      await h.service.control({ id: h.get().id, runId: h.get().productionRun!.id, action: 'pause' });
-      return response(announcement);
+      if (kind === 'interrupted') throw new LlmTextInterruptedError(response(announcement), new Error('offline interruption'));
+      return { ...response(kind === 'malformed' ? '{' : announcement), ...(kind === 'truncated' ? { finishReason: 'max_tokens' } : {}) };
     });
-    h = nativeHarness({ editFilmFile });
-    await h.start(); await h.idle();
-    expect(editFilmFile).toHaveBeenCalledTimes(1);
-    expect(h.get().productionRun?.status).toBe('paused');
-    expect(sharedFile(h).attempts[0]).toMatchObject({ applied: false, rawResponse: announcement });
+    const planFilm = vi.fn(), authorFilmFile = vi.fn(), h = nativeHarness({ editFilmFile, planFilm, authorFilmFile });
+    const before = h.get(), save = vi.spyOn(h.store, 'save');
+    await expect(h.start()).rejects.toThrow('LEMO_OFFICIAL_UNAVAILABLE');
+    for (const operation of [editFilmFile, planFilm, authorFilmFile, save]) expect(operation).not.toHaveBeenCalled();
+    expect(h.get()).toEqual(before); expect(h.receipts.size).toBe(0); expect(h.calls).toEqual([]);
   });
-
-  it('never automatically reissues an interrupted paid response', async () => {
-    const editFilmFile = vi.fn(async () => { throw new LlmTextInterruptedError(response(announcement), new Error('offline interruption')); });
-    const h = nativeHarness({ editFilmFile });
+  it('does not treat an official response without film artifacts as a delivered film or buy legacy corrections', async () => {
+    const officialStep = vi.fn(async (d: EditorialCollagePipelineData, _node: { id: string }) => d), recoverOfficialStep = vi.fn(async () => undefined);
+    const editFilmFile = vi.fn(), planFilm = vi.fn(), authorFilmFile = vi.fn(), h = nativeHarness({ officialStep, recoverOfficialStep, editFilmFile, planFilm, authorFilmFile });
+    const original = h.get();
     await h.start(); await h.idle();
-    expect(editFilmFile).toHaveBeenCalledTimes(1);
-    expect(h.get().productionRun?.nodes.find(n => n.id === 'film-code:shared:edit:1')?.status).toBe('unknown');
-    expect(sharedFile(h).attempts[0]).toMatchObject({ interrupted: true, applied: false, rawResponse: announcement });
+    expect(h.get().productionRun).toMatchObject({ authoringVersion: 4, status: 'failed' });
+    expect(h.get().productionRun!.message).toContain('LEMO_AGENT_NOT_READY');
+    expect(officialStep.mock.calls.map(([, node]) => node.id)).toEqual(['official-treatment', 'official-style-frame', 'official-voice-lock', 'official-authoring']);
+    expect(h.get().productionRun!.nodes.find(n => n.id === 'official-ready')!.status).toBe('failed');
+    expect(h.calls).not.toContain('render');
+    for (const operation of [editFilmFile, planFilm, authorFilmFile]) expect(operation).not.toHaveBeenCalled();
+    expect(h.get().sourceText).toBe(original.sourceText); expect(h.get().creativeFilms).toEqual(original.creativeFilms);
   });
-
-  it('does not introduce hidden retries for other malformed JSON or output truncation', async () => {
-    for (const r of [response('{'), { ...response(announcement), finishReason: 'max_tokens' }, { ...response(announcement), finishReason: null }]) {
-      const editFilmFile = vi.fn(async () => r);
-      const h = nativeHarness({ editFilmFile });
-      await h.start(); await h.idle();
-      expect(editFilmFile).toHaveBeenCalledTimes(1);
-      expect(h.get().productionRun?.status).toBe('failed');
-    }
+  it('keeps an interrupted official request unknown without reissuing it or using old edit providers', async () => {
+    const officialStep = vi.fn(async (document: EditorialCollagePipelineData, node: { id: string }) => {
+      if (node.id === 'official-authoring') throw new LlmTextInterruptedError(response(announcement), new Error('offline interruption'));
+      return document;
+    });
+    const recoverOfficialStep = vi.fn(async () => undefined), editFilmFile = vi.fn(), planFilm = vi.fn();
+    const h = nativeHarness({ officialStep, recoverOfficialStep, editFilmFile, planFilm });
+    await h.start(); await h.idle(); const d = h.get();
+    expect(d.productionRun!.nodes.find(n => n.id === 'official-authoring')).toMatchObject({ status: 'unknown', attempt: 1 });
+    await h.service.control({ id: d.id, runId: d.productionRun!.id, action: 'reconcile' });
+    await expect(h.service.control({ id: d.id, runId: d.productionRun!.id, action: 'resume' })).rejects.toThrow('VOX_PRODUCTION_UNKNOWN');
+    expect(officialStep.mock.calls.map(([, node]) => node.id)).toEqual(['official-treatment', 'official-style-frame', 'official-voice-lock', 'official-authoring']);
+    expect(editFilmFile).not.toHaveBeenCalled(); expect(planFilm).not.toHaveBeenCalled();
+    expect(h.get().productionRun!.nodes.find(n => n.id === 'official-authoring')!.requestId).toBe(d.productionRun!.nodes.find(n => n.id === 'official-authoring')!.requestId);
   });
 });

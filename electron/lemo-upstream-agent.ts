@@ -80,7 +80,8 @@ async function projectFiles(root: string) {
   await walk('', 0);
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
-async function fingerprint(root: string) { return hash(JSON.stringify(await projectFiles(root))); }
+export async function lemoProjectFingerprint(root: string) { return hash(JSON.stringify(await projectFiles(root))); }
+const fingerprint = lemoProjectFingerprint;
 
 function systemPrompt(context: LemoAgentContext) {
   return `You are the film director and native HTML/ESM author inside StoryDream, using the unmodified Lemo library (${LEMO_UPSTREAM_REVISION}).

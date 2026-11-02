@@ -1,11 +1,15 @@
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { encodeHtmlFrames } from '../electron/html-video-frame-stream';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { runBoundedProcess } from '../src/shared/process-runner';
-import { resolvePythonRuntimeInfo } from '../src/shared/python-runtime';
+import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
+
+// Exercise the same pinned Python/FFmpeg runtime used by the desktop app.
+beforeAll(() => setDefaultPythonRuntimeAppRoot(process.cwd()));
+afterAll(() => setDefaultPythonRuntimeAppRoot(undefined));
 
 const python = (root: string, code: string, args: string[]) => runBoundedProcess(resolvePythonRuntimeInfo().command,
   ['-c', code, ...args], { cwd: root, timeoutMs: 60000, maxStdoutBytes: 200000, maxStderrBytes: 200000 });

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFile(new URL('../' + path, import.meta.url), 'utf8');
-describe('native project entrypoint contracts', () => {
+describe('official v4 project entrypoint contracts', () => {
   for (const channel of ['director:render', 'vox:export-shot', 'director:recheck-subtitles', 'director:recheck-media']) {
     it(`${channel} prepares the current picture before building render scenes`, async () => {
       const source = await read('electron/main.ts');
@@ -15,7 +15,8 @@ describe('native project entrypoint contracts', () => {
   it('maps native projects to program captions and never resolves legacy per-shot code', async () => {
     const page = await read('src/features/editorial-collage/EditorialCollagePage.tsx');
     const mapping = page.slice(page.indexOf('function directorShotFromEditorial('));
-    expect(mapping).toContain('document.productionRun?.authoringVersion === 3');
+    expect(mapping).toContain('document.productionRun?.authoringVersion === 4');
+    expect(mapping).not.toContain('document.productionRun?.authoringVersion === 3');
     expect(mapping).toContain('nativeCaptions: !upstream');
     expect(mapping).toContain('animation: upstream ? undefined');
     expect(mapping).toContain('upstreamProject: upstream ?');

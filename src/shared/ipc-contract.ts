@@ -1,6 +1,8 @@
 import { shortVideoMaterialsSchema } from './short-video-materials';
 import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
 import { z } from 'zod';
+import { lemoCapabilityTestRequestSchema } from './lemo-provider-capabilities';
+import { stockMediaSearchSchema, stockMediaImportSchema, stockMediaCancelSchema } from './stock-media';
 import { projectModelsSchema } from './project-models';
 import { libraryListSchema, librarySaveSchema, libraryUpdateSchema } from './asset-library';
 import { musicVoiceRequestSchema } from './music-voice';
@@ -913,6 +915,13 @@ export const ipcInputSchemas = {
   'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema, secretChanges: secretChangesSchema }).strict(),
   'ima:fetch-knowledge': z.object({ query: nonEmptyText(1024) }).strict(),
   'llm:test-config': llmConfigSchema,
+  'lemo-provider:preflight': z.object({ profileId: z.string().min(1).max(256), maxOutputTokens: z.number().int().min(1).max(1000000) }).strict(),
+  'lemo-provider:test': lemoCapabilityTestRequestSchema,
+  'lemo-provider:cancel': z.object({ testId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/) }).strict(),
+  'stock-media:status': z.undefined(),
+  'stock-media:search': stockMediaSearchSchema,
+  'stock-media:import': stockMediaImportSchema,
+  'stock-media:cancel': stockMediaCancelSchema,
   'models:list': providerModelListSchema,
   'volcengine:speakers:list': volcengineSpeakerListSchema,
   'research:web-search': z.union([nonEmptyText(MAX_IPC_TEXT), webSearchRequestSchema]),

@@ -20,6 +20,7 @@ export const DEFAULT_IMAGE_REQUEST_TIMEOUT_MS = 600_000;
 const updatedAt = '2026-05-26T00:00:00.000Z';
 
 export const defaultConfig: AppConfig = {
+  stockMedia: { pexelsApiKey: '' },
   llm: {
     id: 'default-llm',
     name: '第三方',

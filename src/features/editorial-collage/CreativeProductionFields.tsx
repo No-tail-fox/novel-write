@@ -3,6 +3,7 @@ import { CREATIVE_STYLES, resolveCreativeStyle } from '../../shared/creative-ani
 import { VOX_PRODUCTION_PRESETS, type VoxProductionSettings } from '../../shared/vox-production';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { CreativeStyleCover, CreativeStyleFilm } from './CreativeStylePreview';
+import { LemoBudgetFields } from './LemoBudgetFields';
 
 /** Creation and project settings deliberately edit the same persisted inputs. */
 export function CreativeProductionFields({ settings, onChange, onOpenUrl, document, busy = false, showNarration = true }: {
@@ -23,6 +24,7 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   const updateRow = (index: number, patch: Partial<VoxProductionSettings['data'][number]>) => onChange({ ...settings, data: settings.data.map((row, i) => i === index ? { ...row, ...patch } : row) });
   const updateArchive = (index: number, patch: Partial<VoxProductionSettings['archives'][number]>) => onChange({ ...settings, archives: settings.archives.map((row, i) => i === index ? { ...row, ...patch } : row) });
   return <div className="vox-production-fields">
+    {authoring.mode === 'ai-code' ? <LemoBudgetFields value={settings.lemoBudget} disabled={busy} onChange={lemoBudget => onChange({ ...settings, lemoBudget })} /> : null}
     <SelectField label="制作方式" value={authoring.mode} disabled={busy}
       options={[{ value: 'ai-code', label: 'Lemo 风格动画（推荐）' }, { value: 'template', label: 'Vox 分层动画' }]}
       hint={authoring.mode === 'ai-code' ? 'Lemo：导演方案 → 素材准备 → 公共绘图与连续场景 → 样片检查 → 整片调度。每步单独保存，失败可从对应步骤继续；最终输出一部连续影片。' : 'Vox：画面规划 → 背景与主体分层 → 去底 → 跟随旁白编排图文、图表与运动。使用本地动效编排，不调用 Lemo 全片创作。'}

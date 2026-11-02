@@ -8,6 +8,7 @@ import http.server
 import importlib.util
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,19 +19,22 @@ import imageio_ffmpeg
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
-ART = ROOT / '.artifacts/creative-animation-settings'
+ART = Path(os.environ.get('STORYDREAM_QA_OUTPUT', str(ROOT / '.artifacts/creative-animation-settings'))).resolve()
+NODE = os.environ.get('STORYDREAM_QA_NODE') or shutil.which('node')
+if not NODE:
+    raise RuntimeError('Node.js executable was not found; set STORYDREAM_QA_NODE')
 ART.mkdir(parents=True, exist_ok=True)
 spec = importlib.util.spec_from_file_location('qa_base', ROOT / 'scripts/qa-motion-comic.py')
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
-profile = Path(tempfile.mkdtemp(prefix='vox-process-', dir=ROOT / '.codex-temp'))
+profile = Path(tempfile.mkdtemp(prefix='vox-process-', dir=ART))
 Image.open(ROOT / 'docs/design/2026-10-22-vox-generation-simplification/concepts/process-outline/design.png').crop((387, 115, 1499, 588)).save(profile / 'fixture-art.png')
 source = (ROOT / 'tests/editorial-dual-chain.harness.tsx').read_text(encoding='utf8')
 source = source.replace("'../src/", "'" + ROOT.as_posix() + '/src/')
 source = source.replace('theme="dark"', 'theme={new URLSearchParams(location.search).get("theme")==="light"?"light":"dark"}')
 source = source.replace('insertEditorialShot, parseEditorialCollagePipelineData', 'insertEditorialShot, rebuildEditorialTimeline, parseEditorialCollagePipelineData')
 source = source.replace("import '../src/styles.css';", "import '../src/styles.css';")
-source = "import { directorDocumentRenderFingerprint } from '" + ROOT.as_posix() + "/src/shared/director-render';\n" + source
+source = "import { LEMO_NATIVE_ENGINE } from '" + ROOT.as_posix() + "/src/shared/creative-animation/native-film';\nimport { directorDocumentRenderFingerprint } from '" + ROOT.as_posix() + "/src/shared/director-render';\n" + source
 source = source.replace('Object.assign(window, { editorialDualChainQA: controls });', '''
 Object.assign(controls, {
   processFixture(count = 4, longContent = false) {
@@ -58,11 +62,29 @@ Object.assign(controls, {
     snapshot.document.assets.push({ id:'qa-final', assetId:'director-final-video', kind:'video', localPath:location.origin+'/fixture-video.mp4', selected:true, renderFingerprint:directorDocumentRenderFingerprint(snapshot.document), createdAt:seedTime });
     store(); controls.remount();
   },
+  officialProductionFixture(scenario: 'unknown'|'failed'|'running' = 'unknown') {
+    controls.processFixture(4);
+    controls.productionCalls = []; controls.holdProduction = false;
+    const document = snapshot.document;
+    const settings = {...voxProductionSettings(), generateImages:false, narration:false, authoring:{mode:'ai-code' as const,styleId:'watercolor'}};
+    const nodes = buildVoxProductionNodes(document, settings);
+    const stage = nodes.find(n => n.id === 'official-authoring')!;
+    for (const node of nodes.slice(0, nodes.indexOf(stage))) { node.status='completed'; node.attempt=1; }
+    stage.status=scenario; stage.attempt=1; stage.requestId='offline-official-request';
+    stage.error=scenario==='running'?undefined:scenario==='unknown'?'LEMO_SESSION_CANCELLED: 官方会话的原请求仍待核对。':'LEMO_OFFICIAL_REVIEW_REQUIRED: 请先完成本次官方工程的实帧审片。';
+    document.productionSettings=settings;
+    document.productionRun={version:1,id:'qa-official-run',engine:LEMO_NATIVE_ENGINE,authoringVersion:4,status:scenario==='running'?'running':'failed',settings,nodes,sourceHash:'fixture',runtimeIdentity:'fixture',createdAt:seedTime,updatedAt:seedTime,message:stage.error};
+    store(); controls.remount();
+  },
   finishRender() { if (pendingRender) { pendingRender(); pendingRender = undefined; } },
 });
 Object.assign(window, { editorialDualChainQA: controls });''')
 source = source.replace('const localApi = {', '''let pendingRender: (() => void) | undefined;
 const localApi = {
+  async getTaskMediaUrl(projectId: string, path: string) {
+    if (projectId !== snapshot.document.id || path !== location.origin + '/fixture-video.mp4') throw new Error('QA_BLOCKED_MEDIA');
+    return path;
+  },
   async importBgmAudio() { return {title:'导入测试音乐', path:location.origin+'/fixture-music.wav'}; },
   async openHotBoardUrl(url: string) { Object.assign(window, { qaOpenedUrl: url }); },
   async createEditorialCollage(input: Parameters<StoryDreamApi['createEditorialCollage']>[0]) {
@@ -78,11 +100,11 @@ subprocess.run([str(ffmpeg), '-y', '-f', 'lavfi', '-i', 'sine=frequency=220:dura
 subprocess.run([str(ffmpeg), '-y', '-loop', '1', '-i', str(profile / 'fixture-art.png'), '-t', '2', '-vf', 'scale=640:360', '-pix_fmt', 'yuv420p', str(profile / 'fixture-video.mp4')], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 entry = profile / 'process.tsx'
 entry.write_text(source, encoding='utf8')
-build = subprocess.run(['I:/nodejs/node.exe', '--input-type=module', '-e',
+build = subprocess.run([NODE, '--input-type=module', '-e',
     "import {build} from 'vite';await build({configFile:false,define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{outDir:process.argv[2],emptyOutDir:false,target:'chrome120',lib:{entry:process.argv[1],name:'voxQA',formats:['es'],fileName:()=> 'harness.js',cssFileName:'harness'}}});", str(entry), str(profile)], cwd=ROOT, capture_output=True, text=True, encoding='utf8')
 (ART / 'build.log').write_text(build.stdout + build.stderr, encoding='utf8')
 build.check_returncode()
-runtime = subprocess.run(['I:/nodejs/node.exe', '--input-type=module', '-e',
+runtime = subprocess.run([NODE, '--input-type=module', '-e',
     "import {build} from 'esbuild';await build({entryPoints:['src/features/vox-animation/runtime.tsx'],outfile:process.argv[1],bundle:true,platform:'browser',format:'iife',target:'chrome120',define:{'process.env.NODE_ENV':JSON.stringify('production')},minify:true,logLevel:'warning'});", str(profile / 'runtime.js')], cwd=ROOT, capture_output=True, text=True, encoding='utf8')
 runtime.check_returncode()
 import re
@@ -182,6 +204,58 @@ try:
             # A visible DOM box can still be covered by the sticky workspace header.
             for element in [header, close]:
                 check(name + ' header control unobscured', element.evaluate('''e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}'''))
+        # Official SDK entrypoints use the real page, dialogs and mock-only IPC.
+        for label, size in [('desktop', {'width':1536,'height':1024}), ('compact', {'width':1040,'height':720})]:
+            page.set_viewport_size(size)
+            for theme in ['dark', 'light']:
+                page.goto(url + '?theme=' + theme)
+                page.wait_for_selector('.director-desk')
+                for scenario in ['failed', 'unknown']:
+                    page.evaluate('(scenario)=>window.editorialDualChainQA.officialProductionFixture(scenario)', scenario)
+                    page.get_by_role('button', name='制作进度', exact=True).click()
+                    dialog = page.get_by_role('dialog', name='自动制作进度', exact=True)
+                    expect(dialog).to_be_visible()
+                    stage = dialog.locator('[data-node-id="official-authoring"]')
+                    expect(stage.get_by_text('官方 SDK · 整片创作与审片', exact=True)).to_be_visible()
+                    check(label + theme + scenario + ' official stage label', True)
+                    check(label + theme + scenario + ' no retired code recheck', dialog.get_by_role('button', name='重新检查现有代码', exact=True).count() == 0)
+                    check(label + theme + scenario + ' no legacy style fallback disclosure', dialog.get_by_text('镜头采用的风格', exact=True).count() == 0)
+                    if scenario == 'failed':
+                        expect(dialog.get_by_role('button', name='重试失败步骤', exact=True)).to_be_enabled()
+                    else:
+                        expect(dialog.get_by_role('button', name='继续官方步骤', exact=True)).to_be_enabled()
+                        check(label + theme + ' no generic direct retry claim', dialog.get_by_role('button', name='直接重试此步骤', exact=True).count() == 0)
+                        dialog.get_by_text('其他恢复选项', exact=True).click()
+                        expect(dialog.get_by_text('先尝试恢复本机已保存的官方工程与审片凭据。找不到回执不代表服务商没有结果；手工核对记录也不会清除官方会话的未决请求。', exact=True)).to_be_visible()
+                        dialog.get_by_role('button', name='恢复已保存结果', exact=True).click()
+                        check(label + theme + ' recovery stays in original run', page.evaluate('(()=>{const c=window.editorialDualChainQA.productionCalls.at(-1);return c.action==="reconcile"&&c.runId==="qa-official-run"})()'))
+                        dialog.get_by_role('button', name='继续官方步骤', exact=True).click()
+                        check(label + theme + ' official continuation targets same stage', page.evaluate('(()=>{const c=window.editorialDualChainQA.productionCalls.at(-1);return c.action==="retry-unknown"&&c.nodeId==="official-authoring"&&c.runId==="qa-official-run"})()'))
+                        dialog.get_by_role('button', name='记录核对依据', exact=True).scroll_into_view_if_needed()
+                        expect(dialog.get_by_role('button', name='记录核对依据', exact=True)).to_be_disabled()
+                        check(label + theme + ' official evidence does not promise to unlock ledger', dialog.get_by_role('button', name='记录核对并解锁此步骤', exact=True).count() == 0)
+                    name = label + '-' + theme + '-official-' + scenario
+                    capture(name)
+                    geometry = dialog.evaluate('e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth,height:innerHeight,overflow:e.scrollWidth-e.clientWidth}}')
+                    report['states'][name]['dialog'] = geometry
+                    check(name + ' dialog within viewport', geometry['left'] >= -1 and geometry['right'] <= geometry['width']+1 and geometry['top'] >= -1 and geometry['bottom'] <= geometry['height']+1 and geometry['overflow'] <= 1)
+                    expect(dialog.get_by_role('button', name='关闭', exact=True)).to_be_in_viewport()
+                    if scenario == 'failed':
+                        dialog.get_by_role('button', name='重试失败步骤', exact=True).click()
+                        check(label + theme + ' failure resumes original run', page.evaluate('(()=>{const c=window.editorialDualChainQA.productionCalls.at(-1);return c.action==="resume"&&c.runId==="qa-official-run"})()'))
+                    page.keyboard.press('Escape')
+                    expect(dialog).to_be_hidden()
+                    check(name + ' keyboard closes progress dialog', True)
+        if os.environ.get('STORYDREAM_QA_OFFICIAL_ONLY') == '1':
+            report['blockedCalls'] = page.evaluate('window.editorialDualChainQA.snapshot().blockedCalls')
+            check('no provider calls', len(report['blockedCalls']) == 0)
+            check('no page errors', len(report['errors']) == 0)
+            report['status'] = 'passed'
+            browser.close()
+            raise SystemExit(0)
+        page.set_viewport_size({'width':1536, 'height':1024})
+        page.goto(url)
+        page.wait_for_selector('.director-desk')
         fixture()
         page.get_by_role('button', name='背景音乐', exact=True).click()
         music = page.get_by_role('dialog', name='整片背景音乐', exact=True)
@@ -464,7 +538,7 @@ try:
         expect(page.get_by_role('dialog', name='自动制作设置')).to_be_visible()
         capture('desktop-production-settings')
         settings = page.get_by_role('dialog', name='自动制作设置')
-        start = settings.get_by_role('button', name='开始自动制作', exact=True)
+        start = settings.get_by_role('button', name='按此风格创作全片', exact=True)
         settings.get_by_role('combobox', name='素材流程', exact=True).select_option('data-map')
         expect(start).to_be_disabled()
         expect(settings.get_by_role('alert')).to_contain_text('至少两条')
@@ -536,7 +610,7 @@ try:
                     page.get_by_role('button', name='自动制作…', exact=True).click()
                     expect(page.get_by_role('dialog', name='自动制作设置')).to_be_visible()
                     capture(name + '-' + theme + '-production-settings')
-                    expect(page.get_by_role('button', name='开始自动制作', exact=True)).to_be_in_viewport()
+                    expect(page.get_by_role('button', name='按此风格创作全片', exact=True)).to_be_in_viewport()
                     style_options()
                     page.get_by_role('button', name='详细预览视觉风格', exact=True).click()
                     capture(name + '-' + theme + '-sample-dialog')
@@ -628,11 +702,18 @@ try:
         capture('creation-animation-settings-compact')
         expect(page.get_by_role('button', name='下一步', exact=True)).to_be_in_viewport()
         check('compact creation no horizontal overflow', report['states']['creation-animation-settings-compact']['bodyOverflow'] <= 0)
+        expect(page.get_by_text('生成服务与素材一致性', exact=True)).to_have_count(0)
+        check('native authoring uses the project model settings', True)
+        page.get_by_role('combobox', name='制作方式', exact=True).select_option('template')
         page.get_by_text('生成服务与素材一致性', exact=True).click()
-        expect(page.get_by_role('combobox', name='图片生成服务', exact=True)).to_be_visible()
+        expect(page.get_by_text('项目生图模型：', exact=False)).to_be_visible()
+        expect(page.get_by_role('checkbox', name='锁定跨镜头 Seed 与风格参考', exact=True)).to_be_visible()
         capture('creation-generation-services-compact')
         expect(page.get_by_role('button', name='下一步', exact=True)).to_be_in_viewport()
         check('compact creation expanded settings no horizontal overflow', report['states']['creation-generation-services-compact']['bodyOverflow'] <= 0)
+        page.get_by_role('combobox', name='制作方式', exact=True).select_option('ai-code')
+        choose_style('暗色科技发布')
+        expect(page.get_by_role('textbox', name='动画创作要求', exact=True)).to_have_value('大字和留白，观点逐个出现。')
         page.set_viewport_size({'width':1536, 'height':1024})
         page.get_by_role('button', name='下一步', exact=True).click()
         page.get_by_role('checkbox', name='自动生成旁白与字幕', exact=True).uncheck()

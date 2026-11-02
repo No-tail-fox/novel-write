@@ -9,6 +9,9 @@
     "dev:web": "scripts\\run-npm-node.cmd node_modules/vite/bin/vite.js",
     "build": "scripts\\run-npm-powershell.cmd scripts/build.ps1",
     "package:win": "scripts\\run-npm-powershell.cmd scripts/package-win.ps1",
+    "prepare:lemo-runtime": "scripts\\run-npm-node.cmd scripts/prepare-lemo-release.mjs",
+    "build:lemo-worker": "scripts\\run-npm-node.cmd scripts/build-lemo-agent-worker.mjs",
+    "qa:lemo-package": "scripts\\run-npm-node.cmd scripts/qa-lemo-package.mjs",
     "convert:coze": "scripts\\run-npm-node.cmd scripts/convert-coze-workflows.mjs",
     "fetch:coze:feishu": "scripts\\run-npm-node.cmd scripts/fetch-feishu-coze-workflows.mjs",
     "smoke:electron": "scripts\\run-npm-powershell.cmd scripts/smoke-electron.ps1",
@@ -81,6 +84,7 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": ".artifacts/lemo-release/resources/lemo-official", "to": "lemo-official" },
       { "from": "vendor/pixelle-upstream", "to": "pixelle-upstream" },
       { "from": "services/pixelle-worker", "to": "pixelle-worker", "filter": ["**/*.py"] },
       {

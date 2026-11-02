@@ -139,6 +139,7 @@ async def render_frame(request, entry, generator, runtime, work):
         allowed_files.add(image)
     blocked = set()
     page_errors = []
+    layout_validation = None
     resources = {}
     for url, item in request.get("resourceMap", {}).items():
         local = Path(item["path"]).resolve()
@@ -168,6 +169,7 @@ async def render_frame(request, entry, generator, runtime, work):
         def __init__(self, page): self.page = page
         def __getattr__(self, name): return getattr(self.page, name)
         async def screenshot(self, **kwargs):
+            nonlocal layout_validation
             await self.page.wait_for_function("() => document.fonts.status === 'loaded'", timeout=15000)
             fonts_failed = await self.page.evaluate("() => Array.from(document.fonts).some(font => font.status === 'error')")
             images_failed = await self.page.evaluate("() => Array.from(document.images).some(img => !img.complete || img.naturalWidth === 0)")
@@ -175,6 +177,24 @@ async def render_frame(request, entry, generator, runtime, work):
                 raise ResourceRequiredError(blocked)
             if fonts_failed or images_failed or page_errors:
                 raise ValueError("PIXELLE_RENDER_INCOMPLETE: fonts, images or template JavaScript failed: " + "; ".join(page_errors))
+            if entry["ref"]["path"] == "1080x1920/image_default.html":
+                # Fit only the known original fixed text box at draw time. The
+                # pinned HTML, content, image geometry and brand remain intact.
+                layout_validation = await self.page.evaluate("""() => {
+                    const text = document.querySelector('.text');
+                    if (!text) throw new Error('PIXELLE_TEMPLATE_TEXT_BOX_MISSING');
+                    const original = parseFloat(getComputedStyle(text).fontSize);
+                    const range = document.createRange(); range.selectNodeContents(text);
+                    for (let size = original; size >= 28; size -= .5) {
+                        text.style.fontSize = size + 'px';
+                        const box = text.getBoundingClientRect(), ink = range.getBoundingClientRect();
+                        if (!text.textContent.trim() || (ink.top >= box.top + 10 && ink.bottom <= box.bottom - 10 && ink.left >= box.left + 10 && ink.right <= box.right - 10)) {
+                            return { originalFontSize: original, fontSize: size, textFits: true,
+                                box: { top: box.top, bottom: box.bottom }, ink: { top: ink.top, bottom: ink.bottom } };
+                        }
+                    }
+                    throw new Error('PIXELLE_TEMPLATE_TEXT_TOO_DENSE: 当前图文段落过长，请拆分内容后重试。');
+                }""")
             return await self.page.screenshot(**kwargs)
 
     class BrowserGuard:
@@ -207,7 +227,7 @@ async def render_frame(request, entry, generator, runtime, work):
                     raise ValueError("Rendered dimensions do not match the original template")
                 frame.load()
             os.replace(partial, output)
-        return {"path": str(output), "width": entry["width"], "height": entry["height"], "ref": entry["ref"], "kind": "video-overlay" if overlay else "frame", "requiresVideoComposition": overlay, "paidRequests": 0}
+        return {"path": str(output), "width": entry["width"], "height": entry["height"], "ref": entry["ref"], "kind": "video-overlay" if overlay else "frame", "requiresVideoComposition": overlay, "paidRequests": 0, **({"layoutValidation": layout_validation} if layout_validation else {})}
     except Exception:
         # Upstream wraps render errors; preserve a structured dependency contract.
         if blocked:

@@ -17,8 +17,17 @@ const requiredAssertions = [
   'windowPolicyInstalled',
   'shellRendered',
 ] as const;
+const licenseGateAssertions = [
+  'mainLoaded', 'preloadExposed', 'windowPolicyInstalled',
+  'licenseStatusLoaded', 'licenseGateRendered', 'protectedIpcBlocked',
+] as const;
 
 interface SmokeReport {
+  mode?: 'workspace' | 'license-gate';
+  licenseStatus?: string;
+  licenseStatusLoaded?: boolean;
+  licenseGateRendered?: boolean;
+  protectedIpcBlocked?: boolean;
   mainLoaded: boolean;
   preloadExposed: boolean;
   ipcStateLoaded: boolean;
@@ -57,7 +66,12 @@ async function main(): Promise<void> {
         throw new Error(`Electron smoke failed: child ${child.pid} exited with ${child.code ?? child.signal}.${detail ? `\n${detail}` : ''}`);
       }
       const report = JSON.parse(await readFile(outputPath, 'utf8')) as SmokeReport;
-      const failedAssertions = requiredAssertions.filter((field) => report[field] !== true);
+      const assertions = report.mode === 'license-gate' ? licenseGateAssertions : requiredAssertions;
+      const failedAssertions: string[] = assertions.filter((field) => report[field] !== true);
+      if (report.mode === 'license-gate' && (report.shellRendered !== false || report.ipcStateLoaded !== false
+        || report.preloadActionSucceeded !== false || ['active', 'offline'].includes(report.licenseStatus ?? ''))) {
+        failedAssertions.push('unlicensedWorkspaceMustRemainBlocked');
+      }
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
       if (failedAssertions.length > 0) throw new Error(`Electron smoke failed: ${failedAssertions.join(', ')}`);
     },

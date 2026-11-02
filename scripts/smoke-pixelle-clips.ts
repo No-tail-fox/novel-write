@@ -4,7 +4,10 @@ import { promisify } from 'node:util';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { runPixelleWorker } from '../src/shared/pixelle-worker';
-const root = resolve('.'), workDir = join(root, '.artifacts/pixelle-clips-smoke');
+const root = resolve('.');
+const workDir = process.env.STORYDREAM_PIXELLE_VALIDATION_ROOT
+  ? resolve(process.env.STORYDREAM_PIXELLE_VALIDATION_ROOT, 'clips')
+  : join(root, '.artifacts/pixelle-clips-smoke');
 const exec = promisify(execFile);
 const python = join(root, 'vendor/python/python.exe');
 await mkdir(workDir, { recursive: true });

@@ -1,6 +1,7 @@
 import { LlmJsonParseError } from '../src/shared/llm-provider';
 import { LlmTextInterruptedError } from '../src/shared/llm-text-stream';
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,8 +10,6 @@ import { buildVoxProductionNodes, recoverVoxProductionRun, voxProductionControlS
 import { VoxProductionService, voxInputHash, type VoxProductionRuntime } from '../electron/vox-production-service';
 import { createVoxProductionRuntime, type VoxProductionOperations } from '../electron/vox-production-runtime';
 import { FileDatabase } from '../src/shared/storage';
-import { nativeHtml } from './lemo-native.fixture';
-import { compileVoxCode } from '../electron/vox-animation-runtime';
 import { directorDocumentRenderFingerprint } from '../src/shared/director-render';
 
 const document = () => createEditorialCollageStarterPlan(createEditorialCollageDraft({ id: 'vox', title: '城市热岛', ratio: '16:9' }), '道路与建筑吸收阳光。树荫可以降低地表温度。', '2026-10-23T00:00:00.000Z', 15000);
@@ -50,17 +49,18 @@ describe('Vox preset contracts', () => {
     expect(buildVoxProductionNodes(doc, { ...voxProductionSettings(), lockedShotIds: [shot.id] }).filter(n => n.shotId === shot.id).map(n => n.kind)).toEqual(['timing', 'animation', 'compile']);
     for (const node of paper) expect(node.dependencies.every(dep => paper.findIndex(n => n.id === dep) < paper.indexOf(node))).toBe(true);
   });
-  it('disables image generation independently of planning, code and narration, without requiring imported images', () => {
+  it('disables image generation independently of official authoring and narration, without requiring imported images', () => {
     const d = document(), settings = { ...voxProductionSettings(), generateImages: false, authoring: { mode: 'ai-code' as const, styleId: 'auto' } };
     const nodes = buildVoxProductionNodes(d, settings);
     expect(nodes.some(node => ['image', 'cutout'].includes(node.kind))).toBe(false);
-    for (const kind of ['plan', 'voice', 'film-code', 'film-review', 'film-repair', 'film-finalize', 'compile', 'render', 'verify']) expect(nodes.some(node => node.kind === kind), kind).toBe(true);
+    for (const kind of ['voice', 'timing', 'film-edit', 'film-finalize', 'render', 'verify']) expect(nodes.some(node => node.kind === kind), kind).toBe(true);
+    expect(nodes.some(node => ['plan', 'film-code', 'film-review', 'film-repair', 'compile'].includes(node.kind))).toBe(false);
     expect(voxProductionNeedsTextModel(nodes)).toBe(true);
     expect(nodes.every(node => node.dependencies.every(dependency => nodes.some(parent => parent.id === dependency)))).toBe(true);
-    expect(nodes.find(node => node.kind === 'voice')?.dependencies).toEqual(['plan']);
+    expect(nodes.find(node => node.kind === 'voice')?.dependencies).toEqual(['official-style-frame']);
     expect(voxProductionInputErrors(d, settings)).toEqual([]);
     expect(buildVoxProductionNodes(d, { ...settings, narration: false }).some(node => node.kind === 'voice')).toBe(false);
-    expect(buildVoxProductionNodes(d, { ...settings, lockedShotIds: [d.beats[0].shots[0].id] }).filter(node => node.shotId === d.beats[0].shots[0].id).map(node => node.kind)).toEqual(['compile']);
+    expect(buildVoxProductionNodes(d, { ...settings, lockedShotIds: [d.beats[0].shots[0].id] }).filter(node => node.shotId === d.beats[0].shots[0].id).map(node => node.kind)).toEqual(['timing']);
   });
   it('defaults older settings to image generation and reads the retired existing-assets choice', () => {
     const { generateImages: _generateImages, ...legacy } = voxProductionSettings();
@@ -379,34 +379,45 @@ describe('main-owned Vox production', () => {
   });
 });
 describe('Vox runtime gates', () => {
-  it('keeps planning, AI animation code and narration while image generation is disabled', async () => {
+  it('keeps official authoring and measured narration while image generation is disabled', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'vox-no-image-runtime-'));
     try {
       const path = join(directory, 'voice.wav'); await writeFile(path, 'local voice fixture');
       const settings: VoxProductionSettings = { ...voxProductionSettings(), generateImages: false, authoring: { mode: 'ai-code', styleId: 'auto' } };
       const now = document().createdAt;
-      const planFilm = vi.fn(async () => ({ treatment: '在同一连续镜头中展开城市街道的热岛机制，画面先呈现道路蓄热，再以树荫覆盖街道来表达降温，文字配合实测旁白推进。', fps: 24 }));
       const image = vi.fn(async () => { throw new Error('image generation must stay disabled'); });
       const cutout = vi.fn(async () => { throw new Error('background removal must stay disabled'); });
       const speech = vi.fn(async (input, requestId) => ({ durationMs: 4200, record: { id: requestId, text: input.text, provider: input.provider, voiceId: input.voiceId,
         voiceLabel: input.voiceLabel, speed: input.speed, audioPath: path, status: 'generated' as const, errorMessage: '', createdAt: now, finishedAt: now } }));
-      const generateFilm = vi.fn(async (prompt: string) => nativeHtml(JSON.parse(prompt).durationMs));
-      const runtime = createVoxProductionRuntime(operations({ planFilm, image, cutout, speech, generateFilm, compileCode: compileVoxCode, previewCode: async () => ['preview.png'] }));
+      const officialStep = vi.fn(async (d: EditorialCollagePipelineData) => {
+        const filmDirectory = await mkdtemp(join(directory, 'film-'));
+        const bytes = Buffer.from('<html>Offline scheduler fixture, not artistic acceptance.</html>');
+        await writeFile(join(filmDirectory, 'index.html'), bytes);
+        const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+        const sourceHash = hash(JSON.stringify([{ path: 'index.html', sha256: hash(bytes), bytes: bytes.length }]));
+        return { ...d, upstreamFilm: { version: 1 as const, runId: d.productionRun!.id, styleId: 'watercolor', directory: filmDirectory, turn: 1, status: 'ready' as const, sourceHash, lastTool: 'finish_film', message: 'Offline test receipt',
+          review: { sourceHash, technicalPassed: true, frames: [], durationSeconds: d.timeline!.durationMs / 1000 },
+          visualReview: { sourceHash, notes: 'Test-only review receipt; no visual acceptance claimed.', turn: 1 } } };
+      });
+      const runtime = createVoxProductionRuntime(operations({ officialStep: (d, n) => n.id === 'official-authoring' ? officialStep(d) : Promise.resolve(d), recoverOfficialStep: async () => undefined, image, cutout, speech }));
       const h = harness();
       h.runtime.identity = runtime.identity;
+      h.runtime.nativeWorkflowVersion = runtime.nativeWorkflowVersion;
+      h.runtime.preflight = runtime.preflight;
+      h.runtime.expand = runtime.expand;
       h.runtime.input = (d, node) => runtime.input(d, node);
       h.runtime.execute = (d, node) => ['render', 'verify'].includes(node.kind) ? Promise.resolve(d) : runtime.execute(d, node);
 
       const started = await h.start(settings); await h.service.idle('vox');
 
       expect(h.get().productionRun, h.get().productionRun?.message).toMatchObject({ id: started.id, status: 'completed', settings: { generateImages: false, narration: true, authoring: { mode: 'ai-code' } } });
-      expect(planFilm).toHaveBeenCalledOnce();
       expect(speech).toHaveBeenCalled();
-      expect(generateFilm).toHaveBeenCalledOnce();
+      expect(officialStep).toHaveBeenCalledOnce();
+      expect(officialStep.mock.calls[0][0].assets.some(asset => asset.kind === 'audio' && asset.durationMs === 4200)).toBe(true);
       expect(image).not.toHaveBeenCalled();
       expect(cutout).not.toHaveBeenCalled();
       expect(h.get().productionRun!.nodes.some(node => node.kind === 'image' || node.kind === 'cutout')).toBe(false);
-      expect(h.get().productionRun!.nodes.some(node => node.kind === 'film-code' && node.status === 'completed')).toBe(true);
+      expect(h.get().productionRun!.nodes.some(node => node.id === 'official-authoring' && node.status === 'completed')).toBe(true);
       expect(h.errors).toEqual([]);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });

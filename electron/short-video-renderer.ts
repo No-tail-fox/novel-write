@@ -5,6 +5,7 @@ import type { WriteJianyingDraftInput } from '../src/shared/draft';
 import { buildShortVideoComposition, prepareShortVideoInput } from '../src/shared/short-video-render';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
+import { writeStockMediaManifest } from '../src/shared/stock-media-manifest';
 
 export async function prepareShortVideoOutputs(input: WriteJianyingDraftInput, signal?: AbortSignal): Promise<WriteJianyingDraftInput> {
   const durations = new Map<string, number>();
@@ -33,6 +34,7 @@ export async function renderShortVideo(input: WriteJianyingDraftInput, signal?: 
     }
     signal?.throwIfAborted();
     await rename(temporaryPath, finalPath);
+    await writeStockMediaManifest(finalPath + '.sources.json', input.generatedVideos);
     return finalPath;
   } finally {
     await rm(temporaryPath, { force: true });

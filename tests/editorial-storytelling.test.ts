@@ -11,7 +11,9 @@ function addMedia(doc: ReturnType<typeof fixture>) {
   for (const shot of doc.beats.flatMap((beat) => beat.shots)) {
     for (const layer of shot.layers.filter((item) => !item.content)) {
       layer.assetVersionId = `asset-${layer.id}`;
-      doc.assets.push({ id: layer.assetVersionId, assetId: layer.id, kind: 'image', localPath: `I:/fixtures/${layer.id}.png`, createdAt: doc.createdAt });
+      doc.assets.push({ id: layer.assetVersionId, assetId: layer.id, kind: 'image', localPath: `I:/fixtures/${layer.id}.png`, createdAt: doc.createdAt,
+        ...(['subject', 'archival'].includes(layer.kind) ? { backgroundRemoval: { method: 'native-alpha' as const, transparentFraction: 0.5, foregroundFraction: 0.48, edgeFraction: 0.02, quality: 'passed' as const } } : {}),
+      });
     }
     shot.voiceAssetVersionId = `voice-${shot.id}`;
     doc.assets.push({ id: shot.voiceAssetVersionId, assetId: shot.voiceAssetVersionId, kind: 'audio', localPath: 'I:/fixtures/voice.wav', createdAt: doc.createdAt });
@@ -40,8 +42,10 @@ describe('VOX audience copy and narrative motion', () => {
     const other = shot.layers.find((layer) => layer.id.endsWith('-subject-secondary'))!;
     const first = directorImageInput(doc, shot.id, subject.id);
     const second = directorImageInput(doc, shot.id, other.id);
-    expect(first.prompt).toContain('representing: 茶馆.');
-    expect(second.prompt).toContain('representing: 咖啡馆.');
+    expect(first.layerPrompt).toContain('Semantic context (meaning only, never render these words): 茶馆');
+    expect(second.layerPrompt).toContain('Semantic context (meaning only, never render these words): 咖啡馆');
+    expect(first.prompt).toContain(first.layerPrompt!);
+    expect(second.prompt).toContain(second.layerPrompt!);
     expect(first.prompt).not.toBe(second.prompt);
     expect(editorialImageGenerationCount(shot, doc)).toBe(3);
   });

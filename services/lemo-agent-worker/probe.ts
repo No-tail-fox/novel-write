@@ -1,13 +1,14 @@
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { createServer } from 'node:http';
-import { lstat, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { LEMO_AGENT_SDK_VERSION, LEMO_AGENT_SKILL_NAME,
   type LemoAgentSdkProbeReceipt } from '../../src/shared/lemo-agent-sdk';
 import { lemoWorkerEnvironment } from './environment';
 import { prepareLemoStateDirectory, validateProbeRequest } from './paths';
+import { disableLemoGlobalGitBash } from './windows-shell';
 import { LEMO_SDK_UPSTREAM_REVISION, verifyPinnedLemoPlugin, verifyLoadedLemoPlugin } from './policy';
 
 /** Starts the real official SDK, but deliberately never supplies a user/model prompt. */
@@ -17,6 +18,7 @@ export async function probeLemoAgentSdk(raw: unknown, timeoutMs = 45000): Promis
   const stateRoot = await prepareLemoStateDirectory(request, 'sdk-state');
   const env = lemoWorkerEnvironment(process.env, stateRoot);
   const cwd = join(stateRoot, 'project');
+  await disableLemoGlobalGitBash(env, stateRoot);
   let outboundRequestsBlocked = 0;
   // This local sink is never a forwarding proxy. Even accidental model requests cannot incur charges.
   const sink = createServer((_req, res) => {
@@ -29,11 +31,6 @@ export async function probeLemoAgentSdk(raw: unknown, timeoutMs = 45000): Promis
   if (!address || typeof address === 'string') throw new Error('LEMO_SDK_LOCAL_SINK');
   env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${address.port}`;
   env.ANTHROPIC_API_KEY = 'storydream-offline-probe-not-a-real-key';
-  // Explicit system executable only; do not inherit arbitrary shell overrides from a model or project.
-  if (process.platform === 'win32') {
-    const bash = join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe');
-    try { if ((await lstat(bash)).isFile()) env.CLAUDE_CODE_GIT_BASH_PATH = bash; } catch { /* SDK reports missing dependency. */ }
-  }
   const abort = new AbortController();
   let release!: () => void;
   const stopped = new Promise<void>(r => { release = r; });

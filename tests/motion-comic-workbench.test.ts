@@ -82,7 +82,7 @@ describe('motion comic workbench', () => {
     expect(workspace).toContain('generateVoice');
     expect(workspace).toContain('renderProject');
     expect(workspace).toContain('openOutput');
-    expect(workspace).toContain('disabled={!outputUrl || outputBusy}');
+    expect(workspace).toContain('disabled={!hasOutput || outputBusy}');
     expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) clamp(396px, calc(100vw - 1044px), 492px)');
     expect(css).toContain('.director-episode-row .sd-button__content');
     expect(css).toContain('flex: 0 0 auto');

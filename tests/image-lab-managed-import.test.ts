@@ -116,9 +116,13 @@ describe('managed image lab import', () => {
     );
     expect(main).toContain("import { importManagedImageLabRecord } from './image-lab-import';");
     expect(handler).toContain('importManagedImageLabRecord(');
-    expect(handler).toContain('appDataDir()');
+    expect(handler).toContain('artifactDataDir()');
     expect(handler).toContain('(record) => database.addImageLabRecord(record)');
-    expect(handler).toContain('nativeImage.createFromBuffer');
+    expect(handler).toContain('inspectImage: inspectImportedImage');
+    const imageInspection = await readFile(new URL('../electron/imported-image-inspection.ts', import.meta.url), 'utf8');
+    expect(imageInspection).toContain('nativeImage.createFromBuffer(bytes)');
+    expect(imageInspection).toContain('if (!native.isEmpty()) return native.getSize()');
+    expect(imageInspection).toContain('IMAGE_LAB_IMPORT_SOURCE_INVALID');
     expect(handler).toContain('writeDestination: writeWindowsManagedFile');
     expect(handler).not.toContain('database.addImageLabRecord(input)');
     expect(apiContract).toContain('addImageLabRecord: (input: ImageLabImportInput)');

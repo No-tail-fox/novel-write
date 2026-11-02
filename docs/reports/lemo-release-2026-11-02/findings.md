@@ -1,0 +1,39 @@
+# Findings
+
+- Initial packaging gap (resolved in source): package.json packaged legacy lemo-upstream without the official SDK worker, CLI runtime or independent Node. It now includes the verified lemo-official release resources.
+- Initial locator gap (resolved with parent authorization): installed runtime discovery fell back to globally installed Node. The packaged branch now resolves and probes only the verified bundled release and fails closed.
+- Existing working tree contains substantial authorized parallel changes; preserve all unrelated modifications.
+- Full runtime bundle built: 7,706 files, 426,503,240 bytes; SDK 0.3.314 / CLI 2.1.314 / independent Node v22.20.0. The first digest predates the final probe cleanup relocation.
+- Official CLI initializes when Bash is explicitly directed at a nonexistent isolated path and PATH contains only Windows System32. Worker probe/session now use that policy instead of discovering global Git; shell tools remain disabled.
+- Parent authorized packaged locator integration and only the Windows Bash locator sections of probe.ts/session.ts. Budget imports and session fields are preserved.
+- C: reached zero free bytes while D: retained 24 GB. No user C: files were removed; all current build caches/temp/artifacts remain on D:.
+
+## Python recovery and bootstrap safety
+
+- Recovery source: release/StoryDream-Portable/resources/python (9,402 files, 623,617,170 bytes), followed by the existing --require-hashes Pixelle requirement set. The incomplete newly extracted runtime is retained under .artifacts/lemo-release/python-incomplete-after-old-preparer.
+- Python 3.12.4 and all 17 recorded package versions match .artifacts/pixelle-validation-20261102/python-runtime.json exactly. All sidecar imports, Pillow, numpy and imageio_ffmpeg pass.
+- Playwright 1.60.0 restored Chromium headless shell 1223, FFmpeg 1011 and Winldd 1007 from the official installer. Their directory sizes exactly match the earlier baseline: 280,324,007 / 3,517,342 / 258,560 bytes.
+- Actual image_default/video_default/asset_default clips each render 53 frames at 1080x1920 and 2,208 ms. Video motion, freeze/black padding and preservation of the previous output on failure pass; paidRequests=0.
+- The revised preparer checks Python/package versions, all imports, the bundled FFmpeg executable and an actual bundled Chromium screenshot, both before activation and after relocation. Browser download failure is fatal instead of falling back to machine-installed browsers.
+- Transaction tests cover preparation failure, validation failure, successful activation with retained backup, post-relocation rollback, injected rename failure, live/stale locks, current runtime reuse, outside-root paths, junctions and a real preparer run with a corrupt bootstrap response. 11/11 pass on Windows PowerShell 7.
+- A real run against the upstream get-pip endpoint still rejects the unchanged pinned SHA. Eight critical runtime file hashes remain identical after that failure. Evidence: .artifacts/lemo-release/python-recovery-validation-v2/preparer-safety.json.
+- Preparation audit: only the legacy Python preparer deleted the active runtime before replacement readiness. The Lemo preparer removes only its own UUID candidate/temp files; release activation retains older versions and uses a verified active pointer. Fixed upstream scripts verify source trees instead of replacing them.
+- Initial clean-bootstrap blocker: runtime-downloads.json pinned get-pip.py to a hash no longer served by its mutable URL. The follow-up investigation recovered the exact original bytes through official GitHub commit/blob APIs and verified both the original project SHA-256 and Git blob identity; the manifest now uses the immutable official commit URL without changing the pinned checksum. This does not bless a mutable download by hashing it after retrieval.
+- Immutable source evidence: .artifacts/get-pip-investigation-20261102/provenance.md, commit 5e84c8360eaf92009551b3eec69d734137f31cec, blob d8932c35bff658d8599cdc1f22605caaf211175e, 2,226,848 bytes, original SHA-256 a341e1a43e38001c551a1508a73ff23636a11970b61d901d9a1cad2a18f57055. The direct raw URL resets on this host; clean network bootstrap remains unverified. No restored runtime files or marker were changed. Full manifest hash changes with the URL and must not be manually copied into a ready marker.
+
+## Packaged runtime acceptance
+
+- Intermediate real Windows directory package: .artifacts/lemo-win-package-20261102/win-unpacked/StoryDream.exe. SDK 0.3.314, CLI 2.1.314 and Node v22.20.0 pass actual packaged initialization. Intermediate manifest: 73fca0a23e8cad7865b59bdc1bbe17fab6f72100d5f165da0f58d63c90a76add. Final source rebuild supersedes this intermediate artifact.
+- Strict isolation report: .artifacts/lemo-win-package-20261102/lemo-resource-verification-strict-path/qa-summary.json. The SDK probe/session PATH is exactly the bundled Node directory; actual SDK authoring start/resume/cancel passes, writes TREATMENT.md, makes three loopback fixture requests and zero paid requests, then re-verifies the complete release manifest.
+- This machine has a Windows System32 WSL bash.exe. The strict SDK PATH excludes it and the explicit SDK Bash locator points at a verified nonexistent isolated path; this is controlled SDK tooling, not an OS sandbox or a claim that Bash is physically absent. The application smoke separately includes System32 for normal licensing reg.exe.
+- The isolated fresh-profile application correctly shows the inactive license gate. Actual main/preload/window-policy, license status loading, gate rendering and exact LICENSE_REQUIRED protected-IPC rejection pass. authorizedWorkspaceVerified=false and cleanMachineVerified=false. First-launch gate acceptance is not licensed production-workspace acceptance.
+- The main smoke authorization exception preserves all six original authorized-workspace assertions and separately requires three license-gate assertions. Five VM executions of the real handshake cover unlicensed, licensed, unrelated IPC failure, accidental bypass and malformed status; 19 smoke contract tests pass.
+- Packaged Python execution also passes exact dependency/import checks, bundled FFmpeg execution and a bundled Chromium screenshot. Evidence: .artifacts/lemo-win-package-20261102/python-resource-verification.json. The normal bare-ffmpeg discovery warning does not affect the explicitly resolved bundled FFmpeg.
+- A preliminary NSIS compression was stopped before an installer existed so the final artifact can include the parent budget/stage fixes, final progress-dialog fix and Pixelle DOM caption fitting/cache-v2 changes. The partial archive is retained as preliminary-before-final-fixes.nsis.7z.partial. No installer has been run or published.
+
+## Full-suite regression follow-up
+
+- tests/windows-package.test.ts no longer expects one obsolete literal command line. Four actual PowerShell executions verify the script's real builder-argument block for NSIS versus directory-only targets, default versus custom output, x64 and publish=never. Portable-directory assertions follow the selected release directory.
+- tests/viral-media-worker.test.ts now checks that the preparer requires bundled Chromium installation, treats installation failure as fatal and validates a real screenshot. The viral downloader's existing browser-cookie/local-browser and blocked-download behavioral checks remain intact.
+- The package and lockfile are 1.0.3. AppShell already used the live package version, while SettingsPage incorrectly displayed 1.0.0. The UI owner fixed SettingsPage to import the same version. The version test reads both actual JSX version expressions and verifies their displayed values against package and lockfile, without changing the release version.
+- All three assigned regression files pass: 13/13 tests, plus git diff --check. Product packaging remains paused while other full-suite fixes finish.

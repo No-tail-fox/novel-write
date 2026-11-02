@@ -8,7 +8,7 @@ import { creativeStyleSample, LEMO_GALLERY_URL } from '../src/shared/creative-an
 import { creativeStylePoster } from '../src/shared/creative-animation/posters';
 import coverManifest from '../src/assets/creative-style-previews/manifest.json';
 import { loadCreativeStyleReference } from '../electron/creative-style-references';
-import { createEditorialCollageDraft, createEditorialCollageStarterPlan, parseEditorialCollagePipelineData } from '../src/shared/editorial-collage';
+import { createEditorialCollageDraft, createEditorialCollageStarterPlan, parseEditorialCollagePipelineData, rebuildEditorialTimeline } from '../src/shared/editorial-collage';
 import { buildVoxProductionNodes, voxProductionSettings, voxProductionInputErrors, voxProductionSettingsSchema } from '../src/shared/vox-production';
 import { createVoxProductionRuntime, type VoxProductionOperations } from '../electron/vox-production-runtime';
 import { VoxProductionService } from '../electron/vox-production-service';
@@ -19,7 +19,12 @@ import { repairHtmlVideoPlanningSlots, buildHtmlVideoPlanningSystemPrompt } from
 import { directorImageInput, directorImageInputMatches } from '../src/features/director-desk/director-generation';
 import { editorialLayerPrompt } from '../src/shared/editorial-motion';
 import { validateVoxAnimation } from '../src/shared/vox-animation';
-import { nativeHarness, nativeHtml } from './lemo-native.fixture';
+import { assembleCreativeShot } from '../src/shared/creative-animation/assemble';
+import { LEMO_NATIVE_ENGINE } from '../src/shared/creative-animation/native-film';
+import { lemoProductionContext } from '../electron/lemo-upstream-production';
+import { defaultLemoProductionBudget } from '../src/shared/lemo-production-budget';
+import { nativeHarness } from './lemo-native.fixture';
+import { readyOfficialDocument } from './creative-official.fixture';
 
 const root = resolve('vendor/lemo-opuscar');
 describe('creative code property validation', () => {
@@ -137,7 +142,7 @@ function ops(overrides: Partial<VoxProductionOperations> = {}): VoxProductionOpe
   return { identity: 'test', imageModel: 'test', voiceModel: 'test', voice: { provider: 'volcengine', voiceId: 'test', voiceLabel: 'test', speed: 1 }, preflight() {}, plan: never, image: never, speech: never, cutout: never, render: async d => d, verifyVideo: async () => {}, compileCode: compileVoxCode, generateCode: async () => validSource, previewCode: async () => ['a.jpg', 'b.jpg', 'c.jpg'], ...overrides };
 }
 describe('all creative production styles', () => {
-  it('can assemble, author and compile all styles without image assets or semantic placeholders', async () => {
+  it('assembles and compiles all retained styles without image placeholders while blocking retired authoring', async () => {
     for (const style of CREATIVE_STYLES) {
       const { d } = fixture(), shot = d.beats[0].shots[0];
       const settings = { ...voxProductionSettings(), generateImages: false, narration: false, authoring: { mode: 'ai-code' as const, styleId: style.slug } };
@@ -145,18 +150,24 @@ describe('all creative production styles', () => {
       const nodes = buildVoxProductionNodes(d, settings, 'legacy');
       const generateCode = vi.fn(async () => validSource);
       const runtime = createVoxProductionRuntime(ops({ generateCode }));
-      let current = d;
+      const before = structuredClone(d);
       for (const kind of ['animation', 'code', 'code-review', 'code-finalize', 'compile']) {
-        current = await runtime.execute(current, { ...nodes.find(node => node.kind === kind && node.shotId === shot.id)!, requestId: `no-image-${kind}` });
+        await expect(runtime.execute(d, { ...nodes.find(node => node.kind === kind && node.shotId === shot.id)!, requestId: `no-image-${kind}` })).rejects.toThrow('LEMO_WORKFLOW_UNSUPPORTED');
       }
+      expect(generateCode).not.toHaveBeenCalled(); expect(d).toEqual(before);
+      const current = structuredClone(d);
+      current.beats[0].shots[0] = assembleCreativeShot(current, current.beats[0].shots[0], settings);
       const result = current.beats[0].shots[0];
+      result.animation!.mode = 'code';
+      result.animation!.code = { ...result.animation!.code, ...compileVoxCode(validSource) };
       expect(result.animation!.mode, style.slug).toBe('code');
+      expect(validateVoxAnimation(result.animation!, current.assets), style.slug).toEqual([]);
       expect(result.animation!.template.props.assetIds, style.slug).toEqual([]);
       expect(result.cuePlan, style.slug).toBeUndefined();
-      const request = (generateCode.mock.calls[0] as unknown as [{ prompt: string }])[0];
-      expect(request.prompt).toContain('已关闭生图');
-      expect(request.prompt).toContain(style.adapter.motionDirection);
-      const scene = buildDirectorRenderScenes(current, undefined, { shotIds: [shot.id] })[0];
+      expect(buildVoxProductionNodes({ ...d, productionRun: undefined }, settings).some(n => n.kind === 'image')).toBe(false);
+      expect(lemoProductionContext(current).styleId).toBe(style.slug);
+      expect(await loadCreativeStyleReference(root, style.slug)).toContain(style.adapter.motionDirection);
+      const scene = buildDirectorRenderScenes(rebuildEditorialTimeline(current), undefined, { shotIds: [shot.id] })[0];
       expect(scene.semanticBeats).toBeUndefined();
       expect(scene.animationAssets).toEqual([]);
     }
@@ -185,7 +196,7 @@ describe('all creative production styles', () => {
     expect(selected.watercolor).toBe('paper-polaroids');
     expect(selected['city-symphony']).toBe('gallery-grid');
   });
-  it('routes all 59 styles through image inputs, code direction and valid compatible fallbacks', async () => {
+  it('routes all 59 styles through image inputs, official direction and retained compatible templates', async () => {
     const prompts = new Set<string>();
     for (const style of CREATIVE_STYLES) {
       const { d } = fixture();
@@ -214,20 +225,22 @@ describe('all creative production styles', () => {
       const get = (kind: string) => ({ ...nodes.find(n => n.kind === kind && n.shotId === shot.id)!, requestId: `style-${kind}` });
       const generate = vi.fn(async () => validSource);
       const runtime = createVoxProductionRuntime(ops({ generateCode: generate }));
-      let current = await runtime.execute(d, get('animation'));
+      await expect(runtime.execute(d, get('animation'))).rejects.toThrow('LEMO_WORKFLOW_UNSUPPORTED');
+      await expect(runtime.execute(d, get('code'))).rejects.toThrow('LEMO_WORKFLOW_UNSUPPORTED');
+      expect(generate).not.toHaveBeenCalled();
+      const current = structuredClone(d);
+      current.beats[0].shots[0] = assembleCreativeShot(current, current.beats[0].shots[0], settings);
       const animated = current.beats[0].shots[0];
       expect(validateVoxAnimation(animated.animation!, current.assets), style.slug).toEqual([]);
       expect(animated.animation!.template.props.background).toBe(style.adapter.background);
       expect(animated.cuePlan, style.slug).toBeDefined();
       expect(animated.animation?.creativeStyle?.styleId).toBe(style.slug);
-      const scene = buildDirectorRenderScenes(current, undefined, { shotIds: [shot.id] })[0];
+      const scene = buildDirectorRenderScenes(rebuildEditorialTimeline(current), undefined, { shotIds: [shot.id] })[0];
       expect(scene.semanticBeats, style.slug).toBeDefined();
       expect(scene.layers, style.slug).toHaveLength(animated.layers.length);
       expect(scene.animation!.template.id).toBe(animated.animation!.template.id);
-      current = await runtime.execute(current, get('code'));
-      const request = (generate.mock.calls[0] as unknown as [{ prompt: string }])[0];
-      expect(request.prompt, style.slug).toContain(style.adapter.motionDirection);
-      expect(current.beats[0].shots[0].animation?.authoring?.styleId).toBe(style.slug);
+      expect(await loadCreativeStyleReference(root, style.slug), style.slug).toContain(style.adapter.motionDirection);
+      expect(lemoProductionContext(current).styleId).toBe(style.slug);
     }
     expect(prompts.size).toBeGreaterThanOrEqual(59);
   });
@@ -265,166 +278,203 @@ describe('all creative production styles', () => {
     expect(runtime.input(d, node)).toEqual(before);
   });
 });
+function archivedCode(status: 'generated' | 'needs-repair' | 'reviewed' | 'fallback' = 'generated', sources = [validSource]) {
+  const value = fixture(), shot = value.d.beats[0].shots[0];
+  value.d.beats[0].shots[0] = assembleCreativeShot(value.d, shot, value.settings);
+  const animation = value.d.beats[0].shots[0].animation!;
+  animation.mode = status === 'fallback' ? 'template' : 'code';
+  animation.code = { ...animation.code, source: sources.at(-1)!, ...(sources.at(-1) === validSource ? compileVoxCode(validSource) : {}) };
+  animation.authoring = { owner: 'creative-production', revision: 1, styleId: 'dataviz', upstreamRevision: LEMO_REVISION, status,
+    attempts: sources.map((source, index) => ({ requestId: index ? 'request-code-repair' : 'request-code', source })) };
+  value.d = parseEditorialCollagePipelineData(value.d);
+  return value;
+}
+function officialHarness(initial = (() => { const { d } = fixture(); delete d.productionRun; return d; })()) {
+  const generateCode = vi.fn(), generateFilm = vi.fn(), planFilm = vi.fn(), authorFilmFile = vi.fn();
+  const officialStep = vi.fn<NonNullable<VoxProductionOperations['officialStep']>>(async (d, node) =>
+    node.id === 'official-authoring' || node.id.startsWith('official-repair:') ? readyOfficialDocument(d) : d);
+  const recoverOfficialStep = vi.fn<NonNullable<VoxProductionOperations['recoverOfficialStep']>>(async () => undefined);
+  const h = nativeHarness({ officialStep, recoverOfficialStep, generateCode, generateFilm, planFilm, authorFilmFile }, initial);
+  return { ...h, officialStep, recoverOfficialStep, retired: [generateCode, generateFilm, planFilm, authorFilmFile] };
+}
+
 describe('durable creative code pipeline', () => {
-  it('uses cuts for generated code and fallback charts, while preserving explicit transitions and narration', async () => {
-    const { d, node } = fixture(), runtime = createVoxProductionRuntime(ops());
-    let current = await runtime.execute(await runtime.execute(d, node('animation')), node('code'));
-    const shot = current.beats[0].shots[0];
-    shot.animation!.authoring!.status = 'fallback';
-    const original = buildDirectorRenderScenes(current, undefined, { shotIds: [shot.id] })[0];
-    expect(original.transitionIn).toEqual({ type: 'cut', durationMs: 0 });
-    const fingerprint = directorDocumentRenderFingerprint(current);
-    shot.transitionIn = { type: 'dissolve', durationMs: 300 };
-    const changed = buildDirectorRenderScenes(current, undefined, { shotIds: [shot.id] })[0];
-    expect(changed.transitionIn).toEqual(shot.transitionIn);
-    expect(changed.durationMs).toBe(original.durationMs);
-    expect(changed.subtitleCues).toEqual(original.subtitleCues);
-    expect(changed.audioClips).toEqual(original.audioClips);
-    expect(directorDocumentRenderFingerprint(current)).not.toBe(fingerprint);
+  it('uses cuts for retained code and fallback charts, while preserving explicit transitions and narration', () => {
+    for (const state of ['generated', 'fallback'] as const) {
+      const { d: current } = archivedCode(state), shot = current.beats[0].shots[0];
+      const original = buildDirectorRenderScenes(current, undefined, { shotIds: [shot.id] })[0];
+      expect(original.transitionIn).toEqual({ type: 'cut', durationMs: 0 });
+      const fingerprint = directorDocumentRenderFingerprint(current);
+      shot.transitionIn = { type: 'dissolve', durationMs: 300 };
+      const changed = buildDirectorRenderScenes(current, undefined, { shotIds: [shot.id] })[0];
+      expect(changed.transitionIn).toEqual(shot.transitionIn);
+      expect(changed.durationMs).toBe(original.durationMs);
+      expect(changed.subtitleCues).toEqual(original.subtitleCues);
+      expect(changed.audioClips).toEqual(original.audioClips);
+      expect(directorDocumentRenderFingerprint(current)).not.toBe(fingerprint);
+    }
   });
-  it('persists a bounded author brief and passes it to both creation and repair without changing narration', async () => {
-    const { d, settings, node } = fixture();
+  it('persists a bounded author brief in official creation and repair without changing narration', async () => {
+    const { settings } = fixture(), h = officialHarness();
     const brief = '大字开场，三个观点依次展开，避免快速闪烁。';
-    const updated = voxProductionSettingsSchema.parse({ ...settings, authoring: { ...settings.authoring, brief } });
+    const updated = voxProductionSettingsSchema.parse({ ...settings, authoring: { ...settings.authoring, brief },
+      lemoBudget: { ...defaultLemoProductionBudget(), maxRepairRounds: 1 } });
     expect(voxProductionSettingsSchema.safeParse({ ...updated, authoring: { ...updated.authoring, brief: 'x'.repeat(2001) } }).success).toBe(false);
-    d.productionSettings = updated;
-    d.productionRun!.settings = updated;
-    const narration = structuredClone(d.beats.map(b => b.subtitleCues));
-    const generate = vi.fn(async () => validSource);
-    const runtime = createVoxProductionRuntime(ops({ generateCode: generate, previewCode: async () => { throw new Error('CREATIVE_LAYOUT: overflow'); } }));
-    let current = parseEditorialCollagePipelineData(d);
+    const narration = structuredClone(h.get().beats.map(b => b.subtitleCues));
+    await h.start(updated); await h.idle();
+    const first = h.get(); expect(first.productionRun?.status, first.productionRun?.message).toBe('completed');
+    const instructions = '修复构图溢出，保留大字开场和原有旁白。';
+    await h.service.control({ id: first.id, runId: first.productionRun!.id, action: 'repair-shot', shotId: first.beats[0].shots[0].id, instructions }); await h.idle();
+    const current = parseEditorialCollagePipelineData(h.get());
+    expect(current.productionRun?.status, current.productionRun?.message).toBe('completed');
     expect(current.productionSettings?.authoring?.brief).toBe(brief);
-    current = await runtime.execute(await runtime.execute(current, node('animation')), node('code'));
-    current = await runtime.execute(current, node('code-review'));
-    current = await runtime.execute(current, node('code-repair'));
-    expect(generate).toHaveBeenCalledTimes(2);
-    expect(generate.mock.calls.every(args => (args as unknown as [{ prompt: string }])[0].prompt.includes(brief))).toBe(true);
+    const authored = h.officialStep.mock.calls.filter(([, n]) => n.id === 'official-authoring' || n.id.startsWith('official-repair:'));
+    expect(authored).toHaveLength(2);
+    expect(authored.every(([d]) => lemoProductionContext(d).brief.includes(brief))).toBe(true);
+    expect(authored[1][1].repairInstructions).toBe(instructions);
     expect(current.beats.map(b => b.subtitleCues)).toEqual(narration);
+    for (const callback of h.retired) expect(callback).not.toHaveBeenCalled();
   });
-  it('preserves locked/manual shots and legacy settings', () => {
+  it('preserves locked/manual shots and legacy template settings', () => {
     const { d, settings } = fixture(), shot = d.beats[0].shots[0];
     expect(voxProductionSettings().authoring).toBeUndefined();
     expect(buildVoxProductionNodes(d, { ...settings, lockedShotIds: [shot.id] }, 'legacy').filter(n => n.shotId === shot.id).map(n => n.kind)).toEqual(['timing', 'animation', 'compile']);
-    expect(buildVoxProductionNodes(d, { ...settings, lockedShotIds: [shot.id] }).filter(n => n.shotId === shot.id).map(n => n.kind)).toEqual(['compile']);
+    const nodes = buildVoxProductionNodes(d, { ...settings, lockedShotIds: [shot.id] });
+    expect(nodes.filter(n => n.shotId === shot.id).map(n => n.kind)).toEqual(['timing']);
+    expect(nodes.filter(n => n.shotId === shot.id).every(n => !n.paid)).toBe(true);
   });
-  it('preserves a saved explicit dissolve even when it equals the legacy default', async () => {
-    const { d, node } = fixture();
-    d.beats[0].shots[0].transitionIn = { type: 'dissolve', durationMs: 200 };
-    const current = await createVoxProductionRuntime(ops()).execute(d, node('animation'));
-    expect(current.beats[0].shots[0].transitionIn).toEqual({ type: 'dissolve', durationMs: 200 });
+  it('preserves a saved explicit dissolve even when it equals the legacy default', () => {
+    const { d, settings } = fixture(), shot = d.beats[0].shots[0];
+    shot.transitionIn = { type: 'dissolve', durationMs: 200 };
+    expect(assembleCreativeShot(d, shot, settings).transitionIn).toEqual({ type: 'dissolve', durationMs: 200 });
   });
-  it('checkpoints invalid returned source, repairs once, then falls back retaining both attempts', async () => {
-    const { d, node } = fixture();
-    const generate = vi.fn(async () => 'invalid source');
-    const runtime = createVoxProductionRuntime(ops({ generateCode: generate }));
-    let current = await runtime.execute(d, node('animation'));
-    current = await runtime.execute(current, node('code'));
-    expect(current.beats[0].shots[0].animation?.authoring?.attempts[0]).toEqual({ requestId: 'request-code', source: 'invalid source' });
-    current = parseEditorialCollagePipelineData(current);
-    current = await runtime.execute(current, node('code-review'));
-    expect(current.beats[0].shots[0].animation?.authoring?.status).toBe('needs-repair');
-    current = await runtime.execute(current, node('code-repair'));
-    current = await runtime.execute(current, node('code-finalize'));
-    expect(generate).toHaveBeenCalledTimes(2);
-    expect(current.beats[0].shots[0].animation).toMatchObject({ mode: 'template', authoring: { status: 'fallback', attempts: [{ requestId: 'request-code' }, { requestId: 'request-code-repair' }] } });
+  it('retains invalid source and both historical attempts while rejecting retired repair and fallback execution', async () => {
+    const { d, node } = archivedCode('fallback', ['invalid source', 'invalid repaired source']);
+    const generate = vi.fn(), preview = vi.fn(), runtime = createVoxProductionRuntime(ops({ generateCode: generate, previewCode: preview }));
+    const before = structuredClone(d);
+    expect(() => compileVoxCode(d.beats[0].shots[0].animation!.authoring!.attempts[0].source)).toThrow();
+    for (const kind of ['animation', 'code', 'code-review', 'code-repair', 'code-finalize', 'compile']) {
+      await expect(runtime.execute(d, node(kind))).rejects.toThrow('LEMO_WORKFLOW_UNSUPPORTED');
+    }
+    expect(parseEditorialCollagePipelineData(d)).toEqual(before);
+    expect(d.beats[0].shots[0].animation).toMatchObject({ mode: 'template', authoring: { status: 'fallback',
+      attempts: [{ requestId: 'request-code', source: 'invalid source' }, { requestId: 'request-code-repair', source: 'invalid repaired source' }] } });
+    expect(generate).not.toHaveBeenCalled(); expect(preview).not.toHaveBeenCalled();
   });
-  it('repairs explicit layout errors, but pauses infrastructure failures without spending on repair', async () => {
-    const { d, node } = fixture();
-    const preview = vi.fn().mockRejectedValueOnce(new Error('CREATIVE_LAYOUT: overflow')).mockResolvedValue(['a', 'b', 'c']);
-    const generate = vi.fn(async () => validSource);
-    const runtime = createVoxProductionRuntime(ops({ previewCode: preview, generateCode: generate }));
-    let current = await runtime.execute(await runtime.execute(d, node('animation')), node('code'));
-    current = await runtime.execute(current, node('code-review'));
-    current = await runtime.execute(current, node('code-repair'));
-    current = await runtime.execute(current, node('code-finalize'));
-    expect(current.beats[0].shots[0].animation).toMatchObject({ mode: 'code', authoring: { status: 'reviewed' } });
-    preview.mockRejectedValue(new Error('ENOENT runtime missing'));
-    await expect(runtime.execute(current, node('code-review'))).rejects.toThrow('ENOENT');
-    expect(generate).toHaveBeenCalledTimes(2);
+  it('repairs an explicitly selected official layout and blocks another purchase after infrastructure uncertainty', async () => {
+    const { settings } = fixture(), h = officialHarness();
+    await h.start(settings); await h.idle(); const first = h.get();
+    const request = { id: first.id, runId: first.productionRun!.id, action: 'repair-shot' as const, shotId: first.beats[0].shots[0].id, instructions: 'CREATIVE_LAYOUT: fix the text overflow in this shot.' };
+    await h.service.control(request); await h.idle();
+    expect(h.get().productionRun?.status).toBe('completed');
+    const successful = h.get().productionRun!.nodes.filter(n => n.status === 'completed' && n.paid).map(n => n.requestId);
+    h.officialStep.mockImplementation(async (d, n) => { if (n.id.startsWith('official-repair:')) throw new Error('ENOENT runtime missing'); return d; });
+    await h.service.control(request); await h.idle();
+    const unknown = h.get().productionRun!.nodes.find(n => n.status === 'unknown')!;
+    expect(unknown.error).toContain('ENOENT'); expect(unknown.id).toMatch(/^official-repair:/);
+    const count = h.officialStep.mock.calls.length;
+    await expect(h.service.control({ ...request, action: 'resume' })).rejects.toThrow('VOX_PRODUCTION_UNKNOWN');
+    await expect(h.service.control(request)).rejects.toThrow('LEMO_REPAIR_PENDING');
+    expect(h.officialStep).toHaveBeenCalledTimes(count);
+    expect(successful.every(id => h.get().productionRun!.nodes.some(n => n.requestId === id && n.status === 'completed'))).toBe(true);
+    for (const callback of h.retired) expect(callback).not.toHaveBeenCalled();
   });
-  it('runs the same bounded repair for unsupported factual annotations', async () => {
-    const { d, node } = fixture();
-    const runtime = createVoxProductionRuntime(ops({ previewCode: async () => { throw new Error('CREATIVE_CONTENT: 历史最高记录'); } }));
-    const generated = await runtime.execute(await runtime.execute(d, node('animation')), node('code'));
-    expect((await runtime.execute(generated, node('code-review'))).beats[0].shots[0].animation?.authoring?.status).toBe('needs-repair');
+  it('retains unsupported factual diagnostics without reopening the retired paid repair loop', async () => {
+    const { d, node } = archivedCode('needs-repair');
+    d.beats[0].shots[0].animation!.authoring!.error = 'CREATIVE_CONTENT: 历史最高记录';
+    const generate = vi.fn(), preview = vi.fn(), runtime = createVoxProductionRuntime(ops({ generateCode: generate, previewCode: preview }));
+    expect(creativeUnsupportedClaims('历史最高记录', d.sourceText ?? '')).toEqual(['历史最高记录']);
+    const before = structuredClone(d);
+    for (const kind of ['code-review', 'code-repair', 'code-finalize']) await expect(runtime.execute(d, node(kind))).rejects.toThrow('LEMO_WORKFLOW_UNSUPPORTED');
+    expect(d).toEqual(before); expect(d.beats[0].shots[0].animation?.authoring?.status).toBe('needs-repair');
+    expect(generate).not.toHaveBeenCalled(); expect(preview).not.toHaveBeenCalled();
   });
-  it('does not buy a third attempt when a later review rejects already repaired code', async () => {
-    const { d, node } = fixture(), generate = vi.fn(async () => validSource);
-    const preview = vi.fn().mockRejectedValueOnce(new Error('CREATIVE_LAYOUT: overflow')).mockResolvedValueOnce(['a.jpg']);
-    const runtime = createVoxProductionRuntime(ops({ generateCode: generate, previewCode: preview }));
-    let current = await runtime.execute(await runtime.execute(d, node('animation')), node('code'));
-    current = await runtime.execute(current, node('code-review'));
-    current = await runtime.execute(current, node('code-repair'));
-    current = await runtime.execute(current, node('code-finalize'));
-    expect(current.beats[0].shots[0].animation?.authoring?.status).toBe('reviewed');
-    preview.mockRejectedValue(new Error('CREATIVE_CONTENT: 历史最高记录'));
-    current = await runtime.execute(current, node('code-review'));
-    expect(runtime.isPaid?.(current, node('code-repair'))).toBe(false);
-    current = await runtime.execute(current, node('code-repair'));
-    current = parseEditorialCollagePipelineData(await runtime.execute(current, node('code-finalize')));
-    expect(generate).toHaveBeenCalledTimes(2);
-    expect(current.beats[0].shots[0].animation).toMatchObject({ mode: 'template', authoring: { status: 'fallback' } });
-    expect(current.beats[0].shots[0].animation?.authoring?.attempts).toHaveLength(2);
+  it('does not buy a second official repair after exhausting the shared run allowance', async () => {
+    const { settings } = fixture(), h = officialHarness();
+    await h.start({ ...settings, lemoBudget: { ...defaultLemoProductionBudget(), maxRepairRounds: 1 } }); await h.idle();
+    const first = h.get(), originalNodes = first.productionRun!.nodes.filter(n => !['official-ready', 'render', 'verify'].includes(n.id));
+    const request = { id: first.id, runId: first.productionRun!.id, action: 'repair-shot' as const, shotId: first.beats[0].shots[0].id, instructions: 'Repair the selected layout without altering the narration.' };
+    await h.service.control(request); await h.idle();
+    expect(h.get().productionRun?.status).toBe('completed');
+    const after = h.get();
+    expect(after.productionRun!.nodes.filter(n => originalNodes.some(old => old.id === n.id))).toEqual(originalNodes);
+    expect(h.officialStep).toHaveBeenCalledTimes(5);
+    await expect(h.service.control(request)).rejects.toThrow('LEMO_REPAIR_BUDGET_EXHAUSTED');
+    expect(h.officialStep).toHaveBeenCalledTimes(5); expect(h.get()).toEqual(after);
+    expect(after.productionRun!.nodes.filter(n => n.id.startsWith('official-repair:'))).toHaveLength(1);
+    for (const callback of h.retired) expect(callback).not.toHaveBeenCalled();
   });
-  it('skips paid repair after successful preview and protects manual code', async () => {
-    const { d, settings, node } = fixture(), generate = vi.fn(async () => validSource);
-    const runtime = createVoxProductionRuntime(ops({ generateCode: generate }));
-    let current = await runtime.execute(await runtime.execute(d, node('animation')), node('code'));
-    current = await runtime.execute(current, node('code-review'));
-    expect(runtime.isPaid?.(current, node('code-repair'))).toBe(false);
-    current = await runtime.execute(current, node('code-repair'));
-    expect(generate).toHaveBeenCalledOnce();
-    delete current.beats[0].shots[0].animation!.authoring;
-    expect(voxProductionInputErrors(current, settings).join()).toContain('请先锁定');
-  });
-  it('reuses native runtime hashes after review and preserves unknown paid requests', async () => {
-    const { d, settings } = fixture(); delete d.productionRun;
-    const generateFilm = vi.fn(async (prompt: string) => nativeHtml(JSON.parse(prompt).durationMs));
-    const planFilm = vi.fn(async () => ({ treatment: '以数据和来源作为叙事核心，在连续画面中先呈现道路蓄热，再移动至树荫覆盖的街道，构图与文字采用所选风格的原生表达。', fps: 24 }));
-    const h = nativeHarness({ generateFilm, planFilm }, d);
+  it('skips unrequested paid repair after successful official review and protects manual code', async () => {
+    const { settings } = fixture(), h = officialHarness();
     await h.start(settings); await h.idle();
-    expect(h.get().productionRun?.status, h.get().productionRun?.message).toBe('completed');
+    expect(h.get().productionRun?.status).toBe('completed');
+    expect(h.officialStep.mock.calls.map(([, n]) => n.id)).toEqual(['official-treatment', 'official-style-frame', 'official-voice-lock', 'official-authoring']);
+    expect(h.get().productionRun!.nodes.some(n => n.id.startsWith('official-repair:'))).toBe(false);
+    const { d, node } = archivedCode('reviewed');
+    delete d.beats[0].shots[0].animation!.authoring;
+    expect(voxProductionInputErrors(d, settings).join()).toContain('请先锁定');
+    const generate = vi.fn(), runtime = createVoxProductionRuntime(ops({ generateCode: generate }));
+    await expect(runtime.execute(d, node('code-repair'))).rejects.toThrow('LEMO_WORKFLOW_UNSUPPORTED');
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it('keeps official input hashes stable after review and preserves unknown paid requests', async () => {
+    const { settings } = fixture(), h = officialHarness();
+    await h.start(settings); await h.idle(); const first = h.get();
+    expect(first.productionRun?.status, first.productionRun?.message).toBe('completed');
+    const authoring = first.productionRun!.nodes.find(n => n.id === 'official-authoring')!;
+    const input = h.runtime.input(first, authoring);
+    first.upstreamFilm!.message = 'A later progress update';
+    expect(h.runtime.input(first, authoring)).toEqual(input);
     await h.start(settings); await h.idle();
-    expect(generateFilm).toHaveBeenCalledOnce(); expect(planFilm).toHaveBeenCalledOnce();
-    expect(h.get().productionRun!.nodes.filter(n => n.kind === 'film-repair').every(n => !n.paid)).toBe(true);
-    generateFilm.mockRejectedValue(new Error('network closed after submit'));
+    expect(h.get().productionRun?.status).toBe('completed');
+    expect(h.get().productionRun!.id).not.toBe(first.productionRun!.id);
+    expect(h.officialStep).toHaveBeenCalledTimes(8);
+    h.officialStep.mockImplementation(async (d, n) => { if (n.id === 'official-authoring') throw new Error('network closed after submit'); return d; });
     await h.start({ ...settings, authoring: { ...settings.authoring, brief: '采用一次连续横移的镜头' } }); await h.idle();
-    expect(h.get().productionRun?.nodes.find(n => n.status === 'unknown')?.kind).toBe('film-code');
-    await expect(h.service.control({ id: d.id, runId: h.get().productionRun!.id, action: 'resume' })).rejects.toThrow('UNKNOWN');
+    const unknown = h.get().productionRun!.nodes.find(n => n.status === 'unknown')!;
+    expect(unknown.id).toBe('official-authoring'); expect(unknown.requestId).toBeTruthy();
+    await expect(h.service.control({ id: first.id, runId: h.get().productionRun!.id, action: 'resume' })).rejects.toThrow('VOX_PRODUCTION_UNKNOWN');
+    await h.service.control({ id: first.id, runId: h.get().productionRun!.id, action: 'reconcile' });
+    expect(h.get().productionRun!.nodes.find(n => n.id === unknown.id)).toMatchObject({ status: 'unknown', requestId: unknown.requestId });
+    expect(h.officialStep).toHaveBeenCalledTimes(12);
+    for (const callback of h.retired) expect(callback).not.toHaveBeenCalled();
   });
-  it('creates a native treatment when switching from legacy, then reuses only matching native inputs', async () => {
+  it('creates official treatment after template production and reruns it for each new style or brief', async () => {
     const { d, settings: initialSettings } = fixture(); delete d.productionRun;
     const settings = { ...initialSettings, generateImages: false };
     const plan = vi.fn(async () => ({ shots: d.beats.flatMap(b => b.shots.map(s => ({ id: s.id, title: '数据', scenePrompt: 'Compare the documented source data using clear chart labels' }))) }));
-    const planFilm = vi.fn(async () => ({ treatment: '将文案中的街道热量与树荫降温组织成完整连续的论述，保留真实数据和来源，并以所选风格独立决定全片文字、构图和运动。', fps: 24 }));
-    const generateFilm = vi.fn(async (prompt: string) => nativeHtml(JSON.parse(prompt).durationMs));
-    const h = nativeHarness({ plan, planFilm, generateFilm }, d);
+    const officialStep = vi.fn<NonNullable<VoxProductionOperations['officialStep']>>(async (document, n) => n.id === 'official-authoring' ? readyOfficialDocument(document) : document);
+    const planFilm = vi.fn(), generateFilm = vi.fn();
+    const h = nativeHarness({ plan, planFilm, generateFilm, officialStep, recoverOfficialStep: async () => undefined }, d);
     const { authoring: _authoring, ...legacy } = settings;
     await h.start(legacy); await h.idle();
     expect(h.get().productionRun?.status, h.get().productionRun?.message).toBe('completed');
     const planRequest = h.get().productionRun!.nodes[0].requestId;
-    await h.start(settings); await h.idle();
-    expect(h.get().productionRun?.status, h.get().productionRun?.message).toBe('completed');
-    expect(h.get().productionRun!.nodes[0].requestId).not.toBe(planRequest);
-    expect(plan).toHaveBeenCalledOnce(); expect(planFilm).toHaveBeenCalledOnce(); expect(generateFilm).toHaveBeenCalledOnce();
-    await h.start(settings); await h.idle();
-    expect(planFilm).toHaveBeenCalledOnce(); expect(generateFilm).toHaveBeenCalledOnce();
     const otherSettings = { ...settings, authoring: { mode: 'ai-code' as const, styleId: 'swiss-motion' } };
-    await h.start(otherSettings); await h.idle();
-    expect(plan).toHaveBeenCalledOnce(); expect(planFilm).toHaveBeenCalledTimes(2); expect(generateFilm).toHaveBeenCalledTimes(2);
     const withBrief = { ...otherSettings, authoring: { ...otherSettings.authoring, brief: '大字开场，克制推进。' } };
-    await h.start(withBrief); await h.idle();
-    expect(h.get().productionRun?.status, h.get().productionRun?.message).toBe('completed');
-    expect(h.get().productionSettings?.authoring?.brief).toBe(withBrief.authoring.brief);
-    expect(plan).toHaveBeenCalledOnce(); expect(planFilm).toHaveBeenCalledTimes(3); expect(generateFilm).toHaveBeenCalledTimes(3);
+    const runIds = new Set<string>();
+    for (const [index, selected] of [settings, settings, otherSettings, withBrief].entries()) {
+      await h.start(selected); await h.idle(); const current = h.get();
+      expect(current.productionRun?.status, current.productionRun?.message).toBe('completed');
+      expect(current.productionRun!.nodes[0]).toMatchObject({ id: 'official-treatment', status: 'completed' });
+      expect(current.productionRun!.nodes[0].requestId).not.toBe(planRequest);
+      expect(current.productionRun!.engine).toBe(LEMO_NATIVE_ENGINE);
+      expect(current.productionRun!.authoringVersion).toBe(4);
+      runIds.add(current.productionRun!.id);
+      expect(officialStep).toHaveBeenCalledTimes((index + 1) * 4);
+      expect(current.productionSettings?.authoring).toEqual(selected.authoring);
+    }
+    expect(runIds.size).toBe(4); expect(plan).toHaveBeenCalledOnce();
+    expect(planFilm).not.toHaveBeenCalled(); expect(generateFilm).not.toHaveBeenCalled();
   });
   it('awaits failed reference preflight before writing a paid claim', async () => {
     const { d, settings } = fixture(); delete d.productionRun;
-    const save = vi.fn(async value => value), generate = vi.fn();
-    const runtime = createVoxProductionRuntime(ops({ generateCode: generate, preflight: async () => { throw new Error('CREATIVE_REFERENCE_INTEGRITY'); } }));
+    const save = vi.fn(async value => value), generate = vi.fn(), officialStep = vi.fn(), recoverOfficialStep = vi.fn();
+    const runtime = createVoxProductionRuntime(ops({ generateCode: generate, officialStep, recoverOfficialStep, preflight: async () => { throw new Error('CREATIVE_REFERENCE_INTEGRITY'); } }));
     const service = new VoxProductionService({ load: async () => structuredClone(d), save, projects: async () => [d.id] }, async () => runtime);
     await expect(service.start({ id: d.id, expectedUpdatedAt: d.updatedAt, settings })).rejects.toThrow('INTEGRITY');
     expect(save).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+    expect(officialStep).not.toHaveBeenCalled(); expect(recoverOfficialStep).not.toHaveBeenCalled();
   });
 });
 

@@ -543,7 +543,7 @@ export function buildDirectorRenderScenes(
   explicitEpisodeId?: string,
   scope?: { shotIds?: readonly string[]; upstreamVideoPath?: string },
 ): DirectorRenderScene[] {
-  if (document.workflowKind === 'editorial-collage' && document.productionRun?.authoringVersion === 3 && !scope?.upstreamVideoPath) {
+  if (document.workflowKind === 'editorial-collage' && document.productionRun?.authoringVersion === 4 && !scope?.upstreamVideoPath) {
     throw new Error('LEMO_PICTURE_REQUIRED: 原生工程必须使用已验证的整片画面，不能回退到旧逐镜动画。');
   }
   const assets = new Map(document.assets.map((asset) => [asset.id, asset]));

@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { FileDatabase } from '../src/shared/storage';
 
 const profile = resolve(process.argv[2]);
-const report = JSON.parse(await readFile('.artifacts/short-video-dual-output-smoke/report.json', 'utf8'));
+const report = JSON.parse(await readFile(process.env.STORYDREAM_SHORT_VIDEO_QA_REPORT || '.artifacts/short-video-dual-output-smoke/report.json', 'utf8'));
 if (report.status !== 'passed') throw new Error('Real render smoke must pass before UI seeding');
 const result = report.results.find((item: { targets: string[] }) => item.targets.length === 2);
 const db = await FileDatabase.open(join(profile, 'storydream', 'data.db'));

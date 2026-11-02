@@ -112,9 +112,12 @@ describe('draft font selection', () => {
       expect(source).toContain(`aria-label={\`${'${layerLabel}'}字体\`}`);
       expect(source).toContain(`layerLabel="${label.replace('字体', '')}"`);
     }
-    expect(source).toContain('draftFontGroups.map((group)');
-    expect(source).toContain('draftFontOptions.filter((option) => option.group === group).map((option)');
-    expect(source).toContain('<optgroup key={group} label={group}>');
+    expect(source).toContain('options={draftFontOptions.map((option) => ({ value: option.value, label: option.label, group: option.group, style: { fontFamily: option.cssFamily } }))}');
+    const selectField = await readFile(new URL('../src/ui/SelectField.tsx', import.meta.url), 'utf8');
+    expect(selectField).toContain("const group = option.group ?? '';");
+    expect(selectField).toContain('groups.set(group, [...(groups.get(group) ?? []), option])');
+    expect(selectField).toContain('<optgroup key={group} label={group}>{items.map(renderOption)}</optgroup>');
+    expect(selectField).toContain('style={option.style}');
     expect(source).toContain('style={{ fontFamily: draftFontCssFamily(value) }}');
   });
 });

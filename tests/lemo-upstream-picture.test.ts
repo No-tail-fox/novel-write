@@ -25,12 +25,12 @@ afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { rec
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'lemo-picture-')); roots.push(root);
   const doc = createEditorialCollageDraft({ id: 'picture-test', title: 'offline', ratio: '16:9' });
-  doc.productionRun = { version: 1, id: 'run-1', engine: 'lemo-native-v1', authoringVersion: 3, status: 'completed',
+  doc.productionRun = { version: 1, id: 'run-1', engine: 'lemo-native-v1', authoringVersion: 4, status: 'completed',
     settings: voxProductionSettings('paper-explainer'), nodes: [], sourceHash: 'test', runtimeIdentity: 'test', createdAt: doc.createdAt, updatedAt: doc.updatedAt };
   doc.upstreamFilm = { version: 1, runId: 'run-1', directory: 'source', styleId: 'brick-toy', turn: 3, sourceHash: 'abc', status: 'ready', lastTool: 'finish', message: 'test' };
   return { root, doc, prepare: (signal?: AbortSignal) => prepareLemoUpstreamPicture(library, root, doc, signal) };
 }
-describe('one verified native picture for all production entrypoints', () => {
+describe('one verified official v4 picture for all production entrypoints', () => {
   it('reuses only a fully written hash-verified capture', async () => {
     const h = await fixture(); const first = await h.prepare();
     expect(await h.prepare()).toBe(first); expect(mock.export).toHaveBeenCalledTimes(1);
@@ -79,9 +79,13 @@ describe('one verified native picture for all production entrypoints', () => {
     const controller = new AbortController(); controller.abort(new Error('cancelled'));
     await expect(h.prepare(controller.signal)).rejects.toThrow('cancelled'); expect(mock.export).toHaveBeenCalledTimes(2);
   });
-  it('leaves legacy documents alone and rejects a mismatched run', async () => {
-    const h = await fixture(); h.doc.productionRun!.authoringVersion = 2; expect(await h.prepare()).toBeUndefined();
-    h.doc.productionRun!.authoringVersion = 3; h.doc.upstreamFilm!.runId = 'old-run';
+  it.each([undefined, 2, 3] as const)('does not process a retired native version %s', async version => {
+    const h = await fixture(); h.doc.productionRun!.authoringVersion = version;
+    expect(await h.prepare()).toBeUndefined();
+    expect(mock.assertCurrent).not.toHaveBeenCalled(); expect(mock.export).not.toHaveBeenCalled();
+  });
+  it('rejects a mismatched run for an official v4 project', async () => {
+    const h = await fixture(); h.doc.upstreamFilm!.runId = 'old-run';
     await expect(h.prepare()).rejects.toThrow('LEMO_AGENT_NOT_READY'); expect(mock.export).not.toHaveBeenCalled();
   });
 });

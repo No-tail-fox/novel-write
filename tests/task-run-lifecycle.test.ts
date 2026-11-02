@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { HistoryActivityRegistry } from '../electron/history-activity-registry';
 import * as taskRunLifecycle from '../electron/task-run-lifecycle';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
+import { defaultConfig } from '../src/shared/config';
+import { resolveShortVideoMaterials } from '../src/shared/short-video-materials';
+import { preflightPixelleTask } from '../src/shared/pixelle-render';
 import {
   finalizeTaskRunIntent,
   requestTaskRunIntent,
@@ -1953,6 +1956,10 @@ async function loadShutdownApplication(
     'activeMusicSubmissions',
     'musicBgmImportQueue',
     'agentSearchService',
+    'licenseService',
+    'updateTimer',
+    'motionComicScriptService',
+    'voxProductionService',
     `${compiledSource}\nreturn shutdownApplication;`,
   );
   return factory(
@@ -1969,6 +1976,10 @@ async function loadShutdownApplication(
     new Set(),
     Promise.resolve(),
     { close: async () => undefined },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
   ) as () => Promise<void>;
 }
 
@@ -2080,17 +2091,21 @@ async function loadLabGenerateHandler(
     spec.workDirName,
     'publishStatePatch',
     spec.summaryName,
+    'reserveProjectModelGeneration',
+    'selectImageLabProfileConfig',
     `${compiledSource}\nreturn labGenerateHandler;`,
   );
   const compiled = factory(
     () => 'generated-id',
     dependencies.registry,
     async () => dependencies.database,
-    async () => ({ getRuntimeConfig: async () => ({}) }),
+    async () => ({ getRuntimeConfig: async () => structuredClone(defaultConfig) }),
     dependencies.generate,
     () => 'work/managed-key',
     async () => null,
     (record: Record<string, unknown>) => record,
+    () => () => undefined,
+    (config: unknown) => config,
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);
 }
@@ -2153,6 +2168,9 @@ async function loadCreatedRunHandler(
     'readFile',
     'readViralAnalysisResult',
     'createViralProductionTaskInput',
+    'resolveShortVideoMaterials',
+    'preflightPixelleTask',
+    'pixelleHostOptions',
     `${compiledSource}\nreturn createdRunHandler;`,
   );
   const database = {
@@ -2195,6 +2213,9 @@ async function loadCreatedRunHandler(
     async () => '{}',
     async () => ({ recreation: { taskDefaults: {} } }),
     () => ({ inputText: 'production task' }),
+    resolveShortVideoMaterials,
+    preflightPixelleTask,
+    () => ({ appRoot: process.cwd() }),
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);
 }

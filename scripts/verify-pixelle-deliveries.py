@@ -1,21 +1,28 @@
 """Verify the complete real-render matrix without altering films or draft files."""
 import hashlib
 import json
+import os
 import av
 import numpy as np
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-WORK = ROOT / '.artifacts/pixelle-all-templates-dual-output'
+WORK = (Path(os.environ['STORYDREAM_PIXELLE_VALIDATION_ROOT']).resolve() / 'matrix'
+        if os.environ.get('STORYDREAM_PIXELLE_VALIDATION_ROOT')
+        else ROOT / '.artifacts/pixelle-all-templates-dual-output')
 
 
 def main():
     source = json.loads((WORK / 'report.json').read_text(encoding='utf-8'))
     results = source['results']
     assert source['status'] == 'passed', 'Render matrix must finish successfully before final validation'
-    assert source['expectedTemplates'] == 31 and len(results) == 31
-    assert len({item['file'] for item in results}) == 31, 'All template paths must be distinct'
+    extra = source.get('extendedCases', 0)
+    assert extra in (0, 6)
+    assert source['expectedTemplates'] == 31 and len(results) == 31 + extra
+    assert len({item['file'] for item in results[:31]}) == 31, 'All pinned template paths must be distinct'
+    if extra:
+        assert {item['caseName'] for item in results[31:]} == {'asset-image-off', 'asset-image-template', 'asset-image-timed', 'video-long-caption', 'video-multiline', 'image-long-template'}
     checks = []
     for item in results:
         outputs = item['outputs']
@@ -51,7 +58,7 @@ def main():
         frame = movie.parent.parent / 'frame.png'
         assert frame.is_file()
         motion = None
-        if Path(item['file']).name.startswith(('video_', 'asset_')):
+        if item.get('mediaKind', 'video' if Path(item['file']).name.startswith(('video_', 'asset_')) else 'image') == 'video':
             samples = []
             with av.open(str(movie)) as container:
                 for decoded in container.decode(video=0):
@@ -64,8 +71,10 @@ def main():
             motion = {'meanAbsoluteDifference': float(delta.mean()), 'changedPixelFraction': float(np.mean(np.max(delta, axis=2) > 12))}
             # The source fixture moves during its first half-second; noise alone must not pass.
             assert motion['meanAbsoluteDifference'] > 1 and motion['changedPixelFraction'] > 0.01, f"Video is static: {item['file']}"
-        checks.append({'template': item['file'], 'materials': references, 'mp4Sha256': hashlib.sha256(movie.read_bytes()).hexdigest(), 'frame': str(frame), 'motion': motion})
-    assert sum(item['motion'] is not None for item in checks) == 3
+        checks.append({'template': item['file'], 'caseName': item.get('caseName', item['file']), 'materials': references, 'mp4Sha256': hashlib.sha256(movie.read_bytes()).hexdigest(), 'frame': str(frame), 'motion': motion})
+    assert sum(item['motion'] is not None for item in checks[:31]) == 3
+    if extra:
+        assert sum(item['motion'] is not None for item in checks[31:]) == 2
     font = ImageFont.truetype('C:/Windows/Fonts/arial.ttf', 14)
     sheets = []
     for start in range(0, len(checks), 12):
@@ -80,13 +89,13 @@ def main():
                 sheet.paste(thumb, (x + (360 - thumb.width) // 2, y + (300 - thumb.height) // 2))
             parts = check['template'].split('/')
             draw.text((x + 8, y + 305), parts[0], font=font, fill='#222222')
-            draw.text((x + 8, y + 323), parts[1], font=font, fill='#222222')
+            draw.text((x + 8, y + 323), check['caseName'] if check['caseName'] in {'asset-image-off', 'asset-image-template', 'asset-image-timed', 'video-long-caption', 'video-multiline', 'image-long-template'} else parts[1], font=font, fill='#222222')
         path = WORK / f'contact-sheet-{start // 12 + 1}.png'
         sheet.save(path)
         sheets.append(str(path))
-    report = {'status': 'passed', 'templates': len(checks), 'checks': checks, 'contactSheets': sheets, 'jianyingApplicationOpened': False, 'aiArtisticQualityAccepted': False, 'paidRequests': 0}
+    report = {'status': 'passed', 'templates': 31, 'cases': len(checks), 'extendedCases': extra, 'checks': checks, 'contactSheets': sheets, 'jianyingApplicationOpened': False, 'aiArtisticQualityAccepted': False, 'paidRequests': 0}
     (WORK / 'delivery-verification.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-    print(json.dumps({'status': report['status'], 'templates': len(checks), 'draftMaterialReferences': sum(len(x['materials']) for x in checks), 'movingVideoTemplates': sum(x['motion'] is not None for x in checks), 'contactSheets': sheets}, ensure_ascii=False))
+    print(json.dumps({'status': report['status'], 'templates': 31, 'cases': len(checks), 'draftMaterialReferences': sum(len(x['materials']) for x in checks), 'movingVideoCases': sum(x['motion'] is not None for x in checks), 'contactSheets': sheets}, ensure_ascii=False))
 
 
 if __name__ == '__main__':

@@ -76,7 +76,12 @@ describe('viral media worker wiring', () => {
     expect(buildScript).toContain("copyFile('src/shared/viral-media-worker.py'");
     expect(runtimeScript).toContain('browser-cookie3');
     expect(runtimeScript).toContain('pycryptodomex');
-    expect(runtimeScript).toContain('local Chrome/Edge');
+    expect(runtimeScript).toContain('playwright install chromium --only-shell');
+    expect(runtimeScript).toContain('PYTHON_RUNTIME_BROWSER_INSTALL_FAILED');
+    expect(runtimeScript).toContain('$env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $Directory "playwright-browsers"');
+    expect(runtimeScript).toContain('browser = p.chromium.launch(headless=True)');
+    expect(runtimeScript).toContain("page.screenshot().startswith(b'\\x89PNG')");
+    expect(runtimeScript).not.toContain('local Chrome/Edge');
     expect(runtimeScript).not.toContain('yt-dlp');
     expect(runtimeScript).not.toContain('yt_dlp');
     expect(workerScript).toContain('find_local_chromium_executable');

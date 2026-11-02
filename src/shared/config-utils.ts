@@ -698,6 +698,7 @@ export function normalizeAppConfig(input: unknown): AppConfig {
       legacyFallbackEnabled: partial.webSearch?.legacyFallbackEnabled !== false,
     },
     ui: { ...defaultConfig.ui, ...(partial.ui ?? {}) },
+    stockMedia: { pexelsApiKey: typeof partial.stockMedia?.pexelsApiKey === 'string' ? partial.stockMedia.pexelsApiKey.trim() : '' },
   };
 }
 

@@ -739,7 +739,7 @@ describe('managed history paths', () => {
     expectSourceOrder(getDatabase, [
       'FileDatabase.open',
       'backfillLegacyManagedHistoryStorage(',
-      'reapHistoryQuarantines(dir, database)',
+      'reapHistoryQuarantines(artifacts, database)',
       'service.migrateLegacySecrets()',
       'db = database',
     ]);
@@ -758,11 +758,12 @@ describe('managed history paths', () => {
     ]);
     expect(startup).toContain('dbInitializationPromise ??= initializeDatabase()');
     expect(startup).toContain('return await initialization');
-    expect(startup.match(/reapHistoryQuarantines\(dir, database\)/gu)).toHaveLength(1);
+    expect(startup).toContain('const artifacts = artifactDataDir();');
+    expect(startup.match(/reapHistoryQuarantines\(artifacts, database\)/gu)).toHaveLength(1);
     expectSourceOrder(startup, [
       'async function initializeDatabase()',
       'FileDatabase.open',
-      'reapHistoryQuarantines(dir, database)',
+      'reapHistoryQuarantines(artifacts, database)',
       'DATABASE_INITIALIZATION_CANCELLED',
       'db = database',
     ]);
@@ -910,10 +911,10 @@ describe('managed history paths', () => {
   it('starts task and viral work only from canonical database-owned keys', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const workDirHelpers = sourceSection(main, 'function taskWorkDir', 'function appDataDir');
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'task', task.managedStorageKey)");
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'viral-analysis', record.managedStorageKey)");
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'image-lab', record.managedStorageKey)");
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'voice-lab', record.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'task', task.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'viral-analysis', record.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'image-lab', record.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'voice-lab', record.managedStorageKey)");
     expect(workDirHelpers).not.toContain("'tasks', task.id");
     expect(workDirHelpers).not.toContain("'viral-analyses', record.id");
     expect(workDirHelpers).not.toContain("'image-lab', id");

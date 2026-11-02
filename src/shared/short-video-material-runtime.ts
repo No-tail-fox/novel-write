@@ -4,9 +4,11 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import type { StoryboardScene, TaskArtifactVideoPreview } from './types';
 import { shortVideoMaterialsSchema, type ShortVideoMaterials } from './short-video-materials';
+import { stockMediaProvenanceSchema, type StockMediaProvenance } from './stock-media';
 
 export interface ShortVideoMaterialProbe { width: number; height: number; durationMs: number }
 export interface ManagedShortVideoMaterial extends ShortVideoMaterialProbe {
+  stockMedia?: StockMediaProvenance[];
   path: string; originalName: string; sourceHash: string; outputHash: string;
 }
 interface MaterialHost {
@@ -36,6 +38,15 @@ export async function bindShortVideoMaterials(settings: ShortVideoMaterials, wor
     const before = await stat(source);
     if (!before.isFile() || before.size < 1 || before.size > MAX_BYTES) throw new Error('本地视频必须是有效文件，且不超过 2 GB');
     const sourceHash = await hashShortVideoMaterial(source, host.signal);
+    let stockMedia: StockMediaProvenance[] | undefined;
+    try {
+      const receipt = JSON.parse(await readFile(source + '.stock.json', 'utf8'));
+      if (receipt.version !== 1 || receipt.contentHash !== sourceHash || !Array.isArray(receipt.sources) || !receipt.sources.length) throw new Error('网络素材来源回执无效');
+      stockMedia = receipt.sources.map((item: unknown) => stockMediaProvenanceSchema.parse(item));
+      if (stockMedia!.some(item => item.contentHash !== sourceHash)) throw new Error('网络素材来源哈希不符');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('网络素材来源回执损坏，请重新检索并下载');
+    }
     let cached: ManagedShortVideoMaterial | undefined;
     // A persisted task references its managed output, not the removable original.
     for (const receipt of [source + '.json', join(directory, sourceHash + '.mp4.json')]) {
@@ -45,6 +56,10 @@ export async function bindShortVideoMaterials(settings: ShortVideoMaterials, wor
         if (!/^[a-f0-9]{64}$/.test(candidate.sourceHash) || resolve(candidate.path) !== expected) continue;
         if (candidate.sourceHash !== sourceHash && candidate.path !== source) continue;
         assertProbe(candidate);
+        if (candidate.stockMedia) {
+          candidate.stockMedia = candidate.stockMedia.map(item => stockMediaProvenanceSchema.parse(item));
+          if (!candidate.stockMedia.length || candidate.stockMedia.some(item => item.contentHash !== candidate.sourceHash)) continue;
+        }
         if (await hashShortVideoMaterial(expected, host.signal) !== candidate.outputHash) continue;
         cached = candidate; break;
       } catch { host.signal?.throwIfAborted(); }
@@ -64,7 +79,7 @@ export async function bindShortVideoMaterials(settings: ShortVideoMaterials, wor
       const outputStat = await stat(temporary);
       if (!outputStat.isFile() || outputStat.size === 0) throw new Error('素材视频标准化结果为空');
       const outputHash = await hashShortVideoMaterial(temporary, host.signal);
-      const item: ManagedShortVideoMaterial = { ...probe, path, originalName: basename(source), sourceHash, outputHash };
+      const item: ManagedShortVideoMaterial = { ...probe, path, originalName: basename(source), sourceHash, outputHash, ...(stockMedia ? { stockMedia } : {}) };
       await writeFile(temporaryReceipt, JSON.stringify(item, null, 2), { encoding: 'utf8', flag: 'wx' });
       host.signal?.throwIfAborted();
       await rename(temporary, path);
@@ -87,6 +102,7 @@ export function allocateShortVideoMaterials(scenes: StoryboardScene[], assets: M
     offsets.set(asset.path, trimStartMs + scene.durationMs);
     return { sceneId: scene.id, path: asset.path, source: 'local-upload', originalName: asset.originalName,
       durationMs: asset.durationMs, width: asset.width, height: asset.height, trimStartMs, fit, muted: true,
-      license: '用户提供素材；使用者需确认授权' };
+      ...(asset.stockMedia ? { stockMedia: asset.stockMedia, providerId: 'pexels' } : {}),
+      license: asset.stockMedia?.length ? asset.stockMedia.map(source => `${source.author} / Pexels · ${source.sourceUrl} · ${source.licenseUrl}`).join('；') : '用户提供素材；使用者需确认授权' };
   });
 }

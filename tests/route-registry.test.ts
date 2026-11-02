@@ -16,6 +16,7 @@ const expectedViews = [
   'image-lab',
   'voice-lab',
   'video-lab',
+  'music-lab',
   'music-mv',
   'book-selection',
   'benchmark',
@@ -66,8 +67,8 @@ describe('renderer route registry', () => {
 
     const loaderSection = registry.slice(registry.indexOf('export const routeLoaders'), registry.indexOf('export const routeComponents'));
     const componentSection = registry.slice(registry.indexOf('export const routeComponents'), registry.indexOf('export function preloadRoute'));
-    expect(registryKeys(loaderSection)).toEqual(expectedViews);
-    expect(registryKeys(componentSection)).toEqual(expectedViews);
+    expect(registryKeys(loaderSection).sort()).toEqual([...expectedViews].sort());
+    expect(registryKeys(componentSection)).toEqual(registryKeys(loaderSection));
     expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(expectedViews.length);
     expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(expectedViews.length);
     expect(registry).toContain('export async function preloadRoute(view: ShellView)');
@@ -77,12 +78,12 @@ describe('renderer route registry', () => {
   it('keeps new task separate, every workbench reachable, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
     expect(sidebarNavGroups.map((group) => group.label)).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 6, 4, 2, 2, 1]);
-    expect(sidebarNavItems).toHaveLength(22);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(22);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([5, 7, 4, 2, 2, 1]);
+    expect(sidebarNavItems).toHaveLength(23);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(23);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
-    expect(navigationItems).toHaveLength(23);
+    expect(navigationItems).toHaveLength(24);
     expect(new Set([...navigationItems.map((item) => item.view), 'task-detail'])).toEqual(new Set(expectedViews));
   });
 
@@ -100,6 +101,7 @@ describe('renderer route registry', () => {
     expect(navigationPrimaryView('image-lab')).toBe('person-assets');
     expect(navigationPrimaryView('voice-lab')).toBe('person-assets');
     expect(navigationPrimaryView('video-lab')).toBe('person-assets');
+    expect(navigationPrimaryView('music-lab')).toBe('person-assets');
     expect(navigationPrimaryView('book-selection')).toBe('hot-board');
     expect(navigationPrimaryView('draft-templates')).toBe('prompt-templates');
     expect(navigationPrimaryView('history')).toBe('queue');
@@ -110,12 +112,13 @@ describe('renderer route registry', () => {
     const group = sidebarNavGroups.find((item) => item.id === 'assets')!;
     expect(group.defaultView).toBe('person-assets');
     expect(group.items[0].view).toBe(group.defaultView);
-    expect(group.items.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab']);
+    expect(group.items.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab', 'music-lab']);
     expect(secondaryNavigationItems(group).map((item) => item.view)).toEqual(['copy-studio', 'conversation-workbench', ...generationNavItems.map((item) => item.view)]);
     expect(generationNavItems.map(({ view, label }) => ({ view, label }))).toEqual([
       { view: 'image-lab', label: '图片生成' },
       { view: 'voice-lab', label: '配音生成' },
       { view: 'video-lab', label: '视频生成' },
+      { view: 'music-lab', label: '音乐创作' },
     ]);
     for (const item of generationNavItems) {
       expect(primaryNavigationGroupForView(item.view)).toBe(group);

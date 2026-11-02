@@ -9,6 +9,7 @@ import { renderPixelleFrameWithResources } from './pixelle-resources';
 import { pixelleUsesVideo, resolvePixelleTask } from './pixelle-task';
 import { getTemplate, resolveDraftTemplateForRatio } from './templates';
 import { outputFingerprint } from './task-output-runner';
+import { fitPixelleTimedCaption } from './pixelle-caption-layout';
 
 export interface PixelleHostOptions {
   appRoot: string; resourcesPath?: string; cacheDir: string; signal?: AbortSignal;
@@ -64,11 +65,12 @@ export async function preparePixelleTaskOutputs(input: WriteJianyingDraftInput, 
     options.signal?.throwIfAborted();
     const image = template.type !== 'static' && !video ? input.generatedImages.find(item => item.sceneId === scene.id)?.path : undefined;
     if (template.type !== 'static' && !video && !image) throw new Error(`Pixelle 镜头 ${scene.id} 缺少原始图片`);
-    const videoPath = input.generatedVideos?.find(item => item.sceneId === scene.id)?.path ?? settings.videoPath;
+    const sourceVideo = input.generatedVideos?.find(item => item.sceneId === scene.id);
+    const videoPath = sourceVideo?.path ?? settings.videoPath;
     const voices = input.narrationAudio.filter(item => item.sceneId === scene.id).sort((a, b) => (a.turnIndex ?? 0) - (b.turnIndex ?? 0));
     if (video && !voices.length) throw new Error(`Pixelle 镜头 ${scene.id} 缺少可复用配音`);
     const base = { workDir: root, templateRef: template.ref, title: input.cover.title || input.title, text: settings.subtitleMode === 'template' ? scene.cap : '', index: index + 1, parameters: settings.parameters, imagePath: image, mediaKind: video ? 'video' as const : 'image' as const };
-    const fingerprint = await outputFingerprint({ version: 1, base, durationMs: scene.durationMs, video, videoPath, settings }, [image ?? '', ...(video ? [videoPath!, ...voices.map(item => item.path)] : [])]);
+    const fingerprint = await outputFingerprint({ version: 2, base, durationMs: scene.durationMs, video, videoPath, settings }, [image ?? '', ...(video ? [videoPath!, ...voices.map(item => item.path)] : [])]);
     const output = `scene-${index + 1}-${fingerprint.slice(0, 20)}.${video ? 'mp4' : 'png'}`;
     const path = join(root, output), receipt = path + '.json';
     let cached = false;
@@ -90,7 +92,7 @@ export async function preparePixelleTaskOutputs(input: WriteJianyingDraftInput, 
       await writeFile(partial, JSON.stringify({ fingerprint, sha256: hash(await readFile(path)), templateRef: template.ref }), 'utf8');
       await rename(partial, receipt);
     }
-    if (video) videos.push({ sceneId: scene.id, path, source: 'local-upload', originalName: template.name, durationMs: scene.durationMs, width: template.width, height: template.height, trimStartMs: 0, fit: 'contain', muted: true });
+    if (video) videos.push({ sceneId: scene.id, path, source: 'local-upload', originalName: template.name, durationMs: scene.durationMs, width: template.width, height: template.height, trimStartMs: 0, fit: 'contain', muted: true, ...(sourceVideo?.stockMedia ? { stockMedia: sourceVideo.stockMedia, providerId: sourceVideo.providerId, license: sourceVideo.license } : {}) });
     else images.push({ sceneId: scene.id, path });
   }
   // The visual frame is already complete. Keep only the user's audio and timed-caption styling.
@@ -102,5 +104,7 @@ export async function preparePixelleTaskOutputs(input: WriteJianyingDraftInput, 
   deliveryTemplate.subtitle.visible = false;
   deliveryTemplate.disclaimer.visible = false;
   deliveryTemplate.caption.visible = settings.subtitleMode === 'timed-overlay';
+  if (deliveryTemplate.caption.visible) deliveryTemplate.caption = fitPixelleTimedCaption(deliveryTemplate.caption, template,
+    input.subtitles?.cues.map(cue => cue.text) ?? input.scenes.map(scene => scene.cap));
   return { ...input, generatedImages: images, generatedVideos: videos, template: deliveryTemplate };
 }

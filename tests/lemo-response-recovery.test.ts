@@ -16,10 +16,10 @@ afterEach(async () => {
 const fingerprint = requestFingerprint({ endpoint: 'https://test.invalid/v1/messages', prompt: 'private prompt' });
 const response = Buffer.from(JSON.stringify({ id: 'msg_private', type: 'message', role: 'assistant',
   content: [{ type: 'text', text: '私有原创工程代码' }], stop_reason: 'end_turn' }));
-async function fixture() {
+async function fixture(maxBytes?: number) {
   const root = await mkdtemp(join(tmpdir(), 'lemo-private-response-')); roots.push(root);
   const ledger = await LemoRequestLedger.open(root, 8); ledgers.push(ledger);
-  const store = await LemoResponseStore.open(ledger.responseDirectory);
+  const store = await LemoResponseStore.open(ledger.responseDirectory, maxBytes);
   const id = await ledger.begin(fingerprint);
   const input = { requestId: id, fingerprint, stream: false, response };
   return { root, ledger, store, id, input };
@@ -82,8 +82,8 @@ describe('private response artifacts and explicit recovery', () => {
     expect(await f.store.load(f.id, fingerprint)).toBeUndefined();
   });
   it('enforces the response size allowance', async () => {
-    const f = await fixture(); const store = await LemoResponseStore.open(f.store.directory, 2);
-    await expect(store.save(f.input)).rejects.toThrow('INPUT');
+    const f = await fixture(2);
+    await expect(f.store.save(f.input)).rejects.toThrow('INPUT');
   });
   it.each(['../escape', 'a/b', 'a\\b', '', '..'])('rejects unsafe artifact id %s', async id => {
     const f = await fixture(); await expect(f.store.save({ ...f.input, requestId: id })).rejects.toThrow('ID');

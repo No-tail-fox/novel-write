@@ -5,7 +5,7 @@ import { prepareLemoStateDirectory } from '../services/lemo-agent-worker/paths';
 import { lemoWorkerEnvironment } from '../services/lemo-agent-worker/environment';
 
 /** Stop only the process tree spawned for this request, never unrelated Python/Electron tasks. */
-function stopWorkerTree(child: ReturnType<typeof spawn>): Promise<void> {
+export function stopWorkerTree(child: ReturnType<typeof spawn>): Promise<void> {
   const pid = child.pid;
   if (!pid) return Promise.resolve();
   if (process.platform === 'win32') {

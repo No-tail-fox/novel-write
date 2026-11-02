@@ -193,6 +193,13 @@ export const INVOKE_CHANNELS = Object.freeze([
   'config:test',
   'ima:fetch-knowledge',
   'llm:test-config',
+  'lemo-provider:preflight',
+  'lemo-provider:test',
+  'lemo-provider:cancel',
+  'stock-media:status',
+  'stock-media:search',
+  'stock-media:import',
+  'stock-media:cancel',
   'models:list',
   'volcengine:speakers:list',
   'research:web-search',
@@ -563,6 +570,13 @@ export type StoryDreamApi = {
   getPixelleCatalog: () => Promise<import('./pixelle').PixelleCatalog>;
   selectLocalVideo: () => Promise<string | null>;
   selectShortVideoMaterials: () => Promise<string[]>;
+  getStockMediaStatus: import('./stock-media').StockMediaApi['getStockMediaStatus'];
+  preflightLemoProvider: import('./lemo-provider-capabilities').LemoCapabilityApi['preflightLemoProvider'];
+  testLemoProvider: import('./lemo-provider-capabilities').LemoCapabilityApi['testLemoProvider'];
+  cancelLemoProviderTest: import('./lemo-provider-capabilities').LemoCapabilityApi['cancelLemoProviderTest'];
+  searchStockMedia: import('./stock-media').StockMediaApi['searchStockMedia'];
+  importStockMedia: import('./stock-media').StockMediaApi['importStockMedia'];
+  cancelStockMedia: import('./stock-media').StockMediaApi['cancelStockMedia'];
   selectMotionComicSourceFile: () => Promise<LocalTextFile | null>;
   importBgmAudio: () => Promise<ManagedBgmImport | null>;
   selectLocalAudio: {

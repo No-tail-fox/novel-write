@@ -1,6 +1,7 @@
 import type { AppConfig, AppState } from './types';
 
 export type SecretId =
+  | 'stockMedia/pexels/apiKey'
   | `llm/${string}/apiKey`
   | `image/${string}/apiKey`
   | `image/${string}/gptImage/apiKey`
@@ -45,12 +46,13 @@ interface SecretSlot {
 const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|(?:video|music)\/[^/]+\/apiKey|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|(?:speechToText|viralVision)\/(?:[^/]+\/)?apiKey|ima\/apiKey)$/u;
 
 export function isSecretId(value: string): value is SecretId {
-  return value.length <= 1024 && SECRET_ID_PATTERN.test(value);
+  return value.length <= 1024 && (value === 'stockMedia/pexels/apiKey' || SECRET_ID_PATTERN.test(value));
 }
 
 function cloneConfig(config: AppConfig): AppConfig {
   return {
     ...config,
+    stockMedia: { pexelsApiKey: config.stockMedia?.pexelsApiKey ?? '' },
     llm: { ...config.llm },
     llmProfiles: config.llmProfiles.map((profile) => ({ ...profile })),
     image: { ...config.image },
@@ -122,6 +124,7 @@ function secretSlots(config: AppConfig): SecretSlot[] {
   add('tts/@active/minimax/apiKey', () => config.tts.minimax.apiKey, (value) => { config.tts.minimax.apiKey = value; });
   add('speechToText/apiKey', () => config.speechToText.apiKey, (value) => { config.speechToText.apiKey = value; });
   add('ima/apiKey', () => config.ima.apiKey, (value) => { config.ima.apiKey = value; });
+  add('stockMedia/pexels/apiKey', () => config.stockMedia?.pexelsApiKey, (value) => { config.stockMedia = { pexelsApiKey: value }; });
   add('viralVision/apiKey', () => config.viral.vision.apiKey, (value) => { config.viral.vision.apiKey = value; });
 
   const llmIds = new Set<string>();

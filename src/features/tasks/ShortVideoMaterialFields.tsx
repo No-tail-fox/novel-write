@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { Button, SelectField } from '../../ui';
-import type { ShortVideoMaterials } from '../../shared/short-video-materials';
-export function ShortVideoMaterialFields({ value, onChange, onAdd, templateControlsFit }: {
+import { appendShortVideoMaterialFiles, type ShortVideoMaterials } from '../../shared/short-video-materials';
+import type { StockMediaApi } from '../../shared/stock-media';
+import { StockMediaPicker } from './StockMediaPicker';
+export function ShortVideoMaterialFields({ value, onChange, onAdd, templateControlsFit, api }: {
+  api?: StockMediaApi;
   templateControlsFit?: boolean;
   value: ShortVideoMaterials; onChange: (value: ShortVideoMaterials) => void; onAdd: () => Promise<void>;
 }) {
   const [picking, setPicking] = useState(false);
   const [addError, setAddError] = useState('');
+  const latest = useRef({ value, onChange }); latest.current = { value, onChange };
   async function handleAdd() {
     if (picking) return;
     setPicking(true); setAddError('');
@@ -26,5 +30,6 @@ export function ShortVideoMaterialFields({ value, onChange, onAdd, templateContr
     <SelectField disabled={templateControlsFit || picking} hint={templateControlsFit ? "Pixelle 原模板决定画幅裁切；此设置仅用于常规短片。" : undefined} label="混剪画幅适配" value={value.fit} options={[{ value: 'cover', label: '铺满画幅（居中裁切）' }, { value: 'contain', label: '完整显示（留边）' }]} onChange={event => onChange({ ...value, fit: event.target.value as ShortVideoMaterials['fit'] })} />
     <p>按添加顺序循环分配；常规短片长素材顺序选段，短素材减速匹配配音。Pixelle 视频使用原模板补齐策略。</p>
     <p>导入后复制到项目，MP4 与剪映草稿共用素材。素材原声静音，由程序统一配音和字幕；请确认素材使用授权。</p>
+    {api ? <StockMediaPicker api={api} remaining={100 - value.files.length} onAdd={path => latest.current.onChange(appendShortVideoMaterialFiles(latest.current.value, [path]))} /> : null}
   </section>;
 }

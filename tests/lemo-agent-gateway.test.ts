@@ -175,6 +175,22 @@ describe('official Messages gateway with local upstream', () => {
     const t = await gateway((_req, res) => { res.destroy(); }); expect((await t.request()).status).toBe(400);
     expect(t.g.summary().unknown).toBe(1); expect((await t.request()).status).toBe(400); expect(t.calls()).toBe(1);
   });
+  it.each(['orphan-delta', 'truncated-tool-json'])('does not acknowledge or replay a terminal SSE stream with %s', async mode => {
+    const payload = frame('message_start', { message: { ...message, content: [], stop_reason: null } })
+      + (mode === 'orphan-delta'
+        ? frame('content_block_delta', { index: 42, delta: { type: 'input_json_delta', partial_json: '{' } })
+        : frame('content_block_start', { index: 0, content_block: { type: 'tool_use', id: 'tool_offline', name: 'preview', input: {} } })
+          + frame('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: '{' } })
+          + frame('content_block_stop', { index: 0 }))
+      + frame('message_delta', { delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 2 } })
+      + frame('message_stop');
+    const t = await gateway((_req, res) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(payload); });
+    expect((await t.request({ stream: true })).status).toBe(400);
+    expect(t.g.summary()).toMatchObject({ requests: 1, received: 0, unknown: 1, blocked: true });
+    expect(await readFile(join(t.state.path, 'requests.jsonl'), 'utf8')).not.toContain('"outcome":"received"');
+    expect((await t.request({ stream: true })).status).toBe(400);
+    expect(t.calls()).toBe(1);
+  });
   it('aborts slow upstream rather than retrying under a new SDK request', async () => {
     const t = await gateway(() => {}, { timeoutMs: 150 }); expect((await t.request()).status).toBe(400);
     expect(t.g.summary().unknown).toBe(1); expect((await t.request()).status).toBe(400); expect(t.calls()).toBe(1);

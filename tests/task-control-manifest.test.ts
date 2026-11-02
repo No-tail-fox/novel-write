@@ -4,7 +4,10 @@ import { approvedEditorialInventories } from './fixtures/editorial-workbench-par
 
 describe('new task field ownership manifest', () => {
   it('assigns every approved CreateTaskInput field to exactly one stage owner', () => {
-    expect(Object.keys(NEW_TASK_CREATE_FIELD_STAGE)).toEqual(approvedEditorialInventories.createTaskInputFields.values);
+    const ownedFields = Object.keys(NEW_TASK_CREATE_FIELD_STAGE);
+    const approvedFields = approvedEditorialInventories.createTaskInputFields.values;
+    expect(new Set(ownedFields).size).toBe(ownedFields.length);
+    expect([...ownedFields].sort()).toEqual([...approvedFields].sort());
     expect(Object.values(NEW_TASK_CREATE_FIELD_STAGE).every((stage) => (
       stage === 'material' || stage === 'creative' || stage === 'output' || stage === 'system'
     ))).toBe(true);

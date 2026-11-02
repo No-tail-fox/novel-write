@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { AppError, normalizeAppError, serializeAppErrorForBridge } from '../src/shared/app-error';
 
 describe('real Electron smoke contract', () => {
   it('launches the packaged application main instead of constructing a harness window', async () => {
@@ -319,5 +321,88 @@ describe('real Electron smoke contract', () => {
     expect(qa).toContain("document.querySelectorAll('.hv-authoring-clip')");
     expect(qa).toContain('authoringDesktop.horizontalOverflow');
     expect(qa).toContain('authoringCompact.clippedControls.length');
+  });
+});
+
+
+describe('license-aware application smoke handshake', () => {
+  async function handshake(options: { licensed?: boolean; allowProtectedBootstrap?: boolean; bootstrapError?: string; brokenLicense?: boolean } = {}) {
+    const main = (await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+    const opening = 'const rendererResult = await mainWindow.webContents.executeJavaScript(' + String.fromCharCode(96);
+    const start = main.indexOf(opening) + opening.length;
+    const end = main.indexOf(String.fromCharCode(96) + ', true)', start);
+    expect(start).toBeGreaterThan(opening.length);
+    expect(end).toBeGreaterThan(start);
+    const calls: string[] = [];
+    const state = { config: {}, tasks: { items: [] }, ui: {} };
+    const api = {
+      getLicenseStatus: async () => options.brokenLicense ? {} : ({ configured: true, status: options.licensed ? 'active' : 'inactive' }),
+      getBootstrap: async () => {
+        calls.push('bootstrap');
+        if (!options.licensed && !options.allowProtectedBootstrap) {
+          throw new Error(serializeAppErrorForBridge(new AppError(options.bootstrapError ?? 'LICENSE_REQUIRED', 'Fixture denial')));
+        }
+        return state;
+      },
+      saveConfig: async () => { calls.push('saveConfig'); return { kind: 'state-patch', patch: { kind: 'config' } }; },
+      saveUiPreferences: async () => { calls.push('saveUiPreferences'); return { kind: 'state-patch', patch: { kind: 'theme-preference', ui: { activeView: 'new-task' } } }; },
+    };
+    const result = await runInNewContext(main.slice(start, end), {
+      window: { storydream: api },
+      document: {
+        querySelector: (selector: string) => selector === '.app-shell' ? (options.licensed ? {} : null)
+          : selector === '.license-gate .license-settings' && !options.licensed ? {} : null,
+        documentElement: { dataset: { themeReady: 'true' } },
+        body: { innerText: 'StoryDream' },
+      },
+      setTimeout,
+    });
+    return { result, calls, protectedIpcBlocked: normalizeAppError(result.protectedIpcError ?? '').code === 'LICENSE_REQUIRED', main };
+  }
+
+  it('verifies the first-launch license page, status IPC and exact protected-IPC denial independently', async () => {
+    const { result, calls, protectedIpcBlocked, main } = await handshake();
+    expect(result.mode).toBe('license-gate');
+    expect(result.licenseStatusLoaded).toBe(true);
+    expect(result.licenseGateRendered).toBe(true);
+    expect(protectedIpcBlocked).toBe(true);
+    expect(result.ipcStateLoaded).toBe(false);
+    expect(result.preloadActionSucceeded).toBe(false);
+    expect(result.shellRendered).toBe(false);
+    expect(calls).toEqual(['bootstrap']);
+    expect(main).toContain("protectedIpcBlocked: normalizeAppError(rendererResult.protectedIpcError ?? '').code === 'LICENSE_REQUIRED'");
+  });
+
+  it('preserves the complete authorized workspace handshake and mutation checks', async () => {
+    const { result, calls, protectedIpcBlocked } = await handshake({ licensed: true });
+    expect(result.mode).toBe('workspace');
+    expect(result.preloadExposed).toBe(true);
+    expect(result.ipcStateLoaded).toBe(true);
+    expect(result.preloadActionSucceeded).toBe(true);
+    expect(result.shellRendered).toBe(true);
+    expect(result.licenseGateRendered).toBe(false);
+    expect(protectedIpcBlocked).toBe(false);
+    expect(calls).toEqual(['bootstrap', 'saveConfig', 'saveUiPreferences']);
+  });
+
+  it('does not treat an unrelated IPC failure as a successful authorization guard', async () => {
+    const { protectedIpcBlocked } = await handshake({ bootstrapError: 'DATABASE_UNAVAILABLE' });
+    expect(protectedIpcBlocked).toBe(false);
+  });
+
+  it('detects an accidental authorization bypass without mutating workspace settings', async () => {
+    const { result, calls, protectedIpcBlocked } = await handshake({ allowProtectedBootstrap: true });
+    expect(result.mode).toBe('license-gate');
+    expect(protectedIpcBlocked).toBe(false);
+    expect(result.preloadActionSucceeded).toBe(false);
+    expect(calls).toEqual(['bootstrap']);
+  });
+
+  it('fails closed when the license-status IPC returns an invalid result', async () => {
+    const { result, calls, protectedIpcBlocked } = await handshake({ brokenLicense: true });
+    expect(result.licenseStatusLoaded).toBe(false);
+    expect(result.ipcStateLoaded).toBe(false);
+    expect(protectedIpcBlocked).toBe(false);
+    expect(calls).toEqual([]);
   });
 });

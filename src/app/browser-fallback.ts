@@ -872,6 +872,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       return persist({ ...read(), config: input.config });
     },
     async testLlmConfig(config) {
+      // Browser previews do not dispatch live provider capability probes.
       const endpoint = llmEndpoint(config);
       return {
         status: config.apiKey ? 'warn' : 'fail',
@@ -1884,6 +1885,13 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async selectShortVideoMaterials() {
       return [];
     },
+    async getStockMediaStatus() { return { provider: 'pexels', configured: false }; },
+    async preflightLemoProvider() { throw new Error('LEMO_CAPABILITY_DESKTOP_REQUIRED: 请在桌面应用检查模型能力。'); },
+    async testLemoProvider() { throw new Error('LEMO_CAPABILITY_DESKTOP_REQUIRED: 请在桌面应用测试模型能力。'); },
+    async cancelLemoProviderTest() { return; },
+    async searchStockMedia() { throw new Error('网络素材检索仅在桌面应用中可用'); },
+    async importStockMedia() { throw new Error('网络素材下载仅在桌面应用中可用'); },
+    async cancelStockMedia() {},
     async selectMotionComicSourceFile() {
       return null;
     },

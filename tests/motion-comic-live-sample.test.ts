@@ -10,7 +10,33 @@ import { generateMotionComicScript } from '@shared/motion-comic-planner';
 const sample = JSON.parse(readFileSync(resolve('tests/fixtures/motion-comic-live-gemini-20260928.json'), 'utf8'));
 const now = '2026-09-28T05:06:00.000Z';
 const units = splitMotionComicSource(sample.sourceText);
-const original = motionComicScriptDraftSchema.parse(normalizeMotionComicScriptRaw(sample.script, units));
+// The capture predates the closing-quote fix in splitMotionComicSource. Preserve
+// the genuine response and replay its evidence using the exact splitter from
+// e2c19a9. Only this archived test fixture is rebased; production still rejects
+// stale or invented source IDs. Every joined source text must match exactly.
+const capturedUnits = (sample.sourceText as string).trim().split(/\r?\n+|(?<=[。！？!?；;])\s*/u)
+  .map(value => value.trim()).filter(Boolean).map((text, index) => ({ id: `S${index + 1}`, text }));
+const capturedScript = motionComicScriptDraftSchema.parse(normalizeMotionComicScriptRaw(sample.script, capturedUnits));
+const capturedToCurrentSourceIds = new Map<string, string>();
+let capturedCursor = 0;
+for (const unit of units) {
+  let joined = '';
+  while (joined.length < unit.text.length && capturedCursor < capturedUnits.length) {
+    const captured = capturedUnits[capturedCursor++];
+    joined += captured.text;
+    capturedToCurrentSourceIds.set(captured.id, unit.id);
+  }
+  if (joined !== unit.text) throw new Error(`Captured source text cannot be rebased exactly: ${unit.id}`);
+}
+if (capturedCursor !== capturedUnits.length) throw new Error('Captured source units were omitted while rebasing');
+const original = structuredClone(capturedScript);
+for (const scene of original.scenes) for (const beat of scene.beats) {
+  beat.sourceUnitIds = [...new Set(beat.sourceUnitIds.map(id => {
+    const current = capturedToCurrentSourceIds.get(id);
+    if (!current) throw new Error(`Captured source ID is unknown: ${id}`);
+    return current;
+  }))];
+}
 const document = () => createMotionComicStarterProject(createMotionComicDraft({ id: 'live-sample', title: '雨停之前', premise: sample.sourceText, now }), '第一集', now);
 function editedScript() {
   const script = structuredClone(original);
@@ -20,6 +46,18 @@ function editedScript() {
 }
 
 describe('captured real-model motion-comic acceptance sample', () => {
+  it('preserves the archived response and rejects its stale IDs before explicit text-preserving rebasing', () => {
+    expect(capturedUnits).toHaveLength(16);
+    expect(units).toHaveLength(12);
+    expect(validateMotionComicScriptDraft(capturedScript, capturedUnits)).toEqual([]);
+    expect(validateMotionComicScriptDraft(capturedScript, units).map(issue => issue.message)).toEqual([
+      '原文句段不存在：S13', '原文句段不存在：S14', '原文句段不存在：S15', '原文句段不存在：S16',
+    ]);
+    expect(capturedToCurrentSourceIds.size).toBe(capturedUnits.length);
+    expect([...new Set(original.scenes.flatMap(scene => scene.beats.flatMap(beat => beat.sourceUnitIds)))]).toEqual(units.map(unit => unit.id));
+    expect(capturedScript.scenes.flatMap(scene => scene.beats).at(-1)?.sourceUnitIds).toEqual(['S16']);
+    expect(original.scenes.flatMap(scene => scene.beats).map(beat => beat.text)).toEqual(capturedScript.scenes.flatMap(scene => scene.beats).map(beat => beat.text));
+  });
   it('retains both scenes, contiguous acts, all source units and four explicitly attributed dialogue lines', () => {
     expect(validateMotionComicScriptDraft(original, units)).toEqual([]);
     expect(original.scenes.map(s => s.actIndex)).toEqual([1, 2]);

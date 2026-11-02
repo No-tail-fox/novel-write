@@ -71,6 +71,20 @@ describe('isolated original Pixelle runtime', () => {
     expect(result.requiresVideoComposition).toBe(true);
     expect(await pngSize(result.path)).toEqual([1080, 1920]);
   }, 30_000);
+  it('fits longer original image-template text inside its box without overlapping the image', async () => {
+    const result = await runPixelleWorker(frame('image_default.html', { output: 'long-text.png', text: '这是图文模板的较长说明。画面提供信息，旁白说明原因，标题突出核心观点。'.repeat(3) }), options);
+    expect(result.layoutValidation?.textFits).toBe(true);
+    expect(result.layoutValidation!.fontSize).toBeGreaterThanOrEqual(28);
+    expect(result.layoutValidation!.fontSize).toBeLessThan(result.layoutValidation!.originalFontSize);
+    expect(result.layoutValidation!.ink.top).toBeGreaterThanOrEqual(result.layoutValidation!.box.top + 10);
+    expect(result.layoutValidation!.ink.bottom).toBeLessThanOrEqual(result.layoutValidation!.box.bottom - 10);
+    expect(await pngSize(result.path)).toEqual([1080, 1920]);
+  }, 30_000);
+  it('rejects unreadable long paragraphs without replacing a previous successful output', async () => {
+    await writeFile(join(workDir, 'dense.png'), 'prior-success', 'utf8');
+    await expect(runPixelleWorker(frame('image_default.html', { output: 'dense.png', text: '过长文本'.repeat(300) }), options)).rejects.toThrow('PIXELLE_TEMPLATE_TEXT_TOO_DENSE');
+    expect(await readFile(join(workDir, 'dense.png'), 'utf8')).toBe('prior-success');
+  }, 30_000);
   it('fails loudly for missing default resources without overwriting a successful output', async () => {
     const output = 'preserved.png';
     await writeFile(join(workDir, output), 'prior-success');

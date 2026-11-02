@@ -23,29 +23,39 @@ describe('director product flow', () => {
     expect(start).toContain('data-director-project-recovery');
   });
 
-  it('uses a three-step preflight whose choices are persisted into both documents', async () => {
-    const [vox, comic, start] = await Promise.all([
+  it('persists each three-step workflow preflight into its project document', async () => {
+    const [vox, comic, start, comicCreate] = await Promise.all([
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
       source('src/features/motion-comic/MotionComicPage.tsx'),
       source('src/features/director-desk/DirectorProjectStart.tsx'),
+      source('src/features/motion-comic/MotionComicCreateFlow.tsx'),
     ]);
     for (const label of ['内容结构', '生成与一致性', '声音与输出']) expect(start).toContain(label);
     expect(start).toContain('data-director-create-wizard');
     for (const value of ['createStep', 'createStyleId', 'createLayoutTemplate', 'createMotionPreset', 'createVoiceId', 'createSubtitleStyle', 'createSeedLocked']) {
       expect(vox).toContain(value);
     }
-    for (const value of ['createStep', 'createGenre', 'createTone', 'createAudience', 'createProtagonist', 'createLocation', 'createVoiceId', 'createSubtitleStyle', 'createSeedLocked']) {
+    for (const value of ['createStep', 'createSourceKind', 'createAdaptationMode', 'createSourceText', 'createTargetCharacters', 'createTargetDurationSec', 'createSplitStrategy', 'createEpisodeDrafts', 'createSplitEvidence', 'createModels']) {
       expect(comic).toContain(value);
     }
+    for (const label of ['剧本导入', '分集确认', '创建项目']) expect(comicCreate).toContain(label);
+    expect(comicCreate).toContain('data-motion-comic-create-flow');
+    expect(comic).toContain('<MotionComicCreateFlow');
+    const createComic = comic.slice(comic.indexOf('async function createProject()'), comic.indexOf('async function persistProject('));
+    for (const value of ['projectModels: createModels', 'kind: createSourceKind', 'adaptationMode: createAdaptationMode', 'originalText: sourceText', 'episodes,', 'splitEvidence,']) expect(createComic).toContain(value);
     expect(vox).toContain('api.saveEditorialCollage');
     expect(comic).toContain('api.saveMotionComic');
     expect(start).toContain('图片服务');
     expect(start).toContain('旁白服务');
     expect(start).toContain('创建项目本身不调用付费生成');
     for (const page of [vox, comic]) {
-      expect(page).toContain("const actionFeedback = providerAction.feedback?.tone === 'success'");
-      expect(page.match(/feedback=\{actionFeedback\}/g)).toHaveLength(2);
+      expect(page).toContain("providerAction.feedback?.tone === 'success' ? providerAction.feedback.message");
+      expect(page).toContain("projectAction.feedback?.tone === 'success' ? projectAction.feedback.message");
     }
+    expect(vox.match(/feedback=\{actionFeedback\}/g)).toHaveLength(2);
+    expect(comic.match(/feedback=\{actionFeedback\}/g)).toHaveLength(3);
+    expect(comic).toContain("feedback={sourceFileAction.feedback?.tone === 'success' ? sourceFileAction.feedback.message");
+    expect(comic).toContain("episodePlanningAction.feedback?.tone === 'success' ? episodePlanningAction.feedback.message");
   });
 
   it('keeps the create action row reachable while the form scrolls', async () => {
@@ -75,12 +85,18 @@ describe('director product flow', () => {
   });
 
   it('renders the AI series bible as a full page rather than an overflowing dialog', async () => {
-    const comic = await source('src/features/motion-comic/MotionComicPage.tsx');
+    const [comic, production] = await Promise.all([
+      source('src/features/motion-comic/MotionComicPage.tsx'),
+      source('src/features/motion-comic/MotionComicProductionWorkspace.tsx'),
+    ]);
     expect(comic).toContain('data-motion-comic-series-bible="true"');
     expect(comic).toContain('director-series-page');
-    expect(comic).toContain('保存系列圣经');
-    expect(comic).toContain('场景空镜');
-    expect(comic).toContain('道具参考图');
+    expect(comic).toContain('<MotionComicProductionWorkspace');
+    expect(comic).toContain('onSave={() => void saveProject()}');
+    expect(production).toContain('disabled={!dirty || busy} onClick={onSave}>保存</Button>');
+    expect(comic).toContain("referenceImportControl('scene', asset.id, versions.length > 0)");
+    expect(comic).toContain("referenceImportControl('prop', asset.id, versions.length > 0)");
+    expect(comic).toContain('onSetFixed={(versionId) => setFixedReference(target, versionId)}');
     expect(comic).not.toContain('<Dialog');
   });
 
@@ -196,10 +212,11 @@ describe('director product flow', () => {
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
     ]);
     expect(workspace).toContain('director-style-candidates');
-    expect(workspace).toContain('onSelect={onSelectStyle}');
-    expect(workspace).toContain('onSelect?.(style.id)');
+    expect(workspace).toContain('onClick={() => onSelectStyle?.(style.id)}');
+    expect(workspace).toContain('aria-pressed={selected}');
     expect(workspace).toContain('onGenerateStyleCandidate');
-    expect(workspace).toContain('onGenerateStyleCandidate ? (id) => void generateStyleCandidate(id)');
+    expect(workspace).toContain('onClick={() => void generateStyleCandidate(style.id)}');
+    expect(workspace).toContain('disabled={structureBusy || generating}');
     expect(vox).toContain('styleCandidates={directorStyleCandidates}');
     expect(vox).toContain('styleCandidates: current.styleCandidates.map');
     expect(vox).toContain('applyEditorialStyleCandidateRecord');

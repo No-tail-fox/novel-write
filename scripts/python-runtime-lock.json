@@ -1,0 +1,281 @@
+{
+  "schema": 1,
+  "python": "3.12.4",
+  "platform": "win_amd64",
+  "source": "previously validated vendor/python distribution metadata",
+  "directPackages": {
+    "httpx": "0.28.1",
+    "browser-cookie3": "0.20.1",
+    "pyyaml": "6.0.3",
+    "pyjianyingdraft": "0.2.6",
+    "pycryptodomex": "3.23.0",
+    "faster-whisper": "1.2.1",
+    "gmssl": "3.2.2",
+    "jieba": "0.42.1",
+    "aiofiles": "25.1.0",
+    "imageio-ffmpeg": "0.6.0",
+    "playwright": "1.60.0",
+    "pydub": "0.25.1"
+  },
+  "verifiedArtifacts": {
+    "jiebaSource": {
+      "url": "https://files.pythonhosted.org/packages/c6/cb/18eeb235f833b726522d7ebed54f2278ce28ba9438e3135ab0278d9792a2/jieba-0.42.1.tar.gz",
+      "sha256": "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2"
+    }
+  },
+  "distributions": [
+    {
+      "name": "aiofiles",
+      "version": "25.1.0"
+    },
+    {
+      "name": "annotated-doc",
+      "version": "0.0.4"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.7.0"
+    },
+    {
+      "name": "anyio",
+      "version": "4.13.0"
+    },
+    {
+      "name": "av",
+      "version": "17.1.0"
+    },
+    {
+      "name": "beautifulsoup4",
+      "version": "4.14.3"
+    },
+    {
+      "name": "browser-cookie3",
+      "version": "0.20.1"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.5.20"
+    },
+    {
+      "name": "click",
+      "version": "8.4.1"
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6"
+    },
+    {
+      "name": "comtypes",
+      "version": "1.4.16"
+    },
+    {
+      "name": "ctranslate2",
+      "version": "4.8.0"
+    },
+    {
+      "name": "faster-whisper",
+      "version": "1.2.1"
+    },
+    {
+      "name": "ffmpeg-python",
+      "version": "0.2.0"
+    },
+    {
+      "name": "filelock",
+      "version": "3.29.1"
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19"
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.4.0"
+    },
+    {
+      "name": "future",
+      "version": "1.0.0"
+    },
+    {
+      "name": "gmssl",
+      "version": "3.2.2"
+    },
+    {
+      "name": "greenlet",
+      "version": "3.5.1"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.5.1"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1"
+    },
+    {
+      "name": "huggingface_hub",
+      "version": "1.18.0"
+    },
+    {
+      "name": "idna",
+      "version": "3.18"
+    },
+    {
+      "name": "ImageIO",
+      "version": "2.37.3"
+    },
+    {
+      "name": "imageio-ffmpeg",
+      "version": "0.6.0"
+    },
+    {
+      "name": "jieba",
+      "version": "0.42.1",
+      "sourceArtifact": "jiebaSource"
+    },
+    {
+      "name": "loguru",
+      "version": "0.7.3"
+    },
+    {
+      "name": "lz4",
+      "version": "4.4.5"
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "4.2.0"
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2"
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.6"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.26.0"
+    },
+    {
+      "name": "packaging",
+      "version": "26.2"
+    },
+    {
+      "name": "pillow",
+      "version": "12.2.0"
+    },
+    {
+      "name": "pip",
+      "version": "26.1.2"
+    },
+    {
+      "name": "playwright",
+      "version": "1.60.0"
+    },
+    {
+      "name": "protobuf",
+      "version": "7.35.0"
+    },
+    {
+      "name": "pycryptodomex",
+      "version": "3.23.0"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.12.5"
+    },
+    {
+      "name": "pydantic_core",
+      "version": "2.41.5"
+    },
+    {
+      "name": "pydub",
+      "version": "0.25.1"
+    },
+    {
+      "name": "pyee",
+      "version": "13.0.1"
+    },
+    {
+      "name": "Pygments",
+      "version": "2.20.0"
+    },
+    {
+      "name": "pyjianyingdraft",
+      "version": "0.2.6"
+    },
+    {
+      "name": "pymediainfo",
+      "version": "7.0.1"
+    },
+    {
+      "name": "pywin32",
+      "version": "312"
+    },
+    {
+      "name": "PyYAML",
+      "version": "6.0.3"
+    },
+    {
+      "name": "rich",
+      "version": "15.0.0"
+    },
+    {
+      "name": "setuptools",
+      "version": "82.0.1"
+    },
+    {
+      "name": "shadowcopy",
+      "version": "0.0.4"
+    },
+    {
+      "name": "shellingham",
+      "version": "1.5.4"
+    },
+    {
+      "name": "soupsieve",
+      "version": "2.8.3"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.1"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.68.2"
+    },
+    {
+      "name": "typer",
+      "version": "0.25.1"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.2"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0"
+    },
+    {
+      "name": "uiautomation",
+      "version": "2.0.29"
+    },
+    {
+      "name": "win32_setctime",
+      "version": "1.2.0"
+    },
+    {
+      "name": "WMI",
+      "version": "1.5.1"
+    }
+  ]
+}

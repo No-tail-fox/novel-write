@@ -32,7 +32,7 @@ async function cachedPicture(directory: string, key: string): Promise<string | u
  * Only a completed, hash-verified capture is reusable; subtitles/audio are composed later.
  */
 export async function prepareLemoUpstreamPicture(library: Library, work: string, document: DirectorRenderDocument, signal?: AbortSignal): Promise<string | undefined> {
-  if (document.workflowKind !== 'editorial-collage' || document.productionRun?.authoringVersion !== 3) return;
+  if (document.workflowKind !== 'editorial-collage' || document.productionRun?.authoringVersion !== 4) return;
   signal?.throwIfAborted();
   const film = document.upstreamFilm;
   if (!film || film.runId !== document.productionRun.id) throw new Error('LEMO_AGENT_NOT_READY: 请先完成当前原生工程。');

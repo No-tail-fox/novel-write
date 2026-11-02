@@ -1,9 +1,19 @@
 import { readFile } from 'node:fs/promises';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFallbackApi } from '../src/app/browser-fallback';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
 
 describe('person asset preview capabilities', () => {
+  beforeEach(() => {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
   const operations: [string, (api: StoryDreamApi) => Promise<unknown>][] = [
     ['create', (api) => api.createPersonAsset('Preview person')],
     ['rename', (api) => api.renamePersonAsset('Preview person', 'Renamed person')],

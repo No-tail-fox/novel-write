@@ -394,6 +394,7 @@ export interface ViralAnalyzerConfig {
 }
 
 export interface AppConfig {
+  stockMedia: { pexelsApiKey: string };
   llm: LlmConfig;
   llmProfiles: LlmConfig[];
   activeLlmProfileId: string;
@@ -2253,6 +2254,7 @@ export interface TaskArtifactAssetPreview {
 export type TaskArtifactVideoSource = 'local-upload' | 'local-library' | 'local-random' | 'ai-video';
 
 export interface TaskArtifactVideoPreview {
+  stockMedia?: import('./stock-media').StockMediaProvenance[];
   sceneId: number;
   path: string;
   source: TaskArtifactVideoSource;

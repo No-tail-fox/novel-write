@@ -1171,7 +1171,9 @@ def probe_glyphs(payload):
                 for index in range(table_count):
                     record = base + 12 + index * 16
                     if data[record:record + 4] == b"cmap":
-                        cmap_offset = base + struct.unpack_from(">I", data, record + 8)[0]
+                        # SFNT table offsets are absolute from the font file,
+                        # including TTC members whose directory base is nonzero.
+                        cmap_offset = struct.unpack_from(">I", data, record + 8)[0]
                         break
                 if cmap_offset is None or cmap_offset + 4 > len(data):
                     continue
@@ -1519,6 +1521,9 @@ def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame
         "-map", "[aout]",
         "-pix_fmt", "yuv420p",
         "-c:v", "libx264",
+        # concat's AVTB time base does not retain an output frame rate.
+        # Declare the authored clock instead of accepting FFmpeg's 25fps guess.
+        "-r", str(fps), "-fps_mode", "cfr",
         "-c:a", "aac",
         *duration_args,
         output_path,

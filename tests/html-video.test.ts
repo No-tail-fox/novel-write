@@ -1957,6 +1957,11 @@ describe('Electron HTML video capture contract', () => {
         'Error: HTML scene image failed to load. Verify the task image assets and retry.',
       );
       expect(String(error)).not.toContain(workDir);
+      expect((error as Error).cause).toMatchObject({
+        htmlPath: join(workDir, 'broken.html'),
+        readiness: expect.stringContaining('images'),
+        error: { message: 'HTML scene image failed to load. Verify the task image assets and retry.' },
+      });
       expect(electronHarness.state.instances.every((window) => window.isDestroyed())).toBe(true);
     });
   });
@@ -2109,6 +2114,7 @@ function previewInput(workDir: string, name: string, signal?: AbortSignal) {
 
 function createReadyScriptExecutor(images: unknown[], fontsReady: Promise<void> = Promise.resolve()) {
   return async (script: string): Promise<unknown> => {
+    if (script.startsWith('JSON.stringify({ready:')) return JSON.stringify({ ready: true, images });
     if (!script.includes('document.readyState')) return true;
     return vm.runInNewContext(script, {
       clearInterval,

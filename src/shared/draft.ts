@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
 import { access, mkdir, stat, writeFile } from 'node:fs/promises';
+import { writeStockMediaManifest } from './stock-media-manifest';
 import { dirname, join } from 'node:path';
 import type { BgmItem, CoverMetadata, DiagnosticsReport, DraftTemplate, ImagePrompt, StoryboardScene, SubtitleTrack, TaskArtifactVideoPreview } from './types';
 import { buildSubtitleTrack } from './story';
@@ -173,6 +174,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     const runBridge = options.runBridge ?? (options.runSidecar ? undefined : runPyJianYingDraftBridge);
     if (runBridge) {
       const bridge = await runBridge(bridgePayload);
+      await writeStockMediaManifest(join(bridge.draftDir, 'stock-media-sources.json'), input.generatedVideos);
       updateDiagnostic(diagnostics, 'jianying-draft', 'pass', 'pyJianYingDraft generated draft_content.json and draft_meta_info.json.');
       await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
       return {
@@ -196,6 +198,7 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
     const sidecarDraftDir = sidecar.draft_dir ?? draftDirFromResult(sidecarPayload, title);
     const draftContentPath = join(sidecarDraftDir, 'draft_content.json');
     const draftMetaPath = join(sidecarDraftDir, 'draft_meta_info.json');
+    await writeStockMediaManifest(join(sidecarDraftDir, 'stock-media-sources.json'), input.generatedVideos);
     await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
     return {
       draftDir: sidecarDraftDir,
