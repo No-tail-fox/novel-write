@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, Film } from 'lucide-react';
 import { Button } from '../../ui';
-import { creativeStyleSample, LEMO_GALLERY_URL, LEMO_REPOSITORY_URL } from '../../shared/creative-animation/samples';
+import { creativeStyleSample, LEMO_GALLERY_URL, LEMO_LIBRARY_STYLE_COUNT, LEMO_REPOSITORY_URL, OPUSCAR98_PAGE_URL } from '../../shared/creative-animation/samples';
 import { creativeStylePoster } from '../../shared/creative-animation/posters';
-import type { CREATIVE_STYLES } from '../../shared/creative-animation/styles';
+import type { CreativeStyleEntry } from '../../shared/creative-animation/styles';
 
-type CreativeStyle = typeof CREATIVE_STYLES[number];
+type CreativeStyle = CreativeStyleEntry;
 export function CreativeStyleCover({ style, thumbnail = false }: { style: CreativeStyle; thumbnail?: boolean }) {
   const [failed, setFailed] = useState(false);
   const poster = creativeStylePoster(style.slug);
@@ -59,12 +59,15 @@ export function CreativeStyleFilm({ style, mode, automatic, onOpenUrl }: {
       {state === 'error' ? <div className="creative-style-media-error" role="alert"><p>样片加载失败，请重试或前往官方风格库观看。</p><Button onClick={() => { setState('idle'); setAttempt(value => value + 1); }}>重新加载样片</Button></div> : null}
     </div> : <p>此风格尚未接入样片，可在官方风格库查看。</p>}
     <div className="creative-style-film-copy">
-      <strong>{style.film} · {Math.round(style.dur)} 秒</strong>
+      <strong>{style.film} · {Math.round(style.dur)} 秒{style.family === 'opuscar98' ? ` · ${style.opuscar98?.render ?? ''}` : ''}</strong>
       <p>{style.line_cn}</p>
-      <p>{mode === 'template' ? '模板装配按风格生成素材，使用所选配色与现有兼容动效，官方样片供风格参考。' : '官方样片供风格参考，AI 将按你的文案重新编排画面与动画。'}</p>
+      {style.family === 'opuscar98' ? <p>OPUSCAR 98 轻量风格：上游只公开了风格提示词和该片段的导演编排，没有完整 STYLE.md。Lemo 创意动画会先选一个最接近的库风格作技术底座，写出本片自己的 STYLE.md，再按你的文案原创，不复用原片段的故事和角色。</p>
+        : <p>{mode === 'template' ? '模板装配按风格生成素材，使用所选配色与现有兼容动效，官方样片供风格参考。' : '官方样片供风格参考，AI 将按你的文案重新编排画面与动画。'}</p>}
       {style.adapter?.adaptationNote ? <p>{style.adapter.adaptationNote}</p> : null}
       <p className="creative-style-credit"><a href={LEMO_REPOSITORY_URL} onClick={event => { event.preventDefault(); open(LEMO_REPOSITORY_URL); }}>LemoLab</a> · 原片画面与封面 CC BY 4.0{sample?.voiceExcludedFromCc ? '；原片配音不在此许可内' : ''}。本地封面已缩放并转为 WebP。制作时不使用原片音轨。</p>
-      <Button variant="subtle" icon={<ExternalLink size={14} />} onClick={() => open(LEMO_GALLERY_URL)}>查看 Lemo 全部 59 种风格</Button>
+      {style.family === 'opuscar98'
+        ? <Button variant="subtle" icon={<ExternalLink size={14} />} onClick={() => open(OPUSCAR98_PAGE_URL)}>查看 OPUSCAR 98 全部 98 种风格</Button>
+        : <Button variant="subtle" icon={<ExternalLink size={14} />} onClick={() => open(LEMO_GALLERY_URL)}>查看 Lemo 全部 {LEMO_LIBRARY_STYLE_COUNT} 种风格</Button>}
       {actionError ? <p role="alert">{actionError}</p> : null}
     </div>
   </section>;

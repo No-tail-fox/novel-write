@@ -82,7 +82,7 @@ describe('workflow prompt application', () => {
   it('restores the provider and resolves visual material and motion rules at request time', () => {
     const before = creativeStyle('halftone-dossier')!;
     restore = setWorkflowPromptTemplateProvider(() => [custom('creative-image:halftone-dossier', 'image override', 'editorial-collage'), custom('creative-motion:halftone-dossier', 'motion override', 'editorial-collage')]);
-    expect(creativeStyle('halftone-dossier')!.adapter.direction).toBe('Material and composition: image override\nMotion grammar: motion override');
+    expect(creativeStyle('halftone-dossier')!.adapter!.direction).toBe('Material and composition: image override\nMotion grammar: motion override');
     restore(); restore = undefined;
     expect(creativeStyle('halftone-dossier')).toEqual(before);
   });

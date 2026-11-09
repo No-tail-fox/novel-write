@@ -15,7 +15,7 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_PROJECT_BYTES = 16 * 1024 * 1024;
 interface Turn { index: number; reply: string; observation: string; tool: string; modelRequestId: string | null }
 interface Journal { version: 1; contextHash: string; film: LemoUpstreamFilm; turns: Turn[] }
-export interface LemoAgentContext { runId: string; styleId: string; brief: string; durationSeconds: number; width: number; height: number }
+export interface LemoAgentContext { runId: string; styleId: string; brief: string; durationSeconds: number; width: number; height: number; styleReference?: string }
 export interface LemoAgentOptions {
   root: string; upstreamRoot: string; context: LemoAgentContext;
   model(request: LlmTextRequest): Promise<LlmTextResult>;
@@ -82,9 +82,15 @@ async function projectFiles(root: string) {
 }
 async function fingerprint(root: string) { return hash(JSON.stringify(await projectFiles(root))); }
 
+function styleInstruction(context: LemoAgentContext) {
+  if (!context.styleReference) return `Read DIRECTOR.md, TECHNIQUE.md and styles/${context.styleId}/STYLE.md using tools; inspect relevant demo source only to learn technique.`;
+  // OPUSCAR 98 light styles have a style prompt but no library STYLE.md: upstream MY-STYLES.md "Start from a blank page".
+  return `The user chose OPUSCAR 98 light style ${context.styleId}; it has a style prompt but no library STYLE.md. Read DIRECTOR.md, TECHNIQUE.md and MY-STYLES.md using tools, then follow MY-STYLES.md "Start from a blank page" without interviewing the user (the look is already chosen): pick ONE library style as the technique base (closest materials and engine; at most two to borrow moves from), read its styles/<base>/STYLE.md, and write the film's own STYLE.md in the project (invariants only, in the sections of a library STYLE.md, built from the style prompt below) before TREATMENT.md. Keep every later decision consistent with that STYLE.md. Inspect demo source only to learn technique.
+${context.styleReference}`;
+}
 function systemPrompt(context: LemoAgentContext) {
   return `You are the film director and native HTML/ESM author inside StoryDream, using the unmodified Lemo library (${LEMO_UPSTREAM_REVISION}).
-Create an ORIGINAL film for the user, not a copy of a demo story. Read DIRECTOR.md, TECHNIQUE.md and styles/${context.styleId}/STYLE.md using tools; inspect relevant demo source only to learn technique.
+Create an ORIGINAL film for the user, not a copy of a demo story. ${styleInstruction(context)}
 Work in separate HTML/JS/CSS modules of your own design. No fixed scene factories, no whole-film JSON. You may write outline.md first. Create index.html as the entry. Expose window.READY=true only after assets load, window.DUR=${context.durationSeconds}, and deterministic window.render(t). Use exact ${context.width}x${context.height} viewport and fit the camera to it.
 ESM import maps may map three to /node_modules/three/build/three.module.js and three/addons/ to /node_modules/three/examples/jsm/. Read-only /core/ and /styles/ paths are served. Your files are under /@film/. There is NO network, shell, npm install or Node access. Do not request external URLs or missing fonts; local system fonts are available. Do not alter library files or copy entire demos. Use substantive scene construction, lighting, composition, transitions and appropriate scale. Avoid repetitive title-card slides.
 The host owns narration, ordinary subtitles and final mixing. Do not synthesize speech, play audio or render ordinary subtitles inside your film; in-scene labels are allowed. Respect approved narration and timing supplied below.

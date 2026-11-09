@@ -3,7 +3,7 @@ import { buildLemoProjectNodes } from './lemo-production-graph';
 import { LEMO_NATIVE_ENGINE } from './creative-animation/native-film';
 import { z } from 'zod';
 import type { EditorialCollagePipelineData, EditorialCollageShot } from './editorial-collage';
-import { resolveCreativeStyle } from './creative-animation/styles';
+import { creativeStyleSupportsMode, resolveCreativeStyle } from './creative-animation/styles';
 import { isDefinitiveImageProviderFailure } from './image-provider-error';
 import { isDefinitiveLlmProviderRejection } from './llm-provider-error';
 
@@ -103,7 +103,7 @@ export function voxProductionNeedsTextModel(nodes: readonly VoxProductionNode[])
 }
 export function voxProductionInputErrors(document: EditorialCollagePipelineData, settings: VoxProductionSettings): string[] {
   const errors: string[] = [];
-  if (settings.authoring && !resolveCreativeStyle(settings.authoring.styleId, settings.presetId)?.adapter) errors.push('未找到所选风格，请重新选择。');
+  if (settings.authoring && !creativeStyleSupportsMode(resolveCreativeStyle(settings.authoring.styleId, settings.presetId), settings.authoring.mode === 'template' ? 'template' : 'ai-code')) errors.push(settings.authoring.mode === 'template' ? '所选风格不支持模板动画，请选择已适配风格或改用 Lemo 创意动画。' : '未找到所选风格，请重新选择。');
   if (!document.sourceText?.trim() || !document.beats.some(beat => beat.shots.length)) errors.push('请先填写文案并创建分镜。');
   if (settings.presetId === 'data-map' && settings.data.length < 2) errors.push('请补充至少两条有来源的真实数据；也可以切换纸拼贴讲解。');
   if (settings.presetId === 'data-map' && settings.data.length > 12 && !settings.data.every(row => row.lat !== undefined && row.lng !== undefined)) errors.push('柱状图最多支持 12 条数据；请减少数据或填写完整地点坐标。');

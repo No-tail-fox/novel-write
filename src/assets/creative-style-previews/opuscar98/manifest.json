@@ -1,0 +1,1577 @@
+{
+  "revision": "f17136060781a0068a7951245a3aa7835a7230de",
+  "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+  "creator": "LemoLab",
+  "license": "CC-BY-4.0",
+  "changes": "Resized to fit 480 x 200 and converted from JPEG to WebP; no cropping.",
+  "entries": [
+    {
+      "slug": "o98-01",
+      "file": "01.webp",
+      "source": "styleboard/img/opuscar98/01.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "90d82d5107abf5bb0eab25eb05e6c2c0dd10166c0883993dcc975d5a244d4b98",
+      "previewSha256": "22629d216b5f8e88e637232c5dd30c117c0379d8db7e5591239813e82f86faae",
+      "previewBytes": 11438
+    },
+    {
+      "slug": "o98-02",
+      "file": "02.webp",
+      "source": "styleboard/img/opuscar98/02.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "fd4f67a428cf0bf8d30197611c1515a8548954fb9e096e7ad550f58c11531b83",
+      "previewSha256": "a8fff434beb94974a968ff2d386554d3e9904246d14d25e7d468b37943eada83",
+      "previewBytes": 24290
+    },
+    {
+      "slug": "o98-03",
+      "file": "03.webp",
+      "source": "styleboard/img/opuscar98/03.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "573e2e5c445cb6b55e7693604af3ba4f4edd814ef5cada1d77bc0d7ea83c537f",
+      "previewSha256": "2cc4248743dd504f7ccb4bc894ea52ea3be819ce7c9480ca5111d83646cf57e7",
+      "previewBytes": 14830
+    },
+    {
+      "slug": "o98-04",
+      "file": "04.webp",
+      "source": "styleboard/img/opuscar98/04.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "d78847fdb114dec3adcbad7c2e414c21817a8a585536f69f758b1fdbf81dcc43",
+      "previewSha256": "a9bf7b26f2b9e136151a285c708bd9b4e3233010d899568a83261a188ff6fe9c",
+      "previewBytes": 11902
+    },
+    {
+      "slug": "o98-05",
+      "file": "05.webp",
+      "source": "styleboard/img/opuscar98/05.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "b502386a913fe43d4a6158cfca5ff2f64c246fc9962028ac6ff346f5f8671993",
+      "previewSha256": "9abfbde8caef8d324f571fc4e09eb74c4de442f9688d21286eb77c135ec5020a",
+      "previewBytes": 14066
+    },
+    {
+      "slug": "o98-06",
+      "file": "06.webp",
+      "source": "styleboard/img/opuscar98/06.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "d42f10d37de744ab5a6b692252e062e4b75f374c68cd87e03f01852b1100c516",
+      "previewSha256": "a7fcd82c416a34513a1d570332d27d23382b7e9b320aeabc097ebbfb1a1b753d",
+      "previewBytes": 21588
+    },
+    {
+      "slug": "o98-07",
+      "file": "07.webp",
+      "source": "styleboard/img/opuscar98/07.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "e98662b48c506457d3b4bd7270885c364899dafcfffed4f1f4a00a54f6631f3b",
+      "previewSha256": "2b232de297cc08d17669492f5ddaa5214e96f7c50a1fc451e1785e0ca0b7f711",
+      "previewBytes": 15506
+    },
+    {
+      "slug": "o98-08",
+      "file": "08.webp",
+      "source": "styleboard/img/opuscar98/08.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "ac1a3fbc2389d6208147f12b83c0136fb5ab38c172428db0fea148710984de43",
+      "previewSha256": "46a99c73450f9780b9025b468c255674cc10f384bbf05d06a1581ef39533840f",
+      "previewBytes": 17718
+    },
+    {
+      "slug": "o98-09",
+      "file": "09.webp",
+      "source": "styleboard/img/opuscar98/09.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "c08b751b290e556ef3b13a63fae3bb767c8ae1367a46c90a1465cd639a5f344f",
+      "previewSha256": "244abc88c67a45b8c17f0f684020d78c494af2ef420f622feb7a4b45427f1410",
+      "previewBytes": 17468
+    },
+    {
+      "slug": "o98-10",
+      "file": "10.webp",
+      "source": "styleboard/img/opuscar98/10.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "12063897b2cf373c8570fef256c3b9cb35d31accac40a1b1c2b3fd9d40b412c4",
+      "previewSha256": "1627c1272dd4402223f893a6f8b1ca3fe13bb9d7242fa00d68bcc4a23a450cb6",
+      "previewBytes": 24522
+    },
+    {
+      "slug": "o98-11",
+      "file": "11.webp",
+      "source": "styleboard/img/opuscar98/11.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "d21150b8d8a983d6a597a80e879a7d2a9cf34549c7dd1aa5787119fa83efde4c",
+      "previewSha256": "3f9bd9bc8d30b94c5095b63a3ab58009535f2ef3ca8f4ce91866c311e0383371",
+      "previewBytes": 22642
+    },
+    {
+      "slug": "o98-12",
+      "file": "12.webp",
+      "source": "styleboard/img/opuscar98/12.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "4f2bc4f58cceed5bdd41a13225d091ecb4547ab3713e81de6b88f0ab98b5bdec",
+      "previewSha256": "d6380f6b26f11941933f1fa59674d9b0d9a5ad2085e29400d7508af6d67bd4e0",
+      "previewBytes": 15216
+    },
+    {
+      "slug": "o98-13",
+      "file": "13.webp",
+      "source": "styleboard/img/opuscar98/13.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "2929969b365faeb4053100535d69adc5b260bda6ed699c8039b37adcd2651f4a",
+      "previewSha256": "6c0cf0400b42c5b32d5c8bf8da21d15c8cf497677e51339740f8e30747005d6c",
+      "previewBytes": 19078
+    },
+    {
+      "slug": "o98-14",
+      "file": "14.webp",
+      "source": "styleboard/img/opuscar98/14.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "29cba2c1211c2b152375ad16a2a2dfe29fbbdbbbeb0ba76d5307fd87a0775258",
+      "previewSha256": "03f583cc679121d38263459ad5cbab7545108d23ed1834bcd47de47926a65609",
+      "previewBytes": 19334
+    },
+    {
+      "slug": "o98-15",
+      "file": "15.webp",
+      "source": "styleboard/img/opuscar98/15.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "74ba115c1c138f832be024e5b08bab64558a3d4bcf4e1226a0855ad32c040e7e",
+      "previewSha256": "b44204a68163b2b738855bc363e6a38bb399aa4ac86bdd17a4184c4df49f42ce",
+      "previewBytes": 22076
+    },
+    {
+      "slug": "o98-16",
+      "file": "16.webp",
+      "source": "styleboard/img/opuscar98/16.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "b05d7701af3865ac15cef6f4d175ae7257291df30de10e33ae8477cec7c976a7",
+      "previewSha256": "80cd4da4f9e0c2b6796fc311526a6dbb595c3cec2a9170584b405d5f3cbaca4a",
+      "previewBytes": 6484
+    },
+    {
+      "slug": "o98-17",
+      "file": "17.webp",
+      "source": "styleboard/img/opuscar98/17.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8b39f2fb74d5522227f85e67e12ee7ba54640ca08f2765ff645e0b1793792068",
+      "previewSha256": "5d31c4115bec618f07f793bbbc3a27a35d7cc0b9d02541bc1e2b4ff158018984",
+      "previewBytes": 17524
+    },
+    {
+      "slug": "o98-18",
+      "file": "18.webp",
+      "source": "styleboard/img/opuscar98/18.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "5887153b26cc90fbd065008f438fe4b334795dedcbb4027a345e22f3cfa1d41c",
+      "previewSha256": "7bdb7f18309f74f014fcb9c3ca39a2a4a1c1bec1a58292ed73fe1b92256c5377",
+      "previewBytes": 32058
+    },
+    {
+      "slug": "o98-19",
+      "file": "19.webp",
+      "source": "styleboard/img/opuscar98/19.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "840254ed47b3c6bf51d6b0d704aa1df0f16c8e9b1f1e060fb3c6d03ef315e9c4",
+      "previewSha256": "6443a20f6c89d26e63876e1fee785e7339bd7a273b92f8d69a4adaabd6100d75",
+      "previewBytes": 22432
+    },
+    {
+      "slug": "o98-20",
+      "file": "20.webp",
+      "source": "styleboard/img/opuscar98/20.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "687437f67a2ab30606ddb2c1c497287e6d96a613b0ece241740686a9fbfac27c",
+      "previewSha256": "d20695fdeab024e447fbccf0aabbd4079283953bf3487ca5dc62dec981d474fb",
+      "previewBytes": 12336
+    },
+    {
+      "slug": "o98-21",
+      "file": "21.webp",
+      "source": "styleboard/img/opuscar98/21.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "fdd0ec7ca25f349e647ecf66d179dc9bf715043656231ffae341f381b193cb68",
+      "previewSha256": "9193a9cf7696752a305262db42689ea0a6833b38504cd3d0e4cdf6493fe81be8",
+      "previewBytes": 6352
+    },
+    {
+      "slug": "o98-22",
+      "file": "22.webp",
+      "source": "styleboard/img/opuscar98/22.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "9ae7ec0fb924f22864f422565f0bad416b90b36c0e14378d336227290ef51620",
+      "previewSha256": "841714f21d2033a0fb17b9a3c1ffeaa95b1c80e4860f2f60efd93db4100b97fc",
+      "previewBytes": 44206
+    },
+    {
+      "slug": "o98-23",
+      "file": "23.webp",
+      "source": "styleboard/img/opuscar98/23.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8beb94b88c476eeaa436b5f97ff633af7e64c5bcedc0eda5d8de2029c07bcbce",
+      "previewSha256": "bb0576a9e332a3d0f6d436fae7e5213033172e2fd22590f87ba6a3bb7ea2ec4d",
+      "previewBytes": 17264
+    },
+    {
+      "slug": "o98-24",
+      "file": "24.webp",
+      "source": "styleboard/img/opuscar98/24.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "4114e6776f8849423c5bd524bc780a082b5c7224c0cea3abdd1c9dfb39c5a890",
+      "previewSha256": "2831b24c83ea6b460236554920a254fa9f5fe1dd613f99300b309f6fe6594143",
+      "previewBytes": 19558
+    },
+    {
+      "slug": "o98-25",
+      "file": "25.webp",
+      "source": "styleboard/img/opuscar98/25.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "0ce4e6e516e82446b637ae1ba90b753d651bc99060bee50f05cc83bdbff3ddad",
+      "previewSha256": "66bb4d1ee3c7a7a71f04f54dd426e8f4956375fe8e5cd22e80f37917be403147",
+      "previewBytes": 27232
+    },
+    {
+      "slug": "o98-26",
+      "file": "26.webp",
+      "source": "styleboard/img/opuscar98/26.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "97588e3f883eca639c368bdeb7b9243ac694bc87cfd14fb4c991c2ae7ef499a7",
+      "previewSha256": "caf61b9562980ef03a594e9cea3ffcf9ed253f5d2858606278ddc753a691807d",
+      "previewBytes": 14284
+    },
+    {
+      "slug": "o98-27",
+      "file": "27.webp",
+      "source": "styleboard/img/opuscar98/27.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "d380d2e3a4331bb2c7f93afc2e2f19080ee0f98d5954f03898466793fe6ddd3a",
+      "previewSha256": "707dfaa0eea31589740b0bd1bcb9e849efec61bd3e308ac60810789822952290",
+      "previewBytes": 15074
+    },
+    {
+      "slug": "o98-28",
+      "file": "28.webp",
+      "source": "styleboard/img/opuscar98/28.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "3e2cd27f160680b571db14d6f92182cca28925833dcad1c0f05c29831483f8d7",
+      "previewSha256": "bbd68ab772b132e27278cc198c12e7f9508c2f616bbf5233a5eed11b69597926",
+      "previewBytes": 12662
+    },
+    {
+      "slug": "o98-29",
+      "file": "29.webp",
+      "source": "styleboard/img/opuscar98/29.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "f0343a177ed594f8005b66b66d181d2ef0c08d5f3ad2cd35fc2a17412fe76ab0",
+      "previewSha256": "fafa68229a7ddceba1bc0bf8e0871a051a6ea1d945874c682dd9eb3353042ab1",
+      "previewBytes": 17346
+    },
+    {
+      "slug": "o98-30",
+      "file": "30.webp",
+      "source": "styleboard/img/opuscar98/30.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "4eee108d11cb3bc3abba50f608c248d9b861e5ab3eea8d0f96be83a68d618b32",
+      "previewSha256": "6885003c221c878146a0b14bbb25d1563b240261fabb5da0957bcc8e21811fd7",
+      "previewBytes": 22996
+    },
+    {
+      "slug": "o98-31",
+      "file": "31.webp",
+      "source": "styleboard/img/opuscar98/31.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "9a4ee933ae3b2e102a337080745774b1b13a4160cb5fb3bea6a7985b6da6507e",
+      "previewSha256": "84b1d2bbb1ecd8b1537dfe63e667b8956ed522f33048e0c01b5cbaac22f8ab73",
+      "previewBytes": 19308
+    },
+    {
+      "slug": "o98-32",
+      "file": "32.webp",
+      "source": "styleboard/img/opuscar98/32.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "d588942f5ed892bb9bffa115ac6162da8375f2be85e3adb414a6f0724d230583",
+      "previewSha256": "3c40be6f0b6ca68a2975e3a85f297ff471f69789bb8de9e9f81ef3f502e8068c",
+      "previewBytes": 15818
+    },
+    {
+      "slug": "o98-33",
+      "file": "33.webp",
+      "source": "styleboard/img/opuscar98/33.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "59a8d44dbb52f72e605b5cfaa2efa4ab7d5a1d5d1941d8715cdacca94d13eb4a",
+      "previewSha256": "1c2760dfc546ae0913475ab37b79d3f3f8f13485fb5f157b6f374bcf1798e9d9",
+      "previewBytes": 13584
+    },
+    {
+      "slug": "o98-34",
+      "file": "34.webp",
+      "source": "styleboard/img/opuscar98/34.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8a3b2cae578848b2695c6331761dc22d8c33f771efc6dc0def6b8e2358149fe1",
+      "previewSha256": "288412714c346e39891a435c3c23ebb48901e6b6b818d3bdea42b59d9eae4113",
+      "previewBytes": 15260
+    },
+    {
+      "slug": "o98-35",
+      "file": "35.webp",
+      "source": "styleboard/img/opuscar98/35.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "e6efab06e005595084c693dc355152c5357c39e49375db7fdde637833ba70323",
+      "previewSha256": "85826eab2cf80c372f43c3fd4047459c4af3da680d6c12956e56733c6e51ad15",
+      "previewBytes": 16392
+    },
+    {
+      "slug": "o98-36",
+      "file": "36.webp",
+      "source": "styleboard/img/opuscar98/36.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "43444406babd31e992281b8a95c2b80488fe556503b7b3433e1e58813e698398",
+      "previewSha256": "bfd811c4d0884cd033de013ecb15429bdd8e95d6f66f4a1b6b85d9dd403a635e",
+      "previewBytes": 22054
+    },
+    {
+      "slug": "o98-37",
+      "file": "37.webp",
+      "source": "styleboard/img/opuscar98/37.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "dc0e38b6f28e35596e4ac2c35f37167e5c2d568a22e8bf271845b0cce3c98431",
+      "previewSha256": "600d628181b0b4e4b3d3e7142423b0c4667eca7d8e76a57788443bbaa3033440",
+      "previewBytes": 21240
+    },
+    {
+      "slug": "o98-38",
+      "file": "38.webp",
+      "source": "styleboard/img/opuscar98/38.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "f84f488b4b32788f7a7d6233a1956594552b6830f39215b781a80ddc4e3bc1f1",
+      "previewSha256": "a8f5863684eb510076b10351883ba29e137e84d4762be585a217867fb31f112d",
+      "previewBytes": 14682
+    },
+    {
+      "slug": "o98-39",
+      "file": "39.webp",
+      "source": "styleboard/img/opuscar98/39.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8dc79d638094d398b35267fb928efca14c75148d702ad7efcd68aed516c0937d",
+      "previewSha256": "43612cacac8448f33cac0849db6f5abb4d0e89933b91a6aca3f01bf9799b4a81",
+      "previewBytes": 9774
+    },
+    {
+      "slug": "o98-40",
+      "file": "40.webp",
+      "source": "styleboard/img/opuscar98/40.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "16cb9cd830f16ff9bcdb576abe24cde469d42999157aa76da918bd1c920ed0f6",
+      "previewSha256": "a717ea9fb85743d198d3ff38883b0b00746dac5afc16f05dc82faa79b5f9d119",
+      "previewBytes": 24612
+    },
+    {
+      "slug": "o98-41",
+      "file": "41.webp",
+      "source": "styleboard/img/opuscar98/41.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "939a523b6ced515686b1c8a358e726ad2f846fc7489bb49166aac72e8a5e5d43",
+      "previewSha256": "6b7b741cd0832e59031c81276525834e956c1a67cd0216c61f221b215f08b7eb",
+      "previewBytes": 17036
+    },
+    {
+      "slug": "o98-42",
+      "file": "42.webp",
+      "source": "styleboard/img/opuscar98/42.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "c8aa286a277f85116882d30244d390fe2b8cd11b7958e4c919792ec736266989",
+      "previewSha256": "804bfba9429e42ee92ad2e84e46c3279e644facf6774ad2670756a22d82ee068",
+      "previewBytes": 12240
+    },
+    {
+      "slug": "o98-43",
+      "file": "43.webp",
+      "source": "styleboard/img/opuscar98/43.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "42dd182bbe211bf8727ef4d035103de34f3abab2c9039791c7199d790908997e",
+      "previewSha256": "48f8fb34d60dd0d8623513bb94fed3c373186558e95dd54c6565327a9edcb8aa",
+      "previewBytes": 19334
+    },
+    {
+      "slug": "o98-44",
+      "file": "44.webp",
+      "source": "styleboard/img/opuscar98/44.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "2b1089bf4ae078531423bbc7615fc45f3d3733376d35d13fb886eee039ec372f",
+      "previewSha256": "aab96ea62a72760cb12db6beacb3d71521886d4339b9cb70acbc339a729c7c5d",
+      "previewBytes": 14888
+    },
+    {
+      "slug": "o98-45",
+      "file": "45.webp",
+      "source": "styleboard/img/opuscar98/45.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "fa65bb9c7b24fdedd3fef2194ae274b29153e7ea21ec8bea09db2067f6aefdbd",
+      "previewSha256": "fe283e254db67f345e1e9e04becef6453a6209daa2e7242b950ed00626886592",
+      "previewBytes": 7430
+    },
+    {
+      "slug": "o98-46",
+      "file": "46.webp",
+      "source": "styleboard/img/opuscar98/46.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8417185a8c7d30bfbfe4b3cdb1e90a49dda5230646af67023da796121a51f3c6",
+      "previewSha256": "52a5f17f35219a8ff766fd077e7e1524bcb1ecab3703aabe2fe5f6dd266137da",
+      "previewBytes": 15220
+    },
+    {
+      "slug": "o98-47",
+      "file": "47.webp",
+      "source": "styleboard/img/opuscar98/47.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "56daea46bb8e23538371f01aa8dac5adb1583308abe3b65376aec6e50184966e",
+      "previewSha256": "1d10444d285ae40f27de3af98011b9d7879a0b32070808796a477a4d501f31da",
+      "previewBytes": 7696
+    },
+    {
+      "slug": "o98-48",
+      "file": "48.webp",
+      "source": "styleboard/img/opuscar98/48.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "a37025a67b20e145f5993e2cac8a6fba6ac1cba0c0550e2ba420927b5f818b1c",
+      "previewSha256": "b40e2f0d9f2ee43945537f718081760229559d2ac8ae32aa967ecb20bfd58248",
+      "previewBytes": 9960
+    },
+    {
+      "slug": "o98-49",
+      "file": "49.webp",
+      "source": "styleboard/img/opuscar98/49.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "e7591e0460864744b57230df102df9e3db072520a9f69457a540ea3dcbd91f05",
+      "previewSha256": "26a0dc7bf402e107f15aeb61c032bc9c77b0dc228b15a1f034f4752b38e06a45",
+      "previewBytes": 12264
+    },
+    {
+      "slug": "o98-50",
+      "file": "50.webp",
+      "source": "styleboard/img/opuscar98/50.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8c3b63a70f6519eef98ba69a16a80c4f2a1c21fdfbb1b6e9c9630967a0bacb5d",
+      "previewSha256": "b1760f264b785db9793fd7c9e07a9a3ad6c4912516250a2df81170ea804f42c3",
+      "previewBytes": 13074
+    },
+    {
+      "slug": "o98-51",
+      "file": "51.webp",
+      "source": "styleboard/img/opuscar98/51.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "cb4079b7168b780f5c178e7106c76af66fd1bebf370cdf1229d87b260a6ed840",
+      "previewSha256": "ccf521b65d2849a38e9f41b2eac7cb9c12592fe828fb7754a6f35fb3d27d63d5",
+      "previewBytes": 10702
+    },
+    {
+      "slug": "o98-52",
+      "file": "52.webp",
+      "source": "styleboard/img/opuscar98/52.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "216a010fe99404fa059f2a2226ac7cb79bca7253203ae62265c3c249b37d67a7",
+      "previewSha256": "7e7e4ea23ed75b5de73b59ba4835cc0a6819b43beea692daed34cbe972fa024b",
+      "previewBytes": 37556
+    },
+    {
+      "slug": "o98-53",
+      "file": "53.webp",
+      "source": "styleboard/img/opuscar98/53.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "9b45d9fd56df434368a7a1840fa2c15f7251ec3c4a18ba646f435ef753e9bb5c",
+      "previewSha256": "1e2c44a4c51fce4937326edc34e6a82259ac07266ce4949aa9643e78ff59a1a9",
+      "previewBytes": 14016
+    },
+    {
+      "slug": "o98-54",
+      "file": "54.webp",
+      "source": "styleboard/img/opuscar98/54.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "dcf351993fe8a9c353992f7462858adb948466ddfc0c5a71a47b517ee744dc99",
+      "previewSha256": "0176649633146e0520b6f70ee69af45f8710a5340e0f16809d37ed84733130a9",
+      "previewBytes": 31646
+    },
+    {
+      "slug": "o98-55",
+      "file": "55.webp",
+      "source": "styleboard/img/opuscar98/55.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "7b514bea3d57aba4fb42c528dabf24c62406c683c2117e5e47cdc07bd17ec56a",
+      "previewSha256": "7a6107560af4e0aac35a8ec6695296b3a2ac188410fa3ba23f428cc4d85a67b5",
+      "previewBytes": 23490
+    },
+    {
+      "slug": "o98-56",
+      "file": "56.webp",
+      "source": "styleboard/img/opuscar98/56.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "d281883627fcbaeb784c8c2e0d97f5df49745fcf7e56a64e55f1a8fe79469afe",
+      "previewSha256": "66c9dc16fd4c247a62c57e7a5ed63cf1e382a0c0e93272b800e30025ea195bb7",
+      "previewBytes": 8138
+    },
+    {
+      "slug": "o98-57",
+      "file": "57.webp",
+      "source": "styleboard/img/opuscar98/57.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "fee26d995caf18cd4f0f6956bea596ee8a8704b2dd5ed957f68ce86fabd46603",
+      "previewSha256": "f707d2d4ce8c0eb205f72fbe88602dab10fa42191ea575150e9cbb82104e1c3f",
+      "previewBytes": 13572
+    },
+    {
+      "slug": "o98-58",
+      "file": "58.webp",
+      "source": "styleboard/img/opuscar98/58.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "116ed8711c5cfa84c4c207afc25481955189e30ed3ffd6e9fbc22464aacac96f",
+      "previewSha256": "9614aa2c82279929c20521ef8873bbd3d6d2dfd76e2ac680dcd2ba6b1b000658",
+      "previewBytes": 9326
+    },
+    {
+      "slug": "o98-59",
+      "file": "59.webp",
+      "source": "styleboard/img/opuscar98/59.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "7d0bd4124b751dfdc186b46da715ae8f7c8a7643cb475699c73cc658bcfed928",
+      "previewSha256": "bf659afa072d6a8ffc5fcf2f2d79419842a6102e0ed68c99fb37ef1da408ee4c",
+      "previewBytes": 15660
+    },
+    {
+      "slug": "o98-60",
+      "file": "60.webp",
+      "source": "styleboard/img/opuscar98/60.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "f5035fa3bc9b096c595f82239d9ffb51b6d7b950b67a875d86d76c7f3f8d4ec0",
+      "previewSha256": "6a29e84ee407a7e1f848d209f7eae906c24c99044dd2b1e7fbd74d39b9d3650b",
+      "previewBytes": 12544
+    },
+    {
+      "slug": "o98-61",
+      "file": "61.webp",
+      "source": "styleboard/img/opuscar98/61.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "070c4f824cfa2d7ce206f6f94336def6fcba0ab7d9228caf098fc75db83addd7",
+      "previewSha256": "28d7999be35105474c1e57388ee70502b34c2fb1ad70fd6228e21bc24a09f02e",
+      "previewBytes": 14420
+    },
+    {
+      "slug": "o98-62",
+      "file": "62.webp",
+      "source": "styleboard/img/opuscar98/62.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "648eb5ed1e047f8937a31ad225c6c2e16b0a25f0e28b22aef9198e521a3360a7",
+      "previewSha256": "78b94aa19beaaab3342738a9c9fe3b4bc46cab21ced7dc31f6078134a522b197",
+      "previewBytes": 15864
+    },
+    {
+      "slug": "o98-63",
+      "file": "63.webp",
+      "source": "styleboard/img/opuscar98/63.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8d070e02e05fd6436e6df4e26b732f9d7399378b148908a10818f211f6040f3d",
+      "previewSha256": "6c2a22985ba07eddc49dcaebfb6cbd6632a57aed6ce9353b6879eac78102965c",
+      "previewBytes": 11766
+    },
+    {
+      "slug": "o98-64",
+      "file": "64.webp",
+      "source": "styleboard/img/opuscar98/64.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "5c0fa815d778f24acb63b7dea7df7d36220c0b3a21a8582769e480021c53d944",
+      "previewSha256": "b06a6a083d74dba0f3cddea6e4033073d9b3d56f20ec1656f01d31951f58ae9e",
+      "previewBytes": 12822
+    },
+    {
+      "slug": "o98-65",
+      "file": "65.webp",
+      "source": "styleboard/img/opuscar98/65.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "62527cd1caf1e14f0ed2dabb3e2ef0883e2e4e60a842a94e7c7588fb2efe168e",
+      "previewSha256": "807007214eb68ba4a035c16ea0145567976727482b892a98ab156f173cb2558a",
+      "previewBytes": 13026
+    },
+    {
+      "slug": "o98-66",
+      "file": "66.webp",
+      "source": "styleboard/img/opuscar98/66.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "20888bb10146936c080e8772a36e7ab289b3f7ed818044ff88e62d85b7899bb6",
+      "previewSha256": "e5b4af28a0906ea864be00d61689dcaa18a9f4533d4f0b61184b904cace4e373",
+      "previewBytes": 20930
+    },
+    {
+      "slug": "o98-67",
+      "file": "67.webp",
+      "source": "styleboard/img/opuscar98/67.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "3568ca13bcfe07887a5c25c36d80efd93529483e0e3ef0bd850daa09cd64ed65",
+      "previewSha256": "dbda87fc2ce247a903e2a1d74b4245592afa15e5cdb30281badd52649b78a9af",
+      "previewBytes": 8448
+    },
+    {
+      "slug": "o98-68",
+      "file": "68.webp",
+      "source": "styleboard/img/opuscar98/68.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "aaedd8831c114652b6cf191b92c9a6b4899cae26f0b355adf0d6fb3f122f8045",
+      "previewSha256": "e5b71987517fb38a3d2a5ae9ce6cfce3e5a56b0ef3e9cbe54a6d89fab9bb13ff",
+      "previewBytes": 25258
+    },
+    {
+      "slug": "o98-69",
+      "file": "69.webp",
+      "source": "styleboard/img/opuscar98/69.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "82e3ebcb226a7adc3ab2c26ac5796aa1310ddf16e8db30a368130b46f815dbc2",
+      "previewSha256": "a96ce051dd36813b71e9dff6be96b5514539326464f4884927ddf82633a1872f",
+      "previewBytes": 15650
+    },
+    {
+      "slug": "o98-70",
+      "file": "70.webp",
+      "source": "styleboard/img/opuscar98/70.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "3c5461f9140782d0fdcdf30021e24756118844cc1103295dddca66bbfbd7ca0e",
+      "previewSha256": "e460005fdb2ea65451d9ac54d6d4d7fd3be49274f761cc05edb48406906d1c1d",
+      "previewBytes": 18024
+    },
+    {
+      "slug": "o98-71",
+      "file": "71.webp",
+      "source": "styleboard/img/opuscar98/71.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "770eb9749cef425582264ec53c5eee841fdcbca80f313df16c77a04d6df41133",
+      "previewSha256": "c87393340f4b2af0bf6e0171b52d4e667ae5e1087528bd5b09ce7eead3618f30",
+      "previewBytes": 12554
+    },
+    {
+      "slug": "o98-72",
+      "file": "72.webp",
+      "source": "styleboard/img/opuscar98/72.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "2e27088ee1851c27089ff152a77f871336f29c834d296d24fa511c7787d4ef99",
+      "previewSha256": "c13f3d6acc517d1b2f54b9ef52f66920ae8e1580a9dd4b37e2c39b5af724180d",
+      "previewBytes": 18404
+    },
+    {
+      "slug": "o98-73",
+      "file": "73.webp",
+      "source": "styleboard/img/opuscar98/73.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "dbeb9ca37ed2519e3dde2f0ae07307f414b7720ffd16a7475c56c34d210b5973",
+      "previewSha256": "6cbb5ea34b2c6e583061e817391a075a80d9a773b35a37c06d04a8597b7fd65c",
+      "previewBytes": 26242
+    },
+    {
+      "slug": "o98-74",
+      "file": "74.webp",
+      "source": "styleboard/img/opuscar98/74.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "fdb637731b2becc73e82dd625e9d99b1aff4f01a4b1de40e607cc56528086bbf",
+      "previewSha256": "19cf162906a177d2e45ea2c3399aa11f68a87e0d89d35753ccd10c17431baafc",
+      "previewBytes": 10126
+    },
+    {
+      "slug": "o98-75",
+      "file": "75.webp",
+      "source": "styleboard/img/opuscar98/75.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8a4bd7c238d23049b5321235daf9aaed2d82873b0cca61032328aa094375f0b0",
+      "previewSha256": "da269234a5285ba4fbfb9e4c2703652b5fef23f3ff785facb0b4d56cc5ff4a82",
+      "previewBytes": 15368
+    },
+    {
+      "slug": "o98-76",
+      "file": "76.webp",
+      "source": "styleboard/img/opuscar98/76.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "4077420a302beae941085d9c006f9d256b4d14e5b5990f5f2d178d8f0b3272dd",
+      "previewSha256": "0644c9661c95cbe1c01b9cd8d68d7598d8339c4a5b304758c7ef72a40068bdc6",
+      "previewBytes": 10404
+    },
+    {
+      "slug": "o98-77",
+      "file": "77.webp",
+      "source": "styleboard/img/opuscar98/77.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "8f41bacf5cc7c0d9a18896331a4885fa83d1d35100905e7cf8bdd89e524de336",
+      "previewSha256": "0de198df649c9acaf8eb949e1310416876c07bf5329d48fad77aef537c143c7e",
+      "previewBytes": 10206
+    },
+    {
+      "slug": "o98-78",
+      "file": "78.webp",
+      "source": "styleboard/img/opuscar98/78.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "4429a58d1037da5015362f7c06a3ee3424498ffec9228cdcf8bf6ad75ed501f5",
+      "previewSha256": "e807cc14790161a0a4eb9e18c077b482bca7f6313bef4412c2e03e0e78754a63",
+      "previewBytes": 16836
+    },
+    {
+      "slug": "o98-79",
+      "file": "79.webp",
+      "source": "styleboard/img/opuscar98/79.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "49a89adadc9ff581b837701cb76655be335cfcaa8b7b021c0ff8f936966bd477",
+      "previewSha256": "4c436165ae1c8c78e2034358a3755fd625dcc2ade3063b1e3b906db6675001ac",
+      "previewBytes": 16708
+    },
+    {
+      "slug": "o98-80",
+      "file": "80.webp",
+      "source": "styleboard/img/opuscar98/80.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "a313a546f3af969a155fa572c0a2cd1e706e5d4440b90b026b79d407b50249fa",
+      "previewSha256": "8d6dd3f7b7a92159973018d847c6ae1d49adbd34bbc53598d9c323de2d63e189",
+      "previewBytes": 6462
+    },
+    {
+      "slug": "o98-81",
+      "file": "81.webp",
+      "source": "styleboard/img/opuscar98/81.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "9e4808b13d6b10c36659beabe452e7227b91ab585b4f4a4e4d96c2c4dbda5b60",
+      "previewSha256": "775d1e1b6c47dd0c99ebe1d8701c7b224c641ad865ff4f16068e74c228e507a4",
+      "previewBytes": 18092
+    },
+    {
+      "slug": "o98-82",
+      "file": "82.webp",
+      "source": "styleboard/img/opuscar98/82.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "ca02e10d76525cf457911f698b6ecc4db62bdc56f2cf40b97829206778cd6af1",
+      "previewSha256": "420729cdec3330bf63c7848ca5126b8da4946e19e6372146b08e37eec8fbe5ab",
+      "previewBytes": 21832
+    },
+    {
+      "slug": "o98-83",
+      "file": "83.webp",
+      "source": "styleboard/img/opuscar98/83.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "6869328e9a60eac4521d5a70e11867653ad1ad2faf45895bc577994005271061",
+      "previewSha256": "31ddddf55b847cf9042df54a17819875ac07f2e1211e8c9b0e756f57ff049903",
+      "previewBytes": 12814
+    },
+    {
+      "slug": "o98-84",
+      "file": "84.webp",
+      "source": "styleboard/img/opuscar98/84.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "f708027e57134ad63f76b62994a3fee6dda9f60e7bdcd8346d7226e9a572b0ff",
+      "previewSha256": "e03630f1594abd58f6131544fc52d15a68ebfbb85765536997d28cc655fb389d",
+      "previewBytes": 14260
+    },
+    {
+      "slug": "o98-85",
+      "file": "85.webp",
+      "source": "styleboard/img/opuscar98/85.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "c57251361ab8cc7883516af368ac1e33dd958a482ac6b98959e4539c483da8ad",
+      "previewSha256": "36e67f5d92da26ecaf1703eb99dd81c691bc1e0aab42a85dc0fe51e553b2647a",
+      "previewBytes": 27844
+    },
+    {
+      "slug": "o98-86",
+      "file": "86.webp",
+      "source": "styleboard/img/opuscar98/86.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "f1a2318f94438af13731418f25bb0f46dcb3eb056431cd64ca1390e634c35689",
+      "previewSha256": "506b504f659327587ae4733edd91d9bc986039069a03cd34a0782415cdd932ad",
+      "previewBytes": 5200
+    },
+    {
+      "slug": "o98-87",
+      "file": "87.webp",
+      "source": "styleboard/img/opuscar98/87.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "6bcf04689855915706615762a453058f363509014a019e15000b3916b5064cc2",
+      "previewSha256": "6110052b3469b010f595d7bfe6b894b0d0c99039d1c34a7d0c52010a9f7ec390",
+      "previewBytes": 8366
+    },
+    {
+      "slug": "o98-88",
+      "file": "88.webp",
+      "source": "styleboard/img/opuscar98/88.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "51b3eb04689e2d08bb80a20af26850b190ac65c5c390f60ccf1a4a672f13e3cd",
+      "previewSha256": "8d5edc8434879a43fac4dbe922b4bb9ce86b5bc8c9818bcc7dac38c10c908c24",
+      "previewBytes": 8322
+    },
+    {
+      "slug": "o98-89",
+      "file": "89.webp",
+      "source": "styleboard/img/opuscar98/89.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "9a7d91c49a5c49bc6e6ad1dccc3cbc84264b8dbc1165fcad8b8b136d2fbca47c",
+      "previewSha256": "6876c6879976c395a5cb361dc7edc77a422d57d50540945c969a4d9687c6c2c5",
+      "previewBytes": 9072
+    },
+    {
+      "slug": "o98-90",
+      "file": "90.webp",
+      "source": "styleboard/img/opuscar98/90.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "a8a32a0c54c16ec80f40dc198abdde90a4eaa305c34d90b2acc5dd46c92b0cea",
+      "previewSha256": "3522a2a55e29ee55b4ca87e7b345d767edf508bbf242894e273dc38515f55035",
+      "previewBytes": 7796
+    },
+    {
+      "slug": "o98-91",
+      "file": "91.webp",
+      "source": "styleboard/img/opuscar98/91.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "9a7f69f837557772f92c58a88b2c750007f9e6a37f1a17fbad3162e0341668b4",
+      "previewSha256": "d46eeb58a73e42b2946489fce0b71c84c044f7aa1f6984e36b4ac56231f1975c",
+      "previewBytes": 15292
+    },
+    {
+      "slug": "o98-92",
+      "file": "92.webp",
+      "source": "styleboard/img/opuscar98/92.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "151f2670fbc2bda57a4d7f2c83a60bc7011a818e48d6e4ba90a5cb0769bb6bf5",
+      "previewSha256": "734b7ae90832fce64f669a8640a3d179f55cf0df160e9311473d1b7369f17d60",
+      "previewBytes": 11136
+    },
+    {
+      "slug": "o98-93",
+      "file": "93.webp",
+      "source": "styleboard/img/opuscar98/93.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "7dfa7a3b9a8d301db58273f0ccbf596f0eb88bb7570765956931a862da3a83a5",
+      "previewSha256": "4f4900881af4f81847ccfacc61d3cd53fe81a288fbdd1993f24a2c9bcf5d6886",
+      "previewBytes": 8152
+    },
+    {
+      "slug": "o98-94",
+      "file": "94.webp",
+      "source": "styleboard/img/opuscar98/94.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "0749985ea2359e065ce4a7fc63ec0359f27f1995dd55d16cb2dcd4302e9cadd1",
+      "previewSha256": "0dcc789cc9be459efc7882a7ee8cbdc3898533656e7dbb2ec6fa34c36f6fdf32",
+      "previewBytes": 14982
+    },
+    {
+      "slug": "o98-95",
+      "file": "95.webp",
+      "source": "styleboard/img/opuscar98/95.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "c081ff365ff92500b0ea6fca4f9c4e1b9be0cdeacc2a12b00dd02ccccfb583b8",
+      "previewSha256": "ccca96792687b21521d75e203766b7bde556e23845c33b410bd8b2eb0bf178ff",
+      "previewBytes": 10768
+    },
+    {
+      "slug": "o98-96",
+      "file": "96.webp",
+      "source": "styleboard/img/opuscar98/96.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "418023a42d1a87025a1ffefb6bee933e1da1bf74eb869e0ad4506ff4f117452f",
+      "previewSha256": "d9685b4aaa686c84560cbef4dea8f3f2e9b4f41988033f7ddfd5fdf2f534f37e",
+      "previewBytes": 10434
+    },
+    {
+      "slug": "o98-97",
+      "file": "97.webp",
+      "source": "styleboard/img/opuscar98/97.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "415964f05f9efe6979331cc473186f1b3231db5e4cc944a7a4edb49d8acd4bfa",
+      "previewSha256": "520276b0efa9a834ece3ac2173950da3d5ce0f887da154379f1b492ac195e299",
+      "previewBytes": 12094
+    },
+    {
+      "slug": "o98-98",
+      "file": "98.webp",
+      "source": "styleboard/img/opuscar98/98.jpg",
+      "originalSize": [
+        960,
+        400
+      ],
+      "previewSize": [
+        480,
+        200
+      ],
+      "originalSha256": "cb919afcc79f7419991a139dd7a37d6c449bade9687d4e1ad60cd163f6ab4824",
+      "previewSha256": "c6bbae0fe1ffef2ecaf6353b01521cc85ca80a2235a8ca61aa78f67ca6408794",
+      "previewBytes": 14280
+    }
+  ]
+}

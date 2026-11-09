@@ -1,0 +1,128 @@
+{
+  "revision": "f17136060781a0068a7951245a3aa7835a7230de",
+  "repository": "https://github.com/lemomo-ai/lemo-opuscar",
+  "creator": "LemoLab",
+  "license": "CC-BY-4.0",
+  "changes": "Resized to fit 768 x 432 and converted from JPEG to WebP; no cropping.",
+  "entries": [
+    {
+      "slug": "memphis-diorama",
+      "label": "孟菲斯微缩景观",
+      "file": "memphis-diorama.webp",
+      "source": "styleboard/img/memphis-diorama_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "4f22ec183f60f0aa9ec2343fccef8252ddb7124122d2286f391596b4aa11c315",
+      "previewSha256": "fee2ffda1260417c0c37b96c0be448bb9f61f9a53f2ba9e14dfce95d923107b4",
+      "previewBytes": 57456
+    },
+    {
+      "slug": "transit-map",
+      "label": "地铁线路图",
+      "file": "transit-map.webp",
+      "source": "styleboard/img/transit-map_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "57e6facff1edf277d39c3829e5d393a0dfe9708af90bda3f4bb18daedd199675",
+      "previewSha256": "d5d588369d7a184577e5c7dd0654fb02d665567827128e7a3520700d8ca46187",
+      "previewBytes": 37856
+    },
+    {
+      "slug": "chalkboard",
+      "label": "黑板粉笔",
+      "file": "chalkboard.webp",
+      "source": "styleboard/img/chalkboard_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "58164c37ccb6501f2bb352a506f59645025865be510bd8c15f7d8cf53033475d",
+      "previewSha256": "a80a89bbe97ea33bfd16c863e48de9c1f1d42e3c79e1f7aabdf068ebbede865b",
+      "previewBytes": 24370
+    },
+    {
+      "slug": "isometric-picture-book",
+      "label": "等距绘本",
+      "file": "isometric-picture-book.webp",
+      "source": "styleboard/img/isometric-picture-book_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "b28b4502a85ad28bc9e8986a01ab46287a8321b826a6adabcf6c65c85c7c2449",
+      "previewSha256": "10b2f4085687459ff7e38c75dcb381bad8eb52cc3d52a61fbc30deeec28954c4",
+      "previewBytes": 28566
+    },
+    {
+      "slug": "printed-long-take",
+      "label": "印刷长镜头",
+      "file": "printed-long-take.webp",
+      "source": "styleboard/img/printed-long-take_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "c29b67831de5dba020ae61d80bbb53ebdead50b1753e0252460455332f025e31",
+      "previewSha256": "95f0da555f9b935a41a69bcbed94549cc2c91a1d9c9966fd63404f953c1f5c4b",
+      "previewBytes": 86062
+    },
+    {
+      "slug": "circuit-board",
+      "label": "电路板",
+      "file": "circuit-board.webp",
+      "source": "styleboard/img/circuit-board_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "9030fdbd98587e0396523d4bd3d15ef9eb26d78819f8ac7c94924fa2ed657c3b",
+      "previewSha256": "ab754292a3783795b13b0c1aec09143b89fa0166fb9e34e1b2bb4d77c61ea90f",
+      "previewBytes": 32888
+    },
+    {
+      "slug": "desktop-flythrough",
+      "label": "桌面穿梭",
+      "file": "desktop-flythrough.webp",
+      "source": "styleboard/img/desktop-flythrough_0.jpg",
+      "originalSize": [
+        1280,
+        720
+      ],
+      "previewSize": [
+        768,
+        432
+      ],
+      "originalSha256": "60fc1f8ed1bcd529cfc06324ccc17b89b595a6907a5cc0777599cb29695af136",
+      "previewSha256": "0e2824ea0427c3fbceaf9f1b3aab7490ee91e6209c9566a2e34098579a18ee94",
+      "previewBytes": 17026
+    }
+  ]
+}

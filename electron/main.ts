@@ -3268,6 +3268,7 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
         if (upstream) await preflightLemoUpstream(upstreamLibrary, resolveCreativeStyle(settings.authoring?.styleId, settings.presetId)!.slug);
         if (!upstream && (nodes.some(n => ['code', 'code-repair', 'film-edit', 'film-code', 'film-scene', 'film-director', 'film-sample-repair', 'film-repair'].includes(n.kind)) || native && nodes.some(n => ['plan', 'film-plan-materials', 'film-plan-scene'].includes(n.kind)))) {
           const style = resolveCreativeStyle(settings.authoring?.styleId, settings.presetId)!;
+          if (!style.adapter) throw new Error('LEMO_STYLE_NEEDS_UPSTREAM: 此风格（新增完整风格或 OPUSCAR 98 轻量风格）只支持新原生整片工程；请重新开始制作，或在模板动画里选择已适配风格。');
           const engine = native ? 'native' : 'legacy';
           styleReferences.set(`${engine}:${style.slug}`, await loadCreativeStyleReference(join(__dirname, 'lemo-opuscar'), style.slug, native ? LEMO_NATIVE_ENGINE : 'legacy'));
         }

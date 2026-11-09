@@ -63,6 +63,8 @@ export interface DirectorCreateWizardProps {
   onConfigureImage: () => void;
   onConfigureVoice: () => void;
   onCreate: () => void;
+  /** Overrides the mode's heading, e.g. 模板动画 sharing the creative (vox) wizard. */
+  heading?: { title: string; description: string; action: string };
 }
 
 export function DirectorCreateWizard({
@@ -84,8 +86,9 @@ export function DirectorCreateWizard({
   onConfigureImage,
   onConfigureVoice,
   onCreate,
+  heading,
 }: DirectorCreateWizardProps) {
-  const copy = workflowCopy(mode);
+  const copy = heading ? { ...workflowCopy(mode), createTitle: heading.title, createDescription: heading.description } : workflowCopy(mode);
   const steps = mode === 'vox' ? ['内容与画幅', '动画与风格', '声音与输出'] : DIRECTOR_CREATE_STEPS;
   return (
     <div className="director-create-panel" data-director-create-wizard data-director-mode={mode}>
@@ -113,7 +116,7 @@ export function DirectorCreateWizard({
             {errorMessage ? <div className="director-start-feedback is-error" role="alert">{errorMessage}</div> : null}
             <Toolbar aria-label="创建步骤操作" className="director-create-footer">
               <Button variant="subtle" disabled={step === 0 || busy} onClick={() => onStepChange(step - 1)}>上一步</Button>
-              {step < DIRECTOR_CREATE_STEPS.length - 1 ? <Button variant="primary" icon={<ArrowRight size={14} />} disabled={!canContinue || busy} onClick={() => onStepChange(step + 1)}>下一步</Button> : mode === 'vox' ? <Button variant="primary" icon={busy ? <Loader2 className="director-spin" size={15} /> : <Sparkles size={15} />} disabled={!canCreate || busy} onClick={onCreate}>创建 创意动画项目</Button> : <Button variant="primary" icon={busy ? <Loader2 className="director-spin" size={15} /> : <Sparkles size={15} />} disabled={!canCreate || busy} onClick={onCreate}>创建 AI 漫剧系列</Button>}
+              {step < DIRECTOR_CREATE_STEPS.length - 1 ? <Button variant="primary" icon={<ArrowRight size={14} />} disabled={!canContinue || busy} onClick={() => onStepChange(step + 1)}>下一步</Button> : mode === 'vox' ? <Button variant="primary" icon={busy ? <Loader2 className="director-spin" size={15} /> : <Sparkles size={15} />} disabled={!canCreate || busy} onClick={onCreate}>{heading?.action ?? '创建 创意动画项目'}</Button> : <Button variant="primary" icon={busy ? <Loader2 className="director-spin" size={15} /> : <Sparkles size={15} />} disabled={!canCreate || busy} onClick={onCreate}>创建 AI 漫剧系列</Button>}
             </Toolbar>
           </Pane>
 

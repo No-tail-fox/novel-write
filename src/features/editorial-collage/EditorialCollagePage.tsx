@@ -24,8 +24,9 @@ import { editorialShotTitle } from '../../shared/editorial-storytelling';
 import { COPYWRITING_TRACKS, copywritingTrack } from '../../shared/copywriting-tracks';
 import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLES, editorialWritingStyle, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
 import { CreativeProductionFields } from './CreativeProductionFields';
+import { clearCreativeRoute, creativeRouteMode, peekCreativeRoute } from './creative-route';
 import { ProjectMusicFields } from './ProjectMusicFields';
-import { resolveCreativeStyle } from '../../shared/creative-animation/styles';
+import { creativeStyle, creativeStyleSupportsMode, resolveCreativeStyle } from '../../shared/creative-animation/styles';
 import { DirectorOptionPreview, DIRECTOR_SUBTITLE_OPTIONS } from '../director-desk/DirectorOptionPreview';
 import { createProductionHistoryReservations, productionHistoryUsage, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../../shared/production-history';
 import type { ShellView } from '../../shared/types';
@@ -162,7 +163,9 @@ export function EditorialCollagePage({
   const [createVoiceId, setCreateVoiceId] = useState('');
   const [createSubtitleStyle, setCreateSubtitleStyle] = useState<string>(LEMO_FOLLOW_STYLE_SUBTITLES);
   const [createSeedLocked, setCreateSeedLocked] = useState(true);
-  const [createProduction, setCreateProduction] = useState<VoxProductionSettings>(() => ({ ...voxProductionSettings(), authoring: { mode: 'ai-code', styleId: 'auto' } }));
+  const requestedRouteRef = useRef(peekCreativeRoute());
+  const [createProduction, setCreateProduction] = useState<VoxProductionSettings>(() => ({ ...voxProductionSettings(), authoring: { mode: creativeRouteMode(peekCreativeRoute()), styleId: 'auto' } }));
+  useEffect(() => clearCreativeRoute(), []);
   const createNativeAuthoring = createProduction.authoring?.mode === 'ai-code';
   const createEffectiveSubtitleStyle = !createNativeAuthoring && createSubtitleStyle === LEMO_FOLLOW_STYLE_SUBTITLES ? DIRECTOR_SUBTITLE_OPTIONS[0] : createSubtitleStyle;
   const createProductionValid = voxProductionSettingsSchema.safeParse(createProduction).success;
@@ -194,7 +197,11 @@ export function EditorialCollagePage({
       setCreateSubtitleStyle(draft.createSubtitleStyle); setCreateSeedLocked(draft.createSeedLocked);
       try {
         const parsed = voxProductionSettingsSchema.safeParse(JSON.parse(draft.createProductionJson));
-        if (parsed.success) setCreateProduction(parsed.data);
+        // An explicit entry (创意动画 / 模板动画) wins over the draft's production mode; the rest of the draft is kept.
+        const route = requestedRouteRef.current;
+        if (parsed.success) setCreateProduction(route && parsed.data.authoring && parsed.data.authoring.mode !== creativeRouteMode(route)
+          ? { ...parsed.data, authoring: { ...parsed.data.authoring, mode: creativeRouteMode(route), styleId: creativeStyleSupportsMode(creativeStyle(parsed.data.authoring.styleId), creativeRouteMode(route)) ? parsed.data.authoring.styleId : 'auto' } }
+          : parsed.data);
       } catch { /* Older drafts keep their original image settings and use creative defaults. */ }
     },
   });
@@ -1099,6 +1106,7 @@ export function EditorialCollagePage({
     return <div data-editorial-collage-workbench="true">
     <DirectorCreateWizard
       mode="vox"
+      heading={createNativeAuthoring ? undefined : { title: '新建模板动画', description: 'Remotion 模板 · 已适配的 59 种风格 · 稳定批量', action: '创建 模板动画项目' }}
       step={createStep}
       busy={projectAction.busy || providerAction.busy || copyAction.busy}
       canContinue={Boolean(createTitle.trim() && createPlan.plan && (createStep !== 1 || createProductionValid))}
@@ -1114,7 +1122,7 @@ export function EditorialCollagePage({
         { label: '内容赛道', value: copywritingTrack(createTrack).label },
         { label: '文案风格', value: editorialWritingStyle(createWritingStyleId).label },
         { label: '画幅', value: createRatio },
-        { label: '制作', value: createNativeAuthoring ? 'Lemo 风格动画' : 'Vox 分层动画' },
+        { label: '制作', value: createNativeAuthoring ? 'Lemo 创意动画' : 'Remotion 模板动画' },
         { label: '风格', value: `${!createProduction.authoring?.styleId || createProduction.authoring.styleId === 'auto' ? '自动匹配 · ' : ''}${resolveCreativeStyle(createProduction.authoring?.styleId, createProduction.presetId)?.cn ?? '待选择'}` },
         { label: '输出', value: '本地 MP4' },
       ]}

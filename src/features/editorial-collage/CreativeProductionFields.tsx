@@ -1,5 +1,5 @@
 import { CheckboxField, PreviewSelectField, SelectField, TextAreaField, TextField, Button } from '../../ui';
-import { CREATIVE_STYLES, resolveCreativeStyle } from '../../shared/creative-animation/styles';
+import { CREATIVE_STYLES, LEMO_LIBRARY_STYLES, OPUSCAR98_STYLES, creativeStyle, creativeStyleSupportsMode, resolveCreativeStyle } from '../../shared/creative-animation/styles';
 import { VOX_PRODUCTION_PRESETS, type VoxProductionSettings } from '../../shared/vox-production';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { CreativeStyleCover, CreativeStyleFilm } from './CreativeStylePreview';
@@ -24,17 +24,22 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   const updateArchive = (index: number, patch: Partial<VoxProductionSettings['archives'][number]>) => onChange({ ...settings, archives: settings.archives.map((row, i) => i === index ? { ...row, ...patch } : row) });
   return <div className="vox-production-fields">
     <SelectField label="制作方式" value={authoring.mode} disabled={busy}
-      options={[{ value: 'ai-code', label: 'Lemo 风格动画（推荐）' }, { value: 'template', label: 'Vox 分层动画' }]}
-      hint={authoring.mode === 'ai-code' ? 'Lemo：导演方案 → 素材准备 → 公共绘图与连续场景 → 样片检查 → 整片调度。每步单独保存，失败可从对应步骤继续；最终输出一部连续影片。' : 'Vox：画面规划 → 背景与主体分层 → 去底 → 跟随旁白编排图文、图表与运动。使用本地动效编排，不调用 Lemo 全片创作。'}
-      onChange={(_, event) => onChange({ ...settings, authoring: { ...authoring, mode: event.value as 'ai-code' | 'template' } })} />
+      options={[{ value: 'ai-code', label: 'Lemo 创意动画（推荐）' }, { value: 'template', label: 'Remotion 模板动画' }]}
+      hint={authoring.mode === 'ai-code' ? 'Lemo：导演型 AI 按上游 Lemo 文档整片创作，自己读风格、写代码、看静帧、修改；66 种完整风格 + OPUSCAR 98 的 98 种轻量风格。最终输出一部连续影片。' : 'Remotion 模板：画面规划 → 背景与主体分层 → 去底 → 跟随旁白编排图文、图表与运动。用已适配的 59 种风格和模板，稳定、可批量，不调用 Lemo 全片创作。'}
+      onChange={(_, event) => {
+        const mode = event.value as 'ai-code' | 'template';
+        // The template route only renders adapted styles; fall back to automatic matching instead of a blocked choice.
+        const styleId = creativeStyleSupportsMode(creativeStyle(authoring.styleId), mode) || authoring.styleId === 'auto' ? authoring.styleId : 'auto';
+        onChange({ ...settings, authoring: { ...authoring, mode, styleId } });
+      }} />
     <CheckboxField label="自动生成图片" checked={settings.generateImages} disabled={busy} onChange={(_, event) => onChange({ ...settings, generateImages: event.checked === true })} />
     {authoring.mode === 'ai-code' ? <p className="vox-hint">按导演方案准备插画和已有图片，再与代码绘制画面组合。真实证据需导入并填写出处与许可；生成插画不能替代真实资料。</p> : null}
     <PreviewSelectField label="视觉风格" value={authoring.styleId} disabled={busy} detailLabel="播放样片" showSelectedPreview selectedPreviewHint="LemoLab 官方封面 · 点击播放样片"
       options={[
         { value: 'auto', label: '自动匹配（推荐）', description: `当前素材流程匹配：${autoStyle.cn}`, preview: () => <CreativeStyleCover key={autoStyle.slug} style={autoStyle} />, thumbnail: () => <CreativeStyleCover key={autoStyle.slug} style={autoStyle} thumbnail />, detailPreview: () => <CreativeStyleFilm style={autoStyle} mode={previewMode} automatic onOpenUrl={onOpenUrl} /> },
-        ...CREATIVE_STYLES.filter(item => item.adapter || item.slug === authoring.styleId).map(item => ({ value: item.slug, label: item.cn, group: item.category_cn, description: item.description ?? item.line_cn, disabled: !item.adapter, preview: () => <CreativeStyleCover key={item.slug} style={item} />, thumbnail: () => <CreativeStyleCover key={item.slug} style={item} thumbnail />, detailPreview: () => <CreativeStyleFilm style={item} mode={previewMode} automatic={false} onOpenUrl={onOpenUrl} /> })),
+        ...(authoring.mode === 'ai-code' ? [...LEMO_LIBRARY_STYLES, ...OPUSCAR98_STYLES] : CREATIVE_STYLES).filter(item => creativeStyleSupportsMode(item, previewMode) || item.slug === authoring.styleId).map(item => ({ value: item.slug, label: item.family === 'opuscar98' ? `${item.cn} · ${item.opuscar98?.zh ?? ''}` : item.cn, group: item.category_cn, description: item.description ?? item.line_cn, disabled: !creativeStyleSupportsMode(item, previewMode), preview: () => <CreativeStyleCover key={item.slug} style={item} />, thumbnail: () => <CreativeStyleCover key={item.slug} style={item} thumbnail />, detailPreview: () => <CreativeStyleFilm style={item} mode={previewMode} automatic={false} onOpenUrl={onOpenUrl} /> })),
       ]}
-      hint={`${style?.description ?? '请选择已适配的风格。'} 封面可离线预览，播放官方样片需要联网。`}
+      hint={`${style?.description ?? '请选择风格。'}${style?.family === 'opuscar98' ? ' OPUSCAR 98 轻量风格：只有风格提示词，制作时 AI 会先按上游 MY-STYLES 流程写出这部片自己的 STYLE.md。' : ''} 封面可离线预览，播放官方样片需要联网。`}
       onChange={value => onChange({ ...settings, authoring: { ...authoring, styleId: value } })} />
     <SelectField label="素材流程" value={settings.presetId} disabled={busy}
       options={VOX_PRODUCTION_PRESETS.map(item => ({ value: item.id, label: item.id === 'paper-explainer' ? '图文与图形动画（推荐）' : item.label }))}

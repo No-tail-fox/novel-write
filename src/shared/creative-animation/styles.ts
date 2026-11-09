@@ -1,6 +1,8 @@
 import { workflowPrompt } from '../workflow-prompt-runtime';
 import catalog from './lemo-catalog.json';
-import { CREATIVE_ADAPTERS } from './adapters';
+import upstreamCatalog from './lemo-upstream-catalog.json';
+import opuscar98 from './opuscar98-catalog.json';
+import { CREATIVE_ADAPTERS, type CreativeStyleAdapter } from './adapters';
 
 export const LEMO_REVISION = '3961ddb3d24d8876e0e2754f7790d66908acee51';
 export const CREATIVE_ADAPTER_REVISION = 2;
@@ -65,9 +67,38 @@ const descriptions: Record<string, string> = {
   'lowpoly-island': '粉彩低多边形小世界，分件组装和二维景深。',
   'glass-product': '黑底玻璃静物、冷色轮廓光与缓慢扫光。',
 };
-export const CREATIVE_STYLES = catalog.map(style => ({ ...style, description: descriptions[style.slug] ?? style.category_cn, readiness: CREATIVE_ADAPTERS[style.slug] ? 'adapted' as const : 'collected' as const, adapter: CREATIVE_ADAPTERS[style.slug] }));
-export function creativeStyle(slug: string) {
-  const style = CREATIVE_STYLES.find(style => style.slug === slug);
+export type Opuscar98Style = typeof opuscar98.styles[number];
+export interface CreativeStyleEntry {
+  slug: string; num: string; en: string; cn: string; category_en: string; category_cn: string;
+  film: string; line: string; line_cn: string; uses: string[]; frame_sec: number; dur: number;
+  description: string; readiness: 'adapted' | 'collected';
+  /** Present only for the 59 template-capable styles (Remotion/Vox route). */
+  adapter?: CreativeStyleAdapter;
+  family: 'library' | 'opuscar98';
+  opuscar98?: Opuscar98Style;
+}
+export type AdaptedCreativeStyle = CreativeStyleEntry & { adapter: CreativeStyleAdapter };
+/** Template route (Remotion/Vox): the 59 styles with a host adapter. */
+export const CREATIVE_STYLES: AdaptedCreativeStyle[] = catalog.map(style => ({ ...style, description: descriptions[style.slug] ?? style.category_cn, readiness: CREATIVE_ADAPTERS[style.slug] ? 'adapted' as const : 'collected' as const, adapter: CREATIVE_ADAPTERS[style.slug], family: 'library' as const }));
+export const LEMO_UPSTREAM_STYLE_REVISION = upstreamCatalog.revision;
+export const OPUSCAR98_FILM_URL = opuscar98.film;
+export const OPUSCAR98_VIDEO_URL = 'https://github.com/lemomo-ai/lemo-opuscar/releases/download/films/opuscar98.mp4';
+const adaptedBySlug = new Map(CREATIVE_STYLES.map(style => [style.slug, style]));
+/** Lemo route: every complete library style in the pinned upstream snapshot (66), adapted or not. */
+export const LEMO_LIBRARY_STYLES: CreativeStyleEntry[] = upstreamCatalog.styles.map(style => adaptedBySlug.get(style.slug)
+  ?? { ...style, description: style.line_cn, readiness: 'collected' as const, adapter: undefined, family: 'library' as const });
+/** Lemo route: OPUSCAR 98 light styles (a style prompt per film, no STYLE.md); the agent writes STYLE.md first (MY-STYLES.md). */
+export const OPUSCAR98_STYLES: CreativeStyleEntry[] = opuscar98.styles.map(style => ({
+  slug: style.slug, num: String(style.no), en: style.style_en, cn: style.style_zh,
+  category_en: `OPUSCAR 98 · ${style.chapter_en}`, category_cn: `OPUSCAR 98 · ${style.chapter_zh} ${style.years}`,
+  film: `${style.year} ${style.zh}`, line: style.desc_en, line_cn: style.desc_zh, uses: style.blend_zh, frame_sec: style.frame_sec, dur: style.dur,
+  description: `${style.render} · ${style.year}《${style.zh}》 · ${style.blend_zh.slice(0, 2).join(' · ')}`,
+  readiness: 'collected' as const, adapter: undefined, family: 'opuscar98' as const, opuscar98: style,
+}));
+export const isOpuscar98StyleId = (slug: string | undefined) => !!slug && /^o98-\d{2}$/.test(slug);
+export function creativeStyle(slug: string | undefined): CreativeStyleEntry | undefined {
+  if (!slug) return undefined;
+  const style: CreativeStyleEntry | undefined = adaptedBySlug.get(slug) ?? LEMO_LIBRARY_STYLES.find(item => item.slug === slug) ?? OPUSCAR98_STYLES.find(item => item.slug === slug);
   if (!style?.adapter) return style;
   const imageDirection = workflowPrompt("creative-image:" + slug, style.adapter.imageDirection);
   const motionDirection = workflowPrompt("creative-motion:" + slug, style.adapter.motionDirection);
@@ -77,4 +108,8 @@ Motion grammar: ${motionDirection}` } };
 }
 export function resolveCreativeStyle(styleId: string | undefined, presetId: string) {
   return creativeStyle(!styleId || styleId === 'auto' ? presetId === 'data-map' ? 'dataviz' : presetId === 'archival-story' ? 'archive-lighttable' : 'halftone-dossier' : styleId);
+}
+/** Lemo route accepts any complete library or OPUSCAR 98 style; the template route needs a host adapter. */
+export function creativeStyleSupportsMode(style: CreativeStyleEntry | undefined, mode: 'template' | 'ai-code'): boolean {
+  return !!style && (mode === 'ai-code' || !!style.adapter);
 }

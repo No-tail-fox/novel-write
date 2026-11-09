@@ -230,11 +230,13 @@ StoryDream UI ──▶ lemo-agent-worker（独立 Node 进程，现有）
 
 | 来源 | 数量 | 内容 | 能否直接用 |
 |---|---|---|---|
-| 仓库 `styles/`（main 143f387a） | **66 种**（目录共 67 个，含 `_template`） | 完整风格包：`STYLE.md`（固定规则）、`DEMO.md`、demo 源码、海报、`style.json` | ✅ 直接用于 faithful 模式 |
-| OPUSCAR 98 页面（lemomo-ai.github.io/lemo-opuscar/opuscar98/#styles） | **98 种**（2D 77、2.5D 4、3D 17） | 每种包含：风格说明、可复制的**风格提示词**（色板 hex、构图、运动、参照、避免事项）、逐镜头导演编排；**没有 STYLE.md 和 demo 源码**，也不在仓库里，只在 Pages 网页上 | ⚠️ 只能作为“轻量风格”：按 MY-STYLES.md 的“从空白建立自己的风格”流程转成 `STYLE.md`，或者作为 brief 附加的风格提示词 |
-| 合计 | 164 种（有重叠，需要去重） | | |
+| 仓库 `styles/`（本地快照 f171360；main 143f387a 同为 66 种） | **66 种**（目录共 67 个，含 `_template`） | 完整风格包：`STYLE.md`（固定规则）、`DEMO.md`、demo 源码、海报、`style.json` | ✅ 直接用于 faithful 模式 |
+| OPUSCAR 98（仓库 `styleboard/opuscar98_styles.json`，Pages 的 opuscar98/#styles 由它生成） | **98 种**（2D 77、2.5D 4、3D 17） | 每种包含：风格说明、可复制的**风格提示词**（中英，含色板、构图、运动、参照、避免事项）、逐镜头导演编排，另有 `styleboard/img/opuscar98/NN.jpg` 一张静帧；**没有 STYLE.md 和 demo 源码** | ⚠️ 只能作为“轻量风格”：按 MY-STYLES.md 的“从空白建立自己的风格”流程转成 `STYLE.md` |
+| 合计 | 164 个选项 | 98 种是同一部影片里的片段风格，与 66 种在题材上有相近处，但条目不重复 | |
 
-**处理方式**：
-- 66 种完整风格包作为一等公民。
-- 98 种轻量风格作为“风格提示词库”：抓取 Pages 内容后存入本地并记录哈希（MIT 许可，demo 媒体是 CC BY 4.0）。
-- 用户选中某个轻量风格时，模型先按上游 MY-STYLES.md 的流程把它写成 `~/lemo-my-styles/<slug>/STYLE.md`，再按正常流程制作。这样仍然是上游的原生流程，不算偏离。
+> 更正：本节初稿写“98 种不在仓库里，只在 Pages 网页上”，这是错的。数据已在仓库里（`styleboard/opuscar98_styles.json`，469,904 字节），并且已经随 f171360 快照收进 `vendor/lemo-upstream`，在 `storydream-upstream.json` 里有逐文件 sha256。
+
+**处理方式（2026-11-09 已在 `feat/route-split-opuscar98` 实现）**：
+- 66 种完整风格包作为一等公民：`scripts/sync-lemo-styles.py` 从已校验的快照生成 `src/shared/creative-animation/lemo-upstream-catalog.json`。比旧目录多出 7 种（chalkboard、circuit-board、desktop-flythrough、isometric-picture-book、memphis-diorama、printed-long-take、transit-map），它们只走 Lemo 路线，不走模板路线。
+- 98 种轻量风格：同一脚本离线生成 `opuscar98-catalog.json`，只含界面字段，ID 为 `o98-NN`；静帧缩成 WebP，按 CC BY 4.0 署名。完整提示词不复制进前端，生成时由 `electron/lemo-opuscar98.ts` 再按 manifest 哈希校验后读取。
+- 用户选中轻量风格时：预检改查 `MY-STYLES.md` 和 `opuscar98_styles.json`，不查 `styles/<id>/STYLE.md`。Agent 系统提示要求先按 MY-STYLES.md 的“从空白开始”流程选一个技术底座，读它的 STYLE.md，再在**本片工程目录里**写出自己的 `STYLE.md`，然后才写 TREATMENT。同时说明风格已定，不做逐题访谈。这里有两点和原文不同：不写入 `~/lemo-my-styles/`（宿主不写用户主目录），也不复用原片段的故事和角色。

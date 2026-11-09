@@ -8,7 +8,7 @@ import { AsyncActionFeedback as InlineActionFeedback } from '../../components/As
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { Task } from '../../shared/types';
-import { CREATIVE_STYLES, creativeStyle } from '../../shared/creative-animation/styles';
+import { LEMO_LIBRARY_STYLES, OPUSCAR98_STYLES, creativeStyle } from '../../shared/creative-animation/styles';
 import { useAsyncAction } from '../../ui/async-action';
 import { Button, TextField, TextAreaField, SelectField } from '../../ui';
 import { taskFromMutation } from '../tasks/task-formatters';
@@ -123,7 +123,7 @@ export function MusicMvPage({ api, state, applyState, openTaskDetail, isBrowserP
           <Segmented label="制作方式" value={processingMode} options={['full-auto', 'manual']} labels={['全自动制作', '先检查时间轴']} onChange={value => setProcessingMode(value as 'full-auto' | 'manual')} />
           <SelectField label="目标分镜数量" value={String(storyboardSceneCount)} onChange={event => setStoryboardSceneCount(Number(event.target.value))}
             hint="镜头数量不影响歌词完整性；长歌曲会自动增加镜头，保证单镜头不超过 15 秒。" options={[2, 4, 6, 8, 12, 16, 24, 32, 48, 64].map(value => ({ value: String(value), label: `${value} 个镜头` }))} />
-          <SelectField label="Lemo 视觉风格" value={style} onChange={event => setStyle(event.target.value)} options={CREATIVE_STYLES.map(item => ({ value: item.slug, label: item.cn }))} />
+          <SelectField label="Lemo 视觉风格" value={style} onChange={event => setStyle(event.target.value)} options={[...LEMO_LIBRARY_STYLES, ...OPUSCAR98_STYLES].map(item => ({ value: item.slug, label: item.family === 'opuscar98' ? `${item.cn} · ${item.opuscar98?.zh ?? ''}` : item.cn, group: item.family === 'opuscar98' ? 'OPUSCAR 98 轻量风格' : `Lemo 完整风格 · ${item.category_cn}` }))} />
           <SelectField label="成片画幅" value={ratio} onChange={event => setRatio(event.target.value)} options={['16:9', '9:16', '1:1', '4:3'].map(value => ({ value, label: value }))} />
         </div>
         <TextField label="视觉母题" value={musicMvVisualMotif} onChange={event => setMusicMvVisualMotif(event.target.value)} disabled={running} />
