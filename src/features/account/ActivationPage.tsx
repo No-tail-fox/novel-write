@@ -5,7 +5,6 @@ import type { LicenseStatus, UpdateStatus } from '../../shared/licensing';
 import { Button, Dialog, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { AsyncActionFeedback } from '../../components/AsyncActionFeedback';
-import type { ApplyMutationResult, RendererAppState } from '../../app/route-types';
 import './activation.css';
 
 const labels: Record<LicenseStatus['status'], string> = {
@@ -14,7 +13,7 @@ const labels: Record<LicenseStatus['status'], string> = {
 const date = (value: string | null) => value ? new Date(value).toLocaleString() : '--';
 const bytes = (value: number) => `${(value / 1024 / 1024).toFixed(1)} MB`;
 
-export function ActivationPage({ api }: { api: StoryDreamApi; state: RendererAppState; applyState: ApplyMutationResult }) {
+export function ActivationPage({ api, onLicenseStatusChange }: { api: StoryDreamApi; onLicenseStatusChange?: (status: LicenseStatus) => void }) {
   const [license, setLicense] = useState<LicenseStatus | null>(null);
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [code, setCode] = useState('');
@@ -26,7 +25,7 @@ export function ActivationPage({ api }: { api: StoryDreamApi; state: RendererApp
     const load = async () => {
       const results = await Promise.allSettled([api.getLicenseStatus(), api.getUpdateStatus()]);
       if (!alive) return;
-      if (results[0].status === 'fulfilled') setLicense(results[0].value);
+      if (results[0].status === 'fulfilled') { setLicense(results[0].value); onLicenseStatusChange?.(results[0].value); }
       else action.reportError(results[0].reason);
       if (results[1].status === 'fulfilled') setUpdate(results[1].value);
       else updateAction.reportError(results[1].reason);
@@ -34,14 +33,14 @@ export function ActivationPage({ api }: { api: StoryDreamApi; state: RendererApp
     void load();
     const timer = setInterval(() => { void load(); }, 1500);
     return () => { alive = false; clearInterval(timer); };
-  }, [api, action.reportError, updateAction.reportError]);
+  }, [api, action.reportError, updateAction.reportError, onLicenseStatusChange]);
   async function activate() {
-    await action.run(async () => { setLicense(await api.activateLicense(code.trim().toUpperCase())); setCode(''); });
+    await action.run(async () => { const next = await api.activateLicense(code.trim().toUpperCase()); setLicense(next); onLicenseStatusChange?.(next); setCode(''); });
   }
   async function confirmed() {
     const operation = confirm;
     setConfirm(null);
-    if (operation === 'release') await action.run(async () => setLicense(await api.releaseLicense()));
+    if (operation === 'release') await action.run(async () => { const next = await api.releaseLicense(); setLicense(next); onLicenseStatusChange?.(next); });
     if (operation === 'install') await updateAction.run(async () => setUpdate(await api.installUpdate()));
   }
   const changing = action.busy || update?.phase === 'installing';
@@ -56,7 +55,7 @@ export function ActivationPage({ api }: { api: StoryDreamApi; state: RendererApp
           <TextField label="激活码" value={code} onChange={(_, data) => setCode(data.value)} autoComplete="off" spellCheck={false} disabled={changing || !license?.configured} />
           <div className="license-actions">
             <Button type="submit" variant="primary" icon={<KeyRound size={16} />} disabled={changing || !license?.configured || !/^SD-(?:[A-F0-9]{8}-){3}[A-F0-9]{8}$/i.test(code.trim())}>激活本机</Button>
-            <Button type="button" icon={<RefreshCw size={16} />} disabled={changing || !license?.configured} onClick={() => { void action.run(async () => setLicense(await api.refreshLicense())); }}>验证授权</Button>
+            <Button type="button" icon={<RefreshCw size={16} />} disabled={changing || !license?.configured} onClick={() => { void action.run(async () => { const next = await api.refreshLicense(); setLicense(next); onLicenseStatusChange?.(next); }); }}>验证授权</Button>
             <Button type="button" icon={<Unplug size={16} />} disabled={changing || !active} onClick={() => setConfirm('release')}>解绑本机</Button>
           </div>
         </form>
@@ -77,7 +76,7 @@ export function ActivationPage({ api }: { api: StoryDreamApi; state: RendererApp
         </div>
         <AsyncActionFeedback feedback={updateAction.feedback} />
       </section>
-      <Dialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }} title={confirm === 'release' ? '解绑本机' : '安装更新'} actions={<><Button onClick={() => setConfirm(null)}>取消</Button><Button variant={confirm === 'release' ? 'danger' : 'primary'} onClick={() => { void confirmed(); }}>确认{confirm === 'release' ? '解绑' : '安装'}</Button></>}>
+      <Dialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }} title={confirm === 'release' ? '解绑本机' : '安装更新'} actions={<><Button onClick={() => setConfirm(null)}>取消</Button><Button disabled={action.busy || updateAction.busy} variant={confirm === 'release' ? 'danger' : 'primary'} onClick={() => { void confirmed(); }}>确认{confirm === 'release' ? '解绑' : '安装'}</Button></>}>
         {confirm === 'release' ? '解绑后，本机将无法生成新内容，已有作品仍可查看和导出。' : '应用将退出并打开安装程序。请先保存编辑内容；运行中的任务结束后才能安装。'}
       </Dialog>
     </div>

@@ -6,6 +6,7 @@ import {
   insertEditorialShot,
   mergeEditorialShots,
   parseEditorialCollagePipelineData,
+  restoreEditorialCollagePipelineData,
   removeEditorialShot,
   reorderEditorialShot,
   reorderEditorialLayer,
@@ -244,6 +245,23 @@ describe('editorial collage workflow contract', () => {
       'beats[0].shots[0].videoAssetVersionId',
     ]));
     expect(editorialCollageReady(invalid)).toBe(false);
+  });
+
+  it('restores only a stale derived timeline at the persistence boundary', () => {
+    const draft = createEditorialCollageDraft({ id: 'stored-stale', title: 'Stored timeline' });
+    const valid = rebuildEditorialTimeline({ ...draft, beats: [beat()], assets: ['asset-bg', 'asset-subject'].map(id => ({ id, assetId: id, kind: 'image' as const, createdAt: draft.createdAt })) });
+    const stale = structuredClone(valid);
+    stale.timeline!.clips[0].assetVersionIds = [];
+    expect(() => parseEditorialCollagePipelineData(stale)).toThrow('Timeline must match');
+    const restored = restoreEditorialCollagePipelineData(JSON.stringify(stale));
+    expect(restored.timeline).toEqual(valid.timeline);
+    expect(restored.beats).toEqual(valid.beats);
+    expect(restored.assets).toEqual(valid.assets);
+    expect(stale.timeline!.clips[0].assetVersionIds).toEqual([]);
+    const damaged = structuredClone(stale);
+    damaged.beats[0].shots[0].layers[0].assetVersionId = 'missing-image';
+    expect(() => restoreEditorialCollagePipelineData(damaged)).toThrow();
+    expect(() => restoreEditorialCollagePipelineData('{broken')).toThrow('INVALID_JSON');
   });
 
   it('detects a stale timeline after changing a shot motion engine', () => {

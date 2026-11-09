@@ -1,4 +1,5 @@
 import type { EditorialCollageBeat, EditorialCollageLayer, EditorialCollagePipelineData, EditorialCollageShot } from './editorial-collage';
+import { joinEditorialNarration } from './editorial-script';
 
 /** Beat roles describe an outline, not copy intended for the audience. */
 export function isEditorialStructureTitle(text: string): boolean {
@@ -24,7 +25,7 @@ export function editorialContentTitle(narration: string, fallback = ''): string 
 }
 
 export function editorialShotNarration(beat: EditorialCollageBeat, shot: EditorialCollageShot): string {
-  return shot.subtitleCueIds.flatMap((id) => beat.subtitleCues.find((cue) => cue.id === id)?.text ?? []).join('');
+  return joinEditorialNarration(shot.subtitleCueIds.flatMap((id) => beat.subtitleCues.find((cue) => cue.id === id)?.text ?? []));
 }
 
 export function editorialShotTitle(document: Pick<EditorialCollagePipelineData, 'title'>, beat: EditorialCollageBeat, shot: EditorialCollageShot): string {

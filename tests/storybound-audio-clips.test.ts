@@ -6,6 +6,29 @@ import { runStoryboundMediaSidecar, type StoryboundComposeRenderInput, type Stor
 import { sliceProductionAudioClip, type ProductionAudioClip } from '../src/shared/production-audio';
 
 describe('sidecar multi-track audio clips', () => {
+  it('keeps the project fade clock when a BGM source loops', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-loop-envelope-'));
+    try {
+      const frames = join(dir, 'frames'), source = join(dir, 'full.wav'), loop = join(dir, 'loop.wav');
+      await mkdir(frames);
+      await writeFile(join(frames, '0001.png'), colorPng());
+      await writeFile(source, wavToneWithLeadSilence(2400, 0, .12, 330));
+      await writeFile(loop, wavToneWithLeadSilence(600, 0, .12, 330));
+      for (const name of ['full', 'looped']) {
+        const audio_clips = name === 'full'
+          ? [{ id: 'full', trackType: 'music', path: source, startMs: 0, durationMs: 2400, fadeInMs: 1800, fadeOutMs: 1600 }]
+          : [0, 600, 1200, 1800].map(startMs => ({ id: String(startMs), trackType: 'music', path: loop, startMs, durationMs: 600, sourceStartMs: 0, sourceDurationMs: 600,
+              fadeEnvelope: { offsetMs: startMs, durationMs: 2400, fadeInMs: 1800, fadeOutMs: 1600 } }));
+        await runStoryboundMediaSidecar({ mode: 'encode_render_scene', work_dir: join(dir, name), output_path: join(dir, name + '.mp4'),
+          scene: { frames_dir: frames, audio_path: '', duration_s: 2.4, fps: 10, audio_clips } });
+      }
+      const full = pcmSamples(await readFile(join(dir, 'full', 'scene-00-mix.wav')));
+      const looped = pcmSamples(await readFile(join(dir, 'looped', 'scene-00-mix.wav')));
+      expect(looped.length).toBe(full.length);
+      expect(full.reduce((max, sample, i) => Math.max(max, Math.abs(sample - looped[i])), 0)).toBeLessThan(.0001);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 60000);
+
   it.each(['cut', 'fade'])('keeps identical video and audio after releasing scene inputs before %s composition', async (transition) => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-segment-compose-'));
     try {

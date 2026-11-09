@@ -36,7 +36,7 @@ describe('workspace back navigation', () => {
     expect(taskWorkspaceView('music-mv')).toBe('task-detail');
     expect(navigationReturnLabel('projects')).toBe('返回项目');
     expect(navigationReturnLabel('history')).toBe('返回历史任务');
-    expect(navigationReturnLabel('new-task')).toBe('返回新建任务');
+    expect(navigationReturnLabel('new-task')).toBe('返回新建项目');
     expect(navigationReturnLabel('queue')).toBe('返回自动化队列');
   });
 

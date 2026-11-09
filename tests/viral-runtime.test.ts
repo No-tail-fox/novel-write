@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Agent } from 'undici';
 import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
+import { matchMusicMvLyricsToTranscript } from '@shared/music-mv-plan';
 import { buildOpenAiTranscriptionRequest, createViralRuntimeProviders, parseOpenAiTranscriptionResult } from '@shared/viral-runtime';
 
 function getAgentConnectTimeout(dispatcher: unknown): number | null {
@@ -88,6 +89,34 @@ describe('viral runtime speech-to-text API', () => {
     ]);
   });
 
+  it('preserves top-level Whisper word timestamps when coarse segments are also present', () => {
+    const transcript = parseOpenAiTranscriptionResult({
+      text: '第一句。第二句。',
+      segments: [{ text: '第一句。第二句。', start: 0, end: 8 }],
+      words: [
+        { word: '第一句。', start: 1.2, end: 2.4 },
+        { word: '第二句。', start: 5.3, end: 6.8 },
+      ],
+    });
+    expect(transcript[0].words).toHaveLength(2);
+    expect(matchMusicMvLyricsToTranscript('第一句\n第二句', transcript, 8000)?.lrcText)
+      .toBe('[00:01.20]第一句\n[00:02.40]\n[00:05.30]第二句\n[00:06.80]');
+  });
+
+  it('assigns boundary-crossing top-level words only once without changing their times', () => {
+    const transcript = parseOpenAiTranscriptionResult({
+      segments: [{ text: '第一句', start: 0, end: 2 }, { text: '第二句', start: 2, end: 4 }],
+      words: [
+        { word: '第一句', start: 0.2, end: 1.3 },
+        { word: '第二句', start: 1.9, end: 3.2 },
+      ],
+    });
+    expect(transcript.map(segment => segment.words)).toEqual([
+      [{ word: '第一句', start: 0.2, end: 1.3 }],
+      [{ word: '第二句', start: 1.9, end: 3.2 }],
+    ]);
+  });
+
   it('builds a SiliconFlow transcription request with only supported multipart fields', () => {
     const config = normalizeAppConfig({
       ...defaultConfig,
@@ -137,6 +166,35 @@ describe('viral runtime speech-to-text API', () => {
       const providers = createViralRuntimeProviders(config, dir);
 
       await expect(providers.transcribe(audioPath)).rejects.toThrow(/byte|large|limit|大小|上限/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps actionable transcription failures without stack frames or credentials, and preserves cancellation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storybound-viral-stt-diagnostic-'));
+    const audioPath = join(dir, 'audio.wav');
+    await writeFile(audioPath, 'small audio fixture');
+    const originalFetch = globalThis.fetch;
+    const config = normalizeAppConfig({
+      ...defaultConfig,
+      speechToText: { ...defaultConfig.speechToText, apiKey: 'stt-key', baseUrl: 'https://stt.example/v1', model: 'whisper-1' },
+    });
+    const providers = createViralRuntimeProviders(config, dir);
+    try {
+      globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ message: '金币余额不足; api_key=private-value' }), { status: 402 })) as unknown as typeof fetch;
+      const error = await providers.transcribe(audioPath).catch((failure: Error) => failure);
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toContain('HTTP 402');
+      expect(message).toContain('金币余额不足');
+      expect(message).toContain('https://stt.example/v1/audio/transcriptions');
+      expect(message).not.toContain('private-value');
+      expect(message).not.toMatch(/\n\s+at\s/u);
+      const controller = new AbortController();
+      controller.abort();
+      await expect(providers.transcribe(audioPath, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     } finally {
       globalThis.fetch = originalFetch;
       await rm(dir, { recursive: true, force: true });

@@ -1641,3 +1641,6 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+.task-output-deliverables { display: grid; gap: 8px; min-width: 0; }
+.task-output-video { display: block; max-width: 100%; width: 100%; max-height: min(560px, calc(100vh - 280px)); object-fit: contain; }

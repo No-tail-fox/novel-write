@@ -139,7 +139,7 @@ function changeStructure<T extends DirectorSubtitleDocument>(document: T, shotId
           audioClips: document.timeline.audioClips.filter((item) => item.shotId !== shotId || (item.trackType !== 'dialogue' && item.trackType !== 'narration')),
         },
       } : {}),
-      beats: document.beats.map((item) => item !== beat ? item : { ...beat, subtitleCues, narration: subtitleCues.map((cue) => cue.text).join(' '), shots: beat.shots.map((item) => item.id !== shotId ? item : { ...item, voiceAssetVersionId: undefined, subtitleCueIds: nextIds }) }),
+      beats: document.beats.map((item) => item !== beat ? item : { ...beat, subtitleCues, narration: subtitleCues.map((cue) => cue.text).join(''), shots: beat.shots.map((item) => item.id !== shotId ? item : { ...item, voiceAssetVersionId: undefined, subtitleCueIds: nextIds }) }),
     }) as T;
   }
   if (!vox && episode) {

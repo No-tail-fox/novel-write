@@ -31,9 +31,8 @@ import type {
 } from './types';
 
 type TestStatus = ConfigTestResult['status'];
-type ConfigValidationOptions = {
+export type ConfigValidationOptions = {
   pathExists?: (path: string) => boolean;
-  fetchImpl?: typeof fetch;
 };
 const SILICONFLOW_STT_BASE_URL = 'https://api.siliconflow.cn/v1';
 const SILICONFLOW_STT_DEFAULT_MODEL = 'FunAudioLLM/SenseVoiceSmall';
@@ -851,39 +850,6 @@ export function validateConfigTarget(target: ConfigTestTarget, input: AppConfig,
   });
 }
 
-export async function testConfigTarget(target: ConfigTestTarget, input: AppConfig, options: ConfigValidationOptions = {}): Promise<ConfigTestResult> {
-  const fieldResult = validateConfigTarget(target, input, options);
-  if (target !== 'image' || fieldResult.status === 'fail') {
-    return fieldResult;
-  }
-
-  const config = normalizeAppConfig(input);
-  if (config.imageProvider !== 'gpt_image' && config.imageProvider !== 'custom') {
-    return fieldResult;
-  }
-
-  const image = activeOpenAiImageConfig(config);
-  const { testOpenAiCompatibleImageModel } = await import('./openai-image');
-  const probe = await testOpenAiCompatibleImageModel({
-    baseUrl: image.baseUrl,
-    apiKey: image.apiKey,
-    model: image.model,
-    ratio: image.ratio,
-    resolution: image.resolution,
-    quality: image.quality,
-    fetchImpl: options.fetchImpl,
-  });
-
-  return {
-    target: 'image',
-    status: probe.status,
-    detail: probe.detail,
-    latencyMs: probe.latencyMs,
-    endpoint: probe.endpoint,
-    requestId: probe.requestId,
-  };
-}
-
 export function fromLlmModelTestResult(result: LlmModelTestResult): ConfigTestResult {
   return {
     status: result.status,
@@ -1043,7 +1009,7 @@ function speechToTextDefaultBaseUrl(provider: SpeechToTextProvider): string {
   return provider === 'siliconflow' ? SILICONFLOW_STT_BASE_URL : defaultConfig.speechToText.baseUrl;
 }
 
-function activeOpenAiImageConfig(config: AppConfig): {
+export function activeOpenAiImageConfig(config: AppConfig): {
   baseUrl: string;
   apiKey: string;
   model: string;

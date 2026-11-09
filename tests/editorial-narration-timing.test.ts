@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, parseEditorialCollagePipelineData, rebuildEditorialTimeline, splitEditorialShot } from '../src/shared/editorial-collage';
 import { fitEditorialNarrationTiming, prepareEditorialNarrationForRender } from '../src/shared/editorial-narration-timing';
-import { applyEditorialVoiceRecord } from '../src/features/director-desk/director-generation';
+import { applyEditorialVoiceRecord, editorialVoiceInput } from '../src/features/director-desk/director-generation';
 import { hashSubtitleAlignment, hashSubtitleText } from '../src/shared/audio-alignment';
 import { measureProductionNarrationAlignment } from '../src/shared/production-audio-alignment';
+import { productionAudioClipGainAtTime } from '../src/shared/production-audio';
 import type { VoiceLabRecord } from '../src/shared/types';
 
 function fixture() {
@@ -21,6 +22,11 @@ function fixture() {
 }
 
 describe('VOX measured narration timing', () => {
+  it.each([['连续语句还没有说完', 8291], ['这里是分句，', 8416], ['这里是句末。', 8458]] as const)('uses punctuation-aware tail padding: %s', (text, durationMs) => {
+    const source = fixture();
+    source.beats[0].subtitleCues[0].text = text;
+    expect(fitEditorialNarrationTiming(source).beats[0].shots[0].durationMs).toBe(durationMs);
+  });
   it('removes estimate gaps, retains the entire recording and shifts every later shot and cue', () => {
     const source = fixture();
     const before = structuredClone(source);
@@ -82,8 +88,10 @@ describe('VOX measured narration timing', () => {
     expect(paths).toHaveLength(2);
     expect(next.timeline!.audioClips!.at(-1)!.durationMs).toBe(10440);
     await expect(prepareEditorialNarrationForRender(source, async () => NaN)).rejects.toThrow('DURATION_INVALID');
-    source.assets[1].durationMs = 16000;
-    expect(() => fitEditorialNarrationTiming(source)).toThrow('NARRATION_TOO_LONG');
+    source.assets[1].durationMs = 17000;
+    const repaired = fitEditorialNarrationTiming(source);
+    expect(repaired.beats[1].shots).toHaveLength(2);
+    expect(repaired.timeline!.audioClips!.filter(clip => clip.assetVersionId === 'voice-1').reduce((ms, clip) => ms + clip.sourceDurationMs!, 0)).toBe(17000);
   });
 
   it('recognizes a full recording after decoder precision changes and preserves both video routes', async () => {
@@ -102,4 +110,140 @@ describe('VOX measured narration timing', () => {
     expect(result.samples.map(sample => sample.status)).toEqual(['mismatch', 'mismatch']);
     expect(result.samples[1].detail).toContain('截掉尾音');
   });
+  it.each([14950, 17000, 31000, 47000])('automatically splits %i ms without losing speech, text or later timing', measured => {
+    const source = fixture(); source.assets[0].durationMs = measured;
+    source.beats[0].shots[0].cuePlan = undefined;
+    source.beats[0].subtitleCues[0].text = '城市的早晨已经到来，街道上的人们开始新的一天。';
+    const before = structuredClone(source), original = source.beats[0].shots[0];
+    const text = source.beats[0].subtitleCues[0].text;
+    const next = fitEditorialNarrationTiming(source), parts = next.beats[0].shots;
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts[0].id).toBe(original.id);
+    expect(parts.every(s => s.durationMs >= 800 && s.durationMs <= 15000)).toBe(true);
+    expect(parts.slice(1).every(s => s.transitionIn?.type === 'cut')).toBe(true);
+    expect(next.beats[0].subtitleCues.map(c => c.text).join('')).toBe(text);
+    expect(next.beats[0].subtitleCues.every(c => !/^[，。！？、；：]/u.test(c.text))).toBe(true);
+    const clips = next.timeline!.audioClips!.filter(c => c.assetVersionId === 'voice-0').sort((a,b) => a.startMs - b.startMs);
+    expect(clips).toHaveLength(parts.length);
+    expect(clips.reduce((ms,c) => ms + c.sourceDurationMs!,0)).toBe(measured);
+    let cursor = 0;
+    for (const clip of clips) {
+      expect(clip.sourceStartMs).toBe(cursor); expect(clip.startMs).toBe(cursor);
+      cursor += clip.sourceDurationMs!;
+    }
+    expect(next.beats[1].startMs).toBe(next.beats[0].durationMs);
+    expect(next.beats[1].subtitleCues[0].startMs).toBe(next.beats[1].startMs);
+    expect(parseEditorialCollagePipelineData(next)).toEqual(next);
+    expect(fitEditorialNarrationTiming(next)).toBe(next);
+    expect(source.beats[0].shots).toEqual(before.beats[0].shots);
+  });
+
+  it('keeps measured word boundaries when splitting and moves later measured words together', () => {
+    const source = fixture(); source.assets[0].durationMs = 17000;
+    const cue = source.beats[0].subtitleCues[0]; cue.endMs = 17000;
+    source.beats[0].shots[0].cuePlan = undefined;
+    cue.text = '第一句话。第二句话。';
+    cue.tokens = [{ text: '第一句话。', startMs: 0, endMs: 8000 }, { text: '第二句话。', startMs: 9000, endMs: 17000 }];
+    cue.alignmentSource = 'provider'; cue.textHash = hashSubtitleText(cue.text); cue.alignmentFingerprint = hashSubtitleAlignment(cue);
+    const next = fitEditorialNarrationTiming(source), cues = next.beats[0].subtitleCues;
+    expect(next.beats[0].shots[0].durationMs).toBe(8000);
+    expect(cues.map(c => c.text)).toEqual(['第一句话。', '第二句话。']);
+    expect(cues.flatMap(c => c.tokens!)).toEqual(cue.tokens);
+    expect(cues.every(c => c.alignmentSource === 'provider')).toBe(true);
+    expect(parseEditorialCollagePipelineData(next)).toEqual(next);
+    expect(fitEditorialNarrationTiming(next)).toBe(next);
+  });
+
+  it('subdivides a provider sentence token exceeding one shot instead of leaving a child without its text', () => {
+    const source = fixture(); source.assets[0].durationMs = 17000;
+    const cue = source.beats[0].subtitleCues[0]; cue.endMs = 17000;
+    cue.tokens = [{ text: cue.text, startMs: 0, endMs: 17000 }]; cue.alignmentSource = 'provider';
+    cue.textHash = hashSubtitleText(cue.text); cue.alignmentFingerprint = hashSubtitleAlignment(cue);
+    const next = fitEditorialNarrationTiming(source);
+    expect(next.beats[0].shots.every(s => s.subtitleCueIds.length > 0)).toBe(true);
+    expect(next.beats[0].subtitleCues.map(c => c.text).join('')).toBe(cue.text);
+    expect(next.beats[0].subtitleCues.every(c => !c.tokens)).toBe(true);
+    expect(parseEditorialCollagePipelineData(next)).toEqual(next);
+  });
+
+  it('preserves sound offsets and fades across the seam, including a silent continuation after the recording', () => {
+    const source = fixture(), shot = source.beats[0].shots[0];
+    const sound = { id: 'long-sound', shotId: shot.id, assetVersionId: 'voice-1', trackType: 'sfx' as const, startMs: 1000, durationMs: 20000, sourceStartMs: 0, sourceDurationMs: 20000, sourceMediaDurationMs: 20000, gainDb: -6, fadeInMs: 12000, fadeOutMs: 12000 };
+    source.assets[1].durationMs = 20000; source.beats[1].shots[0].voiceAssetVersionId = undefined;
+    source.timeline!.audioClips = [sound];
+    const next = fitEditorialNarrationTiming(source), sounds = next.timeline!.audioClips!.filter(c => c.trackType === 'sfx');
+    expect(sounds.reduce((ms,c) => ms+c.sourceDurationMs!,0)).toBe(20000);
+    for (let at = 1001; at < 21000; at += 127) {
+      expect(sounds.reduce((gain,c) => gain+productionAudioClipGainAtTime(c,at),0)).toBeCloseTo(productionAudioClipGainAtTime(sound,at),10);
+    }
+    const silent = next.beats[0].shots.filter(s => !next.timeline!.audioClips!.some(c => c.shotId === s.id && c.trackType === 'narration'));
+    expect(silent.length).toBeGreaterThan(0);
+    expect(silent.every(s => !s.voiceAssetVersionId)).toBe(true);
+    expect(fitEditorialNarrationTiming(next)).toBe(next);
+    expect(parseEditorialCollagePipelineData(next)).toEqual(next);
+  });
+
+  it('creates durable source slices for an old project without a timeline and stays stable on a second export', async () => {
+    const source = fixture(); source.timeline = undefined;
+    const next = await prepareEditorialNarrationForRender(source, async p => p.endsWith('0.wav') ? 17000 : 10440);
+    expect(next.beats[0].shots).toHaveLength(2);
+    expect(next.timeline!.audioClips!.filter(c => c.assetVersionId === 'voice-0').reduce((ms,c) => ms+c.sourceDurationMs!,0)).toBe(17000);
+    expect(parseEditorialCollagePipelineData(next)).toEqual(next);
+    const again = await prepareEditorialNarrationForRender(next, async p => p.endsWith('0.wav') ? 17000 : 10440);
+    expect(again).toBe(next);
+  });
+
+});
+
+
+describe('regenerated split narration', () => {
+  it('purchases one complete text and replaces every child slice without dropping the tail', () => {
+    const source = fixture(); source.assets.find(a => a.id === 'voice-0')!.durationMs = 30000;
+    const split = fitEditorialNarrationTiming(source), root = split.beats[0].shots[0];
+    const group = split.beats[0].shots.filter(s => s.narrationSplit?.sourceShotId === root.id);
+    expect(group.length).toBeGreaterThan(1);
+    for (const shot of group) { shot.camera = [{ ...shot.camera[0], atMs: shot.durationMs }]; }
+    const input = editorialVoiceInput(split, root.id, { provider: 'minimax', voiceId: 'voice', voiceLabel: '配音', speed: 1 });
+    expect(input.text).toBe(source.beats[0].subtitleCues.map(c => c.text).join(''));
+    expect(input.cueIds).toHaveLength(group.flatMap(s => s.subtitleCueIds).length);
+    const record = { id: 'replacement-voice', text: input.text, voiceId: 'voice', voiceLabel: '配音', speed: 1, provider: 'minimax', audioPath: 'I:/fixture/replacement.wav', status: 'generated', createdAt: source.createdAt, finishedAt: source.createdAt, errorMessage: '' } as VoiceLabRecord;
+    const received = applyEditorialVoiceRecord(split, root.id, record, 'speech', input, true, 21000, false);
+    expect(() => parseEditorialCollagePipelineData(received)).not.toThrow();
+    const next = fitEditorialNarrationTiming(received, [root.id]);
+    const ids = new Set(group.map(s => s.id));
+    const clips = next.timeline!.audioClips!.filter(c => c.trackType === 'narration' && ids.has(c.shotId!)).sort((a,b) => a.startMs - b.startMs);
+    expect(clips).toHaveLength(group.length);
+    expect(new Set(clips.map(c => c.assetVersionId)).size).toBe(1);
+    expect(clips[0].assetVersionId).not.toBe('voice-0');
+    expect(clips.reduce((sum,c) => sum + c.sourceDurationMs!, 0)).toBe(21000);
+    expect(clips[0].sourceStartMs).toBe(0);
+    for (let i=1;i<clips.length;i++) expect(clips[i].sourceStartMs).toBe(clips[i-1].sourceStartMs! + clips[i-1].sourceDurationMs!);
+    for (const shot of next.beats[0].shots) {
+      expect(shot.camera.every(f => f.atMs <= shot.durationMs)).toBe(true);
+      expect(shot.layers.every(l => l.motion.every(f => f.atMs <= shot.durationMs))).toBe(true);
+    }
+    expect(next.sourceText).toBe(split.sourceText);
+    expect(next.beats[0].subtitleCues.map(c => c.text)).toEqual(split.beats[0].subtitleCues.map(c => c.text));
+    expect(next.assets.some(a => a.id === 'voice-0')).toBe(true);
+    expect(() => parseEditorialCollagePipelineData(next)).not.toThrow();
+    expect(fitEditorialNarrationTiming(next)).toEqual(next);
+  });
+  it.each(['trim', 'offset', 'mute', 'extra'])('preserves manual %s edits and rejects unsafe automatic retiming', kind => {
+    const source = fixture(); source.assets[0].durationMs = 30000;
+    const split = fitEditorialNarrationTiming(source), root = split.beats[0].shots[0];
+    const clip = split.timeline!.audioClips!.find(c => c.shotId === root.id && c.trackType === 'narration')!;
+    if (kind === 'trim') { clip.sourceStartMs = 100; clip.sourceDurationMs! -= 100; clip.durationMs! -= 100; }
+    if (kind === 'offset') clip.startMs += 100;
+    if (kind === 'mute') clip.muted = true;
+    if (kind === 'extra') split.timeline!.audioClips!.push({ ...clip, id: 'manual-layer' });
+    const originalClips = structuredClone(split.timeline!.audioClips);
+    const input = editorialVoiceInput(split, root.id, { provider: 'minimax', voiceId: 'voice', voiceLabel: '配音', speed: 1 });
+    const record = { id: 'replacement-voice', text: input.text, voiceId: 'voice', voiceLabel: '配音', speed: 1, provider: 'minimax', audioPath: 'I:/fixture/replacement.wav', status: 'generated', createdAt: source.createdAt, finishedAt: source.createdAt, errorMessage: '' } as VoiceLabRecord;
+    const received = applyEditorialVoiceRecord(split, root.id, record, 'speech', input, true, 21000, false);
+    expect(received.timeline!.audioClips).toEqual(originalClips);
+    expect(received.assets.length).toBeGreaterThan(split.assets.length);
+    expect(() => fitEditorialNarrationTiming(received, [root.id])).toThrow('EDITORIAL_NARRATION_SPLIT_MANUAL_EDIT');
+    expect(received.timeline!.audioClips).toEqual(originalClips);
+  });
+
 });

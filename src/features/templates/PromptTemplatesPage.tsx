@@ -1,3 +1,6 @@
+import { promptChannelOptions, selectWorkflowPrompt, workflowSlotChannels } from '../../shared/workflow-prompt-runtime';
+import { loadDefaultPromptTemplates } from '../../shared/prompt-template-loader';
+import type { PromptChannel } from '../../shared/types';
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Eye, Plus, RotateCcw, Sparkles } from 'lucide-react';
 import type { CustomStyle, PromptTemplate, PromptStepTemplateType, PromptTemplateType } from '../../shared/types';
@@ -8,8 +11,9 @@ import { useAsyncAction } from '../../ui/async-action';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { AsyncActionFeedback as InlineActionFeedback } from '../../components/AsyncActionFeedback';
 import { EmptyState } from '../../components/EmptyState';
-import { Button, HoverPreview, SelectField, Tabs } from '../../ui';
+import { Button, HoverPreview, SelectField, Tabs, TextField } from '../../ui';
 import { ImageStyleSample } from '../image-style-preview/ImageStylePreview';
+import './prompt-templates.css';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
 import { promptTemplateTypeOptions } from '../../shared/editorial-options';
 import {
@@ -25,6 +29,8 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   const [promptTemplateLibraryTab, setPromptTemplateLibraryTab] = useState<'story' | 'image'>('story');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<PromptTemplateType | 'all'>('all');
   const [templateTrackFilter, setTemplateTrackFilter] = useState('all');
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [channelFilter, setChannelFilter] = useState<PromptChannel | 'all'>('all');
   const [imageDraft, setImageDraftState] = useState<CustomStyle | null>(state.customStyles[0] ? { ...state.customStyles[0] } : null);
   const imageDraftRef = useRef(imageDraft);
   const [savedImageDraft, setSavedImageDraft] = useState(imageDraft);
@@ -36,7 +42,8 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   const filteredTemplates = state.promptTemplates.filter((template) => {
     const typeMatches = templateTypeFilter === 'all' || template.type === templateTypeFilter;
     const trackMatches = templateTrackFilter === 'all' || template.baseTrack === templateTrackFilter;
-    return typeMatches && trackMatches;
+    const queryMatches = !templateSearch.trim() || [template.name, template.description, template.slot ?? ''].join(' ').toLocaleLowerCase().includes(templateSearch.trim().toLocaleLowerCase());
+    return queryMatches && typeMatches && trackMatches && (channelFilter === 'all' || (template.channel ?? 'story') === channelFilter || (template.channel === 'shared' && workflowSlotChannels(template.slot).includes(channelFilter)));
   });
   const selected = state.promptTemplates.find((template) => template.id === selectedId) ?? filteredTemplates[0] ?? state.promptTemplates[0];
   const [draft, setDraftState] = useState<PromptTemplate | null>(selected ? { ...selected } : null);
@@ -117,16 +124,17 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
     });
   }
 
-  async function savePromptTemplateDraft(): Promise<boolean> {
+  async function savePromptTemplateDraft(apply = true): Promise<boolean> {
     const submitted = draftRef.current;
     if (!submitted) return false;
     const generation = promptDetailGeneration.current;
-    const shouldForkTemplate = Boolean(submitted.isBuiltin);
     const templateToSave: PromptTemplate = {
       ...independentPromptTemplateFields(submitted),
-      id: shouldForkTemplate ? crypto.randomUUID() : submitted.id,
-      isBuiltin: false,
-      origin: 'custom',
+      id: submitted.id,
+      isBuiltin: submitted.isBuiltin,
+      origin: submitted.isBuiltin ? 'system' : 'custom',
+      builtinModified: submitted.isBuiltin ? true : undefined,
+      enabled: apply,
       updatedAt: new Date().toISOString(),
     };
     const result = await promptTemplateAction.run(async () => {
@@ -151,8 +159,10 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   async function duplicateTemplate(template: PromptTemplate) {
     const generation = promptDetailGeneration.current;
     const currentDraft = draftRef.current;
-    const copy = { ...independentPromptTemplateFields(template), id: crypto.randomUUID(), name: `${template.name} 副本`, isBuiltin: false, origin: 'custom' as const };
     await promptTemplateAction.run(async () => {
+      const detail = template.content ? template : await api.getPromptTemplateDetail(template.id);
+      if (!detail) throw new Error('模板已不存在，请刷新模板库。');
+      const copy = { ...independentPromptTemplateFields(detail), id: crypto.randomUUID(), name: `${detail.name} 副本`, isBuiltin: false, builtinModified: undefined, enabled: false, origin: 'custom' as const };
       applyState(await api.savePromptTemplate(copy));
       if (generation !== promptDetailGeneration.current || draftRef.current !== currentDraft) return;
       acceptPromptTemplate(copy);
@@ -167,27 +177,17 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
   }
 
   async function createPromptTemplate() {
-    const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter;
-    const template: PromptTemplate = {
-      id: crypto.randomUUID(),
-      name: '新建模板',
-      type: 'task',
-      description: '本地自定义提示词模板',
-      content: '请基于 {{inputText}} 生成适合 {{track}} 的短视频内容。',
-      isBuiltin: false,
-      updatedAt: new Date().toISOString(),
-      baseTrack,
-      defaultStyles: ['photo-real'],
-      defaultDraftTemplateId: state.draftTemplates[0]?.id ?? 'default-portrait-9-16',
-      characterPolicy: 'follow-template',
-      step3SkeletonModules: ['防台词文字'],
-      referenceKind: 'none',
-      origin: 'custom',
-      marketTags: [],
-    };
     await promptTemplateAction.run(async () => {
-      applyState(await api.savePromptTemplate(template));
+      const defaults = await loadDefaultPromptTemplates();
+      const base = defaults.find((item) => item.type === 'workflow' && (channelFilter === 'all' || workflowSlotChannels(item.slot).includes(channelFilter))) ?? defaults.find((item) => item.type === 'task')!;
+      const template: PromptTemplate = {
+        ...structuredClone(base), id: crypto.randomUUID(), name: '新建模板',
+        channel: channelFilter === 'all' ? base.channel : channelFilter,
+        isBuiltin: false, origin: 'custom', builtinModified: undefined, enabled: false,
+        updatedAt: new Date().toISOString(),
+      };
       acceptPromptTemplate(template);
+      setSavedDraft(null);
       setTemplateJsonDraft('');
       setTemplateMode('detail');
     });
@@ -400,7 +400,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
         <div className="panel-title-row prompt-template-gallery-toolbar">
           <div>
             <h2>提示词模板</h2>
-            <p>故事模板决定 AI 怎么写，图像模板决定画面怎么长。先浏览模板，点开后查看和编辑细节。</p>
+            <p>管理各创作类别实际使用的提示词。系统默认不可删除，可修改或克隆；保存并应用后用于对应频道的新生成。</p>
           </div>
           <div className="button-row">
             <Button icon={<RotateCcw size={14} />} disabled={promptTemplateAction.busy} onClick={resetPromptTemplateLibrary}>
@@ -414,10 +414,13 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
         <InlineActionFeedback feedback={promptTemplateAction.feedback} />
         <Tabs className="prompt-template-tabs" label="提示词模板类型" value={promptTemplateLibraryTab}
           onChange={(value) => setPromptTemplateLibraryTab(value as 'story' | 'image')}
-          items={[{ value: 'story', label: '故事模板' }, { value: 'image', label: '图像模板' }]} />
+          items={[{ value: 'story', label: '创作提示词' }, { value: 'image', label: '图像模板' }]} />
         {promptTemplateLibraryTab === 'story' ? (
           <>
             <div className="template-filter-row">
+              <TextField label="搜索提示词" placeholder="搜索名称或用途" value={templateSearch} onChange={(event) => setTemplateSearch(event.target.value)} />
+              <SelectField label="创作频道" value={channelFilter} onChange={(event) => setChannelFilter(event.target.value as PromptChannel | 'all')}
+                options={[{ value: 'all', label: '全部频道' }, ...promptChannelOptions]} />
               <SelectField label="类型筛选" value={templateTypeFilter} onChange={(event) => setTemplateTypeFilter(event.target.value as PromptTemplateType | 'all')}
                 options={promptTemplateTypeOptions.map((type) => ({ value: type, label: promptTemplateTypeLabel(type) }))} />
               <SelectField label="赛道筛选" value={templateTrackFilter} onChange={(event) => setTemplateTrackFilter(event.target.value)}
@@ -425,7 +428,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
             </div>
             <section className="prompt-template-list story-template-gallery">
               <div className="prompt-template-list-title">
-                <strong>故事模板（{filteredTemplates.filter((template) => template.type === 'task').length}）</strong>
+                <strong>创作提示词（{state.promptTemplates.length}）</strong>
                 <span>{filteredTemplates.length} 个匹配模板</span>
               </div>
               {filteredTemplates.length > 0 ? filteredTemplates.map((template) => (
@@ -437,7 +440,9 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
                   <div className="prompt-template-row-main">
                     <strong>{template.name}</strong>
                     <span>{template.description}</span>
-                    <small>默认图像模板：{promptTemplateStyleLabelList(template, state.customStyles).join('、') || '未设置'} · id: {template.id}</small>
+                    <small>{promptChannelOptions.find((option) => option.value === (template.channel ?? 'story'))?.label} · {promptTemplateTypeLabel(template.type)} · {template.isBuiltin ? `系统默认 · 不可删除${template.builtinModified ? ' · 已修改' : ''}` : '自定义'}
+                      {template.type === 'workflow' ? ` · ${template.enabled === false ? '未启用' : selectWorkflowPrompt(state.promptTemplates, template.slot!, template.channel ?? 'shared')?.id === template.id ? '当前生效' : '备用'}` : ''}
+                      {template.type === 'task' ? ` · 默认画风：${promptTemplateStyleLabelList(template, state.customStyles).join('、') || '未设置'}` : ''}</small>
                   </div>
                   <div className="prompt-template-row-actions">
                     <Button density="compact" icon={<Eye size={14} />} disabled={promptTemplateAction.busy} onClick={() => openPromptTemplateDetail(template)}>
@@ -455,7 +460,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
           <section className="prompt-template-list image-template-gallery">
             <div className="prompt-template-list-title">
               <strong>图像模板（{state.customStyles.length}）</strong>
-              <span>管理 prefix、suffix、负面提示词和色彩模式</span>
+              <span>悬停预览完整样图，点“查看”编辑提示词</span>
             </div>
             {state.customStyles.map((style) => (
               <HoverPreview key={style.id} title={style.name} description={style.description} renderPreview={() => <ImageStyleSample style={style} />}>
@@ -507,7 +512,7 @@ export function PromptTemplatesPage({ api, state, applyState }: { api: StoryDrea
       setImageTemplateAiPrompt={setImageTemplateAiPrompt}
       setImageTemplateJsonDraft={setImageTemplateJsonDraft}
       setTemplateJsonDraft={setTemplateJsonDraft}
-      savePromptTemplateDraft={async () => { await savePromptTemplateDraft(); }}
+      savePromptTemplateDraft={async (apply = true) => { await savePromptTemplateDraft(apply); }}
       duplicate={duplicate}
       exportPromptTemplateJson={exportPromptTemplateJson}
       importPromptTemplateJson={importPromptTemplateJson}

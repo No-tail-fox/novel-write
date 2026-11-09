@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, Clock3, Images, Settings2, Video } from 'lucide-react';
 import type { DirectorProviderOption, DirectorShot, DirectorVideoJobStatus } from '../director-desk/DirectorDeskWorkspace';
+import type { VideoCapability } from '../../shared/types';
 import type { MotionComicVideoProduction } from '../../shared/motion-comic';
 import type { MotionComicProductionUnit } from '../../shared/motion-comic-production';
 import { Button, SegmentedControl, SelectField } from '../../ui';
@@ -17,7 +18,7 @@ export function MotionComicVideoReadiness({
   onStrategyChange,
   onProviderChange,
   onConfigureProvider,
-  production, submittedReferences=[], referenceError, dialogue=[], referenceAudioOptions=[], units=[], unitError, onProductionChange, onSplitUnits,
+  providerCapabilities = [], keyframeAsReference = false, production, submittedReferences=[], referenceError, dialogue=[], referenceAudioOptions=[], units=[], unitError, onProductionChange, onSplitUnits,
 }: {
   shot: DirectorShot;
   connected: boolean;
@@ -31,6 +32,8 @@ export function MotionComicVideoReadiness({
   onStrategyChange: (strategy: 'deterministic-layers' | 'living-poster') => void;
   onProviderChange?: (providerId: string) => void | Promise<void>;
   onConfigureProvider?: () => void;
+  providerCapabilities?: readonly VideoCapability[];
+  keyframeAsReference?: boolean;
   production?: MotionComicVideoProduction;
   submittedReferences?: Array<{assetVersionId:string;kind:string;description:string}>;
   referenceError?:string;
@@ -42,7 +45,7 @@ export function MotionComicVideoReadiness({
   onSplitUnits?:()=>void;
 }) {
   const remoteVideo = remoteOnly || shot.renderStrategy === 'living-poster';
-  const status = shot.videoUrl ? 'completed' : shot.videoJobStatus ?? 'idle';
+  const status = shot.videoJobStatus === 'running' || shot.videoJobStatus === 'queued' ? shot.videoJobStatus : shot.videoUrl ? 'completed' : shot.videoJobStatus ?? 'idle';
   const failed = status === 'failed' || status === 'cancelled';
   const running = status === 'queued' || status === 'running';
   const ready = connected && Boolean(shot.videoInputReady);
@@ -63,7 +66,8 @@ export function MotionComicVideoReadiness({
           ]}
       onChange={onStrategyChange}
     />
-    {remoteVideo && providerOptions.length > 0 ? <SelectField
+    {remoteVideo && !onProviderChange ? <p>项目视频模型：{providerOptions.find(option => option.value === providerId)?.label ?? '未配置'}</p> : null}
+    {remoteVideo && onProviderChange && providerOptions.length > 0 ? <SelectField
       label="视频生成服务"
       value={providerId ?? ''}
       options={providerOptions}
@@ -71,11 +75,11 @@ export function MotionComicVideoReadiness({
       onChange={(event) => void onProviderChange?.(event.target.value)}
     /> : null}
     {remoteVideo && production ? <>
-      <SelectField label="参考输入方式" value={production.referenceMode} disabled={busy} options={[{value:'frames',label:'首帧 / 首尾帧 · 严格约束'},{value:'references',label:'角色、场景、道具 · 多参考'}]} onChange={event=>onProductionChange?.({referenceMode:event.target.value as MotionComicVideoProduction['referenceMode'],...(event.target.value==='frames'?{audioMode:'post-mix',referenceAudioAssetVersionIds:[]}: {})})}/>
-      <p>{production.referenceMode==='references'?'开场与结尾作为软参考；下列固定版本将按顺序提交。':'首尾帧模式通过关键帧承载角色与场景；固定参考图不会额外提交。'}</p>
+      <SelectField label="参考输入方式" value={production.referenceMode} disabled={busy} options={[{value:'frames',label:keyframeAsReference?'关键帧参考 · 软约束':'首帧 / 首尾帧'},{value:'references',label:'角色、场景、道具 · 多参考',disabled:!providerCapabilities.includes('reference-image')}]} onChange={event=>onProductionChange?.({referenceMode:event.target.value as MotionComicVideoProduction['referenceMode'],...(event.target.value==='frames'?{audioMode:'post-mix',referenceAudioAssetVersionIds:[]}: {})})}/>
+      <p>{production.referenceMode==='references'?'开场与结尾作为软参考；下列固定版本将按顺序提交。':keyframeAsReference?'该服务将关键帧作为参考图片提交，不保证逐像素复现开场；固定参考图不会额外提交。':'通过首帧承载角色与场景；首尾帧需服务支持。固定参考图不会额外提交。'}</p>
       {submittedReferences.length ? <ol aria-label="实际提交参考列表">{submittedReferences.map((ref,index)=><li key={`${index}-${ref.assetVersionId}`}><strong>{ref.description}</strong><small>版本 {ref.assetVersionId}</small></li>)}</ol>:null}
       {referenceError?<p role="alert">{referenceError}</p>:null}
-      <SelectField label="声音制作" value={production.audioMode} disabled={busy} options={[{value:'post-mix',label:'静音画面 + 独立配音混音'},{value:'native',label:'原生音画 · 模型生成声音'},{value:'audio-driven',label:'参考音频驱动 · 需样片核验'}]} onChange={event=>onProductionChange?.({audioMode:event.target.value as MotionComicVideoProduction['audioMode'],...(event.target.value==='audio-driven'?{}:{referenceAudioAssetVersionIds:[]})})}/>
+      <SelectField label="声音制作" value={production.audioMode} disabled={busy} options={[{value:'post-mix',label:'静音画面 + 独立配音混音'},{value:'native',label:'原生音画 · 模型生成声音',disabled:!providerCapabilities.includes('synchronized-audio')},{value:'audio-driven',label:'参考音频驱动 · 需样片核验',disabled:!providerCapabilities.includes('reference-audio')}]} onChange={event=>onProductionChange?.({audioMode:event.target.value as MotionComicVideoProduction['audioMode'],...(event.target.value==='audio-driven'?{}:{referenceAudioAssetVersionIds:[]})})}/>
       {production.audioMode==='audio-driven'?<SelectField label="完整对白参考音频" value={production.referenceAudioAssetVersionIds?.[0]??''} disabled={busy} options={[{value:'',label:'选择已经生成或导入的完整对白'},...referenceAudioOptions]} onChange={event=>onProductionChange?.({referenceAudioAssetVersionIds:event.target.value?[event.target.value]:[]})}/>:null}
       <p>{production.audioMode==='post-mix'?'使用独立角色音色；当前模式不承诺口型同步。':'原生声音会保留到预览与导出。台词、音色与口型需观看实际模型样片核验。'}</p>
       {dialogue.length?<details><summary>完整对白 · {dialogue.length} 条</summary>{dialogue.map(cue=><p key={cue.id}><strong>{cue.role==='narrative'?'VO':cue.role==='monologue'?'OS':cue.speaker}</strong> · {(cue.startMs/1000).toFixed(1)}–{(cue.endMs/1000).toFixed(1)} 秒<br/>{cue.text}</p>)}</details>:null}

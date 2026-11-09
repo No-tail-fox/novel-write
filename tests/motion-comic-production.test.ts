@@ -16,7 +16,7 @@ function fixture(){
 }
 describe('motion comic explicit production inputs',()=>{
  it('submits ordered confirmed references and preserves complete authored dialogue',()=>{
-  const {document,shot}=fixture();const refs=motionComicVideoReferences(document,shot),request=buildMotionComicShotVideoRequest(document,shot);
+  const {document,shot}=fixture();shot.videoProduction!.audioMode='native';const refs=motionComicVideoReferences(document,shot),request=buildMotionComicShotVideoRequest(document,shot);
   expect(refs.map(r=>r.kind)).toEqual(['opening',...shot.characterLookIds.map(()=> 'character'),'scene']);
   expect(request.firstFramePath).toBeUndefined();expect(request.referenceImages?.map(r=>r.path)).toEqual(refs.map(r=>r.path));
   const cue=document.episodes[0].dialogueCues.find(c=>c.id===shot.dialogueCueIds[0])!;expect(request.prompt).toContain(cue.text);

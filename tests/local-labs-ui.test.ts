@@ -214,7 +214,9 @@ describe('local and lab editorial workbenches', () => {
     expect(voice).toContain("['seed-tts-2.0', 'seed-tts-1.0']");
     expect(voice).toContain('filterTtsVoiceOptions');
     expect(voice).toContain('aria-label="搜索音色"');
-    expect(voice).toContain('aria-pressed={voiceId === voice.id}');
+    expect(voice).toContain('<SelectField label="音色" aria-label="音色" value={voiceId}');
+    expect(voice).toContain('onChange={(event) => setVoiceId(event.target.value)}');
+    expect(voice).toContain('visibleVoiceOptions.map((voice)');
     expect(voice).not.toContain('onMouseEnter={() => generatePreview');
     expect(voices).toContain("id: 'cartoon_pig'");
     expect(css).toMatch(/\.voice-lab-voice-list\s*\{[\s\S]*?max-height:\s*260px;[\s\S]*?overflow:\s*auto;/u);
@@ -224,8 +226,8 @@ describe('local and lab editorial workbenches', () => {
     const qa = await readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
 
     expect(qa).toContain("targetView === 'voice-lab'");
-    expect(qa).toContain("button.textContent?.trim() === 'MiniMax'");
+    expect(qa).toContain("controlText(button) === 'MiniMax'");
     expect(qa).toContain("valueSetter?.call(searchInput, '有声书')");
-    expect(qa).toContain("document.querySelectorAll('.voice-lab-voice-list .chip').length === 18");
+    expect(qa).toContain("voiceCatalogCount() === 18");
   });
 });

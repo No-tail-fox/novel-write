@@ -126,6 +126,20 @@ describe('motion comic remote video', () => {
     expect(() => buildDirectorRenderScenes(document, episode.id, { shotIds: [shot.id] })).toThrow(/远程视频任务尚未成功完成/u);
   });
 
+  it('blocks an export that would cut off a measured dialogue recording', () => {
+    const { document, episode, shot } = fixture();
+    shot.renderStrategy = 'image-motion';
+    const cues = episode.dialogueCues.filter(cue => cue.shotId === shot.id);
+    episode.timeline.audioClips = cues.map(cue => {
+      const id = `voice-${cue.id}`;
+      cue.voiceAssetVersionId = id;
+      document.assets.push({ id, assetId: id, kind: 'audio', localPath: 'C:/managed/voice.wav', durationMs: cue.endMs - cue.startMs + 500, createdAt: now });
+      return { id: `dialogue-clip-${cue.id}`, assetVersionId: id, shotId: shot.id, trackType: 'dialogue' as const, startMs: cue.startMs, durationMs: cue.endMs - cue.startMs, sourceStartMs: 0, gainDb: 0 };
+    });
+    expect(cues.length).toBeGreaterThan(0);
+    expect(() => buildDirectorRenderScenes(document, episode.id, { shotIds: [shot.id] })).toThrow(/被时间槽截断/u);
+  });
+
   it('treats a planned action-only shot as an intentional silent mix', () => {
     const { document, episode, shot } = fixture();
     shot.renderStrategy = 'image-motion';

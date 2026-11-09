@@ -1,12 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
-import { rendererCommandInventory } from '../src/app/renderer-command-inventory';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { rendererCommandInventory, rendererCompatibilityMethods, rendererLifecycleCommands } from '../src/app/renderer-command-inventory';
 import { SHELL_VIEWS } from '../src/shared/types';
 import { readRendererSources } from './helpers/renderer-source';
 
 const queryOnlyMethods = new Set([
-  'getState', 'getBootstrap', 'reconcileDeltas', 'listTasks', 'getTaskDetail', 'listTaskEvents',
+  'getPixelleCatalog', // Local read-only template metadata; never starts generation.
+  'getVoxAnimationRuntime', 'readVoxAnimationAsset', 'listVoxTemplates',
+  'getLicenseStatus', 'getUpdateStatus', 'getMotionComicScripts',
+  'getViralReferenceIndex', 'getViralReferencePart', 'getViralMediaUrl',
+  'getArtifactStorage', 'getState', 'getBootstrap', 'reconcileDeltas', 'listTasks', 'getTaskDetail', 'listTaskEvents',
   'listViralAnalyses', 'getViralAnalysisDetail', 'listViralEvents', 'listImageLabRecords',
   'getImageLabRecordDetail', 'listVoiceLabRecords', 'getVoiceLabRecordDetail', 'listVideoLabRecords', 'listPromptTemplates',
   'getMusicLabServiceStatus', 'getMusicLabBalance', 'listMusicLabRecords',
@@ -22,7 +26,7 @@ const queryOnlyMethods = new Set([
 ]);
 
 const routeEntryPaths = {
-  shell: ['src/app/App.tsx', 'src/app/AppShell.tsx', 'src/app/navigation.ts'],
+  shell: ['src/app/App.tsx', 'src/app/AppShell.tsx', 'src/app/navigation.ts', 'src/app/AnnouncementsDialog.tsx'],
   'new-task': ['src/features/tasks/NewTaskPage.tsx'],
   'hot-board': ['src/features/hotboard/HotBoardPage.tsx'],
   projects: ['src/features/projects/ProjectHomePage.tsx'],
@@ -51,19 +55,83 @@ const rendererSourcesPromise = readRendererSources();
 const parsedSourceFileCache = new Map<string, { source: string; sourceFile: ts.SourceFile }>();
 
 describe('renderer command inventory', () => {
+  let allCallOwners: Map<string, string[]>;
+  let allRouteSources: Map<keyof typeof routeEntryPaths, ReadonlyMap<string, string>>;
+  beforeAll(async () => {
+    const sources = await rendererSourcesPromise;
+    allRouteSources = new Map((Object.keys(routeEntryPaths) as Array<keyof typeof routeEntryPaths>).map(route => [route, routeSources(sources, route)]));
+    allCallOwners = rendererCommandCallOwners(allRouteSources);
+  });
+  it('keeps compatibility-only APIs unreachable from renderer calls', async () => {
+    const actual = allCallOwners;
+    for (const [method, reason] of Object.entries(rendererCompatibilityMethods)) {
+      expect(reason.length).toBeGreaterThan(20);
+      expect(queryOnlyMethods.has(method)).toBe(false);
+      expect(method in rendererCommandInventory).toBe(false);
+      expect(actual.get(method) ?? [], method).toEqual([]);
+    }
+  });
+  it('proves non-interactive commands execute in their declared effect or cleanup', async () => {
+    const sources = await rendererSourcesPromise;
+    for (const owner of rendererLifecycleCommands) {
+      const route = routeSources(sources, owner.route);
+      expect(route.has(owner.source)).toBe(true);
+      const source = sources.requiredFile(owner.source);
+      const handler = namedFunctionSource(source, owner.source, owner.handler);
+      const sf = parsedSourceFile(handler, owner.source);
+      const identities = namedFunctionIdentities(sf);
+      const calls: ts.CallExpression[] = [];
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && node.expression.getText(sf) === 'api.' + owner.method && nearestNamedFunction(node, sf, identities) === owner.handler) calls.push(node);
+        ts.forEachChild(node, visit);
+      };
+      visit(sf); expect(calls, owner.method).not.toHaveLength(0);
+      for (const call of calls) {
+        let effect = false, cleanup = false;
+        for (let node: ts.Node | undefined = call.parent; node; node = node.parent) {
+          if (ts.isReturnStatement(node)) cleanup = true;
+          if (ts.isCallExpression(node) && node.expression.getText(sf) === 'useEffect') { effect = true; break; }
+        }
+        expect(effect, owner.method + ' effect').toBe(true);
+        expect(cleanup, owner.method + ' lifecycle').toBe(owner.lifecycle === 'cleanup');
+      }
+      const focused = await readFile(new URL('../' + owner.test, import.meta.url), 'utf8');
+      expect(focused).toContain(owner.method);
+    }
+  });
+
+  it('indexes each menu action separately and retains the disabled trigger contract', () => {
+    const source = '<Menu trigger={<Button disabled={locked}>Media</Button>} options={[{label:"Image",onSelect:()=>replaceImage()},{label:"Video",onSelect:()=>replaceVideo()}]} />';
+    const candidates = indexJsxCommandControlCandidates(source, 'menu-fixture.tsx');
+    expect(candidates.filter(candidate => candidate.eventBindings.includes('replaceImage'))).toHaveLength(1);
+    expect(candidates.filter(candidate => candidate.eventBindings.includes('replaceVideo'))).toHaveLength(1);
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0].text).toContain('disabled={locked}');
+    expect(candidates[0].text).not.toContain('replaceVideo');
+  });
+  it('indexes conditional spread menu entries without losing action-level locks', () => {
+    const source = '<Menu trigger={<Button disabled={busy}>More</Button>} options={[...(running ? [{label:"Cancel",disabled:cancelling,onSelect:()=>cancelRender()}] : [])]} />';
+    const candidates = indexJsxCommandControlCandidates(source, 'spread-menu.tsx');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].eventBindings).toContain('cancelRender()');
+    expect(candidates[0].text).toContain('disabled:cancelling');
+    expect(candidates[0].text).toContain('disabled={busy}');
+  });
   it('keeps the StoryDreamApi type and real preload method sets identical', async () => {
-    const [apiSource, preloadSource] = await Promise.all([
+    const [apiSource, preloadSource, viralSource] = await Promise.all([
       readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
       readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/shared/viral-reference-api.ts', import.meta.url), 'utf8'),
     ]);
-    expect(preloadApiMethods(preloadSource)).toEqual(storyDreamApiMethods(apiSource).sort());
+    expect(preloadApiMethods(preloadSource)).toEqual(storyDreamApiMethods(apiSource + '\n' + viralSource).sort());
   });
 
   it('owns every user command with complete route and UX metadata', async () => {
     const apiSource = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
-    const apiMethods = storyDreamApiMethods(apiSource)
-      .filter((method) => !queryOnlyMethods.has(method))
+    const viralSource = await readFile(new URL('../src/shared/viral-reference-api.ts', import.meta.url), 'utf8');
+    const apiMethods = storyDreamApiMethods(apiSource + '\n' + viralSource)
+      .filter((method) => !queryOnlyMethods.has(method) && !(method in rendererCompatibilityMethods))
       .sort();
     const inventoryMethods = Object.keys(rendererCommandInventory).sort();
     expect(inventoryMethods).toEqual(apiMethods);
@@ -81,11 +149,8 @@ describe('renderer command inventory', () => {
 
   it('enumerates every concrete renderer call owner instead of one representative route', async () => {
     const sources = await rendererSourcesPromise;
-    const ownerSourcesByRoute = new Map(
-      (Object.keys(routeEntryPaths) as Array<keyof typeof routeEntryPaths>)
-        .map((route) => [route, routeSources(sources, route)] as const),
-    );
-    const actualOwners = rendererCommandCallOwners(ownerSourcesByRoute);
+    const ownerSourcesByRoute = allRouteSources;
+    const actualOwners = allCallOwners;
     const inventory = rendererCommandInventory as unknown as Record<string, {
       owners?: Array<{
         route: string;
@@ -113,7 +178,7 @@ describe('renderer command inventory', () => {
       const declaredOwners = metadata.owners ?? [];
       expect(declaredOwners.length, `${method}.owners`).toBeGreaterThan(0);
       expect(
-        [...new Set(declaredOwners.map(({ source, handler }) => `${source}#${handler}`))].sort(),
+        [...new Set([...declaredOwners, ...rendererLifecycleCommands.filter(owner => owner.method === method)].map(({ source, handler }) => `${source}#${handler}`))].sort(),
         `${method} must enumerate each real api call owner`,
       ).toEqual(actualOwners.get(method) ?? []);
 
@@ -182,6 +247,29 @@ describe('renderer command inventory', () => {
     }
   }, 15_000);
 
+  it('connects prompt template save, backup, clone and import controls to real mutations', async () => {
+    const sources = await rendererSourcesPromise;
+    const route = routeSources(sources, 'prompt-templates');
+    const owners = rendererCommandInventory.savePromptTemplate.owners;
+    const actualOwners = rendererCommandCallOwners(new Map([['prompt-templates', route]]));
+    expect([...new Set(owners.map(({ source, handler }) => `${source}#${handler}`))].sort())
+      .toEqual(actualOwners.get('savePromptTemplate'));
+    for (const owner of owners) {
+      const source = sources.requiredFile(owner.source);
+      const controls = jsxCommandControls(sources.requiredFile(owner.controlSource), owner.controlSource, [owner.binding], owner.control);
+      expect(controls, owner.binding).toHaveLength(1);
+      expect(controls[0]).toContain(owner.disabled);
+      expect(namedFunctionSource(source, owner.source, owner.handler)).toMatch(/api\.savePromptTemplate\s*\(/u);
+      expect(sources.requiredFile(owner.evidenceSource)).toContain(owner.loading);
+      expect(sources.requiredFile(owner.evidenceSource)).toContain(owner.error);
+      for (const bridge of owner.bridges ?? []) {
+        expect(route.has(bridge.source)).toBe(true);
+        expect(sources.requiredFile(bridge.source)).toContain(bridge.evidence);
+      }
+      if (owner.controlSource !== owner.source) expect(owner.bridges?.length).toBeGreaterThan(0);
+    }
+  });
+
   it('proves each command owner, visible control, UX states, and focused test inside its declared route', async () => {
     const sources = await rendererSourcesPromise;
     const routeEvidence = new Map(Object.keys(routeEntryPaths).map((route) => {
@@ -233,19 +321,19 @@ function preloadApiMethods(source: string): string[] {
 function storyDreamApiMethods(source: string): string[] {
   const sourceFile = ts.createSourceFile('storydream-api.ts', source, ts.ScriptTarget.Latest, true);
   const names: string[] = [];
-  const owners = new Set(['StoryDreamApi', 'LocalBenchmarkBookPersonAssetApi']);
+  const owners = new Set(['StoryDreamApi', 'LocalBenchmarkBookPersonAssetApi', 'ViralReferenceApi']);
   function visit(node: ts.Node): void {
-    if (ts.isTypeAliasDeclaration(node) && owners.has(node.name.text)) {
+    if ((ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) && owners.has(node.name.text)) {
       const collect = (current: ts.Node): void => {
-        if (ts.isTypeLiteralNode(current)) {
+        if (ts.isTypeLiteralNode(current) || ts.isInterfaceDeclaration(current)) {
           for (const member of current.members) {
-            if (ts.isPropertySignature(member) && member.name) names.push(member.name.getText(sourceFile));
+            if ((ts.isPropertySignature(member) || ts.isMethodSignature(member)) && member.name) names.push(member.name.getText(sourceFile));
           }
           return;
         }
         ts.forEachChild(current, collect);
       };
-      collect(node.type);
+      collect(ts.isInterfaceDeclaration(node) ? node : node.type);
     }
     ts.forEachChild(node, visit);
   }
@@ -466,6 +554,14 @@ function parsedSourceFile(source: string, path: string): ts.SourceFile {
   return sourceFile;
 }
 
+function menuOptionObjects(expression: ts.Expression): ts.ObjectLiteralExpression[] {
+  const node = unwrapExpression(expression);
+  if (ts.isObjectLiteralExpression(node)) return [node];
+  if (ts.isConditionalExpression(node)) return [...menuOptionObjects(node.whenTrue), ...menuOptionObjects(node.whenFalse)];
+  if (ts.isArrayLiteralExpression(node)) return node.elements.flatMap(item => menuOptionObjects(ts.isSpreadElement(item) ? item.expression : item));
+  return [];
+}
+
 function indexJsxCommandControlCandidates(source: string, path: string): ReadonlyArray<{ eventBindings: string; text: string }> {
   const sourceFile = parsedSourceFile(source, path);
   const controls: Array<{ eventBindings: string; text: string }> = [];
@@ -479,6 +575,20 @@ function indexJsxCommandControlCandidates(source: string, path: string): Readonl
         .join(' ');
       const text = node.getText(sourceFile);
       if (eventBindings) controls.push({ eventBindings, text });
+      // Project-owned Menu routes actions through option objects, not JSX onClick.
+      // Keep each option separate, with its real trigger's disabled state.
+      if (opening.tagName.getText(sourceFile) === 'Menu') {
+        const attributes = opening.attributes.properties.filter(ts.isJsxAttribute);
+        const options = attributes.find(attribute => attribute.name.getText(sourceFile) === 'options');
+        const trigger = attributes.find(attribute => attribute.name.getText(sourceFile) === 'trigger');
+        const expression = options?.initializer && ts.isJsxExpression(options.initializer) ? options.initializer.expression : undefined;
+        if (expression && ts.isArrayLiteralExpression(expression)) {
+          for (const option of menuOptionObjects(expression)) {
+            const onSelect = option.properties.filter(ts.isPropertyAssignment).find(property => property.name.getText(sourceFile) === 'onSelect');
+            if (onSelect) controls.push({ eventBindings: onSelect.getText(sourceFile), text: option.getText(sourceFile) + ' ' + (trigger?.getText(sourceFile) ?? '') });
+          }
+        }
+      }
     }
     ts.forEachChild(node, visit);
   }

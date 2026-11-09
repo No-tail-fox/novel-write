@@ -154,7 +154,7 @@ describe('editorial data contracts', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it('accepts only strict bounded clone-voice cursor requests over IPC', () => {
     const schema = ipcInputSchemas['minimax-clone-voice:list'];

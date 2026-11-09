@@ -11,6 +11,8 @@ import {
   testOpenAiCompatibleLlm,
 } from '@shared/llm-provider';
 import { defaultConfig } from '@shared/config';
+import { NetworkPolicyError } from '../src/shared/network-policy';
+import { LlmTextStream, LlmTextInterruptedError } from '../src/shared/llm-text-stream';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -902,5 +904,80 @@ describe('Anthropic Messages LLM JSON adapter', () => {
       version: '2023-06-01',
       auth: null,
     });
+  });
+});
+
+
+describe('LLM text event streaming', () => {
+  const event = (v: unknown) => 'data: ' + JSON.stringify(v) + '\r\n\r\n';
+  const config = { ...defaultConfig.llm, apiKey: 'offline', baseUrl: 'https://provider.example', model: 'm' };
+  const request = { step: 1, name: 'stream', stream: true, maxRetries: 3, messages: [{ role: 'user' as const, content: 'code' }] };
+  const response = (chunks: string[], failure?: Error, status = 200) => new Response(new ReadableStream<Uint8Array>({
+    pull(c) { const chunk = chunks.shift(); if (chunk !== undefined) c.enqueue(new TextEncoder().encode(chunk)); else if (failure) c.error(failure); else c.close(); }
+  }, { highWaterMark: 0 }), { status, headers: { 'content-type': 'text/event-stream' } });
+  it.each([
+    { protocol: 'openai' as const, body: event({ id: 'chat-1', choices: [{ delta: { content: '画面\n' }, index: 0 }] }) + event({ choices: [{ delta: { content: '继续' }, finish_reason: 'stop', index: 0 }] }) + 'data: [DONE]\r\n\r\n', reason: 'stop' },
+    { protocol: 'anthropic' as const, body: event({ type: 'message_start', message: { id: 'msg-1', usage: { input_tokens: 9 } } }) + event({ type: 'content_block_delta', delta: { type: 'text_delta', text: '画面\n继续' } }) + event({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } }) + event({ type: 'message_stop' }), reason: 'end_turn' },
+    { protocol: 'responses' as const, body: event({ type: 'response.output_text.delta', delta: '画面\n继续' }) + event({ type: 'response.completed', response: { id: 'resp-1', status: 'completed', usage: { output_tokens: 5 } } }), reason: 'completed' },
+  ])('parses $protocol across UTF-8 and CRLF boundaries', ({ protocol, body, reason }) => {
+    const parser = new LlmTextStream(protocol), bytes = new TextEncoder().encode(body);
+    for (let i = 0; i < bytes.length; i++) parser.accept(bytes.slice(i, i + 1), response([]));
+    expect(parser.finish()).toMatchObject({ text: '画面\n继续', finishReason: reason });
+  });
+  it('retains a completed paid answer if a later trailing transport read fails', async () => {
+    const fetch = vi.fn(async () => response([event({ id: 'paid', choices: [{ delta: { content: 'complete code' }, finish_reason: 'stop' }] })], new NetworkPolicyError('UND_ERR_SOCKET', 'socket closed')));
+    vi.stubGlobal('fetch', fetch);
+    expect(await createOpenAiCompatibleTextLlm(config)(request)).toMatchObject({ text: 'complete code', requestId: 'paid', finishReason: 'stop' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('retains partial deltas and never replays a mid-stream socket failure', async () => {
+    const fetch = vi.fn(async () => response([event({ id: 'partial', choices: [{ delta: { content: 'partial code' } }] })], new NetworkPolicyError('UND_ERR_SOCKET', 'socket disconnected')));
+    vi.stubGlobal('fetch', fetch);
+    await expect(createOpenAiCompatibleTextLlm(config)({ ...request, captureIncomplete: true })).rejects.toMatchObject({ result: { text: 'partial code', requestId: 'partial' }, name: 'LlmTextInterruptedError' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('keeps byte caps enforced even after a terminal event', async () => {
+    const chunks = [event({ id: 'cap', choices: [{ delta: { content: 'kept' }, finish_reason: 'stop' }] }), ...Array.from({ length: 130 }, () => ':' + 'x'.repeat(65536) + '\n\n')];
+    const fetch = vi.fn(async () => response(chunks)); vi.stubGlobal('fetch', fetch);
+    await expect(createOpenAiCompatibleTextLlm(config)(request)).rejects.toMatchObject({ name: 'LlmTextInterruptedError', cause: { code: 'NETWORK_RESPONSE_TOO_LARGE' } });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('requires a framed terminal marker and retains unterminated final text', () => {
+    const parser = new LlmTextStream('openai');
+    parser.accept(new TextEncoder().encode('data: ' + JSON.stringify({ id: 'tail', choices: [{ delta: { content: 'partial' }, finish_reason: 'stop' }] })), response([]));
+    expect(() => parser.finish()).toThrow(LlmTextInterruptedError);
+    expect(parser.snapshot()).toMatchObject({ text: 'partial', requestId: 'tail' });
+  });
+  it('keeps HTTP rejections out of the SSE success path', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response([event({ choices: [{ delta: { content: 'ignore' }, finish_reason: 'stop' }] })], undefined, 400)));
+    await expect(createOpenAiCompatibleTextLlm(config)(request)).rejects.toThrow('400');
+  });
+  it('applies empty-response policy after a completed trailing failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response([event({ id: 'empty', choices: [{ delta: {}, finish_reason: 'length' }] })], new Error('closed'))));
+    await expect(createOpenAiCompatibleTextLlm(config)(request)).rejects.toThrow('没有返回文本');
+    expect(await createOpenAiCompatibleTextLlm(config)({ ...request, captureIncomplete: true })).toMatchObject({ text: '', finishReason: 'length' });
+  });
+});
+
+describe('durable authoring response capture', () => {
+  const config = { ...defaultConfig.llm, apiKey: 'offline-test', baseUrl: 'https://provider.example', model: 'test' };
+  it.each([
+    { protocol: 'openai', body: { id: 'chat-partial', choices: [{ message: { content: 'return {' }, finish_reason: 'length' }], usage: { completion_tokens: 12000 } }, reason: 'length', id: 'chat-partial' },
+    { protocol: 'anthropic', body: { id: 'msg-partial', content: [{ type: 'text', text: 'return {' }], stop_reason: 'max_tokens', usage: { output_tokens: 12000 } }, reason: 'max_tokens', id: 'msg-partial' },
+    { protocol: 'responses', body: { id: 'resp-partial', status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [{ type: 'message', content: [{ type: 'output_text', text: 'return {' }] }], usage: { output_tokens: 12000 } }, reason: 'max_output_tokens', id: 'resp-partial' },
+  ] as const)('retains the partial code and provider metadata for $protocol', async ({protocol, body, reason, id}) => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetch);
+    const result = await createConfiguredTextLlm({ ...config, provider: protocol === 'anthropic' ? 'anthropic' : 'custom', protocol }).run({ step: 1, name: 'author file', messages: [{ role: 'user', content: 'code' }], maxTokens: 12000, maxRetries: 0, captureIncomplete: true });
+    expect(result).toMatchObject({ text: 'return {', requestId: id, finishReason: reason, usage: body.usage }); expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('retains an empty incomplete Responses result but keeps unfinished queued responses ambiguous', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ id: 'empty', status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const request = { step: 1, name: 'author', messages: [{ role: 'user' as const, content: 'code' }], captureIncomplete: true, maxRetries: 0 };
+    const llm = createConfiguredTextLlm({ ...config, protocol: 'responses' });
+    expect(await llm.run(request)).toMatchObject({ text: '', requestId: 'empty', finishReason: 'max_output_tokens' });
+    fetch.mockImplementation(async () => new Response(JSON.stringify({ id: 'queued', status: 'queued', output: [] }), { status: 200 }));
+    await expect(llm.run(request)).rejects.toThrow('queued');
   });
 });

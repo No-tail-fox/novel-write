@@ -511,7 +511,7 @@ describe('pyJianYingDraft bridge input', () => {
       expect(script).toContain('resolve_enum');
       expect(script).toContain('effects = payload.get("effects") or {}');
       expect(script).toContain('audio_segment.add_fade(');
-      expect(script).toContain('bgm_segment.add_fade(');
+      expect(script).toContain('bgm_segment.add_keyframe(time - cursor, gain_at(time))');
       expect(script).toContain('image_segment.add_transition(');
       expect(script).toContain('image_segment.add_filter(');
       expect(script).toContain('image_segment.add_effect(');
@@ -580,14 +580,14 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
-  it('renders a two-second cover image and title before narration, captions, and body overlays', async () => {
+  it.each(['legacy', 'track-spec'] as const)('renders cover, narration, captions and overlays with the %s track API', async (api) => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-jy-cover-page-'));
     const draftDir = join(dir, 'Draft Root', 'Cover Page Draft');
     const bridgeDir = join(dir, 'pyjianying-bridge');
 
     try {
       await writePyJianYingBridgeScript(dir);
-      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), fakePyJianYingDraftModule, 'utf8');
+      await writeFile(join(bridgeDir, 'pyJianYingDraft.py'), api === 'legacy' ? fakePyJianYingDraftModule : trackSpecPyJianYingDraftModule, 'utf8');
       const voice = join(dir, 'voice.wav');
       const image = join(dir, 'image.png');
       const cover = join(dir, 'cover.png');
@@ -642,7 +642,8 @@ describe('pyJianYingDraft bridge input', () => {
         images: [{ sceneId: 1, path: image }],
         narration: [{ sceneId: 1, path: voice }],
         subtitlesSrtPath: subtitles,
-        bgm: null,
+        bgm: { id: 'loop-test', title: 'Loop test', durationMs: 1000, path: voice, volume: 0.3 },
+        effects: { transitionType: 'none', transitionDurationUs: 0, narrationFadeInUs: 0, narrationFadeOutUs: 0, bgmFadeInUs: 1_800_000, bgmFadeOutUs: 1_600_000, filterType: '', videoEffectType: '', audioEffectType: '' },
         totalDurationUs: 3_000_000,
         volumes: { narration: 1, bgm: 0.3 },
       });
@@ -664,6 +665,15 @@ describe('pyJianYingDraft bridge input', () => {
       expect(coverTitle.segments[0]).toMatchObject({ text: '只在封面出现', target_timerange: { start: 0, duration: 2_000_000 } });
       expect(bodyTitle.segments[0]).toMatchObject({ text: '正文标题', target_timerange: { start: 2_000_000, duration: 1_000_000 } });
       expect(content.duration).toBe(3_000_000);
+      const music = content.tracks.find((track: { name: string }) => track.name === 'bgm').segments;
+      expect(music.map((segment: { target_timerange: { start: number; duration: number } }) => segment.target_timerange)).toEqual([
+        { start: 0, duration: 1_000_000 }, { start: 1_000_000, duration: 1_000_000 }, { start: 2_000_000, duration: 1_000_000 },
+      ]);
+      expect(music[0].keyframes[0].volume).toBe(0);
+      expect(music[2].keyframes.at(-1).volume).toBe(0);
+      expect(music[0].keyframes.at(-1).volume).toBeCloseTo(music[1].keyframes[0].volume, 8);
+      expect(music[1].keyframes.at(-1).volume).toBeCloseTo(music[2].keyframes[0].volume, 8);
+
       const generatedSubtitles = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
       expect(generatedSubtitles).toContain('00:00:02,000 --> 00:00:03,000');
     } finally {
@@ -816,7 +826,9 @@ describe('pyJianYingDraft bridge input', () => {
     }
   });
 
-  it('preserves supplied storyboard caption lines without splitting them again', async () => {
+  it.each(['legacy', 'measured', 'count', 'overlap', 'negative', 'outside', 'zero-duration', 'negative-duration'] as const)('preserves or rejects supplied caption windows: %s', async (mode) => {
+    const explicitStarts = mode !== 'legacy';
+    const invalid = mode !== 'legacy' && mode !== 'measured';
     const dir = await mkdtemp(join(tmpdir(), 'storybound-jy-exact-captions-'));
     const draftDir = join(dir, 'Draft Root', 'Bridge Draft');
     const bridgeDir = join(dir, 'pyjianying-bridge');
@@ -831,7 +843,7 @@ describe('pyJianYingDraft bridge input', () => {
       await writeFile(image, Buffer.from('image'));
       await writeFile(subtitles, '', 'utf8');
 
-      await runPyJianYingDraftBridge({
+      const render = () => runPyJianYingDraftBridge({
         workDir: dir,
         draftDir,
         title: 'Exact caption draft',
@@ -844,7 +856,8 @@ describe('pyJianYingDraft bridge input', () => {
           durationUs: 2_400_000,
           text: '这段原文不应覆盖手动字幕',
           captions: ['手动第一行，保留标点', '手动第二行'],
-          captionDurationsUs: [900_000, 1_500_000],
+          captionDurationsUs: mode === 'zero-duration' ? [0, 900_000] : mode === 'negative-duration' ? [-1, 900_000] : explicitStarts ? [700_000, 900_000] : [900_000, 1_500_000],
+          ...(explicitStarts ? { captionStartsUs: mode === 'count' ? [200_000] : mode === 'overlap' ? [200_000, 500_000] : mode === 'negative' ? [-1, 1_300_000] : mode === 'outside' ? [200_000, 2_000_000] : [200_000, 1_300_000] } : {}),
         }],
         images: [{ sceneId: 1, path: image }],
         narration: [{ sceneId: 1, path: voice }],
@@ -854,11 +867,16 @@ describe('pyJianYingDraft bridge input', () => {
         volumes: { narration: 1, bgm: 0.3 },
       });
 
+      if (invalid) {
+        await expect(render()).rejects.toThrow(/Caption timing/);
+        return;
+      }
+      await render();
       const generated = await readFile(join(draftDir, 'materials', 'subtitles', 'subtitles.srt'), 'utf8');
       const blocks = generated.trim().split(/\r?\n\r?\n/);
       expect(blocks).toHaveLength(2);
-      expect(blocks[0]).toContain('00:00:00,000 --> 00:00:00,900');
-      expect(blocks[1]).toContain('00:00:00,900 --> 00:00:02,400');
+      expect(blocks[0]).toContain(explicitStarts ? '00:00:00,200 --> 00:00:00,900' : '00:00:00,000 --> 00:00:00,900');
+      expect(blocks[1]).toContain(explicitStarts ? '00:00:01,300 --> 00:00:02,200' : '00:00:00,900 --> 00:00:02,400');
       expect(generated).toMatch(/\r?\n手动第一行，保留标点\r?\n/u);
       expect(generated).toMatch(/\r?\n手动第二行\r?\n?/u);
     } finally {
@@ -1371,11 +1389,17 @@ class AudioSegment:
         self.speed = speed
         self.volume = volume
         self.clip_settings = None
+        self.keyframes = []
 
     def add_fade(self, *args, **kwargs):
         return self
 
     def add_effect(self, *args, **kwargs):
+        return self
+
+
+    def add_keyframe(self, time_offset, volume):
+        self.keyframes.append({"time": time_offset, "volume": volume})
         return self
 
 
@@ -1455,4 +1479,18 @@ def read_wav_duration_us(path):
     byte_rate = struct.unpack("<I", data[28:32])[0]
     data_size = struct.unpack("<I", data[40:44])[0]
     return int(round(data_size / byte_rate * 1_000_000))
+`;
+
+// Simulate the bundled TrackSpec API with the legacy entry point removed.
+const trackSpecPyJianYingDraftModule = fakePyJianYingDraftModule
+  .replace('def add_track(self, track_type, name):', 'def _add_track(self, track_type, name):')
+  .replace('self.add_track("text", track_name)', 'self.append_track(TrackSpec("text", track_name))') + String.raw`
+class TrackSpec:
+    def __init__(self, track_type, name=None, mute=False):
+        self.track_type, self.name, self.mute = track_type, name, mute
+
+def _append_track(self, spec):
+    return self._add_track(spec.track_type, spec.name)
+
+Script.append_track = _append_track
 `;

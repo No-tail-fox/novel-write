@@ -1,3 +1,5 @@
+import { ProjectModelFields, ProjectModelBar, useProjectModelConfig } from '../projects/ProjectModelFields';
+import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle2, ChevronRight, CircleAlert, Download, FileText, ImagePlus, Images, Layers3, Loader2, Plus, Save, Scissors, Settings2, Sparkles, Upload, Users, Video, Volume2 } from 'lucide-react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
@@ -109,6 +111,7 @@ export function MotionComicPage({
   const referenceAction = useAsyncAction();
   const planningAction = useAsyncAction();
   const planApplyAction = useAsyncAction();
+  const [createModels, setCreateModels] = useState(() => defaultProjectModels(state.config));
   const [document, setDocument] = useState<MotionComicPipelineData | null>(null);
   const documentRef = useRef<MotionComicPipelineData | null>(null);
   const savedDocumentRef = useRef<MotionComicPipelineData | null>(null);
@@ -151,8 +154,10 @@ export function MotionComicPage({
   const [planApplyMode, setPlanApplyMode] = useState<'append' | 'replace'>('append');
   const [planningSourceEpisodeId, setPlanningSourceEpisodeId] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [rendering, setRendering] = useState(false);
+  const renderPendingRef = useRef(false);
   const projectLeave = useUnsavedChanges({
-    id: 'motion-comic-project', label: 'AI 漫剧项目', dirty, busy: projectAction.busy,
+    id: 'motion-comic-project', label: 'AI 漫剧项目', dirty, busy: projectAction.busy || rendering,
     onSave: saveProject,
     onDiscard: () => {
       const saved = savedDocumentRef.current;
@@ -169,6 +174,7 @@ export function MotionComicPage({
     id: 'motion-comic-create', label: 'AI 漫剧新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSourceText.trim()),
     busy: projectAction.busy || sourceFileAction.busy || episodePlanningAction.busy,
     value: {
+      createModelsJson: JSON.stringify(createModels),
       createTitle,
       createRatio,
       createSourceKind,
@@ -184,6 +190,7 @@ export function MotionComicPage({
       createSplitWarningsJson: JSON.stringify(createSplitWarnings),
     },
     restore: (draft) => {
+      setCreateModels(current => readProjectModelsDraft(draft.createModelsJson, current));
       setCreateTitle(draft.createTitle); setCreateRatio(draft.createRatio); setCreateSourceKind(draft.createSourceKind);
       setCreateAdaptationMode(draft.createAdaptationMode); setCreateSourceFileName(draft.createSourceFileName); setCreateSourceText(draft.createSourceText);
       setCreateTargetCharacters(draft.createTargetCharacters);
@@ -242,12 +249,12 @@ export function MotionComicPage({
     const submitted = { createTitle: document.title, createPremise: document.series.premise };
     const result = await copyAction.run(async () => {
       try {
-        const result = await api.composeResearchCopy(buildDirectorCopyAssistRequest({
+        const result = await api.composeResearchCopy({ projectId: document.id, ...buildDirectorCopyAssistRequest({
           mode: 'motion-comic',
           intent,
           title: submitted.createTitle,
           copy: submitted.createPremise,
-        })).catch((error) => { throw normalizeDirectorCopyAssistError(error); });
+        }) }).catch((error) => { throw normalizeDirectorCopyAssistError(error); });
         if (result?.copy?.trim()) {
           mutateDocument((current) => ({
             ...current,
@@ -260,18 +267,21 @@ export function MotionComicPage({
     });
     if (!result.ok) setCopyAssistIntent(null);
   }
-  const [selectedProviderProfileId, setSelectedProviderProfileId] = useState(() => activeImageProfileId(state.config));
+  const projectTask = state.tasks.find(task => task.id === document?.id);
+  const selectedProjectModels = (!createOpen && projectTask?.projectModels) || createModels;
+  const modelConfig = useProjectModelConfig(state.config, selectedProjectModels);
+  const selectedProviderProfileId = selectedProjectModels.imageProfileId;
 
   const projects = useMemo(() => state.tasks.filter((task) => task.taskType === 'motion-comic' && !task.archivedAt).slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)), [state.tasks]);
-  const providerProfiles = useMemo(() => resolveDirectorImageProviderOptions(state.config, state.secretStatus), [state.config, state.secretStatus]);
-  const providerStatus = useMemo(() => resolveDirectorImageProviderStatus(state.config, state.secretStatus, selectedProviderProfileId), [selectedProviderProfileId, state.config, state.secretStatus]);
+  const providerProfiles = useMemo(() => resolveDirectorImageProviderOptions(modelConfig, state.secretStatus), [modelConfig, state.secretStatus]);
+  const providerStatus = useMemo(() => resolveDirectorImageProviderStatus(modelConfig, state.secretStatus, selectedProviderProfileId), [selectedProviderProfileId, modelConfig, state.secretStatus]);
   const providerOptions = useMemo(() => providerProfiles.map((profile) => ({
     value: profile.profileId,
     label: `${profile.label} · ${profile.model} · ${profile.resolution}${profile.supportsReferenceImages ? ' · 支持参考图' : ' · 不支持参考图'}${profile.connected ? '' : ' · 未连接'}`,
     disabled: !profile.connected || !profile.supportsReferenceImages,
   })), [providerProfiles]);
   const voiceStatus = useMemo(() => resolveDirectorVoiceProviderStatus(state.config, state.secretStatus), [state.config, state.secretStatus]);
-  const videoProviderOptions = useMemo(() => resolveDirectorVideoProviderOptions(state.config, state.secretStatus), [state.config, state.secretStatus]);
+  const videoProviderOptions = useMemo(() => resolveDirectorVideoProviderOptions(modelConfig, state.secretStatus), [modelConfig, state.secretStatus]);
   const committedVideoCost = useMemo(() => (document?.providerJobs ?? [])
     .filter((job) => job.capability === 'image-to-video')
     .reduce((total, job) => job.actualCost !== undefined
@@ -289,10 +299,10 @@ export function MotionComicPage({
   } : document?.episodes.find((episode) => episode.id === document.activeEpisodeId) ?? document?.episodes[0] ?? null;
   const videoProviderStatuses = useMemo(() => new Map((activeEpisode?.scenes ?? []).flatMap((scene) => scene.shots.map((shot) => [
     shot.id,
-    resolveDirectorVideoProviderStatus(state.config, state.secretStatus, { durationMs: shot.durationMs, committedCost: committedVideoCost, requiresLastFrame: Boolean(shot.lastFrameAssetVersionId), comic: document ? {document,shot} : undefined }),
-  ] as const))), [activeEpisode?.scenes, document, committedVideoCost, state.config, state.secretStatus]);
+    resolveDirectorVideoProviderStatus(modelConfig, state.secretStatus, { durationMs: shot.durationMs, committedCost: committedVideoCost, requiresLastFrame: Boolean(shot.lastFrameAssetVersionId), comic: document ? {document,shot} : undefined }),
+  ] as const))), [activeEpisode?.scenes, document, committedVideoCost, modelConfig, state.secretStatus]);
   const selectedVideoProviderStatus = videoProviderStatuses.get(selectedShotId || activeEpisode?.scenes[0]?.shots[0]?.id || '')
-    ?? resolveDirectorVideoProviderStatus(state.config, state.secretStatus, { durationMs: activeEpisode?.scenes[0]?.shots[0]?.durationMs ?? 1_000, committedCost: committedVideoCost });
+    ?? resolveDirectorVideoProviderStatus(modelConfig, state.secretStatus, { durationMs: activeEpisode?.scenes[0]?.shots[0]?.durationMs ?? 1_000, committedCost: committedVideoCost });
   const shots = useMemo(() => activeEpisode ? activeEpisode.scenes.flatMap((scene) => scene.shots.map((shot) => directorShotFromComic(activeEpisode, scene.title, shot, document, videoProviderStatuses.get(shot.id)))).map((shot, index) => ({ ...shot, index: index + 1 })) : [], [activeEpisode, document, videoProviderStatuses]);
   const renderOutputs = useMemo(() => document ? directorRenderOutputs(document, activeEpisode?.id) : { history: [], current: undefined }, [activeEpisode?.id, document]);
   const qualityReview = useMemo(() => document ? directorQualityReview(document, activeEpisode?.id) : undefined, [activeEpisode?.id, document]);
@@ -405,13 +415,11 @@ export function MotionComicPage({
     voiceConnected: voiceStatus.connected,
   });
   const videoRequired = Boolean(activeEpisode?.scenes.some((scene) => scene.shots.some((shot) => shot.renderStrategy === 'remote-video')));
-  const videoUnavailable = videoRequired && [...videoProviderStatuses.values()].some((status) => !status.connected);
+  const videoUnavailable = videoRequired && !videoProviderOptions.some((status) => status.connected);
   const systemStatusTone = actionError ? 'error' : videoUnavailable ? 'warning' : systemStatusSummary.tone;
   const systemStatus = actionError ? systemStatusSummary.label : videoUnavailable ? '远程视频服务待配置' : systemStatusSummary.label;
 
-  useEffect(() => {
-    if (!providerAction.busy) setSelectedProviderProfileId(activeImageProfileId(state.config));
-  }, [providerAction.busy, state.config]);
+
 
   useEffect(() => {
     setBrokenReferenceIds(new Set());
@@ -564,32 +572,6 @@ export function MotionComicPage({
     mutateDocument((current) => updateMotionComicRatio(current, ratio));
   }
 
-  async function selectImageProvider(profileId: string) {
-    const previousProfileId = selectedProviderProfileId;
-    setSelectedProviderProfileId(profileId);
-    const result = await providerAction.run(async () => {
-      const option = providerProfiles.find((candidate) => candidate.profileId === profileId);
-      if (!option?.connected) throw new Error(option?.unavailableReason ?? '图片生成服务未配置，请先完成设置。');
-      if (!option.supportsReferenceImages) throw new Error(`${option.label} 不支持参考图编辑，请切换图片生成服务。`);
-      const mutation = await api.saveConfig({ config: enableImageProfile(state.config, profileId), secretChanges: {} });
-      applyState(mutation);
-      return profileId;
-    }, { successMessage: '生成服务已切换。' });
-    if (!result.ok) setSelectedProviderProfileId(previousProfileId);
-  }
-
-  async function selectVideoProvider(providerId: string) {
-    await providerAction.run(async () => {
-      const option = videoProviderOptions.find((candidate) => candidate.providerId === providerId);
-      if (!option?.connected) throw new Error(option?.unavailableReason ?? '当前远程视频服务不可用，请先完成配置。');
-      const mutation = await api.saveConfig({
-        config: { ...state.config, video: { ...state.config.video, activeProviderId: providerId } },
-        secretChanges: {},
-      });
-      applyState(mutation);
-      return providerId;
-    }, { successMessage: '远程视频服务已切换。' });
-  }
 
   function selectEpisode(episodeId: string) {
     const current = documentRef.current;
@@ -1160,6 +1142,7 @@ export function MotionComicPage({
           throw new Error('每集目标时长需填写 15 至 1800 秒的整数。');
         }
         return api.planMotionComicEpisodes({
+          llmProfileId: createModels.llmProfileId,
           sourceText,
           sourceKind: createSourceKind,
           adaptationMode: createAdaptationMode,
@@ -1293,6 +1276,7 @@ export function MotionComicPage({
       });
       const premise = sourceText.replace(/\s+/gu, ' ').slice(0, 800);
       const mutation = await api.createMotionComic({
+        projectModels: createModels,
         title: createTitle,
         premise,
         ratio: createRatio,
@@ -1350,11 +1334,11 @@ export function MotionComicPage({
   function acceptSavedDocument(saved: MotionComicPipelineData, submitted: MotionComicPipelineData) {
     const live = documentRef.current;
     if (live?.id === submitted.id) {
+      const next = mergeDirectorSavedDocument(live, submitted, saved, savedDocumentRef.current ?? undefined);
       savedDocumentRef.current = saved;
-      const next = mergeDirectorSavedDocument(live, submitted, saved);
       setDocument(next);
       documentRef.current = next;
-      setDirty(live !== submitted);
+      setDirty(next !== saved);
     }
   }
 
@@ -1496,6 +1480,7 @@ export function MotionComicPage({
     let generationError: unknown = null;
     try {
       const mutation = await api.generateImageLab({
+        upstreamTaskId: current.id,
         id: recordId,
         prompt: input.prompt,
         ratio: input.ratio,
@@ -1521,9 +1506,12 @@ export function MotionComicPage({
         return applyMotionComicImageRecord(latest, shotId, record, providerStatus.model, input, isCurrentRequest);
       });
     }
+    if (record?.status === 'failed' && record.errorMessage) {
+      throw new AppError('DIRECTOR_IMAGE_GENERATION_FAILED', record.errorMessage);
+    }
     if (generationError) throw generationError;
     if (!record || record.status !== 'generated' || !record.imagePath) {
-      throw new Error(record?.errorMessage || '图片服务没有返回可用的关键帧文件。');
+      throw new AppError('DIRECTOR_IMAGE_GENERATION_FAILED', '图片服务没有返回可用的关键帧文件。');
     }
     if (inputChanged) throw new AppError('DIRECTOR_IMAGE_INPUT_CHANGED', '镜头输入或固定参考已修改：生成图片保留在历史中，未替换当前关键帧。');
     return { thumbnail: toLocalImageUrl(record.imagePath), provider: `${providerStatus.label} / ${providerStatus.model}` };
@@ -1621,22 +1609,37 @@ export function MotionComicPage({
   }
 
   async function renderProject() {
-    await persistQueueRef.current;
-    let current = documentRef.current;
-    if (!current) throw new Error('当前 AI 漫剧项目不存在。');
-    if (dirty) current = await enqueueProjectMutation(current.id, (latest) => latest);
-    const response = await api.renderDirectorProject({ id: current.id, episodeId: current.activeEpisodeId });
-    applyState(response.mutation);
-    const task = await api.getTaskDetail(current.id);
-    if (!task) throw new Error('AI 漫剧成片已生成，但项目无法重新读取。');
-    const saved = parseMotionComicPipelineData(task.pipelineData);
-    acceptSavedDocument(saved, current);
+    if (renderPendingRef.current) return;
+    renderPendingRef.current = true;
+    setRendering(true);
+    try {
+      await persistQueueRef.current;
+      let current = documentRef.current;
+      if (!current) throw new Error('当前 AI 漫剧项目不存在。');
+      if (current !== savedDocumentRef.current) current = await enqueueProjectMutation(current.id, (latest) => latest);
+      const response = await api.renderDirectorProject({ id: current.id, episodeId: current.activeEpisodeId });
+      applyState(response.mutation);
+      const task = await api.getTaskDetail(current.id);
+      if (!task) throw new Error('AI 漫剧成片已生成，但项目无法重新读取。');
+      const saved = parseMotionComicPipelineData(task.pipelineData);
+      acceptSavedDocument(saved, current);
+      if (documentRef.current?.id === current.id) setWorkflowStage('export');
+    } finally {
+      renderPendingRef.current = false;
+      setRendering(false);
+    }
   }
 
   if (loadingProjectId) return <div data-motion-comic-workbench="true"><DirectorProjectLoading mode="motion-comic" /></div>;
 
   if (createOpen) {
     return <div data-motion-comic-workbench="true"><MotionComicCreateFlow
+      models={<ProjectModelFields config={state.config} value={createModels} onChange={setCreateModels} disabled={projectAction.busy} />}
+      services={[
+        { id: 'image', label: '参考图与分镜图', model: `${providerStatus.label} · ${providerStatus.model}`, ready: providerStatus.connected && providerStatus.supportsReferenceImages, detail: providerStatus.unavailableReason || '需要支持参考图编辑的图片模型。', onConfigure: () => openSettings?.('image', 'motion-comic') },
+        { id: 'video', label: '远程视频', model: selectedVideoProviderStatus.model, ready: selectedVideoProviderStatus.connected, detail: selectedVideoProviderStatus.unavailableReason, onConfigure: () => openSettings?.('video', 'motion-comic') },
+        { id: 'voice', label: '角色配音', model: voiceStatus.label, ready: voiceStatus.connected, detail: voiceStatus.unavailableReason, onConfigure: () => openSettings?.('tts', 'motion-comic') },
+      ]}
       step={createStep}
       title={createTitle}
       ratio={createRatio}
@@ -1695,7 +1698,7 @@ export function MotionComicPage({
     await importReference(libraryTarget.kind, libraryTarget.id, selection);
   }} /> : null;
 
-  if (workflowStage === 'assets') return <div data-motion-comic-workbench="true">{libraryPicker}<MotionComicProductionWorkspace
+  if (workflowStage === 'assets') return <div data-motion-comic-workbench="true"><ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={rendering} />{libraryPicker}<MotionComicProductionWorkspace
     document={document}
     stage="assets"
     stageState={stageState}
@@ -1718,7 +1721,7 @@ export function MotionComicPage({
           <div aria-label="项目资产列表">{projectAssetItems.map((item) => <Button key={item.id} variant="subtle" aria-pressed={item.id === selectedProjectAssetId} onClick={() => setSelectedProjectAssets((current) => ({ ...current, [assetSection]: item.id }))}><strong>{item.label}</strong><small>{item.detail}</small></Button>)}{!projectAssetItems.length ? <small>没有符合条件的资产</small> : null}</div>
         </div> : null}
         <details className="comic-asset-settings"><summary>参考图生成服务</summary><section className="comic-asset-model" aria-label="参考图生成服务">
-          <SelectField label="资产生图模型" value={providerStatus.profileId} disabled={referenceAction.busy || providerAction.busy} onChange={(event) => void selectImageProvider(event.target.value)} options={providerProfiles.map((profile) => ({ value: profile.profileId, label: `${profile.label} · ${profile.model}` }))} />
+          <strong>项目生图模型：{providerStatus.label}</strong>
           <span className={providerStatus.connected ? 'is-ready' : 'is-warning'}>{providerStatus.connected ? '已配置 · 点击生成时调用' : '需要完成模型配置'}</span>
           <small>{providerStatus.model} · {providerStatus.resolution} · {providerStatus.quality === 'high' ? '高质量' : providerStatus.quality === 'medium' ? '标准质量' : '快速质量'}</small>
           {!providerStatus.connected ? <p role="status">{providerStatus.unavailableReason}</p> : null}
@@ -1828,7 +1831,8 @@ export function MotionComicPage({
     </div>
   </div></MotionComicProductionWorkspace></div>;
 
-  return <>
+  return <div className="motion-comic-page">
+    <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={rendering} />
     {libraryPicker}
     <MotionComicPlanDialog
       open={planOpen && !document.sourceDocument}
@@ -1869,7 +1873,7 @@ export function MotionComicPage({
         stage={workflowStage}
         stageState={stageState}
         dirty={dirty}
-        busy={projectAction.busy || providerAction.busy || planningAction.busy || planApplyAction.busy}
+        busy={rendering || projectAction.busy || providerAction.busy || planningAction.busy || planApplyAction.busy}
         showProjectHeader={!['storyboard', 'video', 'audio', 'export'].includes(workflowStage)}
         feedback={actionFeedback}
         errorMessage={actionError}
@@ -1936,7 +1940,8 @@ export function MotionComicPage({
         projectId={document.id}
         expectedUpdatedAt={document.updatedAt}
         dirty={dirty}
-        busy={projectAction.busy || providerAction.busy}
+        busy={rendering || projectAction.busy || providerAction.busy}
+        rendering={rendering}
         feedback={actionFeedback}
         errorMessage={actionError}
         estimatedCost={document.estimatedCost}
@@ -1956,7 +1961,7 @@ export function MotionComicPage({
         videoProviderLabel={selectedVideoProviderStatus.label}
         videoProviderModel={selectedVideoProviderStatus.model}
         videoProviderUnavailableReason={selectedVideoProviderStatus.unavailableReason}
-        videoProviderId={state.config.video.activeProviderId}
+        videoProviderId={modelConfig.video.activeProviderId}
         videoProviderOptions={videoProviderOptions.map((provider) => ({ value: provider.providerId, label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`, disabled: !provider.connected }))}
         outputUrl={outputAsset?.localPath ? toLocalAssetUrl(outputAsset.localPath) : undefined}
         outputHistory={renderOutputs.history.map((asset) => ({ id: asset.id, url: asset.localPath ? toLocalAssetUrl(asset.localPath) : undefined, createdAt: asset.createdAt, current: asset.id === outputAsset?.id }))}
@@ -1989,13 +1994,13 @@ export function MotionComicPage({
         onNewProject={startCreate}
         historyUsage={productionHistoryUsage(document)}
         onGenerateShot={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateShot(shotId))}
-        onProviderProfileChange={selectImageProvider}
+
         onGenerateVoice={generateVoice}
         onGenerateDialogueVoice={generateVoice}
         onGenerateVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
         onRetryVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
-        onVideoProviderChange={selectVideoProvider}
-        renderShotWorkflow={(shotId, busy) => {
+
+        renderShotWorkflow={(shotId, busy, videoRunning) => {
           const shot = shots.find((candidate) => candidate.id === shotId);
           if (!shot) return null;
           const status = videoProviderStatuses.get(shotId) ?? selectedVideoProviderStatus;
@@ -2004,16 +2009,16 @@ export function MotionComicPage({
           let submittedReferences: Array<{assetVersionId:string;kind:string;description:string}> = [];
           let referenceError:string|undefined;
           try { if(canonical&&production.referenceMode==='references') submittedReferences=motionComicVideoReferences(document,canonical); } catch(error) {referenceError=error instanceof Error?error.message:String(error);}
-          const selectedProvider=state.config.video.providers.find(provider=>provider.id===(status.providerId||state.config.video.activeProviderId));
+          const selectedProvider=modelConfig.video.providers.find(provider=>provider.id===(status.providerId||modelConfig.video.activeProviderId));
           let units:ReturnType<typeof planMotionComicProductionUnits>=[],unitError:string|undefined;
           try {if(canonical&&selectedProvider)units=planMotionComicProductionUnits(document,canonical,selectedProvider);}catch(error){unitError=error instanceof Error?error.message:String(error);}
           const updateProduction=(patch:Partial<typeof production>)=>mutateDocument(current=>({...current,episodes:current.episodes.map(episode=>({...episode,scenes:episode.scenes.map(scene=>({...scene,shots:scene.shots.map(item=>item.id===shotId?{...item,videoProduction:{...production,...patch}}:item)}))}))}));
           return <MotionComicVideoReadiness
-            shot={shot}
+            shot={videoRunning ? { ...shot, videoJobStatus: 'running', videoJobError: undefined } : shot}
             connected={status.connected}
             providerLabel={status.label}
             providerModel={status.model}
-            providerId={state.config.video.activeProviderId}
+            providerId={modelConfig.video.activeProviderId}
             providerOptions={videoProviderOptions.map((provider) => ({
               value: provider.providerId,
               label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`,
@@ -2022,6 +2027,8 @@ export function MotionComicPage({
             unavailableReason={status.unavailableReason}
             busy={busy}
             remoteOnly={Boolean(document.sourceDocument)}
+            providerCapabilities={selectedProvider?.capabilities}
+            keyframeAsReference={Boolean(selectedProvider && /^minimax_h3_(?:768p-15s|1080p-10s|736p-12s)$/i.test(selectedProvider.model))}
             production={production}
             submittedReferences={submittedReferences}
             referenceError={referenceError}
@@ -2032,11 +2039,11 @@ export function MotionComicPage({
             onProductionChange={updateProduction}
             onSplitUnits={canonical&&selectedProvider&&units.some(unit=>units.length>1||unit.generationDurationSec>Math.ceil(canonical.durationMs/1000))?()=>mutateDocument(current=>splitMotionComicProductionUnits(current,shotId,selectedProvider)):undefined}
             onStrategyChange={(strategy) => updateShot(shotId, { renderStrategy: strategy })}
-            onProviderChange={selectVideoProvider}
             onConfigureProvider={() => openSettings?.('video', 'motion-comic', document.id)}
           />;
         }}
         onRender={() => withHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, renderProject)}
+        onCancelRender={() => api.cancelDirectorRender(document.id)}
         onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
         onOpenSettings={() => setWorkflowStage('assets')}
         onConfigureProvider={() => openSettings?.('image', 'motion-comic', document.id)}
@@ -2051,7 +2058,7 @@ export function MotionComicPage({
         : null}
       </MotionComicProductionWorkspace>
     </div>
-  </>;
+  </div>;
 }
 
 function suggestMotionComicWorkflowStage(document: MotionComicPipelineData): MotionComicWorkflowStage {
@@ -2095,7 +2102,7 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     ? document?.providerJobs.find((candidate) => candidate.id === shot.videoJobId && candidate.nodeId === shot.id && candidate.capability === 'image-to-video')
     : undefined;
   const latestVideoJob = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video', episode.id) : undefined;
-  const videoJob = selectedVideoJob ?? (latestVideoJob?.status === 'running' ? latestVideoJob : undefined);
+  const videoJob = latestVideoJob?.status === 'running' ? latestVideoJob : selectedVideoJob;
   const firstFrameReady = Boolean(asset?.localPath && asset.kind === 'image');
   const videoReady = Boolean(videoAsset?.localPath && videoJob?.status === 'completed' && videoAsset.providerJobId === videoJob.id);
   const remoteVideo = shot.renderStrategy === 'remote-video';
@@ -2114,9 +2121,9 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     subtitleCues: shot.dialogueCueIds.flatMap((id) => episode.dialogueCues.find((cue) => cue.id === id) ?? []),
     dialogueCharacters: document?.characters.map((character) => ({ value: character.id, label: character.name })),
     thumbnail: asset?.localPath ? toLocalImageUrl(asset.localPath) : undefined,
-    status: remoteVideo ? videoReady ? 'ready' : activeJob?.status === 'running' ? 'generating' : activeJob?.status === 'failed' || activeJob?.status === 'cancelled' ? 'failed' : 'queued' : job?.status === 'completed' ? 'ready' : job?.status === 'running' ? 'generating' : job?.status === 'failed' ? 'failed' : 'queued',
+    status: remoteVideo ? videoReady ? 'ready' : activeJob?.status === 'running' ? 'generating' : activeJob?.status === 'failed' || activeJob?.status === 'cancelled' ? 'failed' : activeJob?.status === 'queued' ? 'queued' : 'idle' : job?.status === 'completed' ? 'ready' : job?.status === 'running' ? 'generating' : job?.status === 'failed' ? 'failed' : 'queued',
     provider: activeJob ? `${activeJob.providerId} / ${activeJob.model}` : undefined,
-    cost: activeJob?.actualCost ?? activeJob?.estimatedCost,
+    cost: job?.actualCost ?? job?.estimatedCost,
     voice: shot.voiceLabel,
     voiceId: shot.voiceId,
     voiceSpeed: shot.voiceSpeed,
@@ -2132,7 +2139,7 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     imageFailed: job?.status === 'failed',
     voiceFailed: voiceJob?.status === 'failed',
     subtitleStyle: shot.subtitleStyle ?? '简体中文 · 白色描边',
-    layoutTemplate: shot.layoutTemplate ?? '漫画分格 · 角色优先',
+    layoutTemplate: shot.layoutTemplate ?? '纪录片 · 纯画面',
     motionPreset: shot.motionPreset ?? '轻微视差',
     seed: shot.seed,
     seedLocked: shot.seedLocked,
@@ -2146,7 +2153,9 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     videoJobId: shot.videoJobId,
     videoJobStatus: videoJob?.status ?? 'idle',
     videoJobError: videoJob?.error,
-    videoEstimatedCost: videoJob?.actualCost ?? videoJob?.estimatedCost ?? videoProviderStatus?.estimatedCost,
+    videoEstimatedCost: videoJob && (videoJob.status === 'completed' || videoJob.status === 'running' || videoJob.providerId === videoProviderStatus?.providerId)
+      ? videoJob.actualCost ?? videoJob.estimatedCost
+      : videoProviderStatus?.estimatedCost,
     linkedAssetIds: [...shot.characterLookIds, shot.sceneAssetId, ...shot.propAssetIds, ...(shot.firstFrameAssetVersionId ? [shot.firstFrameAssetVersionId] : [])],
     assetVersionIds: [...new Set([
       ...(episode.timeline.clips.find((clip) => clip.shotId === shot.id)?.assetVersionIds ?? []),

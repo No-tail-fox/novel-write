@@ -19,7 +19,7 @@ describe('real Electron smoke contract', () => {
   });
 
   it('uses a fixed main-process handshake to cover preload, IPC, policy, and the shell', async () => {
-    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const main = (await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
     const setUserData = main.indexOf("app.setPath('userData'");
     const ready = main.indexOf('app.whenReady()');
 
@@ -54,7 +54,7 @@ describe('real Electron smoke contract', () => {
   });
 
   it('acquires a userData-scoped single-instance lock before primary startup and focuses the existing window', async () => {
-    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const main = (await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
     const setUserData = main.indexOf("app.setPath('userData'");
     const requestLock = main.indexOf('app.requestSingleInstanceLock()');
     const getDatabase = main.indexOf('async function getDb()');

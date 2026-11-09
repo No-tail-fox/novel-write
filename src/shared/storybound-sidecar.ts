@@ -66,6 +66,9 @@ export interface StoryboundMusicMvInput {
 }
 
 export interface StoryboundFrameRenderScene {
+  /** Internal atomic JPEG spool; only work_dir/frames is consumable. */
+  stream_frames?: boolean;
+  stream_timeout_seconds?: number;
   frames_dir: string;
   audio_path: string;
   transition_in?: import('./director-transitions').DirectorTransition;
@@ -85,12 +88,14 @@ export interface StoryboundFrameRenderScene {
   }>;
   fps?: number;
   duration_s?: number;
+  video_frame_count?: number;
 }
 
 export interface StoryboundEncodedRenderScene {
   segment_path: string;
   duration_s: number;
   fps?: number;
+  video_frame_count?: number;
   transition_in?: import('./director-transitions').DirectorTransition;
   frames_dir?: never;
   audio_path?: never;
@@ -105,6 +110,8 @@ export interface StoryboundEncodeRenderSceneInput {
 }
 
 export interface StoryboundComposeRenderInput {
+  /** Internal render-segments-* scratch only, verified before any unlink. */
+  consume_owned_segments?: boolean;
   mode: 'compose_render';
   work_dir: string;
   scenes: Array<StoryboundFrameRenderScene | StoryboundEncodedRenderScene>;
@@ -346,7 +353,8 @@ function safeProcessDetail(value: unknown): string {
   return redacted.length > 64 * 1024 ? redacted.slice(-(64 * 1024)) : redacted;
 }
 
-const pythonSidecarScript = String.raw`import json
+const pythonSidecarScript = String.raw`import errno
+import json
 import math
 import os
 import re
@@ -443,15 +451,28 @@ def _read_bounded_pipe(pipe, max_bytes, chunks, overflow):
             pass
 
 
+def start_media_process(command, options):
+    # CreateProcess can briefly be denied by Windows scanners. Only retry a
+    # failed launch (no PID exists); never replay an already-started encoder.
+    for attempt in range(5):
+        try:
+            return subprocess.Popen([str(item) for item in command], **options)
+        except PermissionError as error:
+            if os.name != "nt" or getattr(error, "winerror", None) not in (5, 32, 33) or attempt == 4:
+                raise
+            time.sleep(0.05 * (2 ** attempt))
+
+
 def run_bounded_subprocess(
     command,
     timeout_seconds=SIDECAR_SUBPROCESS_TIMEOUT_SECONDS,
     max_stdout_bytes=SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES,
     max_stderr_bytes=SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES,
     cwd=None,
+    input_writer=None,
 ):
     popen_options = {
-        "stdin": subprocess.DEVNULL,
+        "stdin": subprocess.PIPE if input_writer else subprocess.DEVNULL,
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "cwd": cwd,
@@ -461,7 +482,7 @@ def run_bounded_subprocess(
             getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
-    process = subprocess.Popen([str(item) for item in command], **popen_options)
+    process = start_media_process(command, popen_options)
     stdout_chunks = []
     stderr_chunks = []
     stdout_overflow = threading.Event()
@@ -478,9 +499,27 @@ def run_bounded_subprocess(
     )
     stdout_thread.start()
     stderr_thread.start()
+    input_errors = []
+    stop_input = threading.Event()
+    def feed_input():
+        try:
+            input_writer(process.stdin, stop_input)
+        except Exception as error:
+            input_errors.append(error)
+        finally:
+            try:
+                process.stdin.close()
+            except Exception:
+                pass
+    input_thread = threading.Thread(target=feed_input, daemon=True) if input_writer else None
+    if input_thread:
+        input_thread.start()
     deadline = time.monotonic() + max(1.0, float(timeout_seconds))
     failure = ""
     while process.poll() is None:
+        if input_errors:
+            failure = "media input failed: " + str(input_errors[0])
+            break
         if stdout_overflow.is_set() or stderr_overflow.is_set():
             failure = "media process output exceeded its byte limit"
             break
@@ -489,6 +528,7 @@ def run_bounded_subprocess(
             break
         time.sleep(0.05)
     if failure:
+        stop_input.set()
         terminate_process_tree(process)
     try:
         process.wait(timeout=5)
@@ -496,6 +536,11 @@ def run_bounded_subprocess(
         terminate_process_tree(process)
         process.kill()
         process.wait(timeout=5)
+    stop_input.set()
+    if input_thread:
+        input_thread.join(timeout=5)
+    if not failure and input_errors:
+        failure = "media input failed: " + str(input_errors[0])
     stdout_thread.join(timeout=5)
     stderr_thread.join(timeout=5)
     stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
@@ -542,12 +587,15 @@ def ffmpeg_timeout_seconds(args):
     return max(SIDECAR_SUBPROCESS_TIMEOUT_SECONDS, min(2 * 60 * 60, duration * 0.5 + 300))
 
 
-def run_ffmpeg(args, cwd=None):
+def run_ffmpeg(args, cwd=None, input_writer=None, input_timeout_seconds=None):
     output_path = norm(args[-1]) if args and not str(args[-1]).startswith("-") else ""
     try:
         bounded_options = {"cwd": cwd}
+        if input_writer:
+            bounded_options["input_writer"] = input_writer
+            bounded_options["timeout_seconds"] = input_timeout_seconds or 30 * 60
         timeout_seconds = ffmpeg_timeout_seconds(args)
-        if timeout_seconds != SIDECAR_SUBPROCESS_TIMEOUT_SECONDS:
+        if not input_writer and timeout_seconds != SIDECAR_SUBPROCESS_TIMEOUT_SECONDS:
             bounded_options["timeout_seconds"] = timeout_seconds
         completed = run_bounded_subprocess([ffmpeg_exe(), "-y", *args], **bounded_options)
     except Exception:
@@ -1381,16 +1429,33 @@ def _compose_with_xfade(segment_paths, output_path, transition_type="fade", tran
     _compose_xfade_recursive(segment_paths, output_path, transition_type, transition_duration, durations)
 
 
-def hard_cut_filter_graph(segment_paths, durations):
+def scene_video_frame_counts(durations, fps):
+    rate = max(0.001, float(fps))
+    elapsed = 0.0
+    allocated_end_frame = 0
+    counts = []
+    for duration in durations:
+        elapsed += max(0.0, float(duration))
+        desired_end_frame = int(math.floor(elapsed * rate + 0.5))
+        end_frame = max(allocated_end_frame + 1, desired_end_frame)
+        counts.append(end_frame - allocated_end_frame)
+        allocated_end_frame = end_frame
+    return counts
+
+
+def hard_cut_filter_graph(segment_paths, durations, fps=24, frame_counts=None):
     inputs = []
     filters = []
     video_inputs = []
     audio_inputs = []
+    frame_counts = frame_counts or scene_video_frame_counts(durations, fps)
     for index, path in enumerate(segment_paths):
         inputs.extend(["-i", path])
         duration = durations[index]
-        filters.append(f"[{index}:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={duration},trim=duration={duration},settb=AVTB,setsar=1[v{index}]")
-        filters.append(f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=duration={duration},asetpts=PTS-STARTPTS[a{index}]")
+        frame_count = frame_counts[index]
+        video_pad_duration = frame_count / max(0.001, float(fps))
+        filters.append(f"[{index}:v]setpts=PTS-STARTPTS,fps={fps},tpad=stop_mode=clone:stop_duration={video_pad_duration},trim=end_frame={frame_count},setpts=N/({fps}*TB),settb=AVTB,setsar=1[v{index}]")
+        filters.append(f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo,apad,atrim=duration={duration},asetpts=N/SR/TB[a{index}]")
         video_inputs.append(f"[v{index}]")
         audio_inputs.append(f"[a{index}]")
     # Keep AAC padding and fractional video frames off the authored audio clock.
@@ -1399,7 +1464,7 @@ def hard_cut_filter_graph(segment_paths, durations):
     return inputs, filters
 
 
-def _compose_hard_cut_groups(segment_paths, output_path, durations, fps):
+def _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_counts):
     # Video-only chunks keep fractional frames off the independent audio clock.
     # Float PCM is encoded to AAC once, after all chunk samples are concatenated.
     with tempfile.TemporaryDirectory(prefix=scratch_prefix("compose-groups-"), dir=os.path.dirname(os.path.abspath(output_path))) as directory:
@@ -1408,7 +1473,7 @@ def _compose_hard_cut_groups(segment_paths, output_path, durations, fps):
         for start in range(0, len(segment_paths), 8):
             index = start // 8
             video_name, audio_name = f"video-{index}.mp4", f"audio-{index}.wav"
-            inputs, filters = hard_cut_filter_graph(segment_paths[start:start + 8], durations[start:start + 8])
+            inputs, filters = hard_cut_filter_graph(segment_paths[start:start + 8], durations[start:start + 8], fps, frame_counts[start:start + 8])
             bounded_inputs = []
             for value in inputs:
                 if value == "-i":
@@ -1434,14 +1499,17 @@ def _compose_hard_cut_groups(segment_paths, output_path, durations, fps):
         ])
 
 
-def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24):
+def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame_counts=None):
     if len(segment_paths) < 2:
         shutil.copy2(segment_paths[0], output_path)
         return
+    frame_counts = frame_counts or scene_video_frame_counts(durations, fps)
+    if len(frame_counts) != len(segment_paths):
+        raise ValueError("Hard-cut frame-count allocation does not match scene count")
     if len(segment_paths) > 8:
-        _compose_hard_cut_groups(segment_paths, output_path, durations, fps)
+        _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_counts)
         return
-    inputs, filters = hard_cut_filter_graph(segment_paths, durations)
+    inputs, filters = hard_cut_filter_graph(segment_paths, durations, fps, frame_counts)
     duration_args = ["-t", str(sum(durations))] if float(fps) < 10 else []
     run_composition_ffmpeg([
         *inputs,
@@ -1457,7 +1525,7 @@ def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24):
     ])
 
 
-def _compose_with_visual_transitions(segment_paths, output_path, durations, transitions, fps=24):
+def _compose_with_visual_transitions(segment_paths, output_path, durations, transitions, fps=24, frame_counts=None):
     """Dissolve an outgoing held frame over the incoming shot, on its own clock.
 
     The source clips never overlap in time: the incoming animation starts at t=0,
@@ -1465,6 +1533,9 @@ def _compose_with_visual_transitions(segment_paths, output_path, durations, tran
     blended. Hard-cut concatenation then keeps every authored narration sample.
     Each boundary is processed separately to bound decoder/filter memory.
     """
+    frame_counts = frame_counts or scene_video_frame_counts(durations, fps)
+    if len(frame_counts) != len(segment_paths):
+        raise ValueError("Visual-transition frame-count allocation does not match scene count")
     with tempfile.TemporaryDirectory(prefix=scratch_prefix("compose-visual-transitions-"), dir=os.path.dirname(os.path.abspath(output_path))) as directory:
         prepared = list(segment_paths)
         for index in range(1, len(segment_paths)):
@@ -1480,20 +1551,22 @@ def _compose_with_visual_transitions(segment_paths, output_path, durations, tran
             if duration < 1.0 / fps:
                 continue
             previous_seek = max(0, durations[index - 1] - max(.25, 3.0 / fps))
+            frame_count = frame_counts[index]
+            video_frame_duration = frame_count / max(0.001, float(fps))
             # One held outgoing frame is sufficient; no outgoing audio is read.
             filters = [
                 f"[0:v]reverse,trim=end_frame=1,loop=loop={int(math.ceil(duration * fps)) + 2}:size=1:start=0,setpts=N/({fps}*TB),fps={fps},setsar=1,settb=AVTB[held]",
-                f"[1:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={durations[index]},trim=duration={durations[index]},fps={fps},setsar=1,settb=AVTB[incoming]",
-                f"[held][incoming]xfade=transition=fade:duration={duration}:offset=0,trim=duration={durations[index]}[out]",
+                f"[1:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={video_frame_duration},trim=end_frame={frame_count},fps={fps},setsar=1,settb=AVTB[incoming]",
+                f"[held][incoming]xfade=transition=fade:duration={duration}:offset=0,trim=end_frame={frame_count}[out]",
             ]
             prepared[index] = os.path.join(directory, f"scene-{index}.mp4")
             run_composition_ffmpeg([
                 "-ss", str(previous_seek), "-i", segment_paths[index - 1], "-i", segment_paths[index],
                 "-filter_complex", ";".join(filters),
                 "-map", "[out]", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-c:a", "copy", "-t", str(durations[index]), prepared[index],
+                "-c:a", "copy", prepared[index],
             ])
-        _compose_with_hard_cuts(prepared, output_path, durations, fps)
+        _compose_with_hard_cuts(prepared, output_path, durations, fps, frame_counts)
 
 
 def first_frame_pattern(frames_dir):
@@ -1536,7 +1609,7 @@ def scene_audio_input(scene, scene_duration, work_dir, index):
         if clip.get("sourceDurationMs") is not None:
             clip_duration = min(clip_duration, float(clip["sourceDurationMs"]) / 1000.0)
         clip_duration = max(0.001, min(clip_duration, max(0.001, scene_duration - max(0, float(clip.get("startMs") or 0) / 1000.0))))
-        start = max(0, int(float(clip.get("startMs") or 0)))
+        start_samples = max(0, round(float(clip.get("startMs") or 0) * 44100 / 1000))
         gain = float(clip.get("gainDb") or 0)
         gain = max(-60.0, min(24.0, gain))
         label = f"[a{clip_index}]"
@@ -1546,14 +1619,23 @@ def scene_audio_input(scene, scene_duration, work_dir, index):
         fade_duration = float(envelope["durationMs"]) / 1000.0 if envelope else clip_duration
         fade_in = max(0.0, float((envelope if envelope else clip).get("fadeInMs") or 0) / 1000.0)
         fade_out = max(0.0, float((envelope if envelope else clip).get("fadeOutMs") or 0) / 1000.0)
-        if not all(math.isfinite(value) for value in (offset, fade_duration, fade_in, fade_out)) or offset < 0 or offset > source_start + 0.000001 or fade_duration < offset + clip_duration - 0.000001:
+        if not all(math.isfinite(value) for value in (offset, fade_duration, fade_in, fade_out)) or offset < 0 or fade_duration < offset + clip_duration - 0.000001:
             raise ValueError("Audio fade envelope is invalid")
-        # Apply the original envelope before trimming its elapsed prefix.
-        chain = f"[{clip_index}:a]aresample=44100,atrim=start={max(0, source_start - offset)}:duration={offset + clip_duration},asetpts=N/SR/TB,volume={gain}dB"
-        if fade_in > 0: chain += f",afade=t=in:st=0:d={min(fade_in, fade_duration)}"
-        if fade_out > 0: chain += f",afade=t=out:st={max(0, fade_duration - fade_out)}:d={min(fade_out, fade_duration)}"
-        if offset > 0: chain += f",atrim=start={offset}:duration={clip_duration},asetpts=N/SR/TB"
-        chain += f",adelay={start}:all=1{label}"
+        if offset > source_start + 0.000001:
+            # Looping media restarts its source clock, not the project fade clock.
+            chain = f"[{clip_index}:a]aresample=44100,atrim=start={source_start}:duration={clip_duration},asetpts=N/SR/TB,volume={gain}dB"
+            envelope_gain = "1"
+            if fade_in > 0: envelope_gain += f"*min(1,max(0,(t+{offset})/{min(fade_in, fade_duration)}))"
+            if fade_out > 0: envelope_gain += f"*min(1,max(0,({fade_duration}-t-{offset})/{min(fade_out, fade_duration)}))"
+            # Normalize before aeval: FFmpeg 7.1 can crash negotiating c=same into amix.
+            chain += f",aformat=channel_layouts=stereo,aeval=exprs='val(0)*{envelope_gain}|val(1)*{envelope_gain}':c=stereo"
+        else:
+            # Preserve sample-exact behavior for existing non-looping source trims.
+            chain = f"[{clip_index}:a]aresample=44100,atrim=start={max(0, source_start - offset)}:duration={offset + clip_duration},asetpts=N/SR/TB,volume={gain}dB"
+            if fade_in > 0: chain += f",afade=t=in:st=0:d={min(fade_in, fade_duration)}"
+            if fade_out > 0: chain += f",afade=t=out:st={max(0, fade_duration - fade_out)}:d={min(fade_out, fade_duration)}"
+            if offset > 0: chain += f",atrim=start={offset}:duration={clip_duration},asetpts=N/SR/TB"
+        chain += f",adelay={start_samples}S:all=1{label}"
         filters.append(chain)
         labels.append(label)
     # FFmpeg 7.1 can stall on amix=inputs=1 followed by padding/resampling.
@@ -1576,12 +1658,60 @@ def render_scene_duration(scene):
     return scene_duration
 
 
+def retry_frame_file_operation(operation, stop, label, timeout_seconds=10):
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if stop.is_set():
+            raise RuntimeError("Frame stream cancelled")
+        try:
+            return operation()
+        except OSError as error:
+            # Windows file scanners / sharing handles may briefly hold an atomic
+            # frame after publication. Retry only access contention, not missing
+            # files, invalid paths, disk-full errors or writes into the pipe.
+            if error.errno not in (errno.EACCES, errno.EPERM, errno.EBUSY) and getattr(error, "winerror", None) not in (5, 32, 33):
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(f"{label} timed out waiting for frame file access") from error
+            if stop.wait(min(0.02, remaining)):
+                raise RuntimeError("Frame stream cancelled") from error
+
+
+def write_streamed_frames(pipe, stop, frames_dir, video_frame_count):
+    for number in range(1, video_frame_count + 1):
+        frame = os.path.join(frames_dir, f"frame_{number:04d}.jpg")
+        while not os.path.isfile(frame):
+            if stop.wait(0.02):
+                raise RuntimeError("Frame stream cancelled before all frames arrived")
+        with retry_frame_file_operation(lambda: open(frame, "rb"), stop, f"Open frame {number}") as handle:
+            while True:
+                chunk = handle.read(65536)
+                if not chunk:
+                    break
+                pipe.write(chunk)
+        pipe.flush()
+        # Never re-send bytes after a deletion failure: a frame is acknowledged
+        # only when its file is removed, preserving both order and backpressure.
+        retry_frame_file_operation(lambda: os.unlink(frame), stop, f"Release frame {number}")
+
+
 def encode_render_scene(scene, work_dir, segment_path, index=0):
-    pattern = first_frame_pattern(scene["frames_dir"])
+    streaming = bool(scene.get("stream_frames"))
+    pattern = None if streaming else first_frame_pattern(scene["frames_dir"])
     scene_duration = render_scene_duration(scene)
     audio_path = scene_audio_input(scene, scene_duration, work_dir, index)
     fps = str(scene.get("fps") or 24)
-    if "%" in pattern:
+    video_frame_count = max(1, int(scene.get("video_frame_count") or math.floor(scene_duration * float(fps) + 0.5)))
+    input_writer = None
+    if streaming:
+        frames_dir = os.path.realpath(norm(scene["frames_dir"]))
+        if frames_dir != os.path.realpath(os.path.join(work_dir, "frames")) or os.path.islink(norm(scene["frames_dir"])):
+            raise ValueError("Unsafe frame spool directory")
+        def input_writer(pipe, stop):
+            write_streamed_frames(pipe, stop, frames_dir, video_frame_count)
+        video_input = ["-f", "image2pipe", "-c:v", "mjpeg", "-framerate", fps, "-i", "pipe:0"]
+    elif "%" in pattern:
         video_input = ["-framerate", fps, "-i", pattern]
     else:
         video_input = ["-loop", "1", "-framerate", fps, "-i", pattern]
@@ -1591,15 +1721,24 @@ def encode_render_scene(scene, work_dir, segment_path, index=0):
         "-i", audio_path,
         "-map", "0:v:0",
         "-map", "1:a:0",
-        "-vf", f"tpad=stop_mode=clone:stop_duration={scene_duration}",
-        "-af", "apad",
-        "-t", str(scene_duration),
+        # Browser captures are sRGB JPEG. Normalize range and YCbCr matrix,
+        # and retain sRGB primaries/transfer explicitly. Missing primaries make
+        # Chromium infer a different gamut even after the range is corrected.
+        # Accurate rounding avoids color drift in the JPEG -> BT.709 transform.
+        "-vf", f"scale=in_range=auto:out_range=tv:out_color_matrix=bt709:flags=accurate_rnd+full_chroma_int,format=yuv420p,setparams=range=limited:colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1,tpad=stop_mode=clone:stop_duration={video_frame_count / float(fps)},trim=end_frame={video_frame_count},settb=expr=1/{fps},setpts=N",
+        "-af", f"apad,atrim=duration={scene_duration},asetpts=N/SR/TB",
         "-pix_fmt", "yuv420p",
+        "-color_range", "tv", "-colorspace", "bt709",
+        "-color_primaries", "bt709", "-color_trc", "iec61966-2-1",
+        # Declare the output clock so the MP4 final sample has a full frame duration.
+        "-r", fps, "-fps_mode", "cfr",
         "-c:v", "libx264",
         "-threads", "2",
+        # Bound video with trim, not -frames:v: the latter stops muxing and can
+        # discard audio entirely for a one-frame scene or clip its final samples.
         "-c:a", "aac",
         segment_path,
-    ])
+    ], **({"input_writer": input_writer, "input_timeout_seconds": scene.get("stream_timeout_seconds") or max(30 * 60, 10 * 60 + video_frame_count / 4) + 120} if input_writer else {}))
     return scene_duration
 
 
@@ -1648,12 +1787,35 @@ def generate_compose_render(payload):
     os.makedirs(work_dir, exist_ok=True)
     segments = []
     segment_durations = []
+    segment_frame_counts = []
     visual_transitions = []
     cover_segment_path = os.path.join(work_dir, "seg_cover.mp4")
     canvas_w = int(payload.get("canvas_w") or 1080)
     canvas_h = int(payload.get("canvas_h") or 1920)
     payload_scenes = payload.get("scenes") or []
-    for index, scene in enumerate(payload_scenes):
+    if not payload_scenes:
+        raise ValueError("compose_render requires at least one scene")
+    owned_segments = []
+    if payload.get("consume_owned_segments"):
+        # Validate all paths before composition or deletion; generated covers are not input segments.
+        root = os.path.realpath(os.path.dirname(work_dir))
+        if not os.path.basename(root).startswith("render-segments-") or os.path.basename(work_dir) != "compose" or os.path.islink(work_dir):
+            raise ValueError("Unsafe owned segment directory")
+        for scene in payload_scenes:
+            segment = norm(scene.get("segment_path") or "")
+            if not segment or os.path.dirname(os.path.realpath(segment)) != root or not re.fullmatch(r"segment-\d+\.mp4", os.path.basename(segment)) or os.path.islink(segment):
+                raise ValueError("Unsafe owned segment path")
+            if segment not in owned_segments:
+                owned_segments.append(segment)
+    fps = float(payload_scenes[0].get("fps") or 24)
+    scene_durations = [render_scene_duration(scene) for scene in payload_scenes]
+    cover_duration = float(payload.get("cover_duration_s", scene_durations[0])) if payload.get("cover_path") else 0
+    if not math.isfinite(cover_duration) or cover_duration < 0 or (payload.get("cover_path") and cover_duration == 0):
+        raise ValueError("Cover duration must be positive")
+    allocated_frames = scene_video_frame_counts(([cover_duration] if cover_duration else []) + scene_durations, fps)
+    cover_frames = allocated_frames.pop(0) if cover_duration else 0
+    for index, original_scene in enumerate(payload_scenes):
+        scene = {**original_scene, "video_frame_count": original_scene.get("video_frame_count") or allocated_frames[index]}
         if scene.get("segment_path"):
             segment_path = norm(scene["segment_path"])
             if not os.path.isfile(segment_path) or os.path.getsize(segment_path) == 0:
@@ -1664,14 +1826,14 @@ def generate_compose_render(payload):
             scene_duration = encode_render_scene(scene, work_dir, segment_path, index)
         segments.append(segment_path)
         segment_durations.append(scene_duration)
+        segment_frame_counts.append(int(scene["video_frame_count"]))
         visual_transitions.append(scene.get("transition_in"))
     if not segments:
         raise ValueError("compose_render requires at least one scene")
     source_path = os.path.join(work_dir, "_source.mp4")
     if payload.get("cover_path"):
-        cover_duration = str(float(payload.get("cover_duration_s") or 2))
-        first_scene = payload_scenes[0] if payload_scenes and isinstance(payload_scenes[0], dict) else {}
-        cover_fps = str(first_scene.get("fps") or 24)
+        cover_duration = str(cover_duration)
+        cover_fps = str(fps)
         run_ffmpeg([
             "-loop",
             "1",
@@ -1702,17 +1864,20 @@ def generate_compose_render(payload):
         ])
         segments = [cover_segment_path, *segments]
         segment_durations = [float(cover_duration), *segment_durations]
+        segment_frame_counts = [cover_frames, *segment_frame_counts]
         visual_transitions = [None, *visual_transitions]
     if len(segments) == 1:
         shutil.copy2(segments[0], source_path)
     elif any(transition for transition in visual_transitions):
-        _compose_with_visual_transitions(segments, source_path, segment_durations, visual_transitions, float(payload_scenes[0].get("fps") or 24))
+        _compose_with_visual_transitions(segments, source_path, segment_durations, visual_transitions, float(payload_scenes[0].get("fps") or 24), segment_frame_counts)
     else:
         transition_type, transition_duration = transition_options(payload.get("transition"))
         if transition_type in ("cut", "none"):
-            _compose_with_hard_cuts(segments, source_path, segment_durations, float(payload_scenes[0].get("fps") or 24))
+            _compose_with_hard_cuts(segments, source_path, segment_durations, float(payload_scenes[0].get("fps") or 24), segment_frame_counts)
         else:
             _compose_with_xfade(segments, source_path, transition_type, transition_duration, segment_durations)
+    for segment in owned_segments:
+        os.unlink(segment)
     target_duration = float(payload.get("total_duration_s") or 0)
     if math.isfinite(target_duration) and target_duration > 0:
         duration_path = os.path.join(work_dir, "_source_duration.mp4")

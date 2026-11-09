@@ -1,3 +1,6 @@
+import { TaskDeliverablePanel } from './TaskDeliverablePanel';
+import { normalizeTaskOutputTargets } from '../../shared/task-output';
+import { ProjectModelBar } from '../projects/ProjectModelFields';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, CheckCircle2, Clapperboard, Copy, FolderOpen, LayoutTemplate, Loader2, Music2, PackageCheck, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, XCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
@@ -94,7 +97,9 @@ function TaskDraftDelivery({
   const templateFieldRef = useRef<HTMLDivElement>(null);
   const bgmFieldRef = useRef<HTMLDivElement>(null);
   const draftStepStatus = snapshotStepStatus(snapshot, 6);
-  const hasDraft = Boolean(snapshot?.draft);
+  const wantsDraft = normalizeTaskOutputTargets(task.outputTargets).includes('jianying-draft');
+  const hasDraft = task.outputTargets ? task.deliverables?.['jianying-draft']?.status === 'completed' : Boolean(snapshot?.draft);
+  const hasOutput = hasDraft || task.deliverables?.mp4?.status === 'completed';
   const packaging = draftStepStatus === 'running' || (task.status === 'running' && task.currentStep === 6);
   const settingsLocked = packaging;
   const pendingRepack = hasDraft && draftStepStatus === 'pending';
@@ -104,14 +109,14 @@ function TaskDraftDelivery({
   const appliedTemplate = templates.find((template) => template.id === task.templateId);
   const appliedBgm = bgmLibrary.find((item) => item.id === task.bgmId);
   const status = packaging
-    ? { className: 'running', label: '正在打包', detail: '剪映草稿正在重新生成' }
+    ? { className: 'running', label: '正在打包', detail: task.outputTargets ? '正在生成所选输出' : '剪映草稿正在重新生成' }
     : unsavedSettings
       ? { className: 'editing', label: '调整未保存', detail: '保存模板或音乐后再重新打包' }
       : pendingRepack
         ? { className: 'pending', label: '待重新打包', detail: '已保存调整，旧草稿仍可打开' }
         : hasDraft
           ? { className: 'ready', label: '剪映草稿已生成', detail: '可继续调整或直接打开剪映' }
-          : { className: 'empty', label: '草稿尚未生成', detail: '完成普通任务流水线后可在此交付' };
+          : { className: 'empty', label: wantsDraft ? '草稿尚未生成' : hasOutput ? 'MP4 已生成' : '等待成片', detail: wantsDraft ? '完成普通任务流水线后可在此交付' : '当前仅选择直接成片' };
   const repackDisabled = settingsDisabled || draftBusy || isBrowserPreview || !task.artifactStatePath || unsavedSettings;
 
   function revealSettings(target: 'all' | 'template' | 'bgm') {
@@ -180,8 +185,8 @@ function TaskDraftDelivery({
           <Button type="button" aria-expanded={settingsOpen} icon={<SlidersHorizontal size={14} />} onClick={() => onSettingsOpenChange(!settingsOpen)}>调整</Button>
           <Button type="button" icon={<LayoutTemplate size={14} />} onClick={() => revealSettings('template')}>模板</Button>
           <Button type="button" icon={<Music2 size={14} />} onClick={() => revealSettings('bgm')}>音乐</Button>
-          <Button type="button" icon={<PackageCheck size={14} />} disabled={repackDisabled} title={unsavedSettings ? '请先应用模板或音乐调整' : '仅重新执行剪映草稿导出'} onClick={onRepack}>重新打包</Button>
-          <Button type="button" icon={<FolderOpen size={14} />} disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onOpenDirectory}>草稿目录</Button>
+          <Button type="button" icon={<PackageCheck size={14} />} disabled={repackDisabled} title={unsavedSettings ? '请先应用模板或音乐调整' : '只重新执行所选输出，不重新生成素材'} onClick={onRepack}>重新打包</Button>
+          <Button type="button" icon={<FolderOpen size={14} />} disabled={!hasOutput || draftBusy || isBrowserPreview} onClick={onOpenDirectory}>{task.outputTargets ? '输出目录' : '草稿目录'}</Button>
           <Button type="button" variant="primary" icon={<Clapperboard size={14} />} disabled={!hasDraft || draftBusy || isBrowserPreview} onClick={onLaunchJianying}>打开剪映</Button>
         </div>
       </div>
@@ -418,6 +423,7 @@ export function TaskDetailPage({
           </Button>
         </div>
       </header>
+      <ProjectModelBar task={activeTask} config={state.config} api={api} onUpdated={applyState} />
 
       <div className="task-stage-track" aria-label={`${progress.total} 步流水线`}>
         {progressStages.map((step) => {
@@ -481,6 +487,7 @@ export function TaskDetailPage({
         {activeDraftTemplate
           ? <ArtifactPreviewContent api={api} task={activeTask} config={state.config} draftTemplate={activeDraftTemplate} applyState={applyState} tab={tab} snapshot={artifactSnapshot} events={events} latestEvent={latestEvent} currentAgent={currentMeta?.agent ?? 'Runner'} isBrowserPreview={isBrowserPreview} onArtifactChanged={() => setArtifactRefreshTick((tick) => tick + 1)} />
           : <EmptyState title="暂无可用草稿模板" />}
+        <TaskDeliverablePanel task={activeTask} api={api} />
         <TaskDraftDelivery
           task={activeTask}
           snapshot={artifactSnapshot}

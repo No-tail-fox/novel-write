@@ -52,6 +52,7 @@ export interface DirectorCreateWizardProps {
   canCreate: boolean;
   providerConnected: boolean;
   providerLabel: string;
+  imageRequired?: boolean;
   voiceConnected: boolean;
   voiceLabel: string;
   summary: readonly { label: string; value: string }[];
@@ -72,6 +73,7 @@ export function DirectorCreateWizard({
   canCreate,
   providerConnected,
   providerLabel,
+  imageRequired = true,
   voiceConnected,
   voiceLabel,
   summary,
@@ -84,6 +86,7 @@ export function DirectorCreateWizard({
   onCreate,
 }: DirectorCreateWizardProps) {
   const copy = workflowCopy(mode);
+  const steps = mode === 'vox' ? ['内容与画幅', '动画与风格', '声音与输出'] : DIRECTOR_CREATE_STEPS;
   return (
     <div className="director-create-panel" data-director-create-wizard data-director-mode={mode}>
       <div className="director-create-page">
@@ -95,7 +98,7 @@ export function DirectorCreateWizard({
         </header>
 
         <nav className="director-create-steps" aria-label="创建步骤">
-          {DIRECTOR_CREATE_STEPS.map((label, index) => (
+          {steps.map((label, index) => (
             <Button key={label} variant="subtle" className={index === step ? 'is-active' : index < step ? 'is-complete' : ''} aria-current={index === step ? 'step' : undefined} disabled={index > step || busy} onClick={() => onStepChange(index)}>
               <span>{index < step ? <Check size={13} /> : index + 1}</span><strong>{label}</strong>
             </Button>
@@ -104,7 +107,7 @@ export function DirectorCreateWizard({
 
         <div className="director-create-layout">
           <Pane as="main" tone="base" className="director-create-form">
-            <div className="director-create-section-heading"><span>步骤 {step + 1} / 3</span><h2>{DIRECTOR_CREATE_STEPS[step]}</h2></div>
+            <div className="director-create-section-heading"><span>步骤 {step + 1} / 3</span><h2>{steps[step]}</h2></div>
             <div className="director-create-fields">{children}</div>
             {feedback ? <div className="director-start-feedback is-success" role="status"><Check size={15} />{feedback}</div> : null}
             {errorMessage ? <div className="director-start-feedback is-error" role="alert">{errorMessage}</div> : null}
@@ -121,8 +124,8 @@ export function DirectorCreateWizard({
             </section>
             <section className="director-preflight-services">
               <h2>服务预检</h2>
-              <div className={providerConnected ? 'is-ready' : 'is-warning'}><Images size={15} /><span><strong>图片服务</strong><small>{providerConnected ? `${providerLabel} 已连接` : '尚未连接，创建后不能生成镜头'}</small></span>{providerConnected ? <Check size={15} /> : <Button variant="subtle" icon={<Settings2 size={13} />} onClick={onConfigureImage}>去配置</Button>}</div>
-              <div className={voiceConnected ? 'is-ready' : 'is-warning'}><Volume2 size={15} /><span><strong>旁白服务</strong><small>{voiceConnected ? `${voiceLabel} 已连接` : '尚未连接，可先创建本地项目'}</small></span>{voiceConnected ? <Check size={15} /> : <Button variant="subtle" icon={<Settings2 size={13} />} onClick={onConfigureVoice}>去配置</Button>}</div>
+              {imageRequired ? <div className={providerConnected ? 'is-ready' : 'is-warning'}><Images size={15} /><span><strong>图片服务</strong><small>{providerConnected ? `${providerLabel} 已配置` : '尚未连接；需要生成图片素材时再配置'}</small></span>{providerConnected ? <Check size={15} /> : <Button variant="subtle" icon={<Settings2 size={13} />} onClick={onConfigureImage}>去配置</Button>}</div> : null}
+              <div className={voiceConnected ? 'is-ready' : 'is-warning'}><Volume2 size={15} /><span><strong>旁白服务</strong><small>{voiceConnected ? `${voiceLabel} 已配置` : '尚未连接，可先创建本地项目'}</small></span>{voiceConnected ? <Check size={15} /> : <Button variant="subtle" icon={<Settings2 size={13} />} onClick={onConfigureVoice}>去配置</Button>}</div>
             </section>
             <div className="director-create-cost"><Clock3 size={14} /><span><strong>创建项目本身不调用付费生成</strong><small>进入导演台后，每次生成前都会显示当前服务和接口计费说明。</small></span></div>
           </aside>
@@ -166,7 +169,7 @@ export function DirectorProjectRecovery({
 function workflowCopy(mode: DirectorDeskMode) {
   if (mode === 'vox') return {
     createTitle: '新建 创意动画项目',
-    createDescription: '先确认内容结构，再锁定生成、一致性、声音和输出。',
+    createDescription: '填入文案，选择动画风格，再确认声音与输出。',
   };
   return {
     createTitle: '新建 AI 漫剧系列',

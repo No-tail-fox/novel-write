@@ -11,13 +11,14 @@ const steps = [
   { id: 'delivery', label: '成片', stage: '导出', icon: Send },
 ] as const;
 
-export function VoxProcessOutline({ shots, selectedId, phase, onStage, onSelect, reveal = true }: {
+export function VoxProcessOutline({ shots, selectedId, phase, onStage, onSelect, reveal = true, musicVideo = false }: {
   shots: readonly DirectorShot[];
   selectedId: string;
   phase: string;
   onStage: (stage: string) => void;
   onSelect: (id: string) => void;
   reveal?: boolean;
+  musicVideo?: boolean;
 }) {
   const outlineRef = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
@@ -27,7 +28,7 @@ export function VoxProcessOutline({ shots, selectedId, phase, onStage, onSelect,
   return <nav ref={outlineRef} className="vox-process-outline" aria-label="Vox 制作流程">
     {steps.map(({ id, label, stage, icon: Icon }) => <section className="vox-process-step" key={id}>
       <Button variant="subtle" className={`vox-process-heading ${phase === id ? 'is-active' : ''}`} aria-current={phase === id ? 'step' : undefined} onClick={() => onStage(stage)}>
-        <Icon size={18} /><strong>{label}</strong><span>{id === 'storyboard' ? `${shots.length} 镜头` : id === 'audio' ? '音色与字幕' : id === 'delivery' ? '预览与导出' : '查看原稿'}</span><ChevronDown size={14} />
+        <Icon size={18} /><strong>{musicVideo ? id === 'script' ? '歌词' : id === 'audio' ? '歌曲字幕' : label : label}</strong><span>{id === 'storyboard' ? `${shots.length} 镜头` : id === 'audio' ? musicVideo ? '主歌曲与歌词' : '音色与字幕' : id === 'delivery' ? '预览与导出' : '查看原稿'}</span><ChevronDown size={14} />
       </Button>
       {id === 'storyboard' ? <div className="vox-outline-shots" aria-label="分镜列表">
         {shots.map(shot => {

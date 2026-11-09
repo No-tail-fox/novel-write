@@ -14,6 +14,9 @@ import {
   DEFAULT_VOLCENGINE_TTS_V3_SPEAKER,
 } from './volcengine-tts';
 
+// Synchronous image relays may need several minutes before returning an image.
+export const DEFAULT_IMAGE_REQUEST_TIMEOUT_MS = 600_000;
+
 const updatedAt = '2026-05-26T00:00:00.000Z';
 
 export const defaultConfig: AppConfig = {

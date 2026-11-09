@@ -11,6 +11,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   density?: ControlDensity;
   icon?: ReactElement;
   iconPosition?: 'before' | 'after';
+  /** Keep keyboard focus during async commands while suppressing activation. */
+  disabledFocusable?: boolean;
 }
 
 const appearances = {

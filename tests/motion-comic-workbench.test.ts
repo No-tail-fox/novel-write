@@ -41,8 +41,9 @@ describe('motion comic workbench', () => {
     expect(page).toContain('async function importReference');
     expect(page).toContain('api.selectLocalImage()');
     expect(page).toContain('api.addImageLabRecord({');
-    expect(page).toContain('api.saveConfig');
-    expect(page).toContain('enableImageProfile');
+    expect(page).toContain('<ProjectModelBar');
+    expect(page).toContain('useProjectModelConfig');
+    expect(page).not.toContain('api.saveConfig');
     expect(page).toContain('resolveDirectorImageProviderOptions');
     expect(page).toContain('applyMotionComicImageRecord');
     expect(page).toContain('applyMotionComicVoiceRecord');
@@ -65,7 +66,7 @@ describe('motion comic workbench', () => {
     expect(page).toContain("projectAction.feedback?.tone === 'error'");
     expect(page).toContain("providerAction.feedback?.tone === 'error'");
     expect(page).toContain('系列圣经');
-    expect(page).toContain('角色定妆图');
+    expect(page).toContain('个角色造型');
     expect(page).not.toContain('onGenerateShot={() => undefined}');
     expect(page).toContain('onSave={() => void saveProject()}');
     expect(workspace).toContain('label="保存版本"');
@@ -99,13 +100,17 @@ describe('motion comic workbench', () => {
   });
 
   it('provides a complete reference-version workflow and blocks unsafe consistency generation', async () => {
-    const [page, consistency, css] = await Promise.all([
+    const [page, reference, consistency, css] = await Promise.all([
       source('src/features/motion-comic/MotionComicPage.tsx'),
+      source('src/features/motion-comic/MotionComicReferenceEditor.tsx'),
       source('src/features/motion-comic/motion-comic-consistency.ts'),
       source('src/styles/features/director-desk.css'),
     ]);
     expect(page).toContain('MotionComicReferenceEditor');
-    for (const label of ['导入参考图', '导入新版本', '固定此版本', '取消固定', '缺少参考图', '文件不可用']) expect(page).toContain(label);
+    for (const label of ['导入参考图', '导入新版本']) expect(page).toContain(label);
+    for (const label of ['固定此版本', '取消固定', '缺少参考图', '文件不可用']) expect(reference).toContain(label);
+    expect(reference).toContain('onSetFixed(preview.id)');
+    expect(reference).toContain('onSetFixed(null)');
     expect(page).toContain('imageLabRecordIdFromMutation(imported)');
     expect(page).toContain('setDirty(true)');
     expect(page).toContain('motionComicReferenceVersionIds(document)');

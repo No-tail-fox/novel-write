@@ -42,6 +42,7 @@ import {
 } from './html-video-config';
 import { htmlVideoCaptionColorsEqual, htmlVideoCaptionLayoutEqual } from './html-video-captions';
 import { normalizeHtmlVideoCoverMode, validateHtmlVideoCoverAsset } from './html-video-cover';
+import { upgradeHtmlSceneComposition } from './html-video-composition';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
 export const MAX_HTML_VIDEO_PIPELINE_FILE_BYTES = MAX_HTML_VIDEO_PIPELINE_JSON_CHARS * 4;
@@ -495,7 +496,20 @@ export function applyHtmlVideoSceneChanges(
       case 'title': scene.title = change.value; break;
       case 'titleHidden': scene.titleHidden = change.value; break;
       case 'captions': scene.captions = [...change.value]; break;
-      case 'sceneTemplate': scene.sceneTemplate = change.value; break;
+      case 'sceneTemplate': {
+        scene.sceneTemplate = change.value;
+        if (scene.compositionVersion === 2) {
+          // Choosing a template replaces its geometry and semantic beats together.
+          // Other scene edits keep the user's existing composition unchanged.
+          Object.assign(scene, upgradeHtmlSceneComposition({
+            ...scene,
+            compositionVersion: undefined,
+            beats: undefined,
+            elements: scene.elements.map(({ layout: _layout, ...element }) => element),
+          }));
+        }
+        break;
+      }
       case 'foregroundHidden': scene.foregroundHidden = change.value; break;
       case 'backgroundPrompt': scene.background.prompt = change.value; break;
       case 'addElement': {

@@ -215,8 +215,9 @@ describe('draft writer', () => {
             text: '公元649年唐太宗去世，武则天重新回到宫廷。',
             captions: ['手动第一行，保留标点', '手动第二行'],
             captionDurationsUs: [600_000, 600_000],
+            captionStartsUs: [0, 600_000],
           },
-          { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line', captions: ['手动第三行'], captionDurationsUs: [1_400_000] },
+          { sceneId: 2, startUs: 1_200_000, durationUs: 1_400_000, text: 'Second line', captions: ['手动第三行'], captionDurationsUs: [1_400_000], captionStartsUs: [0] },
         ],
       });
       expect((bridgePayloads[0] as { images: Array<{ path: string }>; draftDir: string }).images.some((asset) => asset.path.startsWith(output.draftDir))).toBe(false);

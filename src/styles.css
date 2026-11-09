@@ -1,12 +1,29 @@
-/* Import order: tokens → base → shell → components → features */
+@import './styles/features/motion-comic.css';
 @import './styles/tokens.css';
 @import './styles/base.css';
-@import './styles/shell.css';
 @import './styles/components.css';
 @import './styles/storydream-ui.css';
 @import './styles/media-canvas.css';
+@import './styles/shell.css';
 @import './styles/redesign.css';
-@import './styles/features/motion-comic.css';
+
+:root[data-theme='light'] .app-shell {
+  background: var(--bg);
+}
+
+:root[data-theme='light'] .window-line {
+  border-bottom-color: var(--line);
+  background: #ffffff;
+}
+
+:root[data-theme='light'] .sidebar {
+  border-right-color: var(--line);
+  background: linear-gradient(180deg, #ffffff 0%, #eef1f4 100%);
+}
+
+:root[data-theme='light'] .window-control-button:hover {
+  background: #e9edf1;
+}
 
 .app-shell {
   position: relative;
@@ -5713,6 +5730,31 @@ section.error-dialog .error-dialog-head > div > strong {
   display: flex;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.artifact-storage-settings {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.artifact-storage-settings .form-grid > * {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.artifact-storage-settings .button-row {
+  flex-wrap: wrap;
+}
+
+.artifact-storage-settings .local-info strong,
+.artifact-storage-settings .local-info span {
+  display: block;
+}
+
+.artifact-storage-settings .local-info span,
+.artifact-storage-settings .test-result {
+  overflow-wrap: anywhere;
 }
 
 .settings-help-text {

@@ -1,6 +1,6 @@
 import { mkdir, copyFile, rm, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { extname, join } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import type { BrowserWindow } from 'electron';
 import { pathToFileURL } from 'node:url';
 import {
@@ -15,18 +15,26 @@ import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { preflightVideoRenderDisk } from './video-render-preflight';
 import { measureDirectorSubtitleLayout, measureDirectorSubtitleVisibility, productionSubtitleSceneLayoutSchema, type ProductionSubtitleLayoutEvidence, type ProductionSubtitleSceneLayout } from '../src/shared/production-subtitle-layout';
-import { DIRECTOR_VISUAL_FPS, directorVisualCutTimes } from '../src/shared/production-visual-continuity';
+import { directorVisualFps, directorVisualCutTimes } from '../src/shared/production-visual-continuity';
+import { stageVoxRenderAssets, additionalVoxRenderAssetBytes } from './vox-render-assets';
 import { prepareVoxHtml, readVoxAsset } from './vox-animation-runtime';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { coalesceDirectorNativeScenes } from '../src/shared/creative-animation/native-render';
+import { measureLemoSubtitleLayout } from '../src/shared/creative-animation/native-subtitles';
+import { measureNativeGlyphCoverage } from './native-font-coverage';
 
 export async function renderDirectorVideo(input: {
   workDir: string;
+  /** Optional high-capacity scratch root for frames, segments, mixing and temporary media. */
+  renderRootDir?: string;
   projectTitle: string;
   modeLabel: string;
   ratio: string;
   scenes: readonly DirectorRenderScene[];
   sceneStarts?: ReadonlyMap<string, number>;
+  /** Music MVs preserve the gain authored on the original song. */
+  normalizeAudio?: boolean;
   signal?: AbortSignal;
   /** Explicit built runtime for isolated verification or embedding. */
   animationRuntimePath?: string;
@@ -34,30 +42,49 @@ export async function renderDirectorVideo(input: {
   input.signal?.throwIfAborted();
   if (input.scenes.length === 0) throw new Error('DIRECTOR_RENDER_EMPTY: 当前项目没有可渲染的镜头。');
   const canvas = directorCanvasForRatio(input.ratio);
-  const fps = DIRECTOR_VISUAL_FPS;
+  const fps = directorVisualFps(input.scenes);
+  const renderRootDir = input.renderRootDir ?? input.workDir;
+  const renderCacheDir = join(renderRootDir, '.render-assets');
+  const renderStages = coalesceDirectorNativeScenes(input.scenes);
   let stagedMediaBytes = 0;
+  const budgetedPaths = new Set<string>();
   for (const scene of input.scenes) {
     const paths = scene.renderStrategy === 'remotion' ? scene.animationAssets?.map(a => a.path) ?? [] : scene.renderStrategy === 'living-poster' ? [scene.videoPath] : scene.layers.map((layer) => layer.imagePath);
+    // Only native assets use the shared hard-link pool. Ordinary layers are copied per scene.
+    const reusable = scene.renderStrategy === 'remotion' && scene.animation?.code.engine === 'lemo-native';
     for (const path of paths) {
-      if (path) stagedMediaBytes += (await assertFile(path, `镜头 ${scene.index} 画面`)).size;
+      if (path && (!reusable || !budgetedPaths.has(path))) {
+        stagedMediaBytes += reusable ? await additionalVoxRenderAssetBytes(path, renderCacheDir)
+          : (await assertFile(path, `镜头 ${scene.index} 画面`)).size;
+        if (reusable) budgetedPaths.add(path);
+      }
     }
   }
   await mkdir(input.workDir, { recursive: true });
-  await preflightVideoRenderDisk(input.workDir, {
+  await mkdir(renderRootDir, { recursive: true });
+  // Check the volume that will actually hold the large capture and FFmpeg files.
+  await preflightVideoRenderDisk(renderRootDir, {
     width: canvas.width, height: canvas.height, fps,
-    durations: input.scenes.map((scene) => Math.max(0.8, scene.durationMs / 1000)), stagedMediaBytes,
+    durations: renderStages.map(({ scene }) => scene.durationMs / 1000), stagedMediaBytes,
+    streamFrames: true, consumeOwnedSegments: true,
   }, { code: 'DIRECTOR_RENDER_DISK_SPACE_LOW', label: '导演台视频' });
   // Every render owns a private staging/export directory. Concurrent renders
   // must never remove each other's media or collide on a timestamp filename.
-  const renderWorkDir = join(input.workDir, 'director-renders', randomUUID());
+  // The final artifact directory stays under the task so existing artifact paths
+  // and history records remain stable; only the heavy render work may move.
+  const renderId = randomUUID();
+  const renderWorkDir = join(renderRootDir, 'director-renders', renderId);
+  const artifactRenderDir = join(input.workDir, 'director-renders', renderId);
   const mediaDir = join(renderWorkDir, 'director-media');
   const exportDir = join(renderWorkDir, 'exports');
+  const artifactExportDir = join(artifactRenderDir, 'exports');
   await rm(mediaDir, { recursive: true, force: true });
   await mkdir(mediaDir, { recursive: true });
   await mkdir(exportDir, { recursive: true });
+  await mkdir(artifactExportDir, { recursive: true });
 
   const stagedScenes = [];
-  for (const scene of input.scenes) {
+  for (const { scene } of renderStages) {
     input.signal?.throwIfAborted();
     if (scene.audioClips !== undefined) {
       for (const clip of scene.audioClips) await assertFile(clip.path, `镜头 ${scene.index} 音频片段 ${clip.id}`);
@@ -68,9 +95,10 @@ export async function renderDirectorVideo(input: {
     let html: string;
     if (scene.renderStrategy === 'remotion') {
       if (!scene.animation) throw new Error('镜头缺少动画设置');
-      const assets = [];
-      for (const asset of scene.animationAssets ?? []) assets.push({ id: asset.id, label: asset.id, kind: asset.kind, url: await readVoxAsset(asset.path) });
-      html = await prepareVoxHtml(input.animationRuntimePath ?? join(dirname(fileURLToPath(import.meta.url)), 'vox-animation-runtime.js'), {animation:scene.animation,assets,...(scene.semanticBeats ? {semanticBeats:scene.semanticBeats,semanticLayers:scene.layers.map(layer=>({...layer,assetId:scene.animationAssets?.find(asset=>asset.path===layer.imagePath)?.id}))} : {}),audioClips:scene.audioClips,cues:scene.subtitleCues ?? (scene.caption ? [{text:scene.caption,startMs:0,endMs:scene.durationMs}] : []),width:canvas.width,height:canvas.height,fps,durationMs:scene.durationMs,subtitleStyle:scene.subtitleStyle});
+      const native = scene.animation.code.engine === 'lemo-native';
+      const assets = native ? await stageVoxRenderAssets(mediaDir, scene.animationAssets ?? [], renderCacheDir)
+        : await Promise.all((scene.animationAssets ?? []).map(async asset => ({ id: asset.id, label: asset.id, kind: asset.kind, url: await readVoxAsset(asset.path) })));
+      html = await prepareVoxHtml(input.animationRuntimePath ?? join(dirname(fileURLToPath(import.meta.url)), 'vox-animation-runtime.js'), {animation:scene.animation,assets,...(scene.semanticBeats || scene.animation.creativeStyle?.composition === 'scene' ? {semanticBeats:scene.semanticBeats,semanticLayers:scene.layers.map(layer=>({...layer,assetId:scene.animationAssets?.find(asset=>asset.path===layer.imagePath)?.id}))} : {}),audioClips:scene.audioClips,cues:scene.subtitleCues ?? (scene.caption ? [{text:scene.caption,startMs:0,endMs:scene.durationMs}] : []),width:canvas.width,height:canvas.height,fps,durationMs:scene.durationMs,subtitleStyle:scene.subtitleStyle}, native ? assets.map(asset => asset.url) : []);
     } else if (scene.renderStrategy === 'living-poster') {
       if (!scene.videoPath) throw new Error(`DIRECTOR_RENDER_VIDEO_MISSING: 镜头 ${scene.index} 缺少 AI 动态海报视频。`);
       await assertFile(scene.videoPath, `镜头 ${scene.index} AI 动态海报`);
@@ -82,6 +110,8 @@ export async function renderDirectorVideo(input: {
         caption: scene.caption,
         subtitleCues: scene.subtitleCues,
         videoUrl: pathToFileURL(stagedVideo).toString(),
+        videoStartMs: scene.videoStartMs,
+        preserveSourcePicture: scene.preserveSourcePicture,
         renderStrategy: scene.renderStrategy,
         durationMs: scene.durationMs,
         modeLabel: input.modeLabel,
@@ -133,7 +163,7 @@ export async function renderDirectorVideo(input: {
       caption: scene.caption,
       description: scene.caption,
       imagePath: representativePath,
-      duration: Math.max(0.8, scene.durationMs / 1000),
+      duration: scene.durationMs / 1000,
       durationMs: scene.durationMs,
       transitionIn: scene.transitionIn,
       audioPath: scene.audioPath,
@@ -142,21 +172,35 @@ export async function renderDirectorVideo(input: {
     });
   }
 
-  const outputPath = join(exportDir, `director-${Date.now()}-${randomUUID()}.mp4`);
+  const outputName = `director-${Date.now()}-${randomUUID()}.mp4`;
+  const outputPath = join(exportDir, outputName);
+  const artifactOutputPath = join(artifactExportDir, basename(outputPath));
   const totalDurationS = stagedScenes.reduce((total, scene) => total + scene.duration, 0);
   const subtitleLayout: ProductionSubtitleLayoutEvidence = { version: 1, measuredAt: new Date().toISOString(), scenes: [] };
   const sceneStarts = input.sceneStarts ?? new Map(input.scenes.map((scene, index) => [scene.id, input.scenes.slice(0, index).reduce((sum, previous) => sum + previous.durationMs, 0)]));
-  const result = await createElectronHtmlVideoRenderer({ inspectScene: async (window, stagedScene) => {
-    const source = input.scenes.find(scene => scene.index === stagedScene.sceneId)!;
-    try {
-      const measurement = await window.webContents.executeJavaScript(`(${measureDirectorSubtitleLayout.toString()})(${JSON.stringify({ shotId: source.id, startMs: sceneStarts.get(source.id) ?? 0, durationMs: source.durationMs, ...canvas })})`);
-      const parsedMeasurement = productionSubtitleSceneLayoutSchema.parse(measurement);
-      const sourceCues = source.subtitleCues ?? (source.caption.trim() ? [{ startMs: 0, endMs: source.durationMs }] : []);
-      const visibilitySamples = await window.webContents.executeJavaScript(`(${measureDirectorSubtitleVisibility.toString()})(${JSON.stringify({ startMs: sceneStarts.get(source.id) ?? 0, durationMs: source.durationMs, cues: sourceCues })})`);
-      const measuredWithVisibility = productionSubtitleSceneLayoutSchema.parse({ ...parsedMeasurement, visibilitySamples });
-      subtitleLayout.scenes.push(await measureDirectorGlyphCoverage(window, measuredWithVisibility, renderWorkDir));
-    } catch (error) {
-      subtitleLayout.scenes.push({ status: 'failed', shotId: source.id, error: (error instanceof Error ? error.message : String(error)).slice(0, 2000) });
+  const result = await createElectronHtmlVideoRenderer({ inspectionTimeoutMs: 600_000, inspectScene: async (window, stagedScene) => {
+    const stage = renderStages.find(entry => entry.scene.index === stagedScene.sceneId)!;
+    // A recovered capture window is inspected again. Replace this stage's evidence
+    // rather than leaving a failed/duplicate observation from the disposed window.
+    const stageIds = new Set(stage.windows.map(({ scene }) => scene.id));
+    subtitleLayout.scenes = subtitleLayout.scenes.filter(entry => !stageIds.has(entry.shotId));
+    for (const { scene: source, localOffsetMs } of stage.windows) {
+      input.signal?.throwIfAborted();
+      try {
+        const native = source.animation?.code.engine === 'lemo-native';
+        const sourceCues = source.subtitleCues ?? (source.caption.trim() ? [{ text: source.caption, startMs: 0, endMs: source.durationMs }] : []);
+        const measurementInput = { shotId: source.id, startMs: sceneStarts.get(source.id) ?? 0, durationMs: source.durationMs, ...canvas, cues: sourceCues, localOffsetMs };
+        const measure = native ? measureLemoSubtitleLayout : measureDirectorSubtitleLayout;
+        const measurement = await window.webContents.executeJavaScript('(' + measure.toString() + ')(' + JSON.stringify(measurementInput) + ')');
+        const parsedMeasurement = productionSubtitleSceneLayoutSchema.parse(measurement);
+        const visibilitySamples = native && parsedMeasurement.status === 'ok' ? parsedMeasurement.visibilitySamples : await window.webContents.executeJavaScript('(' + measureDirectorSubtitleVisibility.toString() + ')(' + JSON.stringify({ startMs: sceneStarts.get(source.id) ?? 0, durationMs: source.durationMs, cues: sourceCues }) + ')');
+        const measuredWithVisibility = productionSubtitleSceneLayoutSchema.parse({ ...parsedMeasurement, visibilitySamples });
+        subtitleLayout.scenes.push(native ? await measureNativeGlyphCoverage(window, measuredWithVisibility, renderWorkDir) : await measureDirectorGlyphCoverage(window, measuredWithVisibility, renderWorkDir));
+      } catch (error) {
+        subtitleLayout.scenes.push({ status: 'failed', shotId: source.id, error: (error instanceof Error ? error.message : String(error)).slice(0, 2000) });
+        // Native text/runtime failures must stop before capturing a misleading successful movie.
+        if (source.animation?.code.engine === 'lemo-native') throw error;
+      }
     }
   } }).render({
     workDir: renderWorkDir,
@@ -166,7 +210,7 @@ export async function renderDirectorVideo(input: {
     canvas_w: canvas.width,
     canvas_h: canvas.height,
     totalDurationS,
-    normalizeAudio: input.scenes.some(scene => scene.animation?.authoring?.owner === 'creative-production'),
+    normalizeAudio: input.normalizeAudio ?? input.scenes.some(scene => scene.animation?.authoring?.owner === 'creative-production'),
     // Per-scene incoming dissolves are visual-only. The compositor concatenates
     // narration on the original scene clock; ordinary A/V crossfades are disabled.
     transition: { type: 'cut', duration: 0 },
@@ -189,10 +233,14 @@ export async function renderDirectorVideo(input: {
     height: canvas.height,
     fps,
   });
+  if (resolve(result.outputPath) !== resolve(artifactOutputPath)) {
+    await copyFile(result.outputPath, artifactOutputPath);
+  }
+  const artifactOutput = resolve(result.outputPath) === resolve(artifactOutputPath) ? output : await stat(artifactOutputPath);
   return {
-    outputPath: result.outputPath,
+    outputPath: artifactOutputPath,
     durationMs,
-    sizeBytes: output.size,
+    sizeBytes: artifactOutput.size,
     width: canvas.width,
     height: canvas.height,
     hasAudio: true,

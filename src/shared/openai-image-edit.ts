@@ -19,7 +19,7 @@ export async function buildOpenAiImageEditFormData(input: {
   const form = new FormData();
   form.set('model', input.model);
   form.set('prompt', input.prompt);
-  form.set('size', resolveOpenAiImageSize(input.ratio));
+  form.set('size', resolveOpenAiImageSize(input.ratio, input));
   form.set('quality', input.quality ?? resolveOpenAiImageQuality(input.resolution));
   form.set('output_format', 'png');
   for (const path of input.referenceImagePaths) {

@@ -2,7 +2,7 @@ import { createHash, createPublicKey, verify } from 'node:crypto';
 import { request } from 'node:https';
 import { z } from 'zod';
 import { AppError } from '../src/shared/app-error';
-import type { LicenseLease, ReleaseManifest, SignedEnvelope } from '../src/shared/licensing';
+import type { AnnouncementManifest, DifferentialManifest, LicenseLease, ReleaseManifest, SignedEnvelope } from '../src/shared/licensing';
 
 export const licenseConfigSchema = z.object({
   schemaVersion: z.literal(1),
@@ -33,6 +33,25 @@ const releaseSchema = z.object({
   sha256: hash, size: z.number().int().min(2).max(4 * 1024 ** 3), notes: z.string().max(8000),
   issuedAt: time, validUntil: time,
 }).strict();
+const announcementSchema = z.object({
+  schemaVersion: z.literal(1), kind: z.literal('announcement'), id: z.string().uuid(),
+  category: z.enum(['update', 'problem']), title: z.string().min(1).max(120), body: z.string().min(1).max(2000),
+  version: version.nullable(), createdAt: time,
+}).strict();
+const differentialSchema = releaseSchema.pick({ sequence: true, version: true, filename: true, sha256: true, size: true, issuedAt: true, validUntil: true }).extend({
+  schemaVersion: z.literal(1), kind: z.literal('differential'),
+  sha512: z.string().regex(/^[A-Za-z0-9+/]{86}==$/),
+  blockmap: z.object({ sha256: hash, size: z.number().int().min(2).max(8 * 1024 ** 2) }).strict(),
+}).strict();
+
+export function verifyDifferential(envelope: SignedEnvelope, config: LicensePublicConfig, now: number): DifferentialManifest {
+  const value = differentialSchema.parse(verifyEnvelope(envelope, config.signingPublicKey));
+  if (value.issuedAt > now + 60 || value.validUntil <= now || value.validUntil > value.issuedAt + 86400 ||
+      value.issuedAt >= value.validUntil || !value.filename.startsWith(`StoryDream-Setup-${value.version}-`)) {
+    throw new Error('INVALID_DIFFERENTIAL_MANIFEST');
+  }
+  return value;
+}
 
 export function compareVersions(left: string, right: string): number {
   const a = version.parse(left).split('.').map(BigInt);
@@ -71,6 +90,14 @@ export function verifyRelease(envelope: SignedEnvelope, config: LicensePublicCon
   return release;
 }
 
+export function verifyAnnouncement(envelope: SignedEnvelope, config: LicensePublicConfig, now: number): AnnouncementManifest {
+  const announcement = announcementSchema.parse(verifyEnvelope(envelope, config.signingPublicKey));
+  if (announcement.createdAt > now + 60 || (announcement.category === 'update') !== (announcement.version !== null)) {
+    throw new AppError('ANNOUNCEMENT_INVALID', '公告签名或内容无效。');
+  }
+  return announcement;
+}
+
 export class LicenseRemoteError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); }
 }
@@ -93,13 +120,15 @@ export class LicenseTransport {
     return value as T;
   }
 
-  open(path: string, body?: Buffer, offset?: number) {
+  open(path: string, body?: Buffer, offset?: number, end?: number) {
     if (!path.startsWith('/v1/') || path.includes('..') || path.includes('?') || path.includes('#')) throw new Error('INVALID_LICENSE_PATH');
+    if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0) ||
+        end !== undefined && (offset === undefined || !Number.isSafeInteger(end) || end < offset || body)) throw new Error('INVALID_DOWNLOAD_RANGE');
     return new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
       const req = request(new URL(path, this.config.baseUrl), {
         method: body ? 'POST' : 'GET', ca: this.config.caPem, rejectUnauthorized: true,
         minVersion: 'TLSv1.2', agent: false,
-        headers: body ? { 'Content-Type': 'application/json', 'Content-Length': body.length } : offset ? { Range: `bytes=${offset}-` } : {},
+        headers: body ? { 'Content-Type': 'application/json', 'Content-Length': body.length } : offset || end !== undefined ? { Range: `bytes=${offset ?? 0}-${end ?? ''}` } : {},
       }, (response) => {
         response.setTimeout(30000, () => response.destroy(new Error('LICENSE_RESPONSE_TIMEOUT')));
         resolve(response);

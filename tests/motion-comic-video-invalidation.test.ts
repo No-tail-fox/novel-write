@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { motionComicVideoInputFingerprintSource, motionComicVideoJobInputsMatch } from '../src/shared/motion-comic-video';
 import { applyMotionComicImageRecord, restoreMotionComicImageVersion } from '../src/features/director-desk/director-generation';
 import {
   appendMotionComicShot,
@@ -191,4 +193,44 @@ describe('motion-comic derived video invalidation', () => {
     expect(shots.find((candidate) => candidate.id === shot.id)?.videoAssetVersionId).toBeUndefined();
     expect(shots.find((candidate) => candidate.id === otherShot.id)?.videoAssetVersionId).toBe('video-other');
   });
+  it('keeps silent video when post-mix cues, voice choice, or generated audio change', () => {
+    const { document, episode, shot } = fixture();
+    shot.videoProduction = { version: 1, referenceMode: 'frames', audioMode: 'post-mix' };
+    const changed = structuredClone(document);
+    const target = changed.episodes[0].scenes.flatMap(scene => scene.shots).find(item => item.id === shot.id)!;
+    target.voiceId = 'new-female-voice';
+    target.dialogueCueIds = [];
+    changed.episodes[0].dialogueCues = changed.episodes[0].dialogueCues.filter(cue => cue.shotId !== shot.id);
+    changed.characters[0].voiceId = 'new-character-voice';
+    const next = invalidateMotionComicVideosForChangedInputs(document, changed);
+    expect(next.episodes[0].scenes.flatMap(scene => scene.shots).find(item => item.id === shot.id))
+      .toMatchObject({ videoAssetVersionId: 'video-current', videoJobId: 'video-job-current' });
+    expect(next.providerJobs).toEqual(document.providerJobs);
+  });
+
+  it('still invalidates native dialogue video when spoken text changes', () => {
+    const { document, episode, shot } = fixture();
+    shot.videoProduction = { version: 1, referenceMode: 'frames', audioMode: 'native' };
+    const cueId = shot.dialogueCueIds[0];
+    expect(cueId).toBeTruthy();
+    const changed = structuredClone(document);
+    changed.episodes[0].dialogueCues.find(cue => cue.id === cueId)!.text += '新的台词';
+    const next = invalidateMotionComicVideosForChangedInputs(document, changed);
+    expect(next.episodes[0].scenes.flatMap(scene => scene.shots).find(item => item.id === shot.id)?.videoAssetVersionId).toBeUndefined();
+  });
+
+  it('reuses integrity-checked legacy post-mix snapshots but rejects changed visual input', () => {
+    const { document, shot } = fixture();
+    shot.videoProduction = { version: 1, referenceMode: 'frames', audioMode: 'post-mix' };
+    const legacy = motionComicVideoInputFingerprintSource(document, shot, 'remote', 'model');
+    legacy.dialogue = [{ id: 'old', text: '旧台词', role: 'dialogue', characterId: undefined, speaker: '女主', emotion: '平静', startMs: 0, endMs: 1000, voiceId: undefined, voiceProvider: undefined, voiceSpeed: undefined, audioAssetVersionId: undefined }];
+    legacy.prompt = legacy.prompt.replace('保持首帧中的', '[0–1000ms] 对白 女主：旧台词（平静）\n保持首帧中的');
+    const snapshot = JSON.stringify(legacy);
+    const job = { ...document.providerJobs[0], providerId: 'remote', model: 'model', videoInputSnapshot: snapshot, inputHash: createHash('sha256').update(snapshot).digest('hex') };
+    expect(motionComicVideoJobInputsMatch(document, shot, job)).toBe(true);
+    expect(motionComicVideoJobInputsMatch(document, shot, { ...job, videoInputSnapshot: snapshot + ' ' })).toBe(false);
+    shot.motionPrompt += '快速摇镜';
+    expect(motionComicVideoJobInputsMatch(document, shot, job)).toBe(false);
+  });
+
 });

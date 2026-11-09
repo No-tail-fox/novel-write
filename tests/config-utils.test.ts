@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig } from '@shared/config';
-import { configTargetStatus, normalizeAppConfig, testConfigTarget, validateConfigTarget } from '@shared/config-utils';
+import { configTargetStatus, normalizeAppConfig, validateConfigTarget } from '@shared/config-utils';
+import { testConfigTarget } from '@shared/config-test-runtime';
 import { testOpenAiCompatibleImageModel } from '@shared/openai-image';
 
 describe('config validation utilities', () => {
@@ -303,7 +304,7 @@ describe('config validation utilities', () => {
     expect(requests[0].headers.get('Authorization')).toBe('Bearer image-key');
     expect(requests[0].body).toMatchObject({
       model: 'gpt-image-2',
-      size: '1024x1536',
+      size: '1152x2048',
       quality: 'high',
       output_format: 'png',
       moderation: 'auto',

@@ -10,7 +10,8 @@ function project() {
     { id: 'voice', assetId: 'voice', kind: 'audio', localPath: 'C:/fixture/voice.wav', createdAt: document.createdAt },
     { id: 'sound', assetId: 'sound', kind: 'audio', localPath: 'C:/fixture/sound.wav', createdAt: document.createdAt },
     { id: 'image', assetId: 'image', kind: 'image', localPath: 'C:/fixture/image.png', createdAt: document.createdAt },
-    { id: 'subject', assetId: 'subject', kind: 'image', localPath: 'C:/fixture/subject.png', createdAt: document.createdAt },
+    { id: 'subject', assetId: 'subject', kind: 'image', localPath: 'C:/fixture/subject.png', createdAt: document.createdAt,
+      backgroundRemoval: { method: 'native-alpha', transparentFraction: 0.5, foregroundFraction: 0.48, edgeFraction: 0.02, quality: 'passed' } },
   ];
   document.beats.forEach((beat) => beat.shots.forEach((shot) => {
     shot.voiceAssetVersionId = 'voice';

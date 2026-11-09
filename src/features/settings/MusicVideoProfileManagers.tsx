@@ -58,14 +58,14 @@ function ProfileSwitcher({ profiles, activeId, selectedId, saving, label, enable
   const isActive = selectedId === activeId;
   return <div className="media-profile-switcher">
     <div className="media-profile-heading">
-      <div><strong>{label}配置</strong><span>可保存多个模型配置，选中用于编辑，启用用于创作。复制配置后需单独设置密钥。</span></div>
+      <div><strong>{label}配置</strong><span>{label === '视频' ? '可保存多个视频模型，默认用于新建项目；已有项目保持原选择。' : '可保存多个模型配置，选中用于编辑，启用用于创作。'}复制配置后需单独设置密钥。</span></div>
       <Button icon={<Plus size={15} />} disabled={saving} onClick={onAdd}>新增配置</Button>
     </div>
     <div className="media-profile-list" aria-label={`${label}配置列表`}>
       {profiles.map((profile) => <Button key={profile.id} variant="subtle"
         className="media-profile-row" aria-pressed={profile.id === selectedId}
         disabled={saving} onClick={() => onSelect(profile.id)}>
-        <span className="media-profile-row-name">{profile.name || '未命名配置'}{profile.id === activeId ? <small>{enabled ? '启用中' : '当前配置 · 服务关闭'}</small> : null}</span>
+        <span className="media-profile-row-name">{profile.name || '未命名配置'}{profile.id === activeId ? <small>{label === '视频' ? '新项目默认' : enabled ? '启用中' : '当前配置 · 服务关闭'}</small> : null}</span>
         <span className="media-profile-row-detail">{profile.model || '未填写模型'} · {profile.baseUrl || '未填写接口地址'}</span>
       </Button>)}
     </div>
@@ -74,7 +74,7 @@ function ProfileSwitcher({ profiles, activeId, selectedId, saving, label, enable
       <div>
         <Button density="compact" icon={<Copy size={14} />} disabled={saving} onClick={onCopy}>复制配置</Button>
         <Button density="compact" icon={<Trash2 size={14} />} disabled={saving || profiles.length <= 1 || isActive} title={isActive ? '请先启用另一配置，再删除此配置' : undefined} onClick={() => setDeleting(true)}>删除配置</Button>
-        <Button density="compact" variant="primary" icon={<Play size={14} />} disabled={saving || (isActive && enabled)} onClick={() => void onActivate(selectedId)}>{isActive && enabled ? '已启用' : '启用此配置'}</Button>
+        <Button density="compact" variant="primary" icon={<Play size={14} />} disabled={saving || (isActive && enabled)} onClick={() => void onActivate(selectedId)}>{label === '视频' ? isActive && enabled ? '新项目默认' : '设为默认' : isActive && enabled ? '已启用' : '启用此配置'}</Button>
       </div>
     </div>
     <Dialog open={deleting} title={`删除「${selected?.name || '未命名配置'}」？`} onOpenChange={setDeleting}

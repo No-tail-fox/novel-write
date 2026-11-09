@@ -25,9 +25,9 @@ export const approvedEditorialInventories = {
   createTaskInputFields: inventory([
     'title', 'inputText', 'taskKind', 'processingMode', 'publishMode', 'mode', 'aiKeyword', 'aiSources',
     'selectedSources', 'extraRequirements', 'imagePromptReference', 'track', 'style', 'speaker', 'ratio',
-    'imageQuality', 'templateId', 'bgmId', 'pausePoints', 'promptTemplateId', 'promptTemplateType', 'referenceImagePath',
+    'imageQuality', 'visualTemplateRef', 'pixelleOptions', 'templateId', 'bgmId', 'outputTargets', 'pausePoints', 'promptTemplateId', 'promptTemplateType', 'referenceImagePath',
     'rewriteIntensity', 'narrativePov', 'keepPromotion', 'ttsProvider', 'ttsSpeed', 'storyboardSceneCount',
-    'step3PromptSnapshot', 'musicMv', 'videoForm', 'llmProfileId', 'materialSource', 'productInfo',
+    'step3PromptSnapshot', 'musicMv', 'videoForm', 'llmProfileId', 'projectModels', 'materialSource', 'shortVideoMaterials', 'productInfo',
     'materialPerson', 'draftDir', 'fixedIntro', 'outroCta', 'lockIntroSentences', 'taskType', 'pipelineStep',
     'pipelineData', 'targetLength', 'targetScenes', 'scriptFormat', 'podcastImageMode', 'podcastSpeakers',
     'podcastSpeakerA', 'podcastSpeakerB', 'coverImageMode', 'coverTemplateId', 'coverPageEnabled', 'coverPageText', 'manualCoverAssetId', 'autoBorrowImage', 'htmlVideoForeground',

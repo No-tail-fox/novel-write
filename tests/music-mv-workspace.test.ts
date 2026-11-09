@@ -1,32 +1,30 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { FileDatabase } from '@shared/storage';
+import { listVoxProductionProjects } from '../electron/vox-production-projects';
+import { parseEditorialCollagePipelineData } from '@shared/editorial-collage';
+import { taskHistoryTypeLabel } from '../src/features/tasks/task-formatters';
 
-describe('music MV authoring workspace', () => {
-  it('opens persisted MV tasks, restores domain settings, and reruns from content after one governed save', async () => {
-    const page = await readFile(new URL('../src/features/music-mv/MusicMvPage.tsx', import.meta.url), 'utf8');
-    expect(page).toContain("useState<'create' | 'workspace'>('create')");
-    expect(page).toContain("task.taskType === 'music-mv' || task.taskKind === 'music-mv'");
-    expect(page).toContain('function openMusicTask(taskId: string)');
-    expect(page).toContain('setLyrics(task.inputText)');
-    expect(page).toContain('setMusicMvRhythmMode(task.musicMv.rhythmMode)');
-    expect(page).toContain('setMusicMvCaptionStyle(task.musicMv.captionStyle)');
-    expect(page).toContain('api.updateMusicMvTask({');
-    expect(page).toContain("api.rerunTaskStep(activeTask.id, 0, 'regenerate')");
-    expect(page).toContain('api.retryTask(activeTask.id)');
-    expect(page).toContain('>逐镜返工</Button>');
-    expect(page).toContain("taskLocked ? '运行中，只读' : '可编辑'");
-  });
-
-  it('keeps create and existing-task actions in one stable toolbar', async () => {
-    const [page, styles] = await Promise.all([
-      readFile(new URL('../src/features/music-mv/MusicMvPage.tsx', import.meta.url), 'utf8'),
-      readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
-    ]);
-    expect(page).toContain('<Toolbar aria-label="音乐 MV 任务操作">');
-    expect(page).toContain('label="已有 MV"');
-    expect(page).toContain('>新建 MV</Button>');
-    expect(page).toContain("pageMode === 'workspace' ? '保存并重新生成' : '生成音乐 MV'");
-    expect(styles).toContain('.music-mv-workspace-status');
-    expect(styles).toContain('.music-mv-layout .panel-title-row > .sd-toolbar');
+describe('music MV Lemo project persistence', () => {
+  it('reopens the complete project and includes it in the Music MV project filter', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'music-mv-project-'));
+    const file = join(dir, 'storydream.db');
+    let db = await FileDatabase.open(file);
+    try {
+      const task = await db.createMusicMvProjectTask({ title: 'MV', inputText: 'One\nTwo\nThree', taskKind: 'music-mv', track: 'music-mv', storyboardSceneCount: 2, musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'minimal', visualMotif: '', audioPath: 'song.wav' } }, 6000);
+      expect(task).toMatchObject({ taskKind: 'music-mv', taskType: 'editorial-collage', status: 'draft', track: 'music-mv' });
+      expect(taskHistoryTypeLabel(task)).toBe('音乐 MV');
+      await db.close();
+      db = await FileDatabase.open(file);
+      const loaded = await db.getTaskDetail(task.id);
+      expect(parseEditorialCollagePipelineData(loaded!.pipelineData).productionSettings?.music?.path).toBe('song.wav');
+      expect((await db.listTaskSummaries({ taskType: 'music-mv' })).items.map(t => t.id)).toContain(task.id);
+      expect((await db.listTaskSummaries({ taskType: 'editorial-collage' })).items.map(t => t.id)).not.toContain(task.id);
+      expect(await listVoxProductionProjects(db)).toContain(task.id);
+      await expect(db.createMusicMvProjectTask({ inputText: 'One', musicMv: { rhythmMode: 'lyric-sync', captionStyle: 'none', visualMotif: '', audioPath: '' } }, 6000)).rejects.toThrow('AUDIO_REQUIRED');
+      expect((await db.listTaskSummaries()).items).toHaveLength(1);
+    } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
   });
 });

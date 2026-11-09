@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runInNewContext } from 'node:vm';
+import { fitEditorialNarrationTiming } from '../src/shared/editorial-narration-timing';
 import { directorCameraStyle, directorLayerStyle } from '../src/features/director-desk/DirectorDeskWorkspace';
 import {
   assertDirectorRenderProbe,
@@ -162,7 +163,7 @@ describe('director render contracts', () => {
     expect(html).toContain('"atMs":5000,"x":0.5,"y":0.5,"zoom":1');
   });
 
-  it('renders documentary titles with the documentary layout and stable safe-area styling', () => {
+  it('keeps comic shot names as metadata, not burned-in titles', () => {
     const html = buildDirectorSceneHtml({
       title: '一个需要完整保留的纪录片长标题', caption: '字幕内容',
       imageUrl: 'file:///I:/director/shot-03.png', durationMs: 5000,
@@ -170,7 +171,9 @@ describe('director render contracts', () => {
     });
     expect(html).toContain('frame documentary');
     expect(html).toContain('.frame.documentary .title');
-    expect(html).toContain('一个需要完整保留的纪录片长标题');
+    expect(html).not.toContain('<div class="title">');
+    expect(html).not.toContain('<div class="meta">');
+    expect(html).not.toContain('<div class="shade">');
   });
 
   it('maps persisted VOX layers and camera keyframes without guessing a representative image', () => {
@@ -254,6 +257,42 @@ describe('director render contracts', () => {
       })),
     });
     expect(() => buildDirectorRenderScenes(hybrid)).toThrow(/未完成的混合渲染模式/u);
+  });
+
+  it('reuses a split living poster at continuous source offsets and seeks in local time', async () => {
+    const source = voxRenderDocument('living-poster');
+    source.assets.find(a => a.id === source.beats[0].shots[0].voiceAssetVersionId)!.durationMs = 17000;
+    const repaired = fitEditorialNarrationTiming(source), scenes = buildDirectorRenderScenes(repaired);
+    expect(scenes).toHaveLength(2);
+    expect(scenes.map(s => s.videoPath)).toEqual(['C:/managed/shot-1.mp4', 'C:/managed/shot-1.mp4']);
+    expect(scenes.map(s => s.videoStartMs)).toEqual([0, scenes[0].durationMs]);
+    expect(parseEditorialCollagePipelineData(repaired)).toEqual(repaired);
+    const shifted = structuredClone(repaired); shifted.beats[0].shots[1].narrationSplit!.sourceStartMs += 100;
+    expect(directorDocumentRenderFingerprint(shifted)).not.toBe(directorDocumentRenderFingerprint(repaired));
+    const scene = scenes[1], listeners = new Map<string, () => void>();
+    let position = 0;
+    const video = {
+      readyState: 2, duration: 20, ended: false,
+      get currentTime() { return position; },
+      set currentTime(value: number) { position = value; queueMicrotask(() => listeners.get('seeked')?.()); },
+      pause() {}, play: async () => {},
+      addEventListener: (event: string, listener: () => void) => listeners.set(event, listener),
+      removeEventListener: (event: string) => listeners.delete(event),
+    };
+    const window: { __tl?: { seek(seconds: number): Promise<void>; play(): void; pause(): void }; __ready?: boolean } = {};
+    const html = buildDirectorSceneHtml({ ...scene, videoUrl: 'file:///video.mp4', modeLabel: 'VOX' });
+    runInNewContext(html.match(/<script nonce="director-render">([\s\S]+)<\/script>/)![1], {
+      window, document: { getElementById: (id: string) => id === 'scene-video' ? video : { style: {} }, querySelectorAll: () => [] },
+      performance: { now: () => 0 }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, setTimeout, clearTimeout,
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(window.__ready).toBe(true);
+    for (const seconds of [0, 1.5, 4, .5, 0]) {
+      await window.__tl!.seek(seconds);
+      expect(position).toBeCloseTo(scene.videoStartMs! / 1000 + seconds);
+    }
+    video.duration = 1; await window.__tl!.seek(2);
+    expect(position).toBeCloseTo(.999);
   });
 
   it('builds living-poster HTML with load gating and awaited video seeking', () => {

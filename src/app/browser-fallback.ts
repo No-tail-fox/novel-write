@@ -1,3 +1,6 @@
+import { selectImageLabProfileConfig } from '../shared/image-lab-profile';
+import { defaultProjectModels, projectRuntimeConfig, validateProjectModels } from '../shared/project-models';
+import { preparePromptTemplateSave } from '../shared/workflow-prompt-runtime';
 import { cloneState, hydrateState, initialState } from './app-state';
 import { browserAssetLibrary } from './browser-asset-library';
 import { withoutStaleCustomStylePreview } from '../shared/custom-style-preview';
@@ -309,7 +312,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     const defaults = await loadDefaultPromptTemplates();
     const envelope = readEnvelope();
     const custom = envelope.state.promptTemplates.filter((template) => !template.isBuiltin);
-    const next = { ...envelope.state, promptTemplates: [...defaults, ...custom] as PromptTemplate[] };
+    const saved = new Map(envelope.state.promptTemplates.map((template) => [template.id, template]));
+    const builtins = defaults.map((template) => saved.get(template.id)?.builtinModified ? saved.get(template.id)! : template);
+    const next = { ...envelope.state, promptTemplates: [...builtins, ...custom] as PromptTemplate[] };
     if (!changed(envelope.state.promptTemplates, next.promptTemplates)) return envelope.state;
     return commitState(next, { revision: envelope.revision, tombstones: envelope.tombstones });
   };
@@ -626,6 +631,16 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       });
       return fallbackHistoryPage('task', tasks.map(taskToSummary));
     },
+    async setProjectModels(id, models) {
+      const state = read();
+      const task = state.tasks.find(item => item.id === id);
+      if (!task) throw new Error(`TASK_NOT_FOUND: ${id}`);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只可查看。');
+      if (task.status === 'running' || task.status === 'paused' || readDirectorBatches().some(batch => batch.projectId === id && ['queued', 'running', 'paused', 'cancelling'].includes(batch.status))) throw new Error('PROJECT_MODELS_BUSY: 请等待项目生成任务结束后再修改模型。');
+      const validated = validateProjectModels(state.config, models);
+      return commitFallbackHistoryUpsert('task', { ...state, tasks: state.tasks.map(item => item.id === id
+        ? { ...item, projectModels: validated, llmProfileId: validated.llmProfileId } : item) }, id);
+    },
     async setTaskFavorite(id: string, isFavorite: boolean) {
       const state = read();
       const task = state.tasks.find((item) => item.id === id);
@@ -635,6 +650,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         ...state,
         tasks: state.tasks.map((item) => item.id === id ? { ...item, isFavorite } : item),
       }, id);
+    },
+    async generateProjectCover() {
+      throw new Error('请在桌面端生成项目封面。');
+    },
+    async importProjectCover() {
+      throw new Error('请在桌面端上传项目封面。');
+    },
+    async resetProjectCover() {
+      throw new Error('请在桌面端设置项目封面。');
     },
     async archiveTask(id: string) {
       return archiveFallbackHistory('task', id);
@@ -966,8 +990,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async savePromptTemplate(template: PromptTemplate) {
       const state = read();
+      const defaults = await loadDefaultPromptTemplates();
+      const prepared = preparePromptTemplateSave(template, defaults.find((item) => item.id === template.id));
       const next = state.promptTemplates.filter((item) => item.id !== template.id);
-      return persist({ ...state, promptTemplates: [{ ...template, updatedAt: new Date().toISOString() }, ...next] });
+      return persist({ ...state, promptTemplates: [{ ...prepared, updatedAt: new Date().toISOString() }, ...next] });
     },
     async resetPromptTemplates() {
       const state = read();
@@ -1015,13 +1041,18 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async generateImageLab(input: ImageLabGenerateInput) {
       const state = read();
+      const task = input.upstreamTaskId ? state.tasks.find(item => item.id === input.upstreamTaskId) : undefined;
+      if (input.upstreamTaskId && !task) throw new Error('TASK_NOT_FOUND: 项目不存在。');
+      const config = task?.projectModels ? projectRuntimeConfig(state.config, task.projectModels) : selectImageLabProfileConfig(state.config, input);
       const now = new Date().toISOString();
       const record: ImageLabRecord = {
         id: input.id ?? crypto.randomUUID(),
         prompt: input.prompt,
         ratio: input.ratio,
         style: input.style,
-        provider: state.config.imageProvider,
+        provider: config.imageProvider,
+        imageProfileId: config.activeImageProfileId,
+        modelName: config.imageProvider === 'gpt_image' ? config.gptImage.model : config.imageProvider === 'custom' ? config.customImage.model : config.jimeng.model,
         imagePath: '',
         status: 'failed',
         errorMessage: '浏览器预览无法调用真实生图模型，请在 Electron 桌面端使用。',
@@ -1062,11 +1093,14 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       return persist({ ...read(), account });
     },
     async saveActivation(_activation: ActivationState) { throw new Error('请在桌面端使用真实激活码。'); },
+    async getArtifactStorage() { return null; },
+    async chooseArtifactStorage() { throw new Error('请在 StoryDream 桌面端设置产物存储位置。'); },
+    async cancelArtifactStorageChange() { throw new Error('请在 StoryDream 桌面端设置产物存储位置。'); },
     async getLicenseStatus() { return { configured: false, status: 'unconfigured' as const, deviceId: '', deviceLabel: '浏览器预览', expiresAt: null, validUntil: null, devices: [], message: '请在桌面端管理授权。' }; },
     async activateLicense() { throw new Error('请在桌面端激活。'); },
     async refreshLicense() { throw new Error('请在桌面端验证授权。'); },
     async releaseLicense() { throw new Error('请在桌面端解绑。'); },
-    async getUpdateStatus() { return { currentVersion: '1.0.0', phase: 'idle' as const, release: null, downloaded: 0, required: false, message: '请在桌面端管理更新。' }; },
+    async getUpdateStatus() { return { currentVersion: '1.0.0', phase: 'idle' as const, release: null, announcements: [], downloaded: 0, required: false, message: '请在桌面端管理更新。' }; },
     async checkForUpdate() { throw new Error('请在桌面端检查更新。'); },
     async downloadUpdate() { throw new Error('请在桌面端下载更新。'); },
     async installUpdate() { throw new Error('请在桌面端安装更新。'); },
@@ -1179,6 +1213,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const draft = createEditorialCollageDraft({ id, title: validated.title, ratio: validated.ratio, now, writingStyleId: validated.writingStyleId, writingRequirements: validated.writingRequirements });
       const document = createEditorialCollageStarterPlan(draft, validated.sourceText, now, validated.durationMs);
       const task: Task = {
+        projectModels: validateProjectModels(state.config, input.projectModels ?? defaultProjectModels(state.config, 'llmProfileId' in input ? input.llmProfileId as string : undefined)),
         id,
         title: document.title,
         inputText: validated.sourceText,
@@ -1272,6 +1307,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         ? createMotionComicImportedProject(draft, validated.source, now)
         : createMotionComicStarterProject(draft, validated.episodeTitle, now);
       const task: Task = {
+        projectModels: validateProjectModels(state.config, input.projectModels ?? defaultProjectModels(state.config, 'llmProfileId' in input ? input.llmProfileId as string : undefined)),
         id,
         title: document.title,
         inputText: validated.source?.originalText ?? validated.premise,
@@ -1427,6 +1463,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const state = read();
       const now = new Date().toISOString();
       const task: Task = {
+        projectModels: validateProjectModels(state.config, input.projectModels ?? defaultProjectModels(state.config, 'llmProfileId' in input ? input.llmProfileId as string : undefined)),
         id: crypto.randomUUID(),
         title: input.title || input.inputText.slice(0, 18) || 'HTML 动画视频',
         inputText: input.inputText,
@@ -1626,6 +1663,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         '浏览器预览无法运行真实供应商流水线。请在 Electron 桌面端配置 LLM、生图、TTS、Python 和 pyJianYingDraft 后执行。';
       const state = read();
       const task: Task = {
+        projectModels: validateProjectModels(state.config, input.projectModels ?? defaultProjectModels(state.config, 'llmProfileId' in input ? input.llmProfileId as string : undefined)),
         id: crypto.randomUUID(),
         title: input.title || input.inputText.slice(0, 18) || 'New task',
         inputText: input.inputText,
@@ -1839,8 +1877,12 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async selectLocalImage(_purpose?: 'video-reference') {
       return null;
     },
+    async getPixelleCatalog() { throw new Error('Pixelle 原模板运行器仅在桌面应用中可用'); },
     async selectLocalVideo() {
       return null;
+    },
+    async selectShortVideoMaterials() {
+      return [];
     },
     async selectMotionComicSourceFile() {
       return null;

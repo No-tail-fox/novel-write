@@ -50,5 +50,39 @@ The sample story is not included in StoryDream.
 - Revision: `3961ddb3d24d8876e0e2754f7790d66908acee51`
 - Code and text references: MIT, Copyright (c) 2026 LemoLab; see `THIRD_PARTY_LICENSES/LemoLab-MIT.txt`.
 - Imported: 59 style documents/metadata, directing and technique text; SHA-256 inventory in `vendor/lemo-opuscar/manifest.json`.
-- Adaptation: six initial React/Remotion style adapters, selected references loaded on demand, host-managed audio, subtitles and deterministic capture.
-- Demo films, images, audio and third-party voice tracks are not bundled. Their separate licenses do not apply to the text-only import.
+- Native path: complete DIRECTOR/TECHNIQUE/STYLE references; original seeded math helpers from core/lib.js (inventory: vendor/lemo-native-core/provenance.json); continuous HTML/Canvas/WebGL/Three films with film-owned typography and host-managed narration/music. Legacy React/Remotion adapters remain available for existing projects.
+- Bundled gallery stills: 59 official covers by **LemoLab**, licensed under **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/); see `THIRD_PARTY_LICENSES/CC-BY-4.0.txt`. Source: https://lemomo-ai.github.io/lemo-opuscar/ and https://github.com/lemomo-ai/lemo-opuscar. Changes: resized proportionally to fit 768 x 432 and converted from JPEG to WebP without cropping. Per-image sources, dimensions and SHA-256 hashes: `src/assets/creative-style-previews/manifest.json`. Used for style references, not user production assets.
+- The legacy gallery does not bundle demo films, audio or third-party voice tracks. Optional sample playback streams the original gallery video on demand. The separate full-source library is described below.
+
+## Three.js
+
+- Version: 0.170.0 (r170), https://github.com/mrdoob/three.js
+- MIT, Copyright © 2010–2024 three.js authors. Original license ships as `dist-electron/electron/THREE_LICENSE.txt`. Used by the isolated native animation runtime.
+
+## Electron differential updater
+
+- Project: https://github.com/electron-userland/electron-builder
+- Runtime packages: `electron-updater` 6.8.11 and `builder-util-runtime` 9.7.0 (MIT).
+- StoryDream uses the upstream differential download engine with a project-owned,
+  CA-pinned HTTPS range adapter. It retains its own signed release protocol,
+  activation policy and final installer verification.
+- The original license texts for these packages and their bundled dependencies
+  are collected from the actual main-process bundle and distributed in
+  `dist-electron/electron/MAIN_THIRD_PARTY_NOTICES.txt`.
+
+## Lemo-Opuscar full-source library (native project adapter)
+
+- Source: https://github.com/lemomo-ai/lemo-opuscar, revision `f17136060781a0068a7951245a3aa7835a7230de`.
+- All 2,519 tracked upstream files are preserved in `vendor/lemo-upstream`; integrity inventory: `storydream-upstream.json`. No upstream source modifications. Dependencies and release-only media are not part of this Git snapshot.
+- Code and documentation: MIT, Copyright 2026 LemoLab; original `LICENSE` retained.
+- Included sample stills: CC BY 4.0, attribution **LemoLab**, repository above. Unmodified. Contributors and third-party rights remain as recorded in each demo's `CREDITS`.
+- Generated user films are not required by upstream to carry LemoLab attribution. This does not waive third-party asset, font or music licenses.
+- The three upstream-excluded voice recordings (Game Show Flat, Paper-cut Lightbox, Broadcast News Package) are not licensed for reuse by this integration. Do not download or reuse them as production assets.
+- Local benchmark dependency caches retain source URLs, SHA-256, license identifiers and font OFL texts separately; they never overwrite the immutable source tree.
+
+## Pixelle-Video full-source library
+
+- Source: https://github.com/AIDC-AI/Pixelle-Video, revision `848b054e4fae40dabc62ec58e960b573e83793ac`.
+- Complete 313-file upstream Git tree, including all 31 original HTML templates, is preserved byte-for-byte in `vendor/pixelle-upstream`; SHA-256 inventory: `storydream-upstream.json`.
+- Apache-2.0, Copyright (C) 2025 AIDC-AI. Original `LICENSE` and `NOTICE` are retained unchanged. StoryDream adapters live outside the upstream tree.
+- Third-party fonts and media retain their own licenses. Remote URLs referenced by a template are not bundled resources or proof of redistribution rights.

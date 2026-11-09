@@ -1,7 +1,7 @@
 import type { HtmlVideoElementGeometry, HtmlVideoScenePlan, HtmlVideoSemanticBeat } from './types';
 import type { HtmlVideoCaptionCue } from './html-video-captions';
 
-export const HTML_COMPOSITION_REVISION = 'composition-v2.1';
+export const HTML_COMPOSITION_REVISION = 'composition-v2.2';
 type Box = { x: number; y: number; width: number; height: number };
 export interface HtmlCompositionLayout {
   objects: Array<{ slot: number; geometry: HtmlVideoElementGeometry }>;
@@ -22,8 +22,31 @@ export function resolveHtmlCompositionLayout(plan: HtmlVideoScenePlan, portrait:
   } else if (['full-quote', 'quote-card', 'kinetic-copy', 'kinetic-type-beats'].includes(id)) {
     title = { x: 10, y: 25, width: 80, height: 44 };
     boxes = plan.elements.map((_, i) => geometry(66, 49, 27, 30, 3 + i));
-  } else if (['split-compare', 'before-after-wipe', 'parallax-focus'].includes(id)) {
+  } else if (['split-compare', 'before-after-wipe', 'dialogue-duo'].includes(id)) {
     boxes = plan.elements.map((_, i) => portrait ? geometry(i % 2 ? 51 : 3, 30, 46, 48, 3 + i) : geometry(i % 2 ? 52 : 5, 25, 43, 55, 3 + i));
+  } else if (id === 'hero-callouts') {
+    boxes = plan.elements.map((_, i) => i === 0
+      ? portrait ? geometry(25, 44, 50, 35, 5) : geometry(35, 28, 30, 51, 5)
+      : portrait ? geometry(i === 1 ? 4 : 61, 28, 35, 24, 3 + i) : geometry(i === 1 ? 4 : 69, 35, 27, 38, 3 + i));
+  } else if (['grid-four', 'parallax-focus'].includes(id)) {
+    boxes = plan.elements.map((_, i) => geometry(i % 2 ? 52 : 5, 27 + Math.floor(i / 2) * 27, 43, 24, 3 + i));
+  } else if (id === 'three-float') {
+    boxes = plan.elements.map((_, i) => geometry(4 + i * 32, i === 1 ? 30 : 36, 28, portrait ? 40 : 42, 3 + i));
+  } else if (['orbit-focus', 'radial-system'].includes(id)) {
+    const positions = [[34, 27, 32, 16], [64, 44, 32, 19], [34, 64, 32, 16], [4, 44, 32, 19]];
+    boxes = plan.elements.map((_, i) => geometry(...positions[i % positions.length] as [number, number, number, number], 3 + i));
+  } else if (id === 'diagonal-flow') {
+    boxes = plan.elements.map((_, i) => i % 2 ? geometry(51, 47, 44, 32, 3 + i) : geometry(5, 27, 44, 36, 3 + i));
+  } else if (id === 'vertical-timeline') {
+    boxes = plan.elements.map((_, i) => portrait
+      ? geometry(i % 2 ? 54 : 6, 27 + i * 18, 40, 16, 3 + i)
+      : geometry(5 + i * 31, 31 + i * 5, 28, 38, 3 + i));
+  } else if (id === 'stacked-cards') {
+    boxes = plan.elements.map((_, i) => portrait ? geometry(8 + i * 6, 28 + i * 5, 72, 40, 3 + i) : geometry(20 + i * 6, 28 + i * 5, 48, 40, 3 + i));
+  } else if (id === 'product-stage') {
+    boxes = plan.elements.map((_, i) => i === 0 ? geometry(8, 29, 60, 50, 4) : geometry(72, 47, 24, 28, 5));
+  } else if (id === 'split-push') {
+    boxes = plan.elements.map((_, i) => geometry(6, 28 + i * 26, 88, 23, 3 + i));
   } else if (id === 'spatial-pan-stations') {
     boxes = plan.elements.map((_, i) => portrait ? geometry(10 + i % 2 * 40, 26 + Math.floor(i / 2) * 25, 40, 27, 3 + i) : geometry(5 + i * 30, 28, 28, 49, 3 + i));
   } else if (id === 'constellation-hub') {
@@ -58,7 +81,8 @@ export function htmlCompositionBeatTweens(plan: HtmlVideoScenePlan, cues: readon
     return targets.map(selector => {
       if (beat.action === 'reveal') return `tl.fromTo('${selector}', { opacity: 0.25, y: 24 }, { opacity: 1, y: 0, duration: ${length}, immediateRender: false, ease: 'power2.out' }, ${at});`;
       if (beat.action === 'exit' || beat.action === 'dim') return `tl.to('${selector}', { opacity: ${beat.action === 'exit' ? 0 : .35}, duration: ${length} }, ${at});`;
-      return `tl.to('${selector}', { scale: 1.055, duration: ${length / 2}, yoyo: true, repeat: 1, ease: 'power2.inOut' }, ${at});`;
+      return `tl.to('${selector}', { opacity: 1, duration: ${length / 2} }, ${at});\n` +
+        `tl.to('${selector}', { scale: 1.055, duration: ${length / 2}, yoyo: true, repeat: 1, ease: 'power2.inOut' }, ${at});`;
     });
   }).join('\n');
 }

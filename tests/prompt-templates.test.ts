@@ -25,7 +25,7 @@ describe('prompt template rendering', () => {
 
   it('matches the embedded StoryDream prompt inventory', () => {
     const taskTemplates = defaultPromptTemplates.filter((template) => template.type === 'task' && template.isBuiltin);
-    const globalStepTemplates = defaultPromptTemplates.filter((template) => template.type !== 'task' && template.isBuiltin);
+    const globalStepTemplates = defaultPromptTemplates.filter((template) => template.type !== 'task' && template.type !== 'workflow' && template.isBuiltin);
 
     expect(taskTemplates.map((template) => template.id)).toEqual(storyboundSystemTemplates.map((template) => `system-${template.templateId}`));
     expect(taskTemplates.map((template) => template.name)).toEqual(storyboundSystemTemplates.map((template) => template.name));

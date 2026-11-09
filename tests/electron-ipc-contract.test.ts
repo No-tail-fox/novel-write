@@ -340,7 +340,7 @@ describe('electron ipc contract', () => {
     expect(main).toContain('await database.getTaskDetail(id)');
     expect(main).toContain('isHtmlVideoTask(task)');
     expect(main).toContain('htmlVideoTaskDirectory(task.id)');
-    expect(main).toContain("return resolveExistingHtmlVideoTaskWorkDir(app.getPath('userData'), appDataName, task.managedStorageKey ?? '');");
+    expect(main).toContain("return resolveExistingHtmlVideoTaskWorkDir(artifactDataDir(), task.managedStorageKey ?? '');");
     expect(main).toContain("find((asset) => asset.name === name)");
     expect(main).toContain('openExistingDirectory');
     const taskDirectoryHandler = handlerSource(main, 'task:open-output-directory');
@@ -928,8 +928,8 @@ describe('electron ipc contract', () => {
 
     expect(main).toContain("trustedHandle('local-audio:select'");
     expect(main).toContain('selectLocalAudio');
-    expect(main).toContain("purpose === 'managed-bgm' ? importManagedBgm(selectedPath, appDataDir()) : selectedPath");
-    expect(main).toContain('await ensureRuntimeManagedBgmPaths(database, service, dir)');
+    expect(main).toContain("purpose === 'managed-bgm' ? importManagedBgm(selectedPath, artifactDataDir()) : selectedPath");
+    expect(main).toContain('await ensureRuntimeManagedBgmPaths(database, service, artifacts)');
     expect(main).toContain('resolveRuntimeManagedBgmLibrary(dataDir, current)');
     expect(main).toContain("purpose === 'video-reference'");
     expect(main).toContain("? ['mp3', 'wav']");
@@ -1022,7 +1022,7 @@ describe('electron ipc contract', () => {
     expect(renderer).toContain('BrowserWindow');
     expect(renderer).toContain('executeJavaScript');
     expect(renderer).toContain('capturePage');
-    expect(renderer).toContain('frame_%04d.jpg');
+    expect(renderer).toContain('encodeHtmlFrames(encodeInput, writeFrame =>');
     expect(preload).toContain('createHtmlVideoTask');
     expect(preload).toContain("invokeTrusted('html-video:update-config', { id, changes })");
     expect(preload).toContain('openHtmlVideoPreview');
@@ -1109,16 +1109,19 @@ describe('electron ipc contract', () => {
 
   it('waits for a fully ready hidden HTML scene before capture begins', async () => {
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
+    const { createHtmlVideoSceneReadyScript } = await import('../electron/html-video-scene-ready');
+    const readyScript = createHtmlVideoSceneReadyScript();
+    expect(renderer).toContain('createHtmlVideoSceneReadyScript()');
     const openHiddenWindow = renderer.slice(renderer.indexOf('async function openHiddenHtmlWindow'));
 
     expect(renderer).toContain('waitForHiddenHtmlSceneReady');
     expect(openHiddenWindow).toContain('await waitForHiddenHtmlSceneReady(window)');
-    expect(renderer).toContain("document.readyState !== 'loading'");
-    expect(renderer).toContain('window.__ready === true');
-    expect(renderer).toContain("typeof window.__tl.seek === 'function'");
-    expect(renderer).toContain('document.fonts.ready');
-    expect(renderer).toContain('document.images');
-    expect(renderer).toContain("document.querySelectorAll('video')");
+    expect(readyScript).toContain("document.readyState !== 'loading'");
+    expect(readyScript).toContain('window.__ready === true');
+    expect(readyScript).toContain("typeof window.__tl.seek === 'function'");
+    expect(readyScript).toContain('document.fonts.ready');
+    expect(readyScript).toContain('document.images');
+    expect(readyScript).toContain("document.querySelectorAll('video')");
   });
 
   it('uses a real font cmap probe instead of treating Chromium glyph counts as proof', async () => {
@@ -1131,17 +1134,28 @@ describe('electron ipc contract', () => {
     expect(sidecar).not.toContain('GetGlyphIndicesW');
   });
 
-  it('seeks each hidden scene frame onto an animation frame before writing recovered JPEG names', async () => {
+  it('seeks each hidden scene frame before handing it to the sequential atomic frame spool', async () => {
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
-    const captureLoop = renderer.slice(renderer.indexOf('for (let frameIndex = 0'), renderer.indexOf('capturedScenes.push'));
+    const captureStart = renderer.indexOf('for (; nextFrame < totalFrames; nextFrame += 1)');
+    expect(captureStart).toBeGreaterThan(0);
+    const captureLoop = renderer.slice(captureStart, renderer.indexOf('capturedScenes.push'));
+    const stream = await readFile(new URL('../electron/html-video-frame-stream.ts', import.meta.url), 'utf8');
 
-    expect(renderer).toContain("const sidecarFramePattern = 'frame_%04d.jpg'");
+    expect(stream).toContain("'frame_' + String(index + 1).padStart(4, '0') + '.jpg'");
+    expect(stream).toContain('index !== written || index >= expected');
+    expect(stream).toContain("await rename(path + '.tmp', path)");
     expect(captureLoop).toContain('const frameNumber = frameIndex + 1');
-    expect(captureLoop).toContain("sidecarFramePattern.replace('%04d', String(frameNumber).padStart(4, '0'))");
+    expect(captureLoop).toContain('await writeFrame(frameIndex, image.toJPEG(92))');
+    expect(captureLoop.indexOf('await seekHiddenHtmlSceneFrame')).toBeLessThan(captureLoop.indexOf('await writeFrame'));
     expect(captureLoop).toContain('await seekHiddenHtmlSceneFrame(window, time)');
     expect(renderer).toContain('requestAnimationFrame');
-    expect(renderer).toContain('const result = timeline.seek(${JSON.stringify(time)}, false);');
-    expect(renderer).toContain('return Promise.resolve(result === timeline ? undefined : result).then');
+    expect(renderer).toContain('createHtmlVideoFrameSeekScript(time)');
+    const seek = await readFile(new URL('../electron/html-video-frame-seek.ts', import.meta.url), 'utf8');
+    expect(seek).toContain('player.renderSeek(');
+    expect(seek).toContain('timeline.seek(');
+    expect(seek).toContain('if (result !== timeline) await result;');
+    expect(seek).toContain('__hfWaitForSeekCompletion');
+    expect(seek).toContain('requestAnimationFrame(() => requestAnimationFrame(');
     expect(renderer).toContain('window.__tl.play(); return true;');
     expect(renderer).not.toContain('Promise.resolve(window.__tl.play())');
     expect(captureLoop).toContain('capturePage');

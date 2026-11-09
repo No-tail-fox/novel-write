@@ -113,12 +113,12 @@ describe('music lab IPC boundary', () => {
     expect(main).toContain('process.env.SUNO_API_KEY');
     expect(main).toContain("GetEnvironmentVariable('SUNO_API_KEY', 'User')");
     expect(main).toContain('windowsHide: true');
-    expect(main).toContain('resolveManagedBgmFilePath(appDataDir(), basename(input.audioPath))');
+    expect(main).toContain('resolveManagedBgmFilePath(artifactDataDir(), basename(input.audioPath))');
     expect(main).toContain('normalizePath(input.audioPath) !== normalizePath(expectedPath)');
     expect(main).toContain('normalizePath(dirname(sourcePath)) !== normalizePath(managedRoot)');
     expect(main).toContain("const record = await runtime.downloadTrack({ ...input, format: 'mp3' })");
     expect(main).toContain('const sourcePath = track.localMp3Path || track.localWavPath');
-    expect(main).toContain('await importManagedBgm(sourcePath, appDataDir())');
+    expect(main).toContain('await importManagedBgm(sourcePath, artifactDataDir())');
     expect(main).toContain("publishStatePatch({ kind: 'config', ...saved })");
     expect(preload).not.toContain('SUNO_API_KEY');
     expect(fallback).not.toContain('SUNO_API_KEY');

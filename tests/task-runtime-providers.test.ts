@@ -143,6 +143,54 @@ describe('task runtime providers', () => {
     });
   });
 
+  it('prepares opaque foregrounds locally before publishing a completed image', async () => {
+    await withRuntimeTask(async (task, workDir) => {
+      const source = join(workDir, 'generated.png');
+      const cutout = join(workDir, 'cutout.png');
+      const native = { method: 'native-alpha' as const, transparentFraction: .001, foregroundFraction: .999, edgeFraction: 0, quality: 'warning' as const };
+      const passed = { method: 'onnx' as const, transparentFraction: .7, foregroundFraction: .28, edgeFraction: .02, quality: 'passed' as const };
+      const prepare = vi.fn(async () => ({ src: cutout, backgroundRemoval: passed }));
+      const completed: unknown[] = [];
+      const generate = adaptHtmlVideoAssetGenerator(async (scenes) => scenes.map(scene => ({ sceneId: scene.id, path: source })), task, {
+        inspectAssetBackgroundRemoval: async () => native, prepareForegroundAsset: prepare,
+      });
+      const assets = await generate({ scenes: htmlScenes(), config: { foreground: true }, onAssetGenerated: async asset => { completed.push(asset); } });
+      expect(prepare).toHaveBeenCalledExactlyOnceWith(source, undefined);
+      expect(assets[0].src).toBe(source);
+      expect(assets[1]).toMatchObject({ src: cutout, transparency: 'transparent', backgroundRemoval: passed });
+      expect(completed).toEqual(assets);
+    });
+  });
+
+  it('keeps native cutouts and preserves original paid images when local segmentation fails', async () => {
+    await withRuntimeTask(async (task, workDir) => {
+      const source = join(workDir, 'original.png');
+      let metadata = { method: 'native-alpha' as const, transparentFraction: .6, foregroundFraction: .4, edgeFraction: 0, quality: 'passed' as 'passed' | 'warning' };
+      const prepare = vi.fn(async () => { throw new Error('BACKGROUND_REMOVAL_MODEL_INVALID: 模型校验失败'); });
+      const generator = vi.fn(async (scenes: StoryboardScene[]) => scenes.map(scene => ({ sceneId: scene.id, path: source })));
+      const generate = adaptHtmlVideoAssetGenerator(generator, task, { inspectAssetBackgroundRemoval: async () => metadata, prepareForegroundAsset: prepare });
+      const input = { scenes: htmlScenes(), config: { foreground: true } };
+      expect((await generate(input))[1]).toMatchObject({ src: source, transparency: 'transparent' });
+      expect(prepare).not.toHaveBeenCalled();
+      metadata = { ...metadata, transparentFraction: 0, foregroundFraction: 1, quality: 'warning' };
+      const assets = await generate(input);
+      expect(assets[1]).toMatchObject({ src: source, transparency: 'opaque', backgroundRemoval: { quality: 'failed', errorCode: 'BACKGROUND_REMOVAL_MODEL_INVALID' } });
+      expect(generator).toHaveBeenCalledTimes(4);
+      expect(prepare).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('propagates cancellation during local foreground preparation', async () => {
+    await withRuntimeTask(async (task, workDir) => {
+      const controller = new AbortController();
+      const generate = adaptHtmlVideoAssetGenerator(async scenes => scenes.map(scene => ({ sceneId: scene.id, path: join(workDir, 'source.png') })), task, {
+        inspectAssetTransparency: async () => false,
+        prepareForegroundAsset: async () => { controller.abort(); throw controller.signal.reason; },
+      });
+      await expect(generate({ scenes: htmlScenes(), config: { foreground: true }, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    });
+  });
+
   it('does not use Task mirrors as runtime fallbacks for HTML asset or voice providers', async () => {
     await withRuntimeTask(async (task, workDir) => {
       Object.assign(task, {
@@ -522,10 +570,8 @@ describe('task runtime providers', () => {
     );
 
     await withRuntimeTask(async (task, workDir) => {
-      const config = {
-        ...defaultConfig,
-        llm: { ...defaultConfig.llm, apiKey: 'html-key', model: 'html-model', enabled: true },
-      };
+      const llm = { ...defaultConfig.llm, apiKey: 'html-key', model: 'html-model', enabled: true };
+      const config = { ...defaultConfig, llm, llmProfiles: [llm] };
       const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
         measureAudioDuration: async () => 1,
         jobConfig: {},
@@ -582,10 +628,8 @@ describe('task runtime providers', () => {
     );
 
     await withRuntimeTask(async (task, workDir) => {
-      const config = {
-        ...defaultConfig,
-        llm: { ...defaultConfig.llm, apiKey: 'html-key', model: 'html-model', enabled: true },
-      };
+      const llm = { ...defaultConfig.llm, apiKey: 'html-key', model: 'html-model', enabled: true };
+      const config = { ...defaultConfig, llm, llmProfiles: [llm] };
       const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
         measureAudioDuration: async () => 1,
         jobConfig: { maxScenes: 8 },
@@ -625,18 +669,16 @@ describe('task runtime providers', () => {
     );
 
     await withRuntimeTask(async (task, workDir) => {
-      const config = {
-        ...defaultConfig,
-        llm: {
-          ...defaultConfig.llm,
-          provider: 'anthropic' as const,
-          protocol: 'anthropic' as const,
-          apiKey: 'anthropic-key',
-          baseUrl: 'https://api.anthropic.com',
-          model: 'claude-test',
-          enabled: true,
-        },
+      const llm = {
+        ...defaultConfig.llm,
+        provider: 'anthropic' as const,
+        protocol: 'anthropic' as const,
+        apiKey: 'anthropic-key',
+        baseUrl: 'https://api.anthropic.com',
+        model: 'claude-test',
+        enabled: true,
       };
+      const config = { ...defaultConfig, llm, llmProfiles: [llm] };
       const providers = createHtmlVideoRuntimeProviders(config, workDir, task, {
         measureAudioDuration: async () => 1,
         jobConfig: {},
@@ -805,6 +847,9 @@ describe('task runtime providers', () => {
           apiKey: 'job-config-v3-key',
         },
       },
+      ttsProfiles: defaultConfig.ttsProfiles.map(profile => profile.provider === 'volcengine'
+        ? { ...profile, volcengine: { ...profile.volcengine!, apiKey: 'job-config-v3-key' } }
+        : profile),
     };
 
     await withRuntimeTask(async (task, workDir) => {

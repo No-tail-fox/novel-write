@@ -248,3 +248,80 @@ export function distributeDialogueTiming(
     };
   });
 }
+
+/** Reuse existing recordings through the normal export path, including older projects. */
+export async function prepareMotionComicDialogueForRender(
+  document: MotionComicPipelineData,
+  measure: (path: string) => Promise<number>,
+  episodeId = document.activeEpisodeId,
+): Promise<MotionComicPipelineData> {
+  const episode = document.episodes.find(item => item.id === episodeId);
+  if (!episode) return document; // The render preflight reports a missing episode.
+  const shots = episode.scenes.flatMap(scene => scene.shots).filter(shot =>
+    shot.renderStrategy !== 'remote-video' || !['native', 'audio-driven'].includes(shot.videoProduction?.audioMode ?? 'post-mix'));
+  const shotIds = new Set(shots.map(shot => shot.id));
+  const ids = new Set(episode.dialogueCues.filter(cue => shotIds.has(cue.shotId))
+    .flatMap(cue => cue.voiceAssetVersionId ?? cue.audioAssetVersionId ?? []));
+  const measured = new Map<string, number>();
+  const byPath = new Map<string, number>();
+  for (const asset of document.assets) {
+    if (!ids.has(asset.id) || asset.kind !== 'audio' || !asset.localPath) continue;
+    const duration = byPath.get(asset.localPath) ?? await measure(asset.localPath);
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('MOTION_COMIC_DIALOGUE_DURATION_INVALID: 无法读取对白音频的实测时长，已停止导出。');
+    byPath.set(asset.localPath, duration);
+    measured.set(asset.id, Math.round(duration));
+  }
+  let prepared = { ...document, assets: document.assets.map(asset => measured.has(asset.id) ? { ...asset, durationMs: measured.get(asset.id)! } : asset) };
+  for (const shot of shots) prepared = fitMotionComicDialogueTiming(prepared, shot.id);
+  const fitted = prepared.episodes.find(item => item.id === episodeId)!;
+  for (const cue of fitted.dialogueCues) {
+    if (!shotIds.has(cue.shotId)) continue;
+    const duration = measured.get(cue.voiceAssetVersionId ?? cue.audioAssetVersionId ?? '');
+    if (duration && cue.endMs - cue.startMs + 30 < duration) {
+      const shot = shots.find(item => item.id === cue.shotId)!;
+      throw new Error(`MOTION_COMIC_DIALOGUE_DOES_NOT_FIT: 镜头“${shot.title}”无法容纳完整对白“${cue.text.slice(0, 18)}”，请增加镜头时长或调整配音语速后重试。`);
+    }
+  }
+  return JSON.stringify(prepared) === JSON.stringify(document) ? document : prepared;
+}
+
+/** Fit measured cue recordings without cutting speech or changing shot/video timing. */
+export function fitMotionComicDialogueTiming(document: MotionComicPipelineData, shotId: string): MotionComicPipelineData {
+  const episode = document.episodes.find(item => item.scenes.some(scene => scene.shots.some(shot => shot.id === shotId)));
+  const shot = episode?.scenes.flatMap(scene => scene.shots).find(item => item.id === shotId);
+  const owner = episode?.timeline.clips.find(clip => clip.shotId === shotId);
+  if (!episode || !shot || !owner) return document;
+  const cues = episode.dialogueCues.filter(cue => cue.shotId === shotId).sort((a, b) => a.startMs - b.startMs);
+  if (!cues.some(cue => document.assets.some(asset => asset.id === (cue.voiceAssetVersionId ?? cue.audioAssetVersionId) && asset.durationMs))) return document;
+  let previousEnd = owner.startMs - 120;
+  const fitted = cues.map(cue => {
+    const asset = document.assets.find(item => item.id === (cue.voiceAssetVersionId ?? cue.audioAssetVersionId));
+    const durationMs = Math.max(1, Math.round(asset?.durationMs ?? cue.endMs - cue.startMs));
+    const startMs = Math.max(cue.startMs, previousEnd + 120);
+    previousEnd = startMs + durationMs;
+    return { cue, startMs, endMs: previousEnd, durationMs };
+  });
+  let nextStart = owner.startMs + owner.durationMs + 120;
+  for (const item of [...fitted].reverse()) {
+    item.endMs = Math.min(item.endMs, nextStart - 120);
+    item.startMs = item.endMs - item.durationMs;
+    nextStart = item.startMs;
+  }
+  // Keep the recording/history if it cannot fit. Render preflight must report
+  // the truncated speech instead of silently exporting an incomplete sentence.
+  if (fitted.some(item => item.startMs < owner.startMs)) return document;
+  const measuredDuration = (cue: MotionComicDialogueCue) => document.assets.find(asset => asset.id === (cue.voiceAssetVersionId ?? cue.audioAssetVersionId))?.durationMs;
+  const byId = new Map(fitted.map(item => [item.cue.id, item]));
+  return { ...document, episodes: document.episodes.map(item => item !== episode ? item : {
+    ...item,
+    dialogueCues: item.dialogueCues.map(cue => {
+      const timing = byId.get(cue.id);
+      if (!timing || cue.startMs === timing.startMs && cue.endMs === timing.endMs) return cue;
+      return invalidateSubtitleAlignment(cue, { startMs: timing.startMs, endMs: timing.endMs }) as MotionComicDialogueCue;
+    }),
+    timeline: { ...item.timeline, audioClips: item.timeline.audioClips?.map(clip => {
+      const timing = fitted.find(value => clip.id === `dialogue-clip-${value.cue.id}`);
+      return timing ? { ...clip, startMs: timing.startMs, durationMs: timing.durationMs, ...(measuredDuration(timing.cue) ? { sourceDurationMs: timing.durationMs, sourceMediaDurationMs: timing.durationMs } : {}) } : clip;
+    }) },
+  }) };
+}

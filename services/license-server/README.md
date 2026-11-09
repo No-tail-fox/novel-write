@@ -1,10 +1,12 @@
 # StoryDream Licensing and Updates
 
-Deployment status (2026-10-24): the service is running on Ubuntu 24.04 at `https://154.219.120.162:443`. Strict pinned-CA HTTPS health from Windows passes. The repository contains the actual public client trust configuration. Six service tests pass locally and on the deployed server. Real packaged activation/lock/unbind and the corrected QA-only 1.0.0 to production 1.0.2 installer upgrade passed, preserving activation and account data. Acceptance: [acceptance.zh-CN.md](../../docs/plans/license-update-implementation-2026-10-23/acceptance.zh-CN.md).
+Deployment status (2026-10-29): the service and complete management website are running on Ubuntu 24.04 at `https://154.219.120.162:443`, with the website at `/admin/`. All 13 isolated service tests pass on Windows and the server. External pinned-CA health, release signatures, authenticated management reads, and desktop/mobile browser login/navigation/logout pass with no JavaScript errors. Existing license/device/release data and client trust identity are preserved. Earlier packaged activation/lock/unbind and the QA-only 1.0.0 to production 1.0.2 installer upgrade passed, preserving activation and account data. Acceptance: [acceptance.zh-CN.md](../../docs/plans/license-update-implementation-2026-10-23/acceptance.zh-CN.md).
 
-Chinese operator guide: [OPERATIONS.zh-CN.md](OPERATIONS.zh-CN.md).
+Chinese operator guide: [OPERATIONS.zh-CN.md](OPERATIONS.zh-CN.md). The deployed management website covers announcements, release uploads/publication, licenses, devices, and audit records. A separate administrator password is configured and is not stored in this repository. Rotate it interactively over SSH with `storydream-license set-admin-password`. A normal browser must explicitly trust the service's private CA, or use a separately configured publicly trusted management endpoint without replacing desktop trust. Browser smoke tests used an isolated private-CA test context; Windows trust settings were not modified.
 
 ## Deployment
+
+Differential-update server/admin support was deployed on 2026-10-30 after a full private backup and 15 isolated server tests. External pinned-CA compatibility, signatures, Range delivery, authentication and deployed hashes passed. It adds optional `.exe.blockmap` uploads and a separately signed `/v1/releases/differential/<filename>` response without changing the strict v1 release payload. Desktop production remains 1.0.2 while the 1.0.3 candidate is packaged and accepted. Supported clients reuse cached installer blocks, verify the reconstructed installer, and fall back to full download if needed. Initial upgrades from existing clients remain full downloads. See [rollout and validation](../../docs/plans/differential-updates/rollout.zh-CN.md).
 
 Target: Debian/Ubuntu, Python 3.10+, systemd, public IPv4 address, TCP 443 available. Keep the existing SSH session open during deployment. Inspect `ss -ltnp` and existing services first. This installer does not change SSH, firewall rules, or other applications.
 
@@ -34,7 +36,7 @@ Verify the resulting installer on a clean Windows x64 profile against the actual
 
 ## Operator Commands
 
-Run through SSH as root or with sudo. No public administration endpoint is exposed.
+Run these high-privilege license and device operations through SSH as root or with sudo. After deploying this bundle, the same operations are also available through the authenticated HTTPS management website at `/admin/`.
 
 ```bash
 storydream-license issue --days 365 --max-devices 1 --label customer-reference
@@ -69,6 +71,20 @@ Use `--minimum-version 1.0.3` only when older versions must stop generating. Cli
 
 Withdrawal stops discovery and download of that release without advertising an older one. Publish a corrected **higher** version to recover. A previously installed newer version is not automatically downgraded. Release sequence values must not be reset when restoring a server.
 
+## Management Website
+
+The website uses one operator password, not customer license codes or the SSH password. Set it interactively with `storydream-license set-admin-password` (at least 14 characters). Restart the service after rotating this password to invalidate existing in-memory sessions. Sessions expire after eight hours; cookies are Secure, HttpOnly, and SameSite=Strict. Management writes require the same HTTPS origin, and login attempts are rate-limited. This is a single-operator console, not a multi-user role/permission system.
+
+- **Announcements:** view, publish, and withdraw problem/maintenance notices. Update notices are generated from release notes and withdrawn with their corresponding release.
+- **Releases:** upload a Windows `.exe` installer (up to 4 GiB), choose a strictly increasing version and minimum supported version, publish signed metadata, and withdraw a release. Keep the minimum version at `0.0.0` unless older clients must be required to upgrade. Withdrawing does not automatically advertise an older release or downgrade installed clients.
+- **Licenses:** issue codes with duration and device limits; search; revoke, restore, and extend validity. Full activation codes are displayed only once. Extension does not restore revoked licenses, and unactivated codes still begin their duration at first activation.
+- **Devices:** search bound devices, inspect status, lock/unlock, and unbind for replacement hardware. Unlocking a device does not restore a revoked license. Locking/revocation takes effect when clients next validate their authorization, not instantaneously on offline machines.
+- **Audit:** search and paginate management actions. License, device, and release lists are also searchable and paginated (50 records/page).
+
+Uploads are private staged files, checked for Windows executable magic and hashed before publication. Failed partial uploads are removed; abandoned uploads older than 24 hours are cleaned on the next upload. Only one upload/publication runs at a time. Allow free space for both staged and published files plus a reserve. This does not replace malware scanning, installer QA, or Windows publisher signing.
+
+Clients fetch signed announcements at startup, hourly, and when the announcement panel is opened. This is polling, not a WebSocket push channel. Only compatible desktop builds display the upper-left announcement icon; deploying this website cannot add UI to an already installed older build.
+
 ## Backups and Recovery
 
 The SQLite backup command creates a consistent database snapshot, but that snapshot alone cannot restore signing identity or decode activation digests:
@@ -80,6 +96,8 @@ storydream-license backup /var/lib/storydream-license/backup.sqlite3
 For a full backup, stop only this service and archive the whole private data directory, including database/WAL, keys, `secrets.json`, certificates, client trust configuration and releases. Write the archive outside the source directory, mode 0600, and move it into the operator's encrypted off-host backup storage. Restart the service after the archive completes, including on failure. Never put this archive into source control or a public download directory.
 
 An initial complete server-local backup was verified at `/root/storydream-license-backups/storydream-license-20261023T175858Z.tar` (UTC filename, 2026-10-24 in Shanghai). It also includes deployed code/venv, the systemd unit and operator wrapper. Size 2200791040 bytes, mode 0600, SHA-256 `f83ee78b988e9963ce95ef3fcf004374374fa1aff50643eb3a544e833cb0e942`. Post-backup restart and external strict TLS/latest-manifest checks passed. Encrypted off-host backup storage has not been configured.
+
+The management website deployment has another complete pre-deployment backup: `/root/storydream-license-backups/storydream-management-20261029T121218Z.tar` (2026-10-29 20:12:18 Asia/Shanghai), 2200832000 bytes, mode 0600, SHA-256 `c21137ca4ebc0c13c982bc00a1d8351447b35b662a946d6ae6f9b4f4f37db9ae`. It contains the same four recovery targets and predates administrator-password initialization. The uploaded deployment bundle SHA-256 is `eea05f95e72399b69fe26f8e209fe124ada48ed54d4de51cbe952147e4f175e4`. Only the licensing service was stopped; Docker's port-80 service was left untouched. No test licenses, announcements, releases, or device actions were created in production during acceptance.
 
 To restore, stop the service, restore the complete data directory from one consistent backup, restore ownership to `storydream-license`, and start the same service code/venv. Keep the endpoint and signing keys. Test activation/refresh and latest release before reopening access. Old database snapshots can lose activations, revocations or release high-water values; reconcile them before bringing the service back.
 
@@ -98,7 +116,7 @@ Renewal preserves the CA, endpoint key, release-signing identity, and desktop tr
 
 ```bash
 python -m pip install -r requirements.txt
-python -m unittest -v test_server.py
+python -m unittest discover -v
 ```
 
 From the repository root, `node node_modules/vitest/vitest.mjs run tests/licensing.test.ts tests/electron-ipc-contract.test.ts` starts a real local Python TLS service. It verifies activation, locks, revocations, unbinding, signed manifests, range resume, corrupt installers, wrong CAs, anti-replay and the packaged fail-closed policy. It does not establish that the remote server is deployed or that a Windows upgrade has completed.

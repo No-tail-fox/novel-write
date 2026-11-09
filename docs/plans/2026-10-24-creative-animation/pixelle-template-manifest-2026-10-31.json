@@ -1,0 +1,752 @@
+{
+  "upstream": "ATH-MaaS/Pixelle-Video",
+  "commit": "848b054e4fae40dabc62ec58e960b573e83793ac",
+  "scope": "all tracked HTML templates at pinned commit; source inspection only, not render validation",
+  "count": 31,
+  "by_resolution": {
+    "1080x1080": 1,
+    "1080x1920": 25,
+    "1920x1080": 5
+  },
+  "by_type": {
+    "image": 26,
+    "asset": 1,
+    "static": 2,
+    "video": 2
+  },
+  "templates": [
+    {
+      "path": "1080x1080/image_minimal_framed.html",
+      "sha256": "762d8209b41fc363794addc7dc4aef543ae943e6529d988c07e88d001fbd03eb",
+      "bytes": 2714,
+      "type": "image",
+      "resolution": "1080x1080",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "b19fb6e254e5e1e1644d425b503af04b7b8964824119765a2fd62d57807c5f89",
+      "upstream_bytes": 2612,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/asset_default.html",
+      "sha256": "e974a90f5e756427f4a04037320bf48e88afc265653a83a7aed34d265d4dc112",
+      "bytes": 5006,
+      "type": "asset",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "82202bbae9ced307f204c8f052872f406e2a1991bcbe9e023e6c906320a831e9",
+      "upstream_bytes": 4833,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_blur_card.html",
+      "sha256": "6c95bcb71cb435f9181c0a2d40af04b78e32799c62249f203ffe704204004efe",
+      "bytes": 6872,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap"
+      ],
+      "working_tree_sha256": "56be10477b6773ee72333c0cdfc1b030ef652b575640084a3c45a5b330882bad",
+      "upstream_bytes": 6657,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_book.html",
+      "sha256": "d470c3433b93081e720f854de011cc1ce0a88e0a61b004aa68881e3d03430dc4",
+      "bytes": 3885,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "image",
+        "subtitle=作者",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Dancing+Script:wght@400;700&family=Liu+Jian+Mao+Cao&family=ZCOOL+KuaiLe&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Dancing+Script:wght@400;700&family=Liu+Jian+Mao+Cao&family=ZCOOL+KuaiLe&display=swap"
+      ],
+      "working_tree_sha256": "554349a13aa2a5e15202ea080a6f646bfe1cdce755fd84ce561b63537dcdd397",
+      "upstream_bytes": 3767,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_cartoon.html",
+      "sha256": "944f47af3ddad27f2f9dc3ac8e1fb45813a3249d0d0d9504eae94f8df13cf9be",
+      "bytes": 6808,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://lmg.jj20.com/up/allimg/sj02/210122142U11054-0-lp.jpg"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "61b3c1ae72c16dfed3ce035a432ec75cb76e6c6f39174dbb790e4a42270daea3",
+      "upstream_bytes": 6549,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_default.html",
+      "sha256": "d910c098c17eed7b4b304f5a40ad2fe8201ed30004a9d16658153aecb1f74e4e",
+      "bytes": 15371,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "d682efe4a7b3b09ac6cedb7cac32f008506970465a7a7d1566e077aa9be8735a",
+      "upstream_bytes": 14828,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_elegant.html",
+      "sha256": "1e2011c1b880818d524985b1866288a1de5f76b1c057eed23456c3ff4c7b85ee",
+      "bytes": 19367,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "1fae159a6ccdc3f3b7fcb7efc093ddf9d334af031e9095fb0aa1e2f9bb76d155",
+      "upstream_bytes": 18721,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_excerpt.html",
+      "sha256": "f24b929bd954fd09645662c95b354d6af15cff9ad528b3be757a702ebd8c7397",
+      "bytes": 3786,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=Pixelle.AI",
+        "image",
+        "signature=@Pixelle.AI",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap"
+      ],
+      "working_tree_sha256": "4c33a36ec7e5564a83a1bde897bd660ab79d6de88503f46a1b1f39ac7850669d",
+      "upstream_bytes": 3646,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_fashion_vintage.html",
+      "sha256": "cfd835abf5ae79d0b6a8ec57a390b0868903303f269d3b2f73de0f27ca5e33b1",
+      "bytes": 5027,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "79a45f7d7f9f80094622cd98f807d8e130175a13262c87fba39de7662a8ee4ad",
+      "upstream_bytes": 4860,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_full.html",
+      "sha256": "03a32b2f8ac95ab6f24ce182dadb717e6c6c58262f4ad5459c6a08ea6a118c38",
+      "bytes": 5585,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap"
+      ],
+      "working_tree_sha256": "dd2e9b43ac7dd3b61ef7fc2e10dbb4850880799e075e5339acd947d2c46bdd25",
+      "upstream_bytes": 5413,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_healing.html",
+      "sha256": "19a91c5e24a86aa0fdf4158c7cfaa8dd8b80539534a65fcbbe24a573555abbc6",
+      "bytes": 4328,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "index",
+        "signature=@Pixelle.AI",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap"
+      ],
+      "working_tree_sha256": "d6ec33bd54721d5a9889fc875735584fae94ac587b5ea9a03ba3dc53dbeafc2a",
+      "upstream_bytes": 4179,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_health_preservation.html",
+      "sha256": "cb8194bc7be48adf45bf2b6299530bf56e52b8110f80833b5102d2e503b4c1e7",
+      "bytes": 3293,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "signature=@Pixelle.AI",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "c871c3046eca05ce10d23eb5522ae94d247a8346f2c9b3ecdad88b69d0d34d05",
+      "upstream_bytes": 3181,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_life_insights.html",
+      "sha256": "1fab1bd2a6dc5b51ca7453b599c00fc34858e8be0a6cc8ec3d86e50519766e6d",
+      "bytes": 4224,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap"
+      ],
+      "working_tree_sha256": "025c31ea498f63bb36c15a7c4f23b3429f80ac24ebd22931434385802f87beb8",
+      "upstream_bytes": 4078,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_life_insights_light.html",
+      "sha256": "a96f2e07cd8968519cd02ddac1ea666483aa43d67a713d1a2d4fd2aab1d7bbdf",
+      "bytes": 6944,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
+      ],
+      "working_tree_sha256": "33ec27dd3e8a2bd9170c3ff2bca8fbb83cc9e0e3ad10130c062bf60d4fdff192",
+      "upstream_bytes": 6714,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_long_text.html",
+      "sha256": "2c2cc2090507bfafa3047c123c967a5f57db8ab37cc073af86f4461e0debd0da",
+      "bytes": 3550,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400&display=swap"
+      ],
+      "working_tree_sha256": "2b5535d833bcb58cc24402569cd14202b9aff89b67c7585518f54ef3f0de9819",
+      "upstream_bytes": 3440,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_modern.html",
+      "sha256": "fe6e261d3fbe9b4ebf848e013991a836b17c922e588e0a327ddfbf08a2c71734",
+      "bytes": 16419,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "accent_color:color=#764ba2",
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title",
+        "title_font_size:number=72"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "b10c6504344d4a67adbc75f6f40d41dca4587ee5fe7ebb066d0a57827e9768e7",
+      "upstream_bytes": 15845,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_neon.html",
+      "sha256": "ec75eb57b0810a62eb7eed66c9901b941271e312a1f0617f0b09c94360de0351",
+      "bytes": 24474,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "c78285ad91c7c74235d76106686993301919da0e4292fd368a75bebc57619698",
+      "upstream_bytes": 23536,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_psychology_card.html",
+      "sha256": "8339cc4a5459f9f2594bdbf26dd03171bb0a80da7917cccd6b94b9a0d51c4962",
+      "bytes": 3065,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "e37bfba24818f55e3c8afc7dd55ad43acc945d254e88ded34b880a8440798a8e",
+      "upstream_bytes": 2971,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_purple.html",
+      "sha256": "f1435d03e6a882a12ff1023f5b8c003fb24e1e23408977ad72e498f6f645129b",
+      "bytes": 21939,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "ae68b780ab12103720b5189f242726f4f11c618cd27f90b1056bd4a52f4acd63",
+      "upstream_bytes": 21223,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_satirical_cartoon.html",
+      "sha256": "1fe0eae0c0e12feba0ec40a4668b93ac9b431f3dbdbd1f4b2ddd7be8048167bb",
+      "bytes": 10622,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap"
+      ],
+      "working_tree_sha256": "1cf0fe739b4f2f76381e1fe51c1bdc038465e4613e70d19346163e5f14da5b6a",
+      "upstream_bytes": 10332,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_simple_black.html",
+      "sha256": "8e208dfdba73805bf490a46ad9dd5e7cc3f08bd988d1187e63b730af35cee877",
+      "bytes": 4703,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap"
+      ],
+      "working_tree_sha256": "3ecdcd49cce4e148c7c332cfd5c8ca2fc09ccf0a6d0e01be2b1149aaf101f78b",
+      "upstream_bytes": 4553,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/image_simple_line_drawing.html",
+      "sha256": "aad7bdbe6452490ee9fec38ca5ce1d191b2f32da1b840bfc1c5011c8848ec441",
+      "bytes": 4899,
+      "type": "image",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap"
+      ],
+      "working_tree_sha256": "aa8098ba400f64385bbf098408d1d298953ab8bf3f40d86d51deff26e7ce45fd",
+      "upstream_bytes": 4741,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/static_default.html",
+      "sha256": "a073df254b565356f24cf162c26eb9527c368b09610b1c17638e7a0e846d1db1",
+      "bytes": 7925,
+      "type": "static",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "background=https://img.alicdn.com/imgextra/i2/O1CN01TngrfY1NTZK1xwuWd_!!6000000001571-0-tps-690-1494.jpg",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://img.alicdn.com/imgextra/i2/O1CN01TngrfY1NTZK1xwuWd_!!6000000001571-0-tps-690-1494.jpg"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "30936fe419dfd93d149f18c4eed5d8db9426cf9d8f4440e7dc1d3bd33fe94e42",
+      "upstream_bytes": 7644,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/static_excerpt.html",
+      "sha256": "87b09c49414d7597d88d60e0debb0c16c98712cb41748821cc4692923adc5c9d",
+      "bytes": 3527,
+      "type": "static",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=Pixelle.AI",
+        "signature=@Pixelle.AI",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap"
+      ],
+      "working_tree_sha256": "3ed9361a32202de580ba70c2af86d19ecac80e369472d150e6ee848713f3a2db",
+      "upstream_bytes": 3397,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/video_default.html",
+      "sha256": "f374516dfd39cc4313ff70072c2e3fb2c719815dc4b369938ccf4eb9a3e56159",
+      "bytes": 11562,
+      "type": "video",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "84ccd468deefa6a8fa8ccaf95a78e004ff67352540197cea67b2937791bcdfe2",
+      "upstream_bytes": 11235,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1080x1920/video_healing.html",
+      "sha256": "ba8e17467deb8c0bfbd1542b2aebeb82b245af540bce21b21cc1fadd3166f640",
+      "bytes": 4603,
+      "type": "video",
+      "resolution": "1080x1920",
+      "placeholders": [
+        "index",
+        "signature=@Pixelle.AI",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap"
+      ],
+      "working_tree_sha256": "837538f829e971cd4ed6abc92e6a6b0b8671bc23cc57d589844396ba217670be",
+      "upstream_bytes": 4441,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1920x1080/image_book.html",
+      "sha256": "2d2fc3cfa9729ff084279f530bda19a94cb748fc106ced2c94c80e356bfe1136",
+      "bytes": 5952,
+      "type": "image",
+      "resolution": "1920x1080",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&display=swap"
+      ],
+      "working_tree_sha256": "ef1bff93279efe1032177f41222039f2002776fe7930ffeae8f58dddcdc73790",
+      "upstream_bytes": 5746,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1920x1080/image_film.html",
+      "sha256": "ea15b78c48841bb001437a5d31b96a3414381fae6ea0a13577c410d45f86e702",
+      "bytes": 5631,
+      "type": "image",
+      "resolution": "1920x1080",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "1f28000a3c1aefae722fa0a566303601adfb0749a8d2827d7dda33cc3f920247",
+      "upstream_bytes": 5417,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1920x1080/image_full.html",
+      "sha256": "6fda67d0ab1307cfae8d3e4efe789d561e6ce3fdd5abf107b5ae574651b02f6b",
+      "bytes": 5854,
+      "type": "image",
+      "resolution": "1920x1080",
+      "placeholders": [
+        "author=@Pixelle.AI",
+        "brand=Pixelle-Video",
+        "describe=Open Source Omnimodal AI Creative Agent",
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [
+        "https://fonts.googleapis.com",
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap",
+        "https://fonts.gstatic.com"
+      ],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [
+        "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&family=Noto+Serif+SC:wght@400;700;900&family=Liu+Jian+Mao+Cao&family=Ma+Shan+Zheng&display=swap"
+      ],
+      "working_tree_sha256": "fa77869631e0fcb2dab4b06d74cd4a1692d74955b41101db055f6b83ee704f89",
+      "upstream_bytes": 5658,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1920x1080/image_ultrawide_minimal.html",
+      "sha256": "b51d4769dd1eb72ba1fd72618ecdeb5dfb2d21b03ed09ac6fb4aad3e3c3bef30",
+      "bytes": 5121,
+      "type": "image",
+      "resolution": "1920x1080",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "635e0246cd66f724a7fe5e1b6e2dca40868e7f311fc1518b36d0c6d9bd1db7f3",
+      "upstream_bytes": 4924,
+      "matches_upstream_after_crlf_normalization": true
+    },
+    {
+      "path": "1920x1080/image_wide_darktech.html",
+      "sha256": "64a6613d006239a123ef4f52a3e155586b2fe25f2fb33323473d06a01b6a0daa",
+      "bytes": 9069,
+      "type": "image",
+      "resolution": "1920x1080",
+      "placeholders": [
+        "image",
+        "text",
+        "title"
+      ],
+      "urls": [],
+      "replacement_character_count": 0,
+      "matches_upstream_blob": false,
+      "font_css_urls": [],
+      "working_tree_sha256": "59e8823f8dfe3c9fb78d7ada1d0dfdefa3b4fa828acea34980d520d4fe1b2058",
+      "upstream_bytes": 8761,
+      "matches_upstream_after_crlf_normalization": true
+    }
+  ],
+  "hash_policy": "sha256 is the exact git blob (LF); working_tree_sha256 accounts for Windows checkout CRLF. No source changes performed."
+}

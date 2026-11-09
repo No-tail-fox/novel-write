@@ -29,6 +29,9 @@ export async function readRendererSources(): Promise<RendererSources> {
     paths.map(async (path) => [path, await readFile(resolve(projectRoot, ...path.split('/')), 'utf8')] as const),
   );
   const sources = new Map(entries);
+  // One immutable source snapshot: parse shared dependencies once across routes.
+  const importsCache = new Map<string, readonly string[]>();
+  const reachableCache = new Map<string, ReadonlyMap<string, string>>();
 
   return {
     all: entries.map(([, source]) => source).join('\n'),
@@ -44,12 +47,18 @@ export async function readRendererSources(): Promise<RendererSources> {
       return source;
     },
     reachableFrom(entryPath) {
-      return collectReachableSources(sources, normalizeRendererPath(entryPath));
+      const normalized = normalizeRendererPath(entryPath);
+      let reachable = reachableCache.get(normalized);
+      if (!reachable) {
+        reachable = collectReachableSources(sources, normalized, importsCache);
+        reachableCache.set(normalized, reachable);
+      }
+      return reachable;
     },
   };
 }
 
-export function collectReachableSources(sources: ReadonlyMap<string, string>, entryPath: string): ReadonlyMap<string, string> {
+export function collectReachableSources(sources: ReadonlyMap<string, string>, entryPath: string, importsCache = new Map<string, readonly string[]>()): ReadonlyMap<string, string> {
   const reachable = new Map<string, string>();
   const pending = [entryPath];
   while (pending.length > 0) {
@@ -58,7 +67,12 @@ export function collectReachableSources(sources: ReadonlyMap<string, string>, en
     const source = sources.get(path);
     if (source === undefined) throw new Error(`Required renderer source is not tracked: ${path}`);
     reachable.set(path, source);
-    for (const specifier of runtimeModuleImports(source, path)) {
+    let imports = importsCache.get(path);
+    if (!imports) {
+      imports = runtimeModuleImports(source, path);
+      importsCache.set(path, imports);
+    }
+    for (const specifier of imports) {
       const dependency = resolveRendererImport(sources, path, specifier);
       if (dependency && !reachable.has(dependency)) pending.push(dependency);
     }

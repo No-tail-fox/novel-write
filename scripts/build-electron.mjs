@@ -1,6 +1,12 @@
 import { build } from 'esbuild';
+import { execFileSync } from 'node:child_process';
 import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+
+// Refuse to ship a partial or locally altered upstream library.
+execFileSync(process.execPath, ['scripts/import-lemo-upstream.mjs', '--verify'], { stdio: 'inherit', windowsHide: true });
+
+execFileSync(process.execPath, ['scripts/import-pixelle-upstream.mjs', '--verify'], { stdio: 'inherit', windowsHide: true });
 
 await mkdir('dist-electron/electron', { recursive: true });
 await rm('dist-electron/electron/agent-search-mcp-server.mjs', { force: true });
@@ -25,7 +31,7 @@ const agentSearchVersionPlugin = {
   },
 };
 
-await build({
+const mainBuild = await build({
   entryPoints: ['electron/main.ts'],
   outfile: 'dist-electron/electron/main.js',
   bundle: true,
@@ -34,6 +40,8 @@ await build({
   target: 'node20',
   external: ['electron', 'sql.js', 'undici'],
   banner: { js: esmRequireBanner },
+  metafile: true,
+  minify: true,
   sourcemap: false,
 });
 
@@ -45,6 +53,7 @@ await build({
   format: 'cjs',
   target: 'node20',
   external: ['electron'],
+  minify: true,
   sourcemap: false,
 });
 
@@ -63,12 +72,14 @@ const agentSearchBuild = await build({
   },
   plugins: [agentSearchVersionPlugin],
   metafile: true,
+  minify: true,
   sourcemap: false,
 });
 
 await copyFile('src/shared/viral-media-worker.py', 'dist-electron/electron/viral-media-worker.py');
 await copyFile('node_modules/agent-search-mcp/LICENSE', 'dist-electron/electron/AGENT_SEARCH_LICENSE.txt');
-await writeAgentSearchThirdPartyNotices(agentSearchBuild.metafile.inputs);
+await writeBundledThirdPartyNotices(agentSearchBuild.metafile.inputs, 'AGENT_SEARCH_THIRD_PARTY_NOTICES.txt', 'StoryDream Agent Search', 'agent-search-mcp-server.cjs');
+await writeBundledThirdPartyNotices(mainBuild.metafile.inputs, 'MAIN_THIRD_PARTY_NOTICES.txt', 'StoryDream main process', 'main.js');
 await copyFile('src/shared/remove-background-worker.py', 'dist-electron/electron/remove-background-worker.py');
 await copyFile(
   'node_modules/gsap/dist/gsap.min.js',
@@ -85,8 +96,12 @@ await mkdir('dist-electron/electron/shotcraft', { recursive: true });
 await copyFile('src/features/vox-animation/shotcraft/LICENSE', 'dist-electron/electron/shotcraft/LICENSE');
 // Text references and their original MIT notice ship with the runtime; no demo media.
 await cp('vendor/lemo-opuscar', 'dist-electron/electron/lemo-opuscar', { recursive: true });
+await cp('vendor/lemo-native-core', 'dist-electron/electron/lemo-native-core', { recursive: true });
+await copyFile('node_modules/three/LICENSE', 'dist-electron/electron/THREE_LICENSE.txt');
+// Native upstream runner is an isolated backend; existing project flows are not silently migrated.
+await build({ entryPoints: ['electron/lemo-upstream-renderer.ts'], outfile: 'dist-electron/electron/lemo-upstream-renderer.js', bundle: true, platform: 'node', format: 'esm', target: 'node20', external: ['electron'], minify: true });
 
-async function writeAgentSearchThirdPartyNotices(inputs) {
+async function writeBundledThirdPartyNotices(inputs, outputName, title, bundleName) {
   const packageRoots = new Set();
   for (const input of Object.keys(inputs)) {
     const normalized = input.replaceAll('\\', '/');
@@ -120,14 +135,14 @@ async function writeAgentSearchThirdPartyNotices(inputs) {
 
   notices.sort((left, right) => left.name.localeCompare(right.name));
   const header = [
-    'StoryDream Agent Search bundled third-party notices',
+    `${title} bundled third-party notices`,
     '',
-    'The packages below are included in agent-search-mcp-server.cjs.',
+    `The packages below are included in ${bundleName}.`,
     'Each package remains subject to its own license terms.',
     '',
   ].join('\n');
   await writeFile(
-    'dist-electron/electron/AGENT_SEARCH_THIRD_PARTY_NOTICES.txt',
+    resolve('dist-electron/electron', outputName),
     `${header}\n${notices.map((notice) => notice.text).join('\n\n')}\n`,
     'utf8',
   );

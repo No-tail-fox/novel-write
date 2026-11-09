@@ -71,9 +71,10 @@ describe('decoded visual cut evidence', () => {
     expect(evaluateDirectorVisualContinuity(scenes, evidence).status).toBe('pending');
   });
 
-  it('uses the encoded clock including minimum and fractional scene durations', () => {
-    expect(directorVisualCutTimes([{ durationMs: 200 }, { durationMs: 1201 }, { durationMs: 900 }])).toEqual([800, 2001]);
-    expect(visualCutFrameIndices(2001)).toEqual([47, 48, 49, 50]);
+  it('preserves short and fractional authored timings without legacy padding', () => {
+    expect(directorVisualCutTimes([{ durationMs: 200 }, { durationMs: 1201 }, { durationMs: 900 }])).toEqual([200, 1401]);
+    expect(visualCutFrameIndices(1401)).toEqual([32, 33, 34, 35]);
+    expect(visualCutFrameIndices(200, 30)).toEqual([4, 5, 6, 7]);
   });
 
   it('round-trips 499 cuts and 500 affected shots through both document schemas', () => {

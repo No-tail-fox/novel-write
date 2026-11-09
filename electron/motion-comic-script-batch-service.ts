@@ -16,7 +16,7 @@ export class MotionComicScriptBatchService {
   private readonly storyboardWorkers = new Map<string, { controller: AbortController; completion: Promise<void> }>();
   get busy(): boolean { return this.workers.size > 0 || this.storyboardWorkers.size > 0; }
 
-  constructor(private readonly store: MotionComicScriptStore, private readonly runtime: () => Promise<MotionComicScriptRuntime>,
+  constructor(private readonly store: MotionComicScriptStore, private readonly runtime: (projectId: string) => Promise<MotionComicScriptRuntime>,
     private readonly onError: (error: unknown) => void = console.error) {}
 
   start(projectId: string): void {
@@ -65,7 +65,7 @@ export class MotionComicScriptBatchService {
       if (approved.storyboard) { this.storyboardWorkers.delete(input.id); complete(); return snapshot; }
       void (async () => {
         try {
-          const runtime = await this.runtime();
+          const runtime = await this.runtime(input.id);
           worker.controller.signal.throwIfAborted();
           const { document, task, approval } = await this.store.approvedRevision(input, true);
           if (runtime.provider !== task.provider || runtime.model !== task.model) throw new Error('生成模型或渠道已变化，请恢复已批准剧本使用的配置后重试。');
@@ -103,7 +103,7 @@ export class MotionComicScriptBatchService {
         const current = (await this.store.snapshot(projectId)).tasks.find((item) => item.id === task.id);
         if (current?.status !== 'running' || current.attempt !== task.attempt) continue;
         worker.controller.signal.throwIfAborted();
-        const runtime = await this.runtime();
+        const runtime = await this.runtime(projectId);
         if (runtime.provider !== task.provider || runtime.model !== task.model) throw new Error('生成模型或渠道已变化，请按当前配置重新提交；不会静默切换模型。');
         const document = await this.store.readProject(projectId);
         const source = document.sourceDocument?.episodes.find((item) => item.id === task.sourceEpisodeId);

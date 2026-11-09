@@ -1,0 +1,7 @@
+.project-model-fields { display: grid; gap: 12px; min-width: 0; }
+.project-model-fields p, .project-model-note { margin: 0; color: var(--muted); font-size: var(--sd-text-caption); line-height: 1.6; }
+.project-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+.project-model-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); min-width: 0; }
+.project-model-bar > span { color: var(--muted); font-size: var(--sd-text-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-model-note { margin-top: 12px; }
+.project-model-error { color: var(--danger); }

@@ -168,9 +168,9 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
               <IconButton label="重新加载豆包音色" icon={<RefreshCw className={catalogLoading ? 'spin' : undefined} size={14} />} disabled={catalogLoading || !canLoadVolcengineCatalog} onClick={reloadVolcengineCatalog} />
             ) : null}
           </div>
-          <TextField label="搜索音色" contentBefore={<Search size={14} />} value={voiceQuery} placeholder="搜索名称或 voice ID" onChange={(event) => setVoiceQuery(event.target.value)} />
+          <TextField label="搜索音色" aria-label="搜索音色" contentBefore={<Search size={14} />} value={voiceQuery} placeholder="搜索名称或 voice ID" onChange={(event) => setVoiceQuery(event.target.value)} />
           {voiceProvider === 'volcengine' && catalogError ? <div className="voice-lab-catalog-status" role="status">{catalogError}</div> : null}
-          <SelectField label="音色" value={voiceId} onChange={(event) => setVoiceId(event.target.value)} options={[
+          <SelectField label="音色" aria-label="音色" value={voiceId} onChange={(event) => setVoiceId(event.target.value)} options={[
             ...(!visibleVoiceOptions.some((voice) => voice.id === voiceId) && voiceId ? [{ value: voiceId, label: `${selectedVoiceLabel}（当前已选）` }] : []),
             ...visibleVoiceOptions.map((voice) => ({ value: voice.id, label: `${voice.label}${voice.hint ? ` · ${voice.hint}` : ''}` })),
           ]} />

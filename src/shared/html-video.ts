@@ -84,6 +84,29 @@ export interface HtmlVideoCapturedScene {
   audioPath: string;
   audioClips?: HtmlVideoAudioClip[];
   fps: number;
+  videoFrameCount?: number;
+}
+
+/** Allocate integer video frames against cumulative audio-clock boundaries. */
+export function allocateHtmlVideoSceneFrameCounts(durations: readonly number[], fps: number, startOffsetSeconds = 0): number[] {
+  if (!Number.isFinite(fps) || fps <= 0) throw new Error('HTML video frame rate must be positive.');
+  if (!Number.isFinite(startOffsetSeconds) || startOffsetSeconds < 0) throw new Error('HTML video start offset must be nonnegative.');
+  let elapsedSeconds = startOffsetSeconds;
+  let previousEndFrame = startOffsetSeconds > 0 ? Math.max(1, Math.floor(startOffsetSeconds * fps + 0.5)) : 0;
+  return durations.map((duration) => {
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('HTML video scene duration must be positive.');
+    elapsedSeconds += duration;
+    const desiredEndFrame = Math.floor(elapsedSeconds * fps + 0.5);
+    const endFrame = Math.max(previousEndFrame + 1, desiredEndFrame);
+    const count = endFrame - previousEndFrame;
+    previousEndFrame = endFrame;
+    return count;
+  });
+}
+
+/** Sample animation against the same global audio clock used to allocate frames. */
+export function htmlVideoSceneFrameTime(frameIndex: number, fps: number, firstFrame: number, sceneStartSeconds: number): number {
+  return Math.max(0, (firstFrame + frameIndex) / fps - sceneStartSeconds);
 }
 
 export interface HtmlVideoBuildInput {
@@ -125,6 +148,7 @@ export interface HtmlVideoExportResult {
 }
 
 export interface HtmlVideoComposePayload {
+  consume_owned_segments?: boolean;
   normalize_audio?: boolean;
   mode: 'compose_render';
   work_dir: string;
@@ -243,16 +267,17 @@ export function createHtmlVideoComposePayload(
   capturedScenes: HtmlVideoCapturedScene[],
 ): HtmlVideoComposePayload {
   const capturedByScene = new Map(capturedScenes.map((scene) => [scene.sceneId, scene]));
+  const frameCounts = allocateHtmlVideoSceneFrameCounts(input.scenes.map(scene => scene.duration), input.fps, input.coverPath ? input.coverDurationS ?? input.scenes[0]?.duration ?? 0 : 0);
   return {
     mode: 'compose_render',
     work_dir: input.workDir,
-    scenes: input.scenes.map((scene) => {
+    scenes: input.scenes.map((scene, index) => {
       const captured = capturedByScene.get(scene.sceneId);
       if (!captured) {
         throw new Error(`Missing captured frames for HTML video scene ${scene.sceneId}.`);
       }
       if (captured.segmentPath) {
-        return { segment_path: captured.segmentPath, fps: captured.fps || input.fps, duration_s: scene.duration, ...(scene.transitionIn ? { transition_in: scene.transitionIn } : {}) };
+        return { segment_path: captured.segmentPath, fps: captured.fps || input.fps, duration_s: scene.duration, video_frame_count: captured.videoFrameCount ?? frameCounts[index], ...(scene.transitionIn ? { transition_in: scene.transitionIn } : {}) };
       }
       return {
         frames_dir: captured.framesDir,
@@ -260,6 +285,7 @@ export function createHtmlVideoComposePayload(
         ...(scene.audioClips !== undefined ? { audio_clips: scene.audioClips } : {}),
         fps: captured.fps || input.fps,
         duration_s: scene.duration,
+        video_frame_count: captured.videoFrameCount ?? frameCounts[index],
         ...(scene.transitionIn ? { transition_in: scene.transitionIn } : {}),
       };
     }),
@@ -786,10 +812,12 @@ function buildSceneHtml(scene: {
     .frame[data-scene-template="stacked-cards"] #foreground-1 { top: 16%; left: 7%; z-index: 2; }
     .frame[data-scene-template="stacked-cards"] #foreground-2 { top: 20%; left: 12%; z-index: 3; }
     .frame[data-scene-template="stacked-cards"] #foreground-3 { top: 24%; left: 17%; z-index: 4; }
-    .frame[data-scene-template="kinetic-copy"] .scene-image,
-    .frame[data-scene-template="cinematic-end"] .scene-image {
+    .frame[data-scene-template="kinetic-copy"] .scene-image {
       opacity: 0.38;
       filter: saturate(0.6) brightness(0.62) contrast(1.12);
+    }
+    .frame[data-scene-template="cinematic-end"] .scene-image {
+      filter: saturate(0.86) brightness(0.96) contrast(1.04);
     }
     .frame[data-scene-template="kinetic-copy"] .scene-foreground,
     .frame[data-scene-template="cinematic-end"] .scene-foreground { opacity: 0.12; }
@@ -826,7 +854,7 @@ function buildSceneHtml(scene: {
     }
     .frame[data-scene-template="split-push"] #foreground-1 { top: 15%; }
     .frame[data-scene-template="split-push"] #foreground-2 { top: 51%; }
-    .frame[data-scene-template="cinematic-end"] .veil { background: rgba(4, 6, 8, 0.68); }
+    .frame[data-scene-template="cinematic-end"] .veil { background: linear-gradient(180deg, rgba(4, 6, 8, 0.48), rgba(4, 6, 8, 0.10) 38%, rgba(4, 6, 8, 0.18) 65%, rgba(4, 6, 8, 0.68)); }
     .frame[data-scene-template="cinematic-end"] .title {
       width: 78%;
       font-size: ${roundCssNumber(titleSize * 1.25)}px;

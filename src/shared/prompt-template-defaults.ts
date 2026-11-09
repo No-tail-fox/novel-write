@@ -1,4 +1,7 @@
 import type { PromptTemplate } from './types';
+import workflowCorpusData from './workflow-prompt-corpus.json';
+import type { WorkflowPromptDescriptor } from './workflow-prompt-catalog';
+const workflowCorpus: readonly (WorkflowPromptDescriptor & { content: string })[] = workflowCorpusData as unknown as readonly (WorkflowPromptDescriptor & { content: string })[];
 import { storyboundSystemTemplateVersionHash, storyboundSystemTemplates, type StoryboundSystemTemplate } from './storybound-system-templates';
 import { storyboundStoryboardPrompt } from './storyboard-prompt';
 
@@ -58,6 +61,13 @@ const taskTemplates: PromptTemplate[] = storyboundSystemTemplates.map((template)
 
 export const defaultPromptTemplates: PromptTemplate[] = [
   ...taskTemplates,
+  ...workflowCorpus.map((entry): PromptTemplate => ({
+    id: `workflow-${entry.slot}`, name: entry.name, type: 'workflow',
+    description: `提取自 ${entry.source}`, content: entry.content,
+    slot: entry.slot, channel: entry.channel as PromptTemplate['channel'],
+    ...('baseTrack' in entry ? { baseTrack: entry.baseTrack as string } : {}),
+    isBuiltin: true, enabled: true, updatedAt, origin: 'system',
+  })),
   {
     id: 'builtin-review',
     name: '预审整理',

@@ -1,7 +1,16 @@
-import { mkdir, open as openFile, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { resolveShortVideoMaterials, shortVideoMaterialsSchema } from './short-video-materials';
+import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
+import { defaultProjectModels, projectModelsSchema, validateProjectModels } from './project-models';
+import type { ProjectModels } from './types';
+import { createMusicMvDocument } from './music-mv-production';
+import { rebaseArtifactPathText } from './artifact-paths';
+import { preparePromptTemplateSave } from './workflow-prompt-runtime';
+import { mkdir, open as openFile, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { MotionComicScriptStore } from './motion-comic-script-store';
+import { ProjectSummaryCache, migrateProjectSummaryVersions, type ProjectSummaryCacheEntry } from './project-summary-cache';
 import { resolveProjectActivity, type ProjectBatchActivity, type ProjectProviderActivity, type ProjectScriptActivity } from './project-activity';
 import initSqlJs, { type Database, type SqlJsStatic, type SqlValue } from 'sql.js';
 import { validCustomStylePreview, withoutStaleCustomStylePreview } from './custom-style-preview';
@@ -73,6 +82,7 @@ import {
   editorialCollageCreateInputSchema,
   editorialCollageSaveInputSchema,
   parseEditorialCollagePipelineData,
+  restoreEditorialCollagePipelineData,
   type EditorialCollageCreateInput,
   type EditorialCollageSaveInput,
 } from './editorial-collage';
@@ -132,6 +142,7 @@ import { loadDefaultPromptTemplates } from './prompt-template-loader';
 import { parseDraftTemplate } from './draft-template-contract';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
 import { builtinDraftTemplateUpdates } from './draft-template-migration';
+import { normalizeTaskOutputTargets } from './task-output';
 import { isOrdinaryTask, parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import {
   normalizeDirectorBatchConcurrency,
@@ -407,16 +418,11 @@ const taskSummaryColumns = `
   created_at, completed_at, started_at, last_heartbeat_at, mode, ai_keyword,
   prompt_template_id, prompt_template_type, reference_image_path, rewrite_intensity,
   narrative_pov, keep_promotion, tts_provider, tts_speed, storyboard_scene_count,
-  failed_step, retry_from_step, artifact_state_path, video_form, llm_profile_id, image_quality,
-  material_source, draft_dir,
+  failed_step, retry_from_step, artifact_state_path, video_form, llm_profile_id, project_models_json, image_quality,
+  material_source, draft_dir, output_targets_json, deliverables_json, visual_template_ref_json, pixelle_options_json, short_video_materials_json,
   lock_intro_sentences, task_type, pipeline_step, target_length, target_scenes,
   script_format, podcast_image_mode, podcast_speaker_a, ordinary_cover_asset_json,
-  CASE WHEN json_valid(pipeline_data) THEN COALESCE(
-    CASE WHEN task_type = 'html-video' THEN json_extract(pipeline_data, '$.coverAsset.path') END,
-    json_extract(pipeline_data, '$.assets.cover[0].path'),
-    json_extract(pipeline_data, '$.coverImagePath'),
-    json_extract(pipeline_data, '$.coverPath')
-  ) END AS project_cover_path,
+  project_cover_override_path AS project_cover_path,
   podcast_speaker_b, cover_image_mode, cover_template_id, cover_page_enabled, cover_page_text, auto_borrow_image, html_video_foreground,
   substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
 `;
@@ -431,7 +437,7 @@ const imageLabSummaryColumns = `
   cutout_image_path, cutout_method, cutout_model, cutout_model_version, cutout_source_sha256,
   cutout_output_sha256, cutout_transparent_fraction, cutout_foreground_fraction, cutout_edge_fraction,
   cutout_quality, cutout_error_code, cutout_error_message, status, substr(error_msg, 1, 1024) AS error_msg,
-  resolution, quality, smart_mode, upstream_task_id, created_at, finished_at
+  resolution, quality, smart_mode, upstream_task_id, image_profile_id, model_name, created_at, finished_at
 `;
 const voiceLabSummaryColumns = `
   id, archived_at, managed_storage_key, substr(text, 1, ${RECORD_TEXT_PREVIEW_LIMIT}) AS text_preview,
@@ -839,6 +845,9 @@ const legacyBundledCozeDraftTemplates = new Map(
 
 export class FileDatabase {
   readonly motionComicScripts = new MotionComicScriptStore(() => this.db, (mutation) => this.enqueueCommit(mutation), () => this.waitForWrites());
+  private readonly projectSummaryCache: ProjectSummaryCache;
+  private readonly pendingProjectSummaries = new Set<string>();
+  private projectSummaryRefresh: Promise<void> | null = null;
   private readonly projectActivities = new Map<symbol, { id: string; detail: string }>();
 
   beginProjectActivity(id: string, detail: string): () => void {
@@ -854,13 +863,14 @@ export class FileDatabase {
 
   private constructor(
     private readonly file: string,
+    private readonly artifactDirectory: string,
     private db: Database,
     private readonly SQL: SqlJsStatic,
     private readonly dependencies: FileDatabaseDependencies,
     private readonly defaultPromptTemplates: readonly PromptTemplate[],
-  ) {}
+  ) { this.projectSummaryCache = new ProjectSummaryCache(`${file}.project-summaries.json`); }
 
-  static async open(file: string, overrides?: Partial<FileDatabaseDependencies>): Promise<FileDatabase> {
+  static async open(file: string, overrides?: Partial<FileDatabaseDependencies>, artifactDirectory = dirname(file)): Promise<FileDatabase> {
     const [SQL, defaultPromptTemplates] = await Promise.all([loadSql(), loadDefaultPromptTemplates()]);
     const dependencies = resolveFileDatabaseDependencies(overrides);
     let database: Database | null = null;
@@ -883,11 +893,12 @@ export class FileDatabase {
     }
     database ??= new SQL.Database();
 
-    const instance = new FileDatabase(file, database, SQL, dependencies, defaultPromptTemplates);
+    const instance = new FileDatabase(file, resolve(artifactDirectory), database, SQL, dependencies, defaultPromptTemplates);
     try {
       instance.migrate();
       await instance.persist();
       await removeStaleDatabaseTemps(file, dependencies);
+      await instance.projectSummaryCache.load(new Set(getRows<{ id: string }>(instance.db, 'SELECT id FROM tasks').map((row) => row.id)));
       return instance;
     } catch (error) {
       instance.db.close();
@@ -1474,6 +1485,7 @@ export class FileDatabase {
       ['artifact_state_path', "TEXT DEFAULT ''"],
       ['video_form', "TEXT DEFAULT 'narration'"],
       ['llm_profile_id', 'TEXT'],
+      ['project_models_json', 'TEXT DEFAULT NULL'],
       ['image_quality', 'TEXT DEFAULT NULL'],
       ['started_at', 'TEXT'],
       ['last_heartbeat_at', 'TEXT'],
@@ -1481,6 +1493,11 @@ export class FileDatabase {
       ['product_info', 'TEXT DEFAULT NULL'],
       ['material_person', 'TEXT DEFAULT NULL'],
       ['draft_dir', 'TEXT DEFAULT NULL'],
+      ['visual_template_ref_json', 'TEXT DEFAULT NULL'],
+      ['pixelle_options_json', 'TEXT DEFAULT NULL'],
+      ['short_video_materials_json', 'TEXT DEFAULT NULL'],
+      ['output_targets_json', 'TEXT DEFAULT NULL'],
+      ['deliverables_json', "TEXT NOT NULL DEFAULT '{}'"],
       ['fixed_intro', 'TEXT DEFAULT NULL'],
       ['outro_cta', 'TEXT DEFAULT NULL'],
       ['lock_intro_sentences', 'INTEGER DEFAULT 0'],
@@ -1501,6 +1518,7 @@ export class FileDatabase {
       ['cover_page_enabled', 'INTEGER NOT NULL DEFAULT 0'],
       ['cover_page_text', "TEXT DEFAULT ''"],
       ['ordinary_cover_asset_json', 'TEXT DEFAULT NULL'],
+      ['project_cover_override_path', 'TEXT DEFAULT NULL'],
       ['auto_borrow_image', 'INTEGER NOT NULL DEFAULT 0'],
       ['html_video_foreground', 'INTEGER DEFAULT NULL'],
       ['archived_at', 'TEXT DEFAULT NULL'],
@@ -1544,6 +1562,8 @@ export class FileDatabase {
       ['resolution', "TEXT DEFAULT '2K'"],
       ['quality', "TEXT DEFAULT 'medium'"],
       ['smart_mode', "TEXT DEFAULT 'text-to-image'"],
+      ['image_profile_id', 'TEXT'],
+      ['model_name', 'TEXT'],
       ['reference_image_paths_json', "TEXT DEFAULT '[]'"],
       ['reference_image_path', "TEXT DEFAULT ''"],
       ['upstream_task_id', 'TEXT'],
@@ -1569,6 +1589,7 @@ export class FileDatabase {
     );
     this.recoverInterruptedDirectorBatches();
     MotionComicScriptStore.migrate(this.db);
+    migrateProjectSummaryVersions(this.db);
     for (const [column, definition] of [
       ['cleanup_state', "TEXT NOT NULL DEFAULT 'pending'"],
       ['quarantine_name', 'TEXT DEFAULT NULL'],
@@ -1646,6 +1667,10 @@ export class FileDatabase {
     this.db.run('INSERT OR REPLACE INTO ui_preferences (id, data) VALUES (1, ?)', [json(pair.ui)]);
     this.recoverInterruptedTasks();
     this.seedShellDefaults();
+    for (const row of getRows<{ id: string; llm_profile_id: string | null }>(this.db, 'SELECT id, llm_profile_id FROM tasks WHERE project_models_json IS NULL')) {
+      const models = defaultProjectModels(normalizedConfig, row.llm_profile_id);
+      this.db.run('UPDATE tasks SET project_models_json = ?, llm_profile_id = ? WHERE id = ?', [json(models), models.llmProfileId, row.id]);
+    }
   }
 
   private recoverInterruptedTasks(): void {
@@ -1781,6 +1806,9 @@ export class FileDatabase {
       }
     }
     for (const template of this.defaultPromptTemplates) {
+      const existing = getFirstRow<{ data_json: string }>(this.db, 'SELECT data_json FROM prompt_templates WHERE id = ?', [template.id]);
+      const stored = existing ? parseJson<Partial<PromptTemplate>>(existing.data_json, {}) : null;
+      if (stored?.builtinModified) continue;
       this.insertPromptTemplate(template);
     }
   }
@@ -1801,6 +1829,7 @@ export class FileDatabase {
   }
 
   private insertPromptTemplate(template: PromptTemplate): void {
+    this.workflowPromptTemplatesCache = null;
     this.db.run(
       `INSERT OR REPLACE INTO prompt_templates (id, name, type, description, content, is_builtin, updated_at, data_json, summary_json)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1828,6 +1857,34 @@ export class FileDatabase {
         validCustomStylePreview(style) ? json(style.preview) : null,
       ],
     );
+  }
+
+  /** Run once after a copied artifact root is committed, before publishing application state. */
+  async rebaseArtifactPaths(sources: readonly string[]): Promise<void> {
+    if (!sources.length) return;
+    await this.enqueueCommit(() => {
+      const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"';
+      const tables = getRows<{ name: string }>(this.db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+      for (const { name } of tables) {
+        const table = quote(name);
+        const columns = getRows<{ name: string; type: string }>(this.db, 'PRAGMA table_info(' + table + ')')
+          .filter((column) => /TEXT/iu.test(column.type)).map((column) => column.name);
+        if (!columns.length) continue;
+        const rows = getRows<Record<string, SqlValue>>(this.db, 'SELECT rowid AS __artifact_rowid, ' + columns.map(quote).join(', ') + ' FROM ' + table);
+        for (const row of rows) {
+          const changes: Array<[string, string]> = [];
+          for (const column of columns) {
+            const previous = row[column];
+            if (typeof previous !== 'string') continue;
+            const next = rebaseArtifactPathText(previous, sources, this.artifactDirectory);
+            if (next !== previous) changes.push([column, next]);
+          }
+          if (changes.length) this.db.run('UPDATE ' + table + ' SET ' + changes.map(([column]) => quote(column) + ' = ?').join(', ') + ' WHERE rowid = ?', [...changes.map(([, value]) => value), row.__artifact_rowid]);
+        }
+      }
+    });
+    for (const id of this.projectSummaryCache.entries.keys()) this.projectSummaryCache.delete(id);
+    await this.projectSummaryCache.flush();
   }
 
   async persist(): Promise<void> {
@@ -1947,6 +2004,8 @@ export class FileDatabase {
     const acceptedWrites = this.writeTail;
     this.closePromise = (async () => {
       await acceptedWrites;
+      await this.projectSummaryRefresh;
+      await this.projectSummaryCache.flush();
       await atomicWriteDatabase(this.file, this.db.export(), this.dependencies);
       this.db.close();
       this.closed = true;
@@ -1975,11 +2034,13 @@ export class FileDatabase {
 
   async upsertPromptTemplate(input: PromptTemplateInput): Promise<PromptTemplate> {
     return this.enqueueCommit(() => {
+      const canonical = this.defaultPromptTemplates.find((template) => template.id === input.id);
+      const prepared = preparePromptTemplateSave({ ...input, description: input.description ?? '', isBuiltin: input.isBuiltin ?? false, updatedAt: input.updatedAt ?? new Date().toISOString() }, canonical);
       const template: PromptTemplate = {
-        ...input,
+        ...prepared,
         description: input.description ?? '',
-        isBuiltin: input.isBuiltin ?? false,
-        updatedAt: input.updatedAt ?? new Date().toISOString(),
+        isBuiltin: prepared.isBuiltin,
+        updatedAt: new Date().toISOString(),
       };
       this.insertPromptTemplate(template);
       return template;
@@ -2158,6 +2219,8 @@ export class FileDatabase {
         ratio: input.ratio,
         style: input.style,
         provider: input.provider,
+        imageProfileId: input.imageProfileId,
+        modelName: input.modelName,
         imagePath: input.imagePath ?? '',
         originalImagePath: input.originalImagePath ?? input.imagePath ?? '',
         originalImageSha256: input.originalImageSha256 ?? '',
@@ -2246,6 +2309,7 @@ export class FileDatabase {
           record.smartMode,
         ],
       );
+      this.db.run('UPDATE image_lab_records SET image_profile_id = ?, model_name = ? WHERE id = ?', [record.imageProfileId ?? null, record.modelName ?? null, record.id]);
       return record;
     });
   }
@@ -2271,6 +2335,8 @@ export class FileDatabase {
         | 'cutoutQuality'
         | 'cutoutErrorCode'
         | 'cutoutErrorMessage'
+        | 'imageProfileId'
+        | 'modelName'
         | 'status'
         | 'errorMessage'
         | 'resolution'
@@ -2287,6 +2353,8 @@ export class FileDatabase {
       this.assertHistoryWritable('image-lab', id);
       const mapping: Array<[keyof typeof patch, string, (value: unknown) => SqlValue]> = [
         ['provider', 'provider', toNullableSqlValue],
+        ['imageProfileId', 'image_profile_id', toNullableSqlValue],
+        ['modelName', 'model_name', toNullableSqlValue],
         ['imagePath', 'image_path', toNullableSqlValue],
         ['originalImagePath', 'original_image_path', toNullableSqlValue],
         ['originalImageSha256', 'original_image_sha256', toNullableSqlValue],
@@ -2585,14 +2653,47 @@ export class FileDatabase {
     ).map((row) => String(row.archive_date));
   }
 
+  async setProjectModels(id: string, models: ProjectModels): Promise<Task> {
+    return this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', id);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [id]);
+      if (!row) throw new Error(`TASK_NOT_FOUND: ${id}`);
+      const task = rowToTask(row);
+      if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只可查看。');
+      if (task.status === 'running' || task.status === 'paused' || [...this.projectActivities.values()].some(activity => activity.id === id)) {
+        throw new Error('PROJECT_MODELS_BUSY: 请等待项目生成任务结束后再修改模型。');
+      }
+      const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
+      const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
+      const validated = validateProjectModels(config, models);
+      this.db.run('UPDATE tasks SET project_models_json = ?, llm_profile_id = ? WHERE id = ?', [json(validated), validated.llmProfileId, id]);
+      this.db.run(`INSERT INTO task_events (task_id, run_generation, type, step, agent, tool, detail, data_json, ts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, task.runGeneration ?? 0, 'project_models_updated', null, null, 'project-models', '已更新项目模型，后续生成统一使用此配置。', json(validated), Date.now()]);
+      return { ...task, projectModels: validated, llmProfileId: validated.llmProfileId };
+    });
+  }
+
   async createTask(input: CreateTaskInput): Promise<Task> {
     return this.enqueueCommit(() => this.insertTask(input));
+  }
+
+  async createMusicMvProjectTask(input: CreateTaskInput, audioDurationMs: number, lyricTimingSource: 'manual' | 'provider' = 'manual', lyricTimingText?: string): Promise<Task> {
+    return this.enqueueCommit(() => {
+      const task = this.insertTask({ ...input, taskKind: 'music-mv', taskType: EDITORIAL_COLLAGE_TASK_TYPE,
+        processingMode: 'manual', materialSource: 'paste', pipelineStep: 'draft', pipelineData: '{}' });
+      const document = createMusicMvDocument(task.id, lyricTimingText ? { ...input, inputText: lyricTimingText } : input, audioDurationMs, task.createdAt, lyricTimingSource);
+      this.db.run("UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?", [document.stage, JSON.stringify(document), task.id]);
+      const row = getFirstRow<Record<string, unknown>>(this.db, 'SELECT * FROM tasks WHERE id = ?', [task.id]);
+      if (!row) throw new Error('MUSIC_MV_PROJECT_MISSING');
+      return rowToTask(row);
+    });
   }
 
   async createEditorialCollageTask(input: EditorialCollageCreateInput): Promise<Task> {
     const validated = editorialCollageCreateInputSchema.parse(input);
     return this.enqueueCommit(() => {
       const task = this.insertTask({
+        projectModels: validated.projectModels,
         title: validated.title,
         inputText: validated.sourceText,
         taskKind: 'story',
@@ -2686,6 +2787,7 @@ export class FileDatabase {
     const validated = motionComicCreateInputSchema.parse(input);
     return this.enqueueCommit(() => {
       const task = this.insertTask({
+        projectModels: validated.projectModels,
         title: validated.title,
         inputText: validated.source?.originalText ?? validated.premise,
         taskKind: 'story',
@@ -2768,7 +2870,7 @@ export class FileDatabase {
         if (!isOrdinaryTask(task) || !task.managedStorageKey) {
           throw new Error('ORDINARY_MANUAL_COVER_TASK_INVALID: Cover can only be bound to an ordinary managed task.');
         }
-        const coverDirectory = join(dirname(this.file), 'tasks', task.managedStorageKey, 'covers');
+        const coverDirectory = join(this.artifactDirectory, 'tasks', task.managedStorageKey, 'covers');
         await operations.ensureDirectory(coverDirectory);
         stagedPath = join(coverDirectory, `.cover-manual-${randomUUID()}.tmp`);
         const prepared = await operations.prepareImage({
@@ -2806,6 +2908,7 @@ export class FileDatabase {
     const now = new Date().toISOString();
     const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
     const config = configRow ? mergeConfig(parseJson(configRow.data, defaultConfig)) : defaultConfig;
+    const projectModels = validateProjectModels(config, input.projectModels ?? defaultProjectModels(config, input.llmProfileId));
     const explicitStoryboardSceneCount = normalizeStoryboardSceneCount(input.targetScenes ?? input.storyboardSceneCount) ?? undefined;
     const taskIdentity = {
       taskKind: input.taskKind ?? 'story',
@@ -2846,6 +2949,11 @@ export class FileDatabase {
       bgmId: input.bgmId ?? config.jianying.defaultBgmId ?? '',
       pausePoints: input.pausePoints ?? [],
       outputDir: '',
+      outputTargets: input.outputTargets === undefined ? (input.visualTemplateRef || input.shortVideoMaterials) ? ['jianying-draft'] : undefined : normalizeTaskOutputTargets(input.outputTargets),
+      visualTemplateRef: input.visualTemplateRef ? pixelleRefSchema.parse(input.visualTemplateRef) : undefined,
+      pixelleOptions: input.visualTemplateRef ? pixelleOptionsSchema.parse(input.pixelleOptions ?? { subtitleMode: 'template' }) : undefined,
+      shortVideoMaterials: resolveShortVideoMaterials(input),
+      deliverables: {},
       errorMessage: '',
       createdAt: now,
       completedAt: null,
@@ -2873,7 +2981,8 @@ export class FileDatabase {
       retryFromStep: null,
       artifactStatePath: '',
       videoForm: input.videoForm ?? 'narration',
-      llmProfileId: input.llmProfileId ?? null,
+      llmProfileId: projectModels.llmProfileId,
+      projectModels,
       imageQuality: input.imageQuality ?? null,
       materialSource: input.materialSource ?? 'ai',
       productInfo: input.productInfo ?? null,
@@ -2983,6 +3092,7 @@ export class FileDatabase {
         task.htmlVideoForeground === undefined ? null : task.htmlVideoForeground ? 1 : 0,
       ],
     );
+    this.db.run('UPDATE tasks SET project_models_json = ?, output_targets_json = ?, visual_template_ref_json = ?, pixelle_options_json = ?, short_video_materials_json = ? WHERE id = ?', [json(projectModels), task.outputTargets ? json(task.outputTargets) : null, task.visualTemplateRef ? json(task.visualTemplateRef) : null, task.pixelleOptions ? json(task.pixelleOptions) : null, task.shortVideoMaterials ? json(task.shortVideoMaterials) : null, task.id]);
     if (task.autoBorrowImage) {
       this.db.run('UPDATE tasks SET auto_borrow_image = 1 WHERE id = ?', [task.id]);
     }
@@ -3246,7 +3356,9 @@ export class FileDatabase {
   }
 
   async deleteTaskPermanently(id: string, cleanup?: HistoryDeletionCleanup): Promise<HistoryTombstone> {
-    return this.enqueueCommit(() => this.deleteHistoryRecordPermanently('task', id, true, cleanup));
+    const tombstone = await this.enqueueCommit(() => this.deleteHistoryRecordPermanently('task', id, true, cleanup));
+    this.projectSummaryCache.delete(id);
+    return tombstone;
   }
 
   async archiveViralAnalysis(id: string): Promise<ViralAnalysisSummary> {
@@ -3470,6 +3582,10 @@ export class FileDatabase {
         | 'status'
         | 'currentStep'
         | 'outputDir'
+        | 'draftDir'
+        | 'deliverables'
+        | 'pixelleOptions'
+        | 'shortVideoMaterials'
         | 'errorMessage'
         | 'completedAt'
         | 'failedStep'
@@ -3494,6 +3610,10 @@ export class FileDatabase {
       status: 'status',
       currentStep: 'current_step',
       outputDir: 'output_dir',
+      draftDir: 'draft_dir',
+      deliverables: 'deliverables_json',
+      pixelleOptions: 'pixelle_options_json',
+      shortVideoMaterials: 'short_video_materials_json',
       errorMessage: 'error_message',
       completedAt: 'completed_at',
       failedStep: 'failed_step',
@@ -3516,7 +3636,7 @@ export class FileDatabase {
       if (key in patch) {
         sets.push(`${column} = ?`);
         const value = patch[key as keyof typeof patch];
-        values.push(value === null || value === undefined ? null : String(value));
+        values.push(value === null || value === undefined ? null : key === 'deliverables' || key === 'pixelleOptions' || key === 'shortVideoMaterials' ? JSON.stringify(value) : String(value));
       }
     }
     if (sets.length > 0) values.push(id);
@@ -3718,11 +3838,15 @@ export class FileDatabase {
         }
         const captionCues = htmlVideoCaptionCuesFromCompositionSource(source, composition);
 
-        const taskRoot = join(dirname(this.file), 'tasks', task.managedStorageKey);
+        const taskRoot = join(this.artifactDirectory, 'tasks', task.managedStorageKey);
         const htmlDirectory = join(taskRoot, 'html-scenes');
         const filename = `scene-${String(sceneIndex).padStart(3, '0')}.html`;
         const targetPath = join(htmlDirectory, filename);
-        if (relative(resolve(targetPath), resolve(composition.htmlPath))) {
+        // Windows short user paths and their expanded paths identify the same managed file.
+        const [canonicalTarget, canonicalComposition] = await Promise.all([
+          realpath(targetPath), realpath(composition.htmlPath),
+        ]);
+        if (relative(canonicalTarget, canonicalComposition)) {
           throw new Error('HTML_VIDEO_SOURCE_PATH_INVALID: Composition path is outside its managed scene slot.');
         }
 
@@ -3851,11 +3975,11 @@ export class FileDatabase {
         const ratio = normalizeHtmlVideoCoverRatio(pipeline.config.coverRatio ?? '3:4');
         validateHtmlVideoCoverInspection(source, ratio);
 
-        const coverDirectory = join(dirname(this.file), 'tasks', task.managedStorageKey, 'covers');
+        const coverDirectory = join(this.artifactDirectory, 'tasks', task.managedStorageKey, 'covers');
         await operations.ensureDirectory(coverDirectory);
         const revision = (pipeline.coverAsset?.revision ?? 0) + 1;
         const relativePath = `covers/cover-manual-r${revision}.png`;
-        const finalPath = join(dirname(this.file), 'tasks', task.managedStorageKey, relativePath);
+        const finalPath = join(this.artifactDirectory, 'tasks', task.managedStorageKey, relativePath);
         importPaths.staged = join(coverDirectory, `.cover-manual-r${revision}-${randomUUID()}.tmp`);
         const prepared = await operations.prepareImage({
           sourcePath: source.sourcePath,
@@ -3950,7 +4074,7 @@ export class FileDatabase {
     }
     if (request.taskType) {
       filters.push({
-        sql: `${normalizedTaskTypeSql()} = ?`,
+        sql: `CASE WHEN task_kind = 'music-mv' THEN 'music-mv' ELSE ${normalizedTaskTypeSql()} END = ?`,
         params: [request.taskType],
       });
     }
@@ -3975,13 +4099,24 @@ export class FileDatabase {
       }),
       filters,
     });
-    return { ...page, items: await Promise.all(page.items.map((task) => this.withProjectCover(task))) };
+    return { ...page, items: page.items.map((task) => this.withCachedProjectSummary(task)) };
   }
 
-  async getTaskSummary(id: string): Promise<TaskSummary | null> {
+  private withCachedProjectSummary(task: TaskSummary): TaskSummary {
+    const cached = this.projectSummaryCache.entries.get(task.id);
+    this.queueProjectSummaryRefresh(task.id);
+    const projectCover = cached && cached.revision === this.projectSummaryRevision(task.id)
+      ? cached.cover : task.projectCover ?? cached?.cover ?? null;
+    return this.withLiveProjectActivity({ ...task, projectCover,
+      ...(cached?.activity ? { projectActivity: cached.activity } : {}) });
+  }
+
+  async getTaskSummary(id: string, options: { cached?: boolean } = {}): Promise<TaskSummary | null> {
     await this.waitForWrites();
     const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`, [id]);
-    return row ? this.withProjectCover(rowToTaskSummary(row)) : null;
+    if (!row) return null;
+    const task = rowToTaskSummary(row);
+    return options.cached ? this.withCachedProjectSummary(task) : this.withProjectCover(task);
   }
 
   async setTaskFavorite(id: string, isFavorite: boolean): Promise<TaskSummary> {
@@ -3996,24 +4131,128 @@ export class FileDatabase {
     return this.withProjectCover(task);
   }
 
-  private async withProjectCover(task: TaskSummary): Promise<TaskSummary> {
+  async setProjectCover(id: string, path: string | null): Promise<TaskSummary> {
+    await this.enqueueCommit(() => {
+      this.assertHistoryWritable('task', id);
+      this.db.run('UPDATE tasks SET project_cover_override_path = ? WHERE id = ?', [path, id]);
+      if (this.db.getRowsModified() !== 1) throw new Error(`TASK_NOT_FOUND: ${id}`);
+    });
+    return (await this.getTaskSummary(id))!;
+  }
+
+  /** A cached cover or durable activity changed; publish a fresh lightweight task delta. */
+  onProjectCoverReady?: (id: string) => void;
+
+  private projectSummaryRevision(id: string): string | undefined {
+    return getFirstRow<{ revision: string }>(this.db, 'SELECT revision FROM project_summary_versions WHERE task_id = ?', [id])?.revision;
+  }
+
+  private withLiveProjectActivity(task: TaskSummary): TaskSummary {
+    if ((task.taskType === 'motion-comic' || task.taskType === 'editorial-collage') && ['draft', 'completed'].includes(task.status)) {
+      const live = [...this.projectActivities.values()].find((item) => item.id === task.id);
+      if (live) return { ...task, projectActivity: { status: 'running', label: '运行中', detail: live.detail } };
+    }
+    if ((task.taskType === 'motion-comic' || task.taskType === 'editorial-collage') && ['draft', 'completed'].includes(task.status)) return task;
+    const { projectActivity: _activity, ...withoutActivity } = task;
+    return withoutActivity;
+  }
+
+  private queueProjectSummaryRefresh(id: string, force = false): void {
+    if (this.closing || this.closed) return;
+    const cached = this.projectSummaryCache.entries.get(id);
+    if (force && cached) cached.checkedAt = 0;
+    if (!force && cached && cached.revision === this.projectSummaryRevision(id) && Date.now() - cached.checkedAt < (cached.cover ? 30_000 : 0)) return;
+    this.pendingProjectSummaries.add(id);
+    if (this.projectSummaryRefresh) return;
+    this.projectSummaryRefresh = (async () => {
+      while (this.pendingProjectSummaries.size && !this.closing) {
+        // Yield before every project so the basic list response and user actions can run first.
+        await yieldToEventLoop();
+        if (this.closing) break;
+        const currentId = this.pendingProjectSummaries.values().next().value!;
+        this.pendingProjectSummaries.delete(currentId);
+        try {
+          await this.waitForWrites();
+          const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT ${taskSummaryColumns} FROM tasks WHERE id = ?`, [currentId]);
+          const previous = this.projectSummaryCache.entries.get(currentId);
+          if (!row) this.projectSummaryCache.delete(currentId);
+          else {
+            await this.withProjectCover(rowToTaskSummary(row), true);
+            const updated = this.projectSummaryCache.entries.get(currentId);
+            if (updated?.revision !== this.projectSummaryRevision(currentId)) this.queueProjectSummaryRefresh(currentId);
+            if (!this.closing && updated && updated.revision === this.projectSummaryRevision(currentId)
+              && JSON.stringify([previous?.cover ?? null, previous?.activity]) !== JSON.stringify([updated.cover, updated.activity])) {
+              this.onProjectCoverReady?.(currentId);
+            }
+          }
+        } catch (error) {
+          console.error('Project summary refresh failed:', currentId, error);
+        }
+      }
+    })().finally(() => { this.pendingProjectSummaries.clear(); this.projectSummaryRefresh = null; });
+  }
+
+  private async withProjectCover(task: TaskSummary, background = false): Promise<TaskSummary> {
     await this.waitForWrites();
-    const projectActivity = this.getProjectActivity(task);
+    const revision = this.projectSummaryRevision(task.id);
+    const cached = this.projectSummaryCache.entries.get(task.id);
+    const valid = !!cached && cached.revision === revision && !!revision;
+    const projectActivity = valid ? cached.activity : this.getProjectActivity(task);
     let workDir: string | null = null;
     if (task.managedStorageKey) {
       try {
-        workDir = join(dirname(this.file), 'tasks', requireManagedStorageKey(task.managedStorageKey));
+        workDir = join(this.artifactDirectory, 'tasks', requireManagedStorageKey(task.managedStorageKey));
       } catch {
         // Legacy records may have no usable managed directory.
       }
     }
-    return { ...task, ...(projectActivity ? { projectActivity } : {}), projectCover: await readProjectCover(task, workDir) };
+    // Project only media paths and references; scripts/prompts never enter list reads or IPC.
+    const hints = valid ? null : getFirstRow<Record<string, unknown>>(this.db, `SELECT
+      COALESCE(json_extract(pipeline_data, '$.coverAsset.path'), json_extract(pipeline_data, '$.assets.cover[0].path'),
+        json_extract(pipeline_data, '$.coverImagePath'), json_extract(pipeline_data, '$.coverPath')) AS workflow_cover,
+      json_extract(pipeline_data, '$.output.path') AS output_video,
+      (SELECT json_group_array(path) FROM (
+        SELECT json_extract(a.value, '$.localPath') AS path
+        FROM json_each(pipeline_data, '$.assets') a
+        WHERE json_extract(a.value, '$.kind') = 'video'
+          AND json_extract(a.value, '$.assetId') = 'director-final-video'
+        ORDER BY json_extract(a.value, '$.selected') DESC, json_extract(a.value, '$.createdAt') DESC LIMIT 4
+      )) AS final_videos,
+      (SELECT json_group_array(path) FROM (
+        SELECT json_extract(a.value, '$.localPath') AS path
+        FROM json_tree(pipeline_data, CASE WHEN task_type = 'motion-comic' THEN '$.episodes' ELSE '$.beats' END) ref
+        JOIN json_each(pipeline_data, '$.assets') a ON json_extract(a.value, '$.id') = ref.value
+        WHERE ref.key IN ('keyframeAssetVersionId', 'firstFrameAssetVersionId', 'assetVersionId')
+          AND json_extract(a.value, '$.kind') = 'image'
+        ORDER BY CASE WHEN ref.key IN ('keyframeAssetVersionId', 'firstFrameAssetVersionId') THEN 0 ELSE 1 END, ref.id LIMIT 12
+      )) AS shot_images,
+      (SELECT json_group_array(json_extract(c.value, '$.thumbnailPath')) FROM json_each(pipeline_data, '$.compositions') c) AS composition_images,
+      (SELECT json_group_array(path) FROM (
+        SELECT json_extract(a.value, '$.localPath') AS path FROM json_each(pipeline_data, '$.assets') a
+        WHERE json_extract(a.value, '$.kind') = 'video'
+          AND json_extract(a.value, '$.assetId') != 'director-final-video'
+        ORDER BY json_extract(a.value, '$.createdAt') LIMIT 4
+      )) AS scene_videos
+      FROM tasks WHERE id = ? AND json_valid(pipeline_data)`, [task.id]);
+    const paths = (key: string): unknown[] => parseJson<unknown[]>(hints?.[key], []);
+    const coverHints: ProjectSummaryCacheEntry['hints'] = valid ? cached.hints : {
+      covers: [hints?.workflow_cover],
+      videos: [hints?.output_video, ...paths('final_videos')],
+      images: [...paths('shot_images'), ...paths('composition_images')],
+      sceneVideos: paths('scene_videos'),
+    };
+    const projectCover = await readProjectCover(task, workDir, { ...coverHints, background,
+      onReady: () => this.queueProjectSummaryRefresh(task.id, true),
+    });
+    await this.waitForWrites();
+    if (revision && revision === this.projectSummaryRevision(task.id)) {
+      this.projectSummaryCache.set(task.id, { revision, checkedAt: Date.now(), hints: coverHints, cover: projectCover, activity: projectActivity });
+    }
+    return this.withLiveProjectActivity({ ...task, ...(projectActivity ? { projectActivity } : {}), projectCover });
   }
 
   private getProjectActivity(task: TaskSummary): ProjectActivity | undefined {
     if ((task.taskType !== 'motion-comic' && task.taskType !== 'editorial-collage') || !['draft', 'completed'].includes(task.status)) return undefined;
-    const live = [...this.projectActivities.values()].find((item) => item.id === task.id);
-    if (live) return { status: 'running', label: '运行中', detail: live.detail };
     // Extract only activity fields; full scripts, prompts and project documents stay out of list reads.
     const row = getFirstRow<Record<string, unknown>>(this.db, `SELECT
       json_extract(pipeline_data, '$.stage') AS stage,
@@ -4192,6 +4431,12 @@ export class FileDatabase {
       items: pageRows.map(rowToPromptTemplateSummary),
       nextCursor: hasMore && last ? encodeCursor({ createdAt: String(last.updated_at), id: String(last.id) }) : null,
     };
+  }
+
+  private workflowPromptTemplatesCache: PromptTemplate[] | null = null;
+
+  getWorkflowPromptTemplates(): PromptTemplate[] {
+    return this.workflowPromptTemplatesCache ??= getRows<Record<string, unknown>>(this.db, "SELECT * FROM prompt_templates WHERE type = 'workflow'").map(rowToPromptTemplate);
   }
 
   async getPromptTemplateDetail(id: string): Promise<PromptTemplate | null> {
@@ -4548,6 +4793,11 @@ function rowToBenchmarkPost(row: Record<string, unknown>): BenchmarkPost {
 }
 
 function rowToTask(row: Record<string, unknown>): Task {
+  let pipelineData = String(row.pipeline_data ?? '{}');
+  if (normalizeLegacyTaskType(row.task_type, row.task_kind) === 'editorial-collage') {
+    try { pipelineData = JSON.stringify(restoreEditorialCollagePipelineData(pipelineData)); }
+    catch { /* Preserve invalid source data for the project's recovery/error view. */ }
+  }
   return {
     id: String(row.id),
     archivedAt: row.archived_at ? String(row.archived_at) : null,
@@ -4568,6 +4818,11 @@ function rowToTask(row: Record<string, unknown>): Task {
     bgmId: String(row.bgm_id ?? ''),
     pausePoints: parseJson(String(row.pause_points ?? '[]'), []),
     outputDir: String(row.output_dir ?? ''),
+    outputTargets: row.output_targets_json ? normalizeTaskOutputTargets(parseJson(String(row.output_targets_json), null)) : undefined,
+    visualTemplateRef: row.visual_template_ref_json ? pixelleRefSchema.parse(parseJson(String(row.visual_template_ref_json), null)) : undefined,
+    shortVideoMaterials: row.short_video_materials_json ? shortVideoMaterialsSchema.parse(parseJson(String(row.short_video_materials_json), null)) : undefined,
+    pixelleOptions: row.pixelle_options_json ? pixelleOptionsSchema.parse(parseJson(String(row.pixelle_options_json), null)) : undefined,
+    deliverables: parseJson(String(row.deliverables_json ?? '{}'), {}),
     errorMessage: String(row.error_message ?? ''),
     createdAt: String(row.created_at),
     completedAt: row.completed_at ? String(row.completed_at) : null,
@@ -4594,6 +4849,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     retryFromStep: row.retry_from_step === null || row.retry_from_step === undefined ? null : Number(row.retry_from_step),
     artifactStatePath: String(row.artifact_state_path ?? ''),
     videoForm: normalizeVideoForm(row.video_form),
+    projectModels: projectModelsSchema.safeParse(parseJson(String(row.project_models_json ?? 'null'), null)).data,
     llmProfileId: row.llm_profile_id === null || row.llm_profile_id === undefined || row.llm_profile_id === '' ? null : String(row.llm_profile_id),
     imageQuality: row.image_quality === 'low' || row.image_quality === 'medium' || row.image_quality === 'high' ? row.image_quality : null,
     materialSource: String(row.material_source ?? 'ai'),
@@ -4605,7 +4861,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     lockIntroSentences: normalizeLockIntroSentences(row.lock_intro_sentences),
     taskType: normalizeLegacyTaskType(row.task_type, row.task_kind),
     pipelineStep: String(row.pipeline_step ?? 'new'),
-    pipelineData: String(row.pipeline_data ?? '{}'),
+    pipelineData,
     targetLength: row.target_length === null || row.target_length === undefined ? undefined : Number(row.target_length),
     targetScenes: row.target_scenes === null || row.target_scenes === undefined ? undefined : Number(row.target_scenes),
     publishMode: String(row.publish_mode ?? 'review-rewrite') as Task['publishMode'],
@@ -4825,6 +5081,8 @@ function rowToDraftTemplate(row: Record<string, unknown>): DraftTemplate {
 function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
   return {
     id: String(row.id),
+    imageProfileId: row.image_profile_id ? String(row.image_profile_id) : undefined,
+    modelName: row.model_name ? String(row.model_name) : undefined,
     archivedAt: row.archived_at ? String(row.archived_at) : null,
     managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
     prompt: String(row.prompt ?? ''),
@@ -4862,6 +5120,8 @@ function rowToImageLabRecord(row: Record<string, unknown>): ImageLabRecord {
 
 function rowToImageLabSummary(row: Record<string, unknown>): ImageLabSummary {
   return {
+    imageProfileId: row.image_profile_id ? String(row.image_profile_id) : undefined,
+    modelName: row.model_name ? String(row.model_name) : undefined,
     id: String(row.id),
     archivedAt: row.archived_at ? String(row.archived_at) : null,
     managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,

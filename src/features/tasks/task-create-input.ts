@@ -1,3 +1,4 @@
+import { normalizeTaskOutputTargets } from '../../shared/task-output';
 import type { CreateTaskInput, CustomCoverTemplate } from '../../shared/types';
 import { normalizeOrdinaryTaskCoverPageText } from '../../shared/ordinary-task-cover';
 import { parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from './task-control-manifest';
@@ -22,6 +23,7 @@ export function buildTaskCreateInput(
   }
   return {
     ...input,
+    outputTargets: normalizeTaskOutputTargets(input.outputTargets ?? ['mp4']),
     keepPromotion: input.keepPromotion === true,
     coverImageMode,
     coverTemplateId: coverTemplate?.id ?? input.coverTemplateId,

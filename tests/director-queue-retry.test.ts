@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { directorQueueHasActiveImage, directorQueueKind, directorQueueRetryLabel, retryDirectorQueueItem } from '../src/features/director-desk/director-queue';
+import { applyDirectorQueueActivity, directorQueueHasActiveImage, directorQueueKind, directorQueueRetryLabel, retryDirectorQueueItem } from '../src/features/director-desk/director-queue';
 import { createDirectorBatchPlan, directorBatchUnavailableReasons, runDirectorBatchPlan, type DirectorBatchNode } from '../src/features/director-desk/director-batch';
 
 describe('generation queue retries', () => {
@@ -74,5 +74,20 @@ describe('batch retry preflight', () => {
     const plan = createDirectorBatchPlan({ scope: 'missing', capabilities: { image: false, video: true, voice: false, render: false }, outputReady: false, shots: [{ id: 'needs-frame', title: '缺少首帧', renderStrategy: 'living-poster', imageReady: false, videoReady: false, voiceReady: true, imageFailed: false, videoFailed: false, voiceFailed: false }] });
     expect(plan.nodes.map((node) => node.capability)).toEqual(['image', 'video']);
     expect(directorBatchUnavailableReasons(plan.nodes, { image: '请先配置图片服务', voice: '不应显示此旁白错误' })).toEqual(['请先配置图片服务']);
+  });
+});
+
+describe('queue activity during a new request', () => {
+  it('uses capability kinds for opaque job IDs and leaves voice and previous attempts intact', () => {
+    const jobs = [
+      { id: 'voice', shotId: 's1', kind: 'shot-voice' as const, title: '对白', status: 'completed', progress: 100 },
+      { id: 'opaque-video', shotId: 's1', kind: 'shot-video' as const, title: '远程视频', status: 'failed', progress: 0, error: 'old failure' },
+      { id: 'image', shotId: 's1', kind: 'shot-image' as const, title: '关键帧', status: 'failed', progress: 0 },
+      { id: 'older-video', shotId: 's1', kind: 'shot-video' as const, title: '远程视频', status: 'failed', progress: 0 },
+    ];
+    const next = applyDirectorQueueActivity(jobs, { s1: 'running' }, 's1');
+    expect(next.map(j => j.status)).toEqual(['completed', 'running', 'running', 'failed']);
+    expect(next[1].error).toBeUndefined();
+    expect(jobs[1].status).toBe('failed');
   });
 });

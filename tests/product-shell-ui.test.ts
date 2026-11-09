@@ -763,7 +763,14 @@ describe('product shell ui', () => {
       expect(start, `${page} is present`).toBeGreaterThan(-1);
       const nextComponent = renderer.indexOf('\nfunction ', start + 10);
       const section = renderer.slice(start, nextComponent === -1 ? renderer.length : nextComponent);
-      expect(section, `${page} owns local feedback`).toContain('<InlineActionFeedback');
+      if (page === 'ActivationPage') {
+        expect(section).toContain('<AsyncActionFeedback feedback={action.feedback}');
+        expect(section).toContain('<AsyncActionFeedback feedback={updateAction.feedback}');
+        expect(section).toContain('action.reportError(results[0].reason)');
+        expect(section).toContain('updateAction.reportError(results[1].reason)');
+      } else {
+        expect(section, `${page} owns local feedback`).toContain('<InlineActionFeedback');
+      }
     }
     expect(css).toContain('.inline-action-feedback');
     expect(css).toContain('.global-action-banner');
@@ -833,7 +840,10 @@ describe('product shell ui', () => {
 
     expect([...reachable.keys()]).not.toContain('src/shared/llm-provider.ts');
     expect(configUtils).not.toContain("from './openai-image'");
-    expect(configUtils).toContain("await import('./openai-image')");
+    expect(configUtils).not.toContain("import('./openai-image')");
+    for (const path of ['src/shared/config-test-runtime.ts', 'src/shared/network-policy.ts', 'src/shared/openai-image.ts']) {
+      expect([...reachable.keys()]).not.toContain(path);
+    }
     expect(fallbackModels).not.toContain('listConfiguredProviderModels');
     expect(fallbackModels).toContain('浏览器预览无法安全加载模型列表');
     expect(fallbackModels).toContain('models: []');
@@ -877,7 +887,8 @@ describe('product shell ui', () => {
     expect(groupLabels).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
     expect(main).toContain('className="trial-activation-bar"');
     expect(main).toContain('className="recent-task-strip"');
-    expect(main).toContain('<span className="window-version">V1.0.0</span>');
+    expect(main).toContain("import { version } from '../../package.json'");
+    expect(main).toContain('<span className="window-version">V{version}</span>');
     expect(main).not.toContain('className="brand-block"');
     expect(main).toContain('navigate(\'account\')');
     expect(main).toContain('navigate(\'activation\')');
@@ -1249,8 +1260,13 @@ describe('product shell ui', () => {
       'processingMode',
       'setProcessingMode',
       'musicMv:',
-      '请先选择主歌曲音频；BGM 只能作为辅助配乐，不能替代主歌曲。',
+      '请填写歌词并选择主歌曲。',
+      'Lemo 自动制作',
+      'api.createAndRunTask(',
+      "processingMode === 'manual'",
       "!musicMvAudioPath.trim()",
+      '未检测到 LRC 时间戳',
+      '逐字高亮暂不支持精准对齐',
     ]) {
       expect(musicPage).toContain(symbol);
     }
@@ -1798,7 +1814,9 @@ describe('product shell ui', () => {
     const qa = await readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
     expect(qa).toContain("labels.join('|') === '编辑|复制|删除'");
     expect(qa).toContain('widthSpread <= 1');
-    expect(qa).toContain('.draft-template-card .draft-template-delete');
+    expect(qa).toContain("document.querySelector('.draft-template-actions.has-delete')");
+    expect(qa).toContain('buttons.length !== 3');
+    expect(qa).toContain("controlText(button) === '编辑'");
   });
 
   it('hydrates draft template gallery thumbnails from complete persisted details', async () => {
@@ -2343,11 +2361,12 @@ describe('product shell ui', () => {
     expect(main).toContain("promptTemplateType: 'task'");
   });
 
-  it('manages prompt templates with filters, metadata, variables, and save-as-new-template behavior', async () => {
+  it('manages prompt templates with channel filters, source variables, and save/apply controls', async () => {
     const sources = await rendererSourcesPromise;
     const main = [
       sources.requiredFile('src/features/templates/PromptTemplatesPage.tsx'),
       sources.requiredFile('src/features/templates/PromptTemplateEditor.tsx'),
+      sources.requiredFile('src/features/templates/WorkflowPromptEditor.tsx'),
     ].join('\n');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
@@ -2365,7 +2384,7 @@ describe('product shell ui', () => {
     ]) {
       expect(main).toContain(symbol);
     }
-    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '变量', '保存为自定义模板', '保存修改', '自定义模板保存会更新当前模板', '返回模板库', '查看']) {
+    for (const text of ['新建模板', '导出 JSON', '类型筛选', '赛道筛选', '创作频道', '变量', '保存为备用', '保存并应用', '系统默认模板不可删除', '自定义模板保存会更新当前模板', '返回模板库', '查看']) {
       expect(main).toContain(text);
     }
     expect(css).toContain('.template-filter-row');
@@ -2384,16 +2403,21 @@ describe('product shell ui', () => {
     expect(filterSnippet).not.toContain('contentTracks.map');
   });
 
-  it('preserves custom prompt template ids on save while forking built-in templates', async () => {
+  it('preserves prompt template ids and built-in identity while applying saved edits', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplatesPage.tsx');
-    const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft()'), main.indexOf('async function duplicateTemplate'));
+    const saveSnippet = main.slice(main.indexOf('async function savePromptTemplateDraft(apply = true)'), main.indexOf('async function duplicateTemplate'));
     const duplicateSnippet = main.slice(main.indexOf('async function duplicateTemplate'), main.indexOf('async function duplicate()'));
 
     expect(saveSnippet).toContain('const submitted = draftRef.current;');
-    expect(saveSnippet).toContain('const shouldForkTemplate = Boolean(submitted.isBuiltin)');
-    expect(saveSnippet).toContain('id: shouldForkTemplate ? crypto.randomUUID() : submitted.id');
-    expect(saveSnippet).toContain('isBuiltin: false');
-    expect(saveSnippet).toContain("origin: 'custom'");
+    expect(saveSnippet).toContain('id: submitted.id');
+    expect(saveSnippet).toContain('isBuiltin: submitted.isBuiltin');
+    expect(saveSnippet).toContain("origin: submitted.isBuiltin ? 'system' : 'custom'");
+    expect(saveSnippet).toContain('builtinModified: submitted.isBuiltin ? true : undefined');
+    expect(saveSnippet).toContain('enabled: apply');
+    expect(duplicateSnippet).toContain('await api.getPromptTemplateDetail(template.id)');
+    expect(duplicateSnippet).toContain('id: crypto.randomUUID()');
+    expect(duplicateSnippet).toContain('isBuiltin: false');
+    expect(duplicateSnippet).toContain('enabled: false');
     expect(saveSnippet).not.toContain('id: crypto.randomUUID(),');
     expect(saveSnippet).not.toContain('baseTemplateId');
     expect(duplicateSnippet).not.toContain('baseTemplateId');
@@ -2411,15 +2435,19 @@ describe('product shell ui', () => {
     expect(main).toContain('promptTemplateBindingTrackOptions');
     expect(bindingSnippet).toContain('promptTemplateBindingTrackOptions.map(([id, label])');
     expect(bindingSnippet).not.toContain('contentTracks.map');
+    expect(bindingSnippet).toContain('disabled={draft.isBuiltin}');
   });
 
-  it('binds newly created prompt templates to the active track filter when present', async () => {
+  it('creates an inactive prompt template with a compatible slot in the selected channel', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplatesPage.tsx');
     const createSnippet = main.slice(main.indexOf('async function createPromptTemplate()'), main.indexOf('async function saveCustomStyleDraft()'));
 
-    expect(createSnippet).toContain("const baseTrack = templateTrackFilter === 'all' ? 'general-story' : templateTrackFilter");
-    expect(createSnippet).toContain('baseTrack,');
-    expect(createSnippet).not.toContain("baseTrack: 'general-story'");
+    expect(createSnippet).toContain("item.type === 'workflow'");
+    expect(createSnippet).toContain('workflowSlotChannels(item.slot).includes(channelFilter)');
+    expect(createSnippet).toContain("channel: channelFilter === 'all' ? base.channel : channelFilter");
+    expect(createSnippet).toContain('enabled: false');
+    expect(createSnippet).toContain('setSavedDraft(null)');
+    expect(createSnippet).not.toContain('api.savePromptTemplate');
   });
 
   it('keeps prompt template pages padded, scrollable, and tolerant of narrow row actions', async () => {
@@ -2677,7 +2705,7 @@ describe('product shell ui', () => {
     expect(main).toContain('resolvePromptTemplateDefaultDraftTemplateId');
     expect(main).toContain('handleDraftTemplateChange');
     expect(main).toContain('draftTemplateImageRatio');
-    expect(main).toContain('模板默认项');
+    expect(main).toContain('当前模板配置');
     expect(main).toContain('主角档案');
     expect(main).toContain('默认草稿模板');
     expect(main).toContain('参考图类型');
@@ -3101,7 +3129,7 @@ describe('product shell ui', () => {
     const expectations: Array<[string, string[]]> = [
       ['src/app/App.tsx', ['saveUiPreferences', 'windowControl']],
       ['src/features/account/AccountPage.tsx', ['saveAccount']],
-      ['src/features/account/ActivationPage.tsx', ['saveActivation']],
+      ['src/features/account/ActivationPage.tsx', ['getLicenseStatus', 'activateLicense', 'refreshLicense', 'releaseLicense', 'getUpdateStatus', 'checkForUpdate', 'downloadUpdate', 'installUpdate']],
       ['src/features/settings/SettingsPage.tsx', ['runDiagnostics', 'saveConfig', 'testAppConfig']],
       ['src/features/tasks/NewTaskPage.tsx', ['createAndRunTask', 'searchWebSources']],
       ['src/features/tasks/TaskArtifactPreview.tsx', ['regenerateTaskNarration', 'rerunTaskStep', 'updateTaskImagePrompt']],
@@ -3329,7 +3357,7 @@ describe('product shell ui', () => {
     expect(main).toContain('options={state.draftTemplates.map((template) => ({ value: template.id,');
     expect(main).toContain('onChange={(event) => handleDraftTemplateChange(event.target.value)}');
     expect(main).toContain('buildTaskPromptTemplateOptions(state.promptTemplates, track)');
-    expect(main).toContain('taskPromptTemplateOptions.map(([id, label, hint])');
+    expect(main).toContain('taskPromptTemplateOptions.map(([id, label])');
     expect(main).toContain('value={promptTemplateOverrideId || resolvedPromptTemplate?.id || \'\'}');
     expect(main).not.toContain('OptionCloud title="内容赛道" options={contentTracks}');
     expect(main).not.toContain('OptionCloud title="画面风格" options={styleOptions}');
@@ -3365,8 +3393,12 @@ describe('product shell ui', () => {
     expect(page).toContain('selectTaskReferenceImage');
     expect(page).toContain('api.selectLocalImage()');
     expect(page).toContain('onClick={selectTaskReferenceImage}');
-    expect(page).toContain('value={selectedTaskLlmProfileId}');
-    expect(page).toContain('onChange={(event) => setSelectedTaskLlmProfileId(event.target.value)}');
+    expect(page).toContain('const selectedTaskLlmProfileId = projectModels.llmProfileId');
+    expect(page).toContain('<ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running}');
+    const fields = (await rendererSourcesPromise).requiredFile('src/features/projects/ProjectModelFields.tsx');
+    expect(fields).toContain('value={value.llmProfileId}');
+    expect(fields).toContain('onChange={(_, data) => onChange({ ...value, llmProfileId: data.value })}');
+    expect(page).toContain('readProjectModelsDraft(values.projectModels');
   });
 
   it('keeps target word and scene controls visible in the new task form', async () => {

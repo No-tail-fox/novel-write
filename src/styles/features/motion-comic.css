@@ -1,3 +1,12 @@
+.motion-comic-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 ﻿/* ==========================================================================
    0. AI 漫剧全局容器约束与现代滚动条 (修复小屏截断与滚轮失效)
    ========================================================================== */
@@ -2824,9 +2833,9 @@
 .comic-script-detail__scroll p { white-space: pre-wrap; line-height: 1.6; }
 .comic-script-editor { display: flex; flex-direction: column; gap: 8px; flex: 1 1 0; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .comic-script-editor > .sd-toolbar { flex: 0 0 auto; flex-wrap: wrap; gap: 6px; }
-.comic-script-editor > .sd-toolbar { position: sticky; bottom: 0; z-index: 1; padding-block: 6px; background: var(--shell-surface); border-top: 1px solid var(--shell-border); }
+.comic-script-editor > .sd-toolbar { padding-block: 6px; background: var(--shell-surface); border-top: 1px solid var(--shell-border); }
 .comic-script-editor > .sd-toolbar small { color: var(--shell-muted); margin-inline-end: auto; }
-.comic-script-editor .motion-comic-script-review { flex: 1 1 0; min-height: 320px; }
+.comic-script-editor .motion-comic-script-review { flex: 1 0 auto; min-height: 380px; }
 .comic-script-editor .motion-comic-plan-review { flex: 1 1 0; min-height: 202px; grid-template-columns: minmax(140px, 27%) minmax(0, 1fr); }
 .comic-script-editor .motion-comic-plan-scenes { min-height: 0; overflow: hidden; }
 .comic-script-editor .motion-comic-plan-scene-list { flex: 1 1 0; min-height: 0; overflow-y: auto; }
@@ -2876,3 +2885,11 @@
   .comic-script-detail { flex: 0 0 600px; padding: 10px 0 0; }
   .comic-script-editor .motion-comic-script-beats { overflow-y: auto; }
 }
+
+.motion-comic-create__services { display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.motion-comic-create__services p { margin: 0; color: var(--shell-muted); line-height: 1.5; }
+.motion-comic-create__services > div { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--shell-border); padding-top: 8px; }
+.motion-comic-create__services > div > div { display: flex; justify-content: space-between; gap: 8px; }
+.motion-comic-create__services [data-ready="false"] > div > span { color: var(--warn); }
+.motion-comic-create__services small { color: var(--shell-muted); overflow-wrap: anywhere; }
+.motion-comic-create__services .sd-button { align-self: flex-start; }

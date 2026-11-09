@@ -1,3 +1,5 @@
+import { buildLemoNativeHtml } from './creative-animation/native-html';
+import { creativeRenderSpec } from './creative-animation/render-spec';
 import { z } from 'zod';
 import { SHOTCRAFT_TEMPLATES, type ShotcraftRecipe } from './shotcraft-recipes';
 
@@ -73,7 +75,9 @@ export type VoxAnimationItem = z.infer<typeof voxItemSchema>;
 export const voxAnimationSchema = z.object({
   version:z.literal(1), mode:z.enum(['template','code']),
   template:z.object({id:z.string().min(1).max(120),revision:z.literal(1).optional(),props:voxPropsSchema}).strict(),
-  code:z.object({source:z.string().max(100000).default(''), compiled:z.string().max(180000).default(''), prompt:z.string().max(10000).default('')}).strict(),
+  code:z.object({source:z.string().max(500000).default(''), compiled:z.string().max(800000).default(''), prompt:z.string().max(10000).default(''), engine:z.literal('lemo-native').optional()}).strict(),
+  native:z.object({filmId:z.string().max(256),startMs:z.number().nonnegative(),durationMs:z.number().positive(),sourceDurationMs:z.number().positive().optional(),filmDurationMs:z.number().positive(),width:z.number().int().positive(),height:z.number().int().positive(),fps:z.number().int().min(12).max(60),assetIds:z.array(z.string().max(256)).max(500)}).strict().optional(),
+  creativeStyle:z.object({styleId:z.string().min(1).max(120),rendererRevision:z.literal(1),upstreamRevision:z.string().max(64),source:z.enum(['production','local']),composition:z.enum(['scene','data'])}).strict().optional(),
   authoring:z.object({
     owner:z.literal('creative-production'), revision:z.literal(1), styleId:z.string().max(120), upstreamRevision:z.string().max(64),
     status:z.enum(['generated','reviewed','needs-repair','repaired','fallback']),
@@ -85,22 +89,24 @@ export type VoxAnimation = z.infer<typeof voxAnimationSchema>;
 export interface VoxAnimationAsset { id:string; label:string; kind:'image'|'audio'; url:string; }
 export interface VoxAnimationCue {id?:string;text:string;startMs:number;endMs:number;tokens?:{text:string;startMs:number;endMs:number}[];}
 export interface VoxAnimationAudioClip {assetVersionId?:string;startMs:number;durationMs:number;sourceStartMs?:number;muted?:boolean;gainDb?:number;}
-export interface VoxAnimationPayload {semanticLayers?: Array<{id:string;assetId?:string;kind?:string;content?:{type: 'text';text:string};zIndex:number;depth:number;width?:number;height?:number;fit?:'contain'|'cover';motion: Array<{atMs:number;x:number;y:number;scale:number;rotation:number;opacity:number}>}>;semanticBeats?: import('./editorial-cue-plan').ResolvedEditorialBeat[];animation:VoxAnimation;width:number;height:number;fps:number;durationMs:number;assets:VoxAnimationAsset[];cues:VoxAnimationCue[];subtitleStyle?:string;audioClips?:readonly VoxAnimationAudioClip[];}
+export interface VoxAnimationPayload {semanticLayers?: Array<{id:string;assetId?:string;kind?:string;visible?:boolean;content?:{type: 'text';text:string};zIndex:number;depth:number;width?:number;height?:number;fit?:'contain'|'cover';motion: Array<{atMs:number;x:number;y:number;scale:number;rotation:number;opacity:number}>}>;semanticBeats?: import('./editorial-cue-plan').ResolvedEditorialBeat[];animation:VoxAnimation;width:number;height:number;fps:number;durationMs:number;assets:VoxAnimationAsset[];cues:VoxAnimationCue[];subtitleStyle?:string;audioClips?:readonly VoxAnimationAudioClip[];}
 export const voxSavedTemplateSchema=z.object({id:z.string().min(1).max(128),name:z.string().trim().min(1).max(100),animation:voxAnimationSchema,updatedAt:z.string().max(64)}).strict();
 export type VoxSavedTemplate=z.infer<typeof voxSavedTemplateSchema>;
-export interface VoxGenerateRequest {requestId:string;prompt:string;source?:string;templateId:string;props:VoxAnimationProps;durationMs:number;ratio:string;}
-export interface VoxCompileResult {source:string;compiled:string;}
+export interface VoxGenerateRequest {projectId?:string;requestId:string;prompt:string;source?:string;templateId:string;props:VoxAnimationProps;durationMs:number;ratio:string;}
+export interface VoxCompileResult {source:string;compiled:string;engine?:'lemo-native';}
 export const voxTemplate = (id:string) => VOX_TEMPLATES.find(t=>t.id===id);
 export function createVoxAnimation(title='',subtitle=''):VoxAnimation {
   return {version:1,mode:'template',template:{id:'text-opening',props:voxPropsSchema.parse({title,subtitle})},code:{source:'',compiled:'',prompt:''}};
 }
 export function voxAnimationAssetIds(animation:VoxAnimation):string[] {
+  if(animation.code.engine==='lemo-native')return animation.native?.assetIds??animation.template.props.assetIds;
   const t=voxTemplate(animation.template.id),p=animation.template.props;
   const recipe=animation.mode==='template'&&t?.recipe;
   return [...new Set([...(recipe&&t.maxImages===0?[]:p.assetIds),...(p.audioAssetId&&(!recipe||t.audio)?[p.audioAssetId]:[])])];
 }
 export function validateVoxAnimation(animation:VoxAnimation, assets?:readonly {id:string;kind:string}[]):string[] {
   const parsed=voxAnimationSchema.safeParse(animation);if(!parsed.success)return ['动画参数格式无效'];
+  if(animation.creativeStyle&&!creativeRenderSpec(animation.creativeStyle.styleId))return ['镜头采用的风格不存在，请重新应用风格'];
   const a=parsed.data,p=a.template.props,t=voxTemplate(a.template.id),issues:string[]=[];
   if(!t)return ['模板不存在，请重新选择'];
   if(a.mode==='code'){if(!a.code.source.trim()||!a.code.compiled.trim())issues.push('请生成或检查动画代码后再应用');}
@@ -140,7 +146,8 @@ export function validateVoxAnimation(animation:VoxAnimation, assets?:readonly {i
   if(assets){const active=new Set(voxAnimationAssetIds(a));for(const id of p.assetIds)if(active.has(id)&&!assets.some(x=>x.id===id&&x.kind==='image'))issues.push('有图片素材不存在，请重新选择');if(p.audioAssetId&&active.has(p.audioAssetId)&&!assets.some(x=>x.id===p.audioAssetId&&x.kind==='audio'))issues.push('音频素材不存在，请重新选择');}
   return [...new Set(issues)];
 }
-export function buildVoxAnimationHtml(runtime:string,payload:VoxAnimationPayload):string {
+export function buildVoxAnimationHtml(runtime:string,payload:VoxAnimationPayload,localAssetUrls:readonly string[]=[]):string {
+  if(payload.animation.mode==='code' && payload.animation.code.engine==='lemo-native') return buildLemoNativeHtml(runtime,payload,localAssetUrls);
   const json=JSON.stringify(payload).replace(/</g,'\\u003c');
   const safe=(s:string)=>s.replace(/<\/script/gi,'<\\/script');
   const code=payload.animation.mode==='code'?`const module={exports:{}};const exports=module.exports;const require=window.VoxRuntime.require;${safe(payload.animation.code.compiled)}\nwindow.VoxRuntime.mount(${json},module.exports.default);`:`window.VoxRuntime.mount(${json});`;

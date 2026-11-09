@@ -69,12 +69,12 @@ export function taskTerminalStep(task: Pick<Task, 'taskType' | 'processingMode'>
 }
 
 export function taskProgressStages(
-  task: Pick<Task, 'taskType' | 'processingMode'>,
+  task: Pick<Task, 'taskType' | 'processingMode' | 'outputTargets'>,
 ): readonly TaskProgressStage[] {
   if (isDirectorWorkflowTask(task)) return [{ index: 0, title: '导演台工作流', hint: '按项目、分集和批次执行', agent: 'Director Desk' }];
   if (task.taskType === 'html-video') return HTML_VIDEO_TASK_STAGES;
   if (task.processingMode === 'clip-only') return CLIP_ONLY_TASK_STAGES;
-  return ORDINARY_TASK_STAGES;
+  return task.outputTargets ? ORDINARY_TASK_STAGES.map(stage => stage.index === 6 ? { ...stage, title: 'Step 6 成片与草稿', hint: '生成并验收所选输出', agent: 'Delivery' } : stage) : ORDINARY_TASK_STAGES;
 }
 
 export function taskProgressSnapshot(

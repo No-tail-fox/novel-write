@@ -270,6 +270,67 @@
   background: transparent;
 }
 
+.project-cover-dialog {
+  width: min(660px, calc(100vw - 32px));
+  max-width: 660px;
+}
+
+.project-cover-dialog .fui-DialogActions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.project-cover-dialog .fui-DialogActions > .sd-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.project-cover-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-block: 8px 16px;
+}
+
+.project-cover-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--shell-surface);
+  color: var(--shell-muted);
+}
+
+.project-cover-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.project-cover-fields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.project-cover-fields > strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+@media (max-width: 600px) {
+  .project-cover-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-cover-preview {
+    max-height: 160px;
+  }
+}
+
 @media (max-width: 1120px) {
   .project-home-search {
     order: 3;

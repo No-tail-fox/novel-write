@@ -1,3 +1,7 @@
+import { ProjectModelFields, ProjectModelBar } from '../projects/ProjectModelFields';
+import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
+import { COPYWRITING_TRACKS } from '../../shared/copywriting-tracks';
+import { EDITORIAL_WRITING_STYLES, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceNavigation } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
@@ -52,6 +56,8 @@ export function HtmlVideoPage({
   onActiveTaskChange: (taskId: string) => void;
   isBrowserPreview: boolean;
 }) {
+  const [copyTrack, setCopyTrack] = useState('general');
+  const [writingStyleId, setWritingStyleId] = useState<EditorialWritingStyleId>('documentary');
   const [copy, setCopy] = useState('');
   const [copyMode, setCopyMode] = useState<HtmlVideoCopyMode>('paste');
   const [aiKeyword, setAiKeyword] = useState('');
@@ -79,6 +85,7 @@ export function HtmlVideoPage({
   const [coverTemplate, setCoverTemplate] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.coverTemplate);
   const [coverRatio, setCoverRatio] = useState<HtmlVideoCoverRatio>(HTML_VIDEO_JOB_DEFAULTS.coverRatio);
   const [draftTemplate, setDraftTemplate] = useState<string>('');
+  const [projectModels, setProjectModels] = useState(() => defaultProjectModels(state.config));
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [htmlTaskOptions, setHtmlTaskOptions] = useState(() => htmlVideoTaskOptionsFromTasks(state.tasks));
   const [taskListState, setTaskListState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -95,8 +102,10 @@ export function HtmlVideoPage({
   const { requestLeave } = useWorkspaceNavigation();
   const creationDraft = useWorkspaceDraft({
     id: 'html-video-create', label: 'HTML 动画新建草稿', enabled: pageMode === 'create', busy: running,
-    value: { copy, aiKeyword, extraRequirements, style, ratio, maxScenes, foreground, bgmId, ttsProvider, voiceId, ttsSpeed, bgmVolume, transitionType, sceneMotion, coverImageMode, coverTemplate, coverRatio, draftTemplate },
+    value: { projectModelsJson: JSON.stringify(projectModels), copy, aiKeyword, extraRequirements, copyTrack, writingStyleId, style, ratio, maxScenes, foreground, bgmId, ttsProvider, voiceId, ttsSpeed, bgmVolume, transitionType, sceneMotion, coverImageMode, coverTemplate, coverRatio, draftTemplate },
     restore: (draft) => {
+      setProjectModels(current => readProjectModelsDraft(draft.projectModelsJson, current));
+      setCopyTrack(draft.copyTrack ?? 'general'); setWritingStyleId(draft.writingStyleId ?? 'documentary');
       setCopy(draft.copy); setAiKeyword(draft.aiKeyword); setExtraRequirements(draft.extraRequirements);
       setStyle(draft.style); setRatio(draft.ratio); setMaxScenes(draft.maxScenes); setForeground(draft.foreground);
       setBgmId(draft.bgmId); setTtsProvider(draft.ttsProvider); setVoiceId(draft.voiceId); setTtsSpeed(draft.ttsSpeed);
@@ -473,6 +482,8 @@ export function HtmlVideoPage({
       setResearchMessageTone('status');
       setResearchMessage(`正在结合 ${selectedSources.length} 条网页资料创作文案...`);
       const result = await composeHtmlVideoResearchCopy(api, {
+        llmProfileId: projectModels.llmProfileId,
+        track: copyTrack, writingStyleId,
         keyword: aiKeyword,
         extraRequirements,
         selectedSources,
@@ -502,7 +513,7 @@ export function HtmlVideoPage({
       setMessage('');
       try {
         setCreatePhase('create');
-        const next = await api.createHtmlVideoTask(createHtmlVideoTaskInput({
+        const next = await api.createHtmlVideoTask({ ...createHtmlVideoTaskInput({
           copy: copy.trim(),
           mode: copyMode,
           aiKeyword: copyMode === 'ai' ? aiKeyword : '',
@@ -524,7 +535,7 @@ export function HtmlVideoPage({
           coverTemplate,
           coverRatio,
           draftTemplate,
-          }));
+          }), projectModels });
         applyState(next);
         const createdTask = taskFromMutation(next);
         if (createdTask) {
@@ -614,6 +625,7 @@ export function HtmlVideoPage({
           </header>
 
           <div className="hv-create-sheet">
+            <section className="hv-create-section"><h2>项目模型</h2><ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} /></section>
             <section className="hv-create-section">
               <header>{copyMode === 'ai' ? <Wand2 size={17} /> : <FileText size={17} />}<div><h2>文案</h2><p>AI 创作 · 粘贴文案</p></div></header>
               <div className="hv-create-section-content hv-create-copy-content">
@@ -628,6 +640,10 @@ export function HtmlVideoPage({
                 ) : (
                   <div className="hv-ai-copy-fields">
                     <TextField label="创作主题" value={aiKeyword} placeholder="例如：钱学森回国背后的关键转折" onChange={(event) => handleAiKeywordChange(event.target.value)} />
+                    <SelectField label="内容赛道" value={copyTrack} options={COPYWRITING_TRACKS.map(track => ({ value: track.id, label: track.label }))}
+                      disabled={researchAction.busy} onChange={event => { handleExtraRequirementsChange(extraRequirements); setCopyTrack(event.target.value); }} />
+                    <SelectField label="文案创作风格" value={writingStyleId} options={EDITORIAL_WRITING_STYLES.map(style => ({ value: style.id, label: style.label }))}
+                      disabled={researchAction.busy} onChange={event => { handleExtraRequirementsChange(extraRequirements); setWritingStyleId(event.target.value as EditorialWritingStyleId); }} />
                     <TextAreaField label="创作要求" hint="可选" value={extraRequirements} placeholder="例如：500 字左右，突出人物抉择，语气克制" onChange={(event) => handleExtraRequirementsChange(event.target.value)} />
                     <div className="hv-research-provider-panel">
                       <span className="field-title">搜索渠道</span>
@@ -820,6 +836,7 @@ export function HtmlVideoPage({
   return (
     <div className="hv-studio" data-html-video-studio="html-video" data-has-task="true" data-active-tab={activeTab}>
       <section className="hv-studio-parameters" aria-label="HTML 动画视频制作参数">
+        <ProjectModelBar task={activeTask ?? undefined} config={state.config} api={api} onUpdated={applyState} />
         <div className="hv-studio-panel-heading">
           <div>
             <h2>{activeTask.title}</h2>
@@ -1005,8 +1022,8 @@ interface HtmlVideoEditableValues {
   maxScenes: number;
   ratio: '9:16' | '16:9' | '1:1' | '4:3';
   draftTemplate: string;
-  previewLongEdge: 720 | 1080;
-  renderLongEdge: 1080 | 1920;
+  previewLongEdge: 720 | 1080 | '';
+  renderLongEdge: 1080 | 1920 | '';
 }
 
 function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableValues {
@@ -1021,8 +1038,8 @@ function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableV
     sceneMotion: config.sceneMotion ?? HTML_VIDEO_JOB_DEFAULTS.sceneMotion,
     foreground: config.foreground ?? HTML_VIDEO_JOB_DEFAULTS.foreground,
     maxScenes: config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
-    previewLongEdge: config.previewLongEdge ?? 1080,
-    renderLongEdge: config.renderLongEdge ?? 1080,
+    previewLongEdge: config.previewLongEdge ?? '',
+    renderLongEdge: config.renderLongEdge ?? '',
     ratio: (config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio) as HtmlVideoEditableValues['ratio'],
     draftTemplate: config.draftTemplate ?? '',
   };
@@ -1081,6 +1098,7 @@ function HtmlVideoConfigEditor({
       'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'bgmVolume',
       'transitionType', 'sceneMotion', 'foreground', 'maxScenes', 'ratio', 'draftTemplate', 'previewLongEdge', 'renderLongEdge',
     ] as const) {
+      if ((field === 'previewLongEdge' || field === 'renderLongEdge') && values[field] === '') continue;
       if (values[field] !== initial[field]) {
         changes.push({ field, value: values[field] } as HtmlVideoConfigChange);
       }
@@ -1145,10 +1163,10 @@ function HtmlVideoConfigEditor({
           <Segmented label="画布比例" value={values.ratio} options={[...HTML_VIDEO_RATIOS]} disabled={disabled} onChange={(value) => setValue('ratio', value as typeof values.ratio)} />
         </div>
         <div data-html-video-edit-field="previewLongEdge">
-          <SelectField label="预览分辨率（长边）" value={String(values.previewLongEdge)} disabled={disabled} options={[{value:'720',label:'720 px · 快速预览'},{value:'1080',label:'1080 px · 清晰预览'}]} onChange={event=>setValue('previewLongEdge',Number(event.target.value) as 720|1080)} />
+          <SelectField label="预览分辨率（长边）" value={String(values.previewLongEdge)} disabled={disabled} options={[...(initial.previewLongEdge === '' ? [{value:'',label:'默认 · 1280 px',disabled:true}] : []),{value:'720',label:'720 px · 快速预览'},{value:'1080',label:'1080 px · 清晰预览'}]} onChange={event=>setValue('previewLongEdge',Number(event.target.value) as 720|1080)} />
         </div>
         <div data-html-video-edit-field="renderLongEdge">
-          <SelectField label="成片分辨率（长边）" value={String(values.renderLongEdge)} disabled={disabled} options={[{value:'1080',label:'1080 px'},{value:'1920',label:'1920 px · 高清成片'}]} onChange={event=>setValue('renderLongEdge',Number(event.target.value) as 1080|1920)} />
+          <SelectField label="成片分辨率（长边）" value={String(values.renderLongEdge)} disabled={disabled} options={[...(initial.renderLongEdge === '' ? [{value:'',label:'默认 · 1280 px',disabled:true}] : []),{value:'1080',label:'1080 px'},{value:'1920',label:'1920 px · 高清成片'}]} onChange={event=>setValue('renderLongEdge',Number(event.target.value) as 1080|1920)} />
         </div>
         <div data-html-video-edit-field="draftTemplate">
           <SelectField label="画面预设" value={values.draftTemplate} onChange={(event) => setValue('draftTemplate', event.target.value)} disabled={disabled} options={[

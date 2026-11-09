@@ -118,7 +118,7 @@ describe('director desk render strategy UI', () => {
 
     expect(page).toContain('resolveDirectorVideoProviderOptions');
     expect(page).toContain('resolveDirectorVideoProviderStatus');
-    expect(page).toContain('state.config.video.activeProviderId');
+    expect(directorWorkspaceProp(page, 'videoProviderId')).toBe('modelConfig.video.activeProviderId');
     expect(generation).toContain('config.video.providers');
     expect(generation).toContain("provider.capabilities.includes('i2v')");
     for (const prop of [
@@ -128,10 +128,12 @@ describe('director desk render strategy UI', () => {
       'videoProviderUnavailableReason',
       'videoProviderId',
       'videoProviderOptions',
-      'onVideoProviderChange',
     ]) {
       expect(directorWorkspaceProp(page, prop)).not.toMatch(/undefined|null/u);
     }
+    expect(page).toContain('<ProjectModelBar');
+    expect(page).toContain('useProjectModelConfig');
+    expect(page).not.toContain('onVideoProviderChange=');
     expect(directorWorkspaceProp(page, 'onConfigureVideoProvider')).toContain("openSettings?.('video', 'editorial-collage', document.id)");
     expect(directorWorkspaceProp(page, 'onConfigureProvider')).toContain("openSettings?.('image', 'editorial-collage', document.id)");
   });
@@ -142,7 +144,9 @@ describe('director desk render strategy UI', () => {
     expect(inventory).toContain('generateDirectorShotVideo: command(');
     expect(inventory).toContain("'tests/director-render-strategy-ui.test.ts'");
     expect(inventory).toContain('onGenerateVideo=');
-    expect(inventory).toContain('生成 AI 动态海报');
+    expect(inventory).toContain("'生成视频'");
+    const workspace = await source('src/features/director-desk/DirectorDeskWorkspace.tsx');
+    expect(workspace).toContain("'重新生成视频' : '生成视频'");
   });
 });
 

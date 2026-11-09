@@ -17,3 +17,17 @@
 .license-progress { display: grid; gap: 8px; font-size: 13px; }
 .license-progress progress { width: 100%; accent-color: var(--shell-accent); }
 @media (max-width: 760px) { .license-settings { padding: 0 12px 24px; } .license-details { grid-template-columns: 90px minmax(0, 1fr); gap: 10px; } }
+
+.license-gate { box-sizing: border-box; min-height: 100vh; overflow: auto; padding: clamp(24px, 5vh, 56px) 20px; background: var(--shell-bg); color: var(--shell-text); }
+.license-gate-header { display: flex; align-items: center; gap: 12px; max-width: 900px; margin: 0 auto 28px; }
+.license-gate-header .app-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--shell-accent); color: var(--shell-accent-contrast); font-weight: 700; }
+.license-gate-header > div:last-child { display: grid; gap: 3px; }
+.license-gate-header span { color: var(--shell-muted); font-size: 12px; }
+.license-gate-error { max-width: 900px; margin: 0 auto 12px; color: var(--danger); font-size: 13px; }
+.license-gate-header { -webkit-app-region: drag; }
+.license-gate-header > * { -webkit-app-region: no-drag; }
+.license-gate-brand { display: grid; gap: 3px; }
+.license-gate-controls { display: flex; gap: 4px; margin-left: auto; }
+.license-gate-controls button { width: 34px; height: 30px; border: 1px solid var(--shell-border); border-radius: 4px; background: var(--shell-surface); color: var(--shell-text); cursor: pointer; }
+.license-gate-controls button:hover { background: var(--shell-hover); }
+.license-gate-controls button:last-child:hover { background: var(--danger); color: #fff; }

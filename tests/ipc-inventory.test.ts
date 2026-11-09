@@ -32,6 +32,20 @@ describe('renderer IPC inventory', () => {
     expect(INVOKE_CHANNELS).not.toContain('path:open');
   });
 
+  it('keeps artifact folder selection in the main process with no renderer path argument', async () => {
+    await storyDreamApi.getArtifactStorage();
+    await storyDreamApi.chooseArtifactStorage();
+    await storyDreamApi.cancelArtifactStorageChange();
+    expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
+      ['artifact-storage:get', undefined],
+      ['artifact-storage:choose', undefined],
+      ['artifact-storage:cancel', undefined],
+    ]);
+    for (const channel of ['artifact-storage:get', 'artifact-storage:choose', 'artifact-storage:cancel'] as const) {
+      expect(ipcInputSchemas[channel].safeParse({ directory: 'C:/untrusted' }).success).toBe(false);
+    }
+  });
+
   it('routes directory opening through persisted entity IDs and person names instead of renderer paths', async () => {
     await storyDreamApi.openTaskOutputDirectory('task-safe-id');
     await storyDreamApi.openImageLabOutputDirectory('image-safe-id');

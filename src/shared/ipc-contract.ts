@@ -1,4 +1,7 @@
+import { shortVideoMaterialsSchema } from './short-video-materials';
+import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
 import { z } from 'zod';
+import { projectModelsSchema } from './project-models';
 import { libraryListSchema, librarySaveSchema, libraryUpdateSchema } from './asset-library';
 import { musicVoiceRequestSchema } from './music-voice';
 import { musicEnhancedRequestSchema } from './music-enhanced';
@@ -255,8 +258,12 @@ export const createTaskSchema = bounded(
       imageQuality: z.enum(['low', 'medium', 'high']).nullable().optional(),
       speaker: optionalText(1024),
       ratio: optionalText(128),
+      visualTemplateRef: pixelleRefSchema.optional(),
+      pixelleOptions: pixelleOptionsSchema.optional(),
+      shortVideoMaterials: shortVideoMaterialsSchema.optional(),
       templateId: optionalText(256),
       bgmId: optionalText(256),
+      outputTargets: z.array(z.enum(['mp4', 'jianying-draft'])).min(1).max(2).optional(),
       pausePoints: z.array(z.enum(['none', 'critical', 'every-step', 'custom'])).max(16).optional(),
       promptTemplateId: z.string().max(256).nullable().optional(),
       promptTemplateType: z.string().max(128).nullable().optional(),
@@ -271,6 +278,7 @@ export const createTaskSchema = bounded(
       musicMv: musicMvSchema.optional(),
       videoForm: z.enum(['narration', 'two-host-podcast']).optional(),
       llmProfileId: z.string().max(256).nullable().optional(),
+      projectModels: projectModelsSchema.optional(),
       materialSource: optionalText(256),
       productInfo: nullableText(MAX_TASK_TEXT),
       materialPerson: nullableText(1024),
@@ -593,6 +601,19 @@ const volcengineSpeakerListSchema = z
 export const researchCopyComposeSchema = bounded(
   z
     .object({
+      projectId: idSchema.optional(),
+      llmProfileId: nonEmptyText(256).optional(),
+      channel: z.enum(['shared', 'story', 'html-video', 'editorial-collage', 'motion-comic', 'music-mv']).optional(),
+      track: optionalText(256),
+        writingStyleId: z.enum(['documentary', 'story', 'commentary', 'popular-science', 'data', 'cultural-essay']).optional(),
+        directorCopyAssist: z.object({
+          mode: z.enum(['vox', 'motion-comic']), intent: z.enum(['create', 'revise']),
+          title: z.string().max(MAX_IPC_TEXT), copy: z.string().max(MAX_TASK_TEXT),
+          requirements: z.string().max(MAX_TASK_TEXT).optional(), track: optionalText(256),
+          writingStyleId: z.enum(['documentary', 'story', 'commentary', 'popular-science', 'data', 'cultural-essay']).optional(),
+          durationMs: z.union([z.literal('auto'), z.union([z.literal(15000), z.literal(30000), z.literal(60000)])]).optional(),
+        }).strict().optional(),
+      intent: z.enum(['draft', 'refine', 'track']).optional(),
       keyword: nonEmptyText(MAX_IPC_TEXT),
       extraRequirements: z.string().max(MAX_TASK_TEXT),
       selectedSources: z.array(sourceSectionSchema).max(MAX_IPC_ARRAY_ITEMS),
@@ -607,7 +628,11 @@ const promptTemplateSchema = bounded(
     .object({
       id: idSchema,
       name: nonEmptyText(1024),
-      type: z.enum(['review', 'rewrite', 'cover', 'storyboard', 'image-prompt', 'task']),
+      type: z.enum(['review', 'rewrite', 'cover', 'storyboard', 'image-prompt', 'task', 'workflow']),
+      slot: optionalText(256),
+      channel: z.enum(['shared', 'story', 'html-video', 'editorial-collage', 'motion-comic', 'music-mv']).optional(),
+      enabled: z.boolean().optional(),
+      builtinModified: z.boolean().optional(),
       description: z.string().max(MAX_IPC_TEXT),
       content: z.string().max(MAX_TASK_TEXT),
       isBuiltin: z.boolean(),
@@ -656,6 +681,7 @@ const imageLabSchema = z
     prompt: nonEmptyText(MAX_TASK_TEXT),
     ratio: nonEmptyText(128),
     style: z.string().max(1024),
+    imageProfileId: nonEmptyText(256).optional(),
     provider: z.enum(['gpt_image', 'jimeng', 'custom']).optional(),
     resolution: z.enum(['1K', '2K', '4K']).optional(),
     quality: z.enum(['low', 'medium', 'high']).optional(),
@@ -973,6 +999,9 @@ export const ipcInputSchemas = {
       message: z.string().max(MAX_IPC_TEXT),
     })
     .strict(),
+  'artifact-storage:get': z.void(),
+  'artifact-storage:choose': z.void(),
+  'artifact-storage:cancel': z.void(),
   'license:status': z.void(),
   'license:activate': z.string().trim().regex(/^SD-(?:[A-Fa-f0-9]{8}-){3}[A-Fa-f0-9]{8}$/i),
   'license:refresh': z.void(),
@@ -1060,8 +1089,8 @@ export const ipcInputSchemas = {
   }).strict(),
   'vox:export-shot': z.object({id:idSchema,shotId:idSchema,expectedUpdatedAt:timestampSchema}).strict(),
   'vox:runtime': z.void(),
-  'vox:compile': nonEmptyText(100000),
-  'vox:generate': z.object({ requestId: idSchema, prompt: nonEmptyText(10000), source: z.string().max(100000).optional(), templateId: nonEmptyText(120), props: voxPropsSchema, durationMs: finiteNumber.min(1).max(600000), ratio: z.enum(['16:9', '9:16', '1:1', '4:3', '3:4']) }).strict(),
+  'vox:compile': nonEmptyText(500000),
+  'vox:generate': z.object({ projectId: idSchema.optional(), requestId: idSchema, prompt: nonEmptyText(10000), source: z.string().max(100000).optional(), templateId: nonEmptyText(120), props: voxPropsSchema, durationMs: finiteNumber.min(1).max(600000), ratio: z.enum(['16:9', '9:16', '1:1', '4:3', '3:4']) }).strict(),
   'vox:cancel': idSchema,
   'vox:asset': nonEmptyText(MAX_IPC_PATH),
   'vox:templates-list': z.void(),
@@ -1108,7 +1137,11 @@ export const ipcInputSchemas = {
   'task:create-and-run': createTaskSchema,
   'music-mv:update': musicMvTaskUpdateSchema,
   'task:list': taskHistoryListSchema,
+  'project:set-models': z.object({ id: idSchema, models: projectModelsSchema }).strict(),
   'task:set-favorite': z.object({ id: idSchema, isFavorite: z.boolean() }).strict(),
+  'project-cover:generate': z.object({ id: idSchema, prompt: nonEmptyText(4000) }).strict(),
+  'project-cover:import': idOnlySchema,
+  'project-cover:reset': idOnlySchema,
   'task:archive': governanceIdSchema,
   'task:restore': governanceIdSchema,
   'task:delete': governanceIdSchema,
@@ -1160,7 +1193,9 @@ export const ipcInputSchemas = {
   'task:media-url': z.object({ id: idSchema, path: pathSchema }).strict(),
   'asset:read-data-url': pathSchema,
   'local-image:select': z.literal('video-reference').optional(),
+  'pixelle:catalog': z.void(),
   'local-video:select': z.void(),
+  'short-video-materials:select': z.void(),
   'motion-comic-source:select': z.void(),
   'local-audio:select': z.enum(['managed-bgm', 'video-reference']).optional(),
   'local-subtitle-timestamps:select': z.void(),

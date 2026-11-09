@@ -155,7 +155,7 @@ export function validateProductionAudioTimeline(timeline: ProductionTimeline, as
       const envelope = clip.fadeEnvelope;
       const audible = Math.min(duration, clip.sourceDurationMs ?? duration);
       if (!productionAudioFadeEnvelopeSchema.safeParse(envelope).success || envelope.fadeInMs > envelope.durationMs || envelope.fadeOutMs > envelope.durationMs
-        || envelope.offsetMs + audible > envelope.durationMs || envelope.offsetMs > (clip.sourceStartMs ?? 0)) {
+        || envelope.offsetMs + audible > envelope.durationMs) {
         issues.push({ path: `${prefix}.fadeEnvelope`, message: 'Audio fade envelope is invalid.' });
       }
     }

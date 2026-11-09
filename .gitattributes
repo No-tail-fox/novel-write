@@ -1,1 +1,5 @@
 * text=auto eol=lf
+
+# Preserve pinned upstream bytes, including mixed original line endings.
+vendor/lemo-upstream/** -text
+vendor/pixelle-upstream/** -text

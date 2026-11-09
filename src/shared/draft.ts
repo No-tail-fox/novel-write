@@ -9,6 +9,8 @@ import { resolveOrdinaryTaskCoverPageText, resolveOrdinaryTaskCoverTitle } from 
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 
 export interface SceneAsset {
+  /** Measured media duration; never an LLM estimate. */
+  durationMs?: number;
   sceneId: number;
   path: string;
   borrowedFrom?: number;
@@ -81,14 +83,14 @@ export async function writeJianyingDraft(input: WriteJianyingDraftInput, options
   const subtitles = input.subtitles ?? buildSubtitleTrack(input.scenes, { maxCharsPerLine: template.caption.maxCharsPerLine });
   const title = safeDraftName(input.title || input.cover.title || 'storydream-draft');
   const draftDir = join(input.draftRootDir, uniqueDraftFolderName(title));
-  const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset');
   const videosByScene = await collectSceneVideoAssets(input.scenes, input.generatedVideos ?? []);
+  const imagesByScene = await collectSceneAssets(input.scenes, input.generatedImages, 'image asset', new Set(videosByScene.keys()));
   const audioByScene = await collectNarrationAssets(input.scenes, input.narrationAudio);
   const totalDuration = input.scenes.reduce((sum, scene) => sum + msToUs(scene.durationMs), 0);
 
   await mkdir(input.workDir, { recursive: true });
 
-  const sourceImages = input.scenes.map((scene) => imagesByScene.get(scene.id)!);
+  const sourceImages = input.scenes.flatMap((scene) => imagesByScene.has(scene.id) ? [imagesByScene.get(scene.id)!] : []);
   const sourceVideos = input.scenes.flatMap((scene) => videosByScene.get(scene.id) ? [videosByScene.get(scene.id)!] : []);
   const sourceNarration = input.scenes.flatMap((scene) => audioByScene.get(scene.id)!);
   const coverImagePath = input.coverImagePath?.trim() || '';
@@ -248,6 +250,7 @@ function createBridgePayload(input: {
       text: scene.cap,
       captions: sceneCues.map((cue) => cue.text),
       captionDurationsUs: sceneCues.map((cue) => msToUs(cue.endMs - cue.startMs)),
+      captionStartsUs: sceneCues.map((cue) => coverPageDurationUs + msToUs(cue.startMs) - startUs),
     };
   });
   const overlayText = resolveOverlayText(input.input, input.template);
@@ -383,7 +386,7 @@ function createBridgePayload(input: {
       },
     } : undefined,
     scenes,
-    images: input.input.scenes.map((scene, index) => ({ sceneId: scene.id, path: input.sourceImages[index].path })),
+    images: input.sourceImages.map((asset) => ({ sceneId: asset.sceneId, path: asset.path })),
     videos: input.sourceVideos.map((video) => ({
       sceneId: video.sceneId,
       path: video.path,
@@ -460,7 +463,7 @@ function createStoryboundSidecarPayload(input: {
       duration_us: input.coverPage.durationUs,
     } : undefined,
     assets: {
-      images: input.input.scenes.map((scene, index) => ({ scene_id: scene.id, path: input.sourceImages[index].path })),
+      images: input.sourceImages.map((asset) => ({ scene_id: asset.sceneId, path: asset.path })),
       videos: input.sourceVideos.map((video) => ({
         scene_id: video.sceneId,
         path: video.path,
@@ -523,11 +526,12 @@ async function writeDebugArtifacts(input: WriteJianyingDraftInput, subtitles: Su
   await writeFile(join(input.workDir, 'diagnostics.json'), JSON.stringify(diagnostics, null, 2), 'utf8');
 }
 
-async function collectSceneAssets(scenes: StoryboardScene[], assets: SceneAsset[], label: string): Promise<Map<number, SceneAsset>> {
+async function collectSceneAssets(scenes: StoryboardScene[], assets: SceneAsset[], label: string, optionalSceneIds = new Set<number>()): Promise<Map<number, SceneAsset>> {
   const result = new Map<number, SceneAsset>();
   for (const scene of scenes) {
     const asset = assets.find((item) => item.sceneId === scene.id);
-    if (!asset?.path) {
+    if (!asset?.path?.trim()) {
+      if (optionalSceneIds.has(scene.id)) continue;
       throw new Error(`Missing ${label} for scene ${scene.id}.`);
     }
     await assertReadableFile(asset.path, `${label} for scene ${scene.id}`);

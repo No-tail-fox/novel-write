@@ -41,10 +41,37 @@ export interface ReleaseManifest {
   validUntil: number;
 }
 
+export interface AnnouncementManifest {
+  schemaVersion: 1;
+  kind: 'announcement';
+  id: string;
+  category: 'update' | 'problem';
+  title: string;
+  body: string;
+  version: string | null;
+  createdAt: number;
+}
+
+// A separate signed protocol keeps strict v1 release clients compatible.
+export interface DifferentialManifest {
+  schemaVersion: 1;
+  kind: 'differential';
+  sequence: number;
+  version: string;
+  filename: string;
+  sha256: string;
+  sha512: string;
+  size: number;
+  blockmap: { sha256: string; size: number };
+  issuedAt: number;
+  validUntil: number;
+}
+
 export interface UpdateStatus {
   currentVersion: string;
   phase: 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'installing' | 'error';
   release: ReleaseManifest | null;
+  announcements: AnnouncementManifest[];
   downloaded: number;
   required: boolean;
   message: string;

@@ -28,6 +28,13 @@ describe('motion comic domain', () => {
     expect(() => splitMotionComicSourceEpisodes('文'.repeat(30_001))).toThrow(/MOTION_COMIC_SOURCE_EPISODE_TOO_LONG/);
   });
 
+  it('preserves a single explicit episode heading and every source line', () => {
+    const source = '序言\n第1集 最后一封信\n林夏：这封信，是你留下的吗？';
+    expect(splitMotionComicSourceEpisodes(source)).toEqual([
+      { title: '第1集 · 最后一封信', sourceText: source },
+    ]);
+  });
+
   it('creates a series-owned starter project without provider jobs', () => {
     const draft = createMotionComicDraft({
       id: 'comic-1',

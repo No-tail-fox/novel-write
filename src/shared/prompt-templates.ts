@@ -90,7 +90,7 @@ const placeholderAliases = new Map([
 
 export function selectTaskPromptTemplate(templates: PromptTemplate[], input: PromptTemplateSelectionInput): PromptTemplate | null {
   if (input.promptTemplateId) {
-    const explicit = templates.find((template) => template.id === input.promptTemplateId && template.type === 'task');
+    const explicit = templates.find((template) => template.id === input.promptTemplateId && template.type === 'task' && template.enabled !== false && (!template.channel || template.channel === 'story' || template.channel === 'shared'));
     if (explicit) return explicit;
   }
   const taskTemplates = sortTaskTemplatesForSelection(templates);
@@ -137,7 +137,7 @@ export function buildTaskPromptTemplateOptions(templates: PromptTemplate[], trac
 
 function sortTaskTemplatesForSelection(templates: PromptTemplate[]): PromptTemplate[] {
   return templates
-    .filter((template) => template.type === 'task')
+    .filter((template) => template.type === 'task' && template.enabled !== false && (!template.channel || template.channel === 'story' || template.channel === 'shared'))
     .map((template, index) => ({ template, index }))
     .sort((left, right) => {
       const priorityDelta = promptTemplatePriority(right.template) - promptTemplatePriority(left.template);
@@ -150,7 +150,7 @@ function sortTaskTemplatesForSelection(templates: PromptTemplate[]): PromptTempl
 }
 
 function promptTemplatePriority(template: PromptTemplate): number {
-  if (!template.isBuiltin) return 3;
+  if (!template.isBuiltin || template.builtinModified) return 3;
   if (template.origin === 'market') return 2;
   return 1;
 }
@@ -200,7 +200,13 @@ export function resolvePromptTemplateDefaultDraftTemplateId(
 }
 
 export function selectStepPromptTemplate(templates: PromptTemplate[], type: PromptStepTemplateType, taskTemplate?: PromptTemplate | null): PromptTemplate | null {
-  if (taskTemplate?.type === 'task') {
+  const stageOverrides = templates.filter(template => template.type === type && template.enabled !== false
+    && (!template.isBuiltin || template.builtinModified)
+    && (!template.channel || template.channel === 'story' || template.channel === 'shared')
+    && (!template.baseTrack || !taskTemplate || normalizeTaskTrack(template.baseTrack) === normalizeTaskTrack(taskTemplate.baseTrack)))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  if (stageOverrides.length && (!taskTemplate || (taskTemplate.isBuiltin && !taskTemplate.builtinModified))) return stageOverrides[0];
+  if (taskTemplate?.type === 'task' && taskTemplate.enabled !== false) {
     const taskStepPrompt = taskTemplate.stepPrompts?.[type];
     if (taskStepPrompt?.trim()) {
       return {
@@ -218,7 +224,9 @@ export function selectStepPromptTemplate(templates: PromptTemplate[], type: Prom
   }
   return templates
     .map((template, index) => ({ template, index }))
-    .filter(({ template }) => template.type === type)
+    .filter(({ template }) => template.type === type && template.enabled !== false
+      && (!template.channel || template.channel === 'story' || template.channel === 'shared')
+      && (!template.baseTrack || !taskTemplate || normalizeTaskTrack(template.baseTrack) === normalizeTaskTrack(taskTemplate.baseTrack)))
     .sort((left, right) => {
       const priorityDelta = promptTemplatePriority(right.template) - promptTemplatePriority(left.template);
       if (priorityDelta !== 0) return priorityDelta;

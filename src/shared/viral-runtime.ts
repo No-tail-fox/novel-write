@@ -1,6 +1,7 @@
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 import { fetchWithTimeout as fetchWithRequestTimeout } from './http';
+import { isCancellation, redactErrorText } from './app-error';
 import { buildResponsesRequestBody, createConfiguredJsonLlm, extractResponsesTextContent, type ConfiguredJsonLlm, type LlmMessage, type LlmJsonResult } from './llm-provider';
 import { llmEndpoint, resolveLlmProtocol } from './llm-protocol';
 import { readJsonBounded, readTextBounded } from './network-policy';
@@ -191,6 +192,7 @@ export async function transcribeViralAudio(audioPath: string, config: AppConfig,
   try {
     return await transcribeViralAudioWithOpenAiApi(audioPath, config, signal);
   } catch (error) {
+    if (isCancellation(error)) throw error;
     throw new Error(formatOpenAiTranscriptionError(error, config.speechToText));
   }
 }
@@ -293,8 +295,9 @@ export function parseOpenAiTranscriptionResult(payload: unknown): ViralTranscrip
     segments?: unknown;
     words?: unknown;
   };
+  const topLevelWords = normalizeTranscriptWords(body.words);
   if (Array.isArray(body.segments) && body.segments.length) {
-    return body.segments
+    const segments = body.segments
       .map((segment): ViralTranscriptSegment => {
         const source = segment && typeof segment === 'object' ? (segment as Record<string, unknown>) : {};
         return {
@@ -305,9 +308,28 @@ export function parseOpenAiTranscriptionResult(payload: unknown): ViralTranscrip
         };
       })
       .filter((segment) => segment.text || segment.words.length);
+    // Whisper verbose_json reports words next to segments, not inside them.
+    // Keep provider word times intact; assign a crossing word once, to the
+    // segment with greatest overlap, instead of discarding fine-grained timing.
+    const wordsBySegment = segments.map(() => [] as ViralTranscriptSegment['words']);
+    for (const word of topLevelWords) {
+      let owner = -1;
+      let greatestOverlap = 0;
+      segments.forEach((segment, index) => {
+        const overlap = Math.min(segment.end, word.end) - Math.max(segment.start, word.start);
+        if (overlap > greatestOverlap) {
+          owner = index;
+          greatestOverlap = overlap;
+        }
+      });
+      if (owner >= 0) wordsBySegment[owner].push(word);
+    }
+    return segments.map((segment, index) => ({
+      ...segment,
+      words: segment.words.length ? segment.words : wordsBySegment[index],
+    }));
   }
 
-  const topLevelWords = normalizeTranscriptWords(body.words);
   const text = String(body.text ?? '').trim();
   if (topLevelWords.length) {
     return [
@@ -358,7 +380,8 @@ function audioMimeType(path: string): string {
 }
 
 function formatOpenAiTranscriptionError(error: unknown, config: SpeechToTextConfig): string {
-  const detail = compactErrorText(stringifyError(error));
+  // User-facing diagnostics need the provider message, never stack frames or credentials.
+  const detail = compactErrorText(redactErrorText(error instanceof Error ? error.message : stringifyError(error)));
   if (/未配置/.test(detail)) return detail;
   const defaultBaseUrl = config.provider === 'siliconflow' ? SILICONFLOW_STT_BASE_URL : 'https://api.openai.com/v1';
   const endpoint = `${normalizeOpenAiBaseUrl(config.baseUrl || defaultBaseUrl, defaultBaseUrl)}/audio/transcriptions`;
