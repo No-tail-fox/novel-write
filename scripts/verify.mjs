@@ -7,12 +7,16 @@
  *   node scripts/verify.mjs            # everything
  *   node scripts/verify.mjs --ci       # no local vendor trees: skip upstream check, tolerate vendor-only tests
  *   node scripts/verify.mjs --fast     # skip vitest
- *   node scripts/verify.mjs --update-baseline   # rewrite known-failures.json from this run (use sparingly)
+ *   node scripts/verify.mjs --update-baseline   # drop FIXED entries from known-failures.json (shrink only; new failures still fail)
+ *
+ * The vitest step only trusts a complete report written by this run (see scripts/verify-vitest-gate.mjs).
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evaluateVitestGate } from './verify-vitest-gate.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
@@ -45,34 +49,36 @@ step('eslint', process.execPath, ['node_modules/eslint/bin/eslint.js', 'src', 'e
 
 if (!args.has('--fast')) {
   const out = join(root, '.artifacts', 'verify', 'vitest.json');
+  const sidecarPath = join(root, '.artifacts', 'verify', 'vitest-run.json');
   mkdirSync(dirname(out), { recursive: true });
-  step('vitest (full)', process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=4', '--reporter=dot', '--reporter=json', `--outputFile.json=${out}`]);
-  const vitestResult = results.at(-1);
-  if (existsSync(out)) {
-    const report = JSON.parse(readFileSync(out, 'utf8'));
-    const failed = [];
-    for (const file of report.testResults ?? []) {
-      const rel = relative(root, file.name).replaceAll('\\', '/');
-      const cases = (file.assertionResults ?? []).filter(item => item.status === 'failed');
-      if (!cases.length && file.status === 'failed') failed.push(`${rel} > (file failed to run)`);
-      for (const item of cases) failed.push(`${rel} > ${item.fullName ?? item.title}`);
-    }
-    const baselinePath = join(root, 'tests/known-failures.json');
-    const baseline = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, 'utf8')) : { failures: [], requiresLocalVendor: [] };
-    const known = new Set(baseline.failures);
-    const vendorOnly = new Set(baseline.requiresLocalVendor ?? []);
-    const unexpected = failed.filter(id => !known.has(id) && !(ci && !vendorPresent && vendorOnly.has(id.split(' > ')[0])));
-    const fixed = baseline.failures.filter(id => !failed.includes(id));
-    if (args.has('--update-baseline')) {
-      writeFileSync(baselinePath, `${JSON.stringify({ ...baseline, failures: [...new Set(failed)].sort() }, null, 2)}\n`);
-      console.log(`[verify] baseline rewritten with ${failed.length} failures.`);
-    }
-    console.log(`\n[verify] vitest: ${failed.length} failing, ${known.size} in baseline, ${unexpected.length} new, ${fixed.length} fixed.`);
-    for (const id of unexpected) console.log(`  NEW  ${id}`);
-    for (const id of fixed) console.log(`  FIXED (remove from tests/known-failures.json)  ${id}`);
-    // Exit status also reflects baseline failures; the gate is "no new failures".
-    vitestResult.ok = unexpected.length === 0 && (report.numTotalTests ?? 0) > 0;
+  // Never let a previous run's files stand in for this one.
+  rmSync(out, { force: true });
+  rmSync(sidecarPath, { force: true });
+  const nonce = randomUUID();
+  const started = Date.now();
+  process.stdout.write('\n[verify] vitest (full)\n');
+  const run = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=4', '--reporter=dot', '--reporter=json',
+    '--reporter=./scripts/verify-vitest-reporter.mjs', `--outputFile.json=${out}`], {
+    cwd: root, stdio: 'inherit', windowsHide: true, env: { ...process.env, VERIFY_VITEST_NONCE: nonce, VERIFY_VITEST_SIDECAR: sidecarPath },
+  });
+  const readJson = (path) => { try { return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null; } catch { return null; } };
+  const baselinePath = join(root, 'tests/known-failures.json');
+  const baseline = readJson(baselinePath) ?? { failures: [], requiresLocalVendor: [] };
+  const gate = evaluateVitestGate({
+    run: { status: run.status, signal: run.signal, error: run.error }, report: readJson(out), sidecar: readJson(sidecarPath),
+    nonce, spawnedAtMs: started, root, baseline, tolerateVendorOnly: ci && !vendorPresent, updateBaseline: args.has('--update-baseline'),
+  });
+  if (gate.nextBaseline) {
+    writeFileSync(baselinePath, `${JSON.stringify(gate.nextBaseline, null, 2)}\n`);
+    console.log(`[verify] baseline rewritten with ${gate.nextBaseline.failures.length} failures (shrink only).`);
   }
+  for (const note of gate.notes) console.log(`[verify] ${note}`);
+  for (const problem of gate.problems) console.log(`  ERROR  ${problem}`);
+  console.log(`\n[verify] vitest: ${gate.failed.length} failing, ${(baseline.failures ?? []).length} in baseline, ${gate.unexpected.length} new, ${gate.fixed.length} fixed.`);
+  for (const id of gate.unexpected) console.log(`  NEW  ${id}`);
+  for (const id of gate.fixed) console.log(`  FIXED (remove from tests/known-failures.json)  ${id}`);
+  // Exit status also reflects baseline failures; the gate is "complete report of this run + no new failures".
+  results.push({ name: 'vitest (full)', ok: gate.ok, seconds: Math.round((Date.now() - started) / 1000) });
 }
 
 console.log('\n[verify] summary');
