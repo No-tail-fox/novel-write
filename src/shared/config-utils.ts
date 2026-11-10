@@ -3,6 +3,7 @@ import { llmEndpoint, resolveLlmProtocol } from './llm-protocol';
 import { normalizeImageGenerationQuality } from './image-quality';
 import { VIDEO_MODEL_PRESETS } from './video-models';
 import { normalizeOpenAiImageBaseUrl } from './openai-image-config';
+import { normalizeFallbackModels } from './model-capabilities';
 import {
   isArkModelApiKey,
   normalizeVolcengineTtsApiSettings,
@@ -41,8 +42,11 @@ function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number):
   const merged = { ...defaultConfig.llm, ...profile };
   const id = profile.id?.trim() || buildLlmProfileId(merged, index);
   const protocol = resolveLlmProtocol(merged);
+  const fallbackModels = normalizeFallbackModels(String(merged.model ?? ''), merged.fallbackModels);
+  const { fallbackModels: _ignored, ...rest } = merged;
   return {
-    ...merged,
+    ...rest,
+    ...(fallbackModels.length ? { fallbackModels } : {}),
     id,
     name: profile.name?.trim() || defaultLlmProfileName(merged, index),
     provider: normalizeLlmProvider(merged),

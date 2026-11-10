@@ -93,7 +93,7 @@ import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { assertNetworkUrl } from '../src/shared/network-policy';
 import { createPersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset, recyclePersonAsset, restoreRecycledPersonAsset } from '../src/shared/person-assets';
-import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, testConfiguredLlm } from '../src/shared/llm-provider';
+import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, onLlmModelFallback, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, DEFAULT_WEB_SEARCH_PROVIDERS, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
@@ -6865,6 +6865,8 @@ async function shutdownApplication(): Promise<void> {
 }
 
 if (isPrimaryInstance) {
+  // G-1: a model switch is never silent; results also carry modelUsed/modelFallbacks.
+  onLlmModelFallback((event) => console.warn('[llm-fallback]', `${event.name}: ${event.from} → ${event.to} (${event.label})`));
   app.whenReady().then(async () => {
     setDefaultPythonRuntimeAppRoot(app.getAppPath());
     registerHtmlVideoMediaProtocol();

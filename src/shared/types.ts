@@ -61,6 +61,8 @@ export interface LlmConfig {
   proxyUrl: string;
   timeoutMs?: number;
   requestParamsJson?: string;
+  /** G-1: same endpoint/key, tried in order after a definitive model refusal (model not found, no channel, overload). */
+  fallbackModels?: string[];
 }
 
 export interface LlmModelTestResult {

@@ -191,6 +191,7 @@ const llmConfigSchema = bounded(
       proxyUrl: z.string().max(MAX_IPC_TEXT),
       timeoutMs: z.number().finite().int().positive().max(3_600_000).optional(),
       requestParamsJson: optionalText(262_144),
+      fallbackModels: z.array(z.string().max(200)).max(8).optional(),
     })
     .strict(),
 );

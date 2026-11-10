@@ -7,6 +7,7 @@ import { DEFAULT_IMAGE_REQUEST_TIMEOUT_MS, defaultConfig } from "../../shared/co
 import { LLM_PROTOCOL_OPTIONS, resolveLlmProtocol, type LlmProtocol } from '../../shared/llm-protocol';
 import { Button, IconButton, SelectField, SliderField } from '../../ui';
 import { ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
+import { describeModelCapabilities } from '../../shared/model-capabilities';
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import {
   ConfigInput,
@@ -265,6 +266,12 @@ export function LlmProfileManager({
             />
           </>
         )}
+        <ConfigInput
+          label="备选模型（逗号分隔，最多 4 个）"
+          value={(selectedProfile.fallbackModels ?? []).join(',')}
+          onChange={(value) => updateSelectedProfile({ ...selectedProfile, fallbackModels: value.split(/[,，]/u) })}
+        />
+        <ProviderConfigNote title="模型能力档案" value={describeModelCapabilities(selectedProfile.model, selectedProfile.fallbackModels)} />
       </div>
     </div>
   );

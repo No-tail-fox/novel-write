@@ -5,7 +5,8 @@ import { NetworkPolicyError, readJsonBounded, readTextBounded, type NetworkFetch
 import { llmEndpoint, resolveLlmProtocol, type LlmProtocol } from './llm-protocol';
 import { LlmTextStream } from './llm-text-stream';
 import { LLM_RESPONSE_MAX_BYTES } from './llm-response-limits';
-import { parseRetryAfterMs } from './provider-failure';
+import { classifyProviderFailure, parseRetryAfterMs, type ProviderFailureKind } from './provider-failure';
+import { normalizeFallbackModels } from './model-capabilities';
 import type { NetworkFetchOptions } from './network-policy';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
@@ -49,6 +50,9 @@ export interface LlmJsonResult<T = unknown> {
   requestId: string | null;
   finishReason?: string | null;
   usage?: Record<string, unknown>;
+  /** Set only when a fallback model produced this result (G-1). */
+  modelUsed?: string;
+  modelFallbacks?: LlmModelFallbackEvent[];
 }
 
 export interface BaseLlmTextRequest {
@@ -84,6 +88,8 @@ export interface LlmTextResult {
   text: string;
   raw: string;
   requestId: string | null;
+  modelUsed?: string;
+  modelFallbacks?: LlmModelFallbackEvent[];
 }
 
 export type JsonLlm = <T = unknown>(request: LlmJsonRequest) => Promise<LlmJsonResult<T>>;
@@ -139,18 +145,69 @@ export class LlmJsonParseError extends Error {
 
 
 
+/** G-1: one model switch, recorded so the user can see that a different model produced the result (U-4). */
+export interface LlmModelFallbackEvent {
+  step: number;
+  name: string;
+  from: string;
+  to: string;
+  reason: ProviderFailureKind;
+  status?: number;
+  label: string;
+  at: string;
+}
+
+const modelFallbackListeners = new Set<(event: LlmModelFallbackEvent) => void>();
+
+export function onLlmModelFallback(listener: (event: LlmModelFallbackEvent) => void): () => void {
+  modelFallbackListeners.add(listener);
+  return () => { modelFallbackListeners.delete(listener); };
+}
+
+/**
+ * Walk `config.fallbackModels` only for definitive, model-specific refusals (model not found,
+ * channel unavailable, overload after retries). Unknown outcomes and parse failures are never moved
+ * to another model, and a profile without fallbacks keeps its exact previous behaviour.
+ */
+type FallbackRunner = (request: { step: number; name: string; signal?: AbortSignal }) => Promise<object>;
+
+function withModelFallback<F>(config: LlmConfig, build: (config: LlmConfig) => F): F {
+  const models = config.fallbackModels?.length ? [config.model, ...normalizeFallbackModels(config.model, config.fallbackModels)] : [config.model];
+  if (models.length === 1) return build(config);
+  const runners = models.map((model) => build({ ...config, model }) as unknown as FallbackRunner);
+  const run: FallbackRunner = async (request) => {
+    const events: LlmModelFallbackEvent[] = [];
+    for (let index = 0; ; index += 1) {
+      try {
+        const result = await runners[index](request);
+        return events.length ? { ...result, modelUsed: models[index], modelFallbacks: events } : result;
+      } catch (error) {
+        if (index === models.length - 1 || request.signal?.aborted) throw error;
+        const failure = classifyProviderFailure({ error });
+        if (!failure.fallback || failure.outcome !== 'rejected') throw error;
+        const event: LlmModelFallbackEvent = { step: request.step, name: request.name, from: models[index], to: models[index + 1], reason: failure.kind, ...(failure.status ? { status: failure.status } : {}), label: failure.label, at: new Date().toISOString() };
+        events.push(event);
+        for (const listener of modelFallbackListeners) {
+          try { listener(event); } catch { /* observers must not break generation */ }
+        }
+      }
+    }
+  };
+  return run as unknown as F;
+}
+
 export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
-  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: createResponsesJsonLlm(config) };
+  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: withModelFallback(config, createResponsesJsonLlm) };
   return isAnthropicLlmConfig(config)
-    ? { protocol: 'anthropic', run: createAnthropicMessagesJsonLlm(config) }
-    : { protocol: 'openai', run: createOpenAiCompatibleJsonLlm(config) };
+    ? { protocol: 'anthropic', run: withModelFallback(config, createAnthropicMessagesJsonLlm) }
+    : { protocol: 'openai', run: withModelFallback(config, createOpenAiCompatibleJsonLlm) };
 }
 
 export function createConfiguredTextLlm(config: LlmConfig): ConfiguredTextLlm {
-  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: createResponsesTextLlm(config) };
+  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: withModelFallback(config, createResponsesTextLlm) };
   return isAnthropicLlmConfig(config)
-    ? { protocol: 'anthropic', run: createAnthropicMessagesTextLlm(config) }
-    : { protocol: 'openai', run: createOpenAiCompatibleTextLlm(config) };
+    ? { protocol: 'anthropic', run: withModelFallback(config, createAnthropicMessagesTextLlm) }
+    : { protocol: 'openai', run: withModelFallback(config, createOpenAiCompatibleTextLlm) };
 }
 
 export function createOpenAiCompatibleJsonLlm(config: LlmConfig): OpenAiCompatibleJsonLlm {
