@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compileVoxCode, VoxTemplateStore, prepareVoxHtml } from '../electron/vox-animation-runtime';
@@ -49,7 +49,13 @@ describe('VOX animation integration',()=>{
   });
   it('never trusts cached compiled code on export',async()=>{
     const a=createVoxAnimation('标题');a.mode='code';a.code={source,compiled:'throw new Error("poison-cache")',prompt:''};
-    const html=await prepareVoxHtml('dist-electron/electron/vox-animation-runtime.js',{animation:a,width:960,height:540,durationMs:2000,fps:24,assets:[],cues:[]});
-    expect(html).not.toContain('poison-cache');expect(html).toContain('Content-Security-Policy');expect(voxAnimationSchema.parse(a).mode).toBe('code');
+    // Recompilation must not depend on an existing dist-electron build.
+    const dir=await mkdtemp(join(tmpdir(),'vox-runtime-test-'));
+    try {
+      const runtimePath=join(dir,'runtime.js');
+      await writeFile(runtimePath,'/* runtime fixture: compilation is tested independently */','utf8');
+      const html=await prepareVoxHtml(runtimePath,{animation:a,width:960,height:540,durationMs:2000,fps:24,assets:[],cues:[]});
+      expect(html).not.toContain('poison-cache');expect(html).toContain('Content-Security-Policy');expect(voxAnimationSchema.parse(a).mode).toBe('code');
+    } finally { await rm(dir,{recursive:true,force:true}); }
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assertLemoSdkProviderProtocol, LEMO_AGENT_PLUGIN_NAME, LEMO_AGENT_SKILL_NAME, LEMO_AGENT_SDK_VERSION } from '../src/shared/lemo-agent-sdk';
@@ -48,7 +48,7 @@ describe('official Lemo SDK boundary', () => {
     await expect(prepareLemoStateDirectory({ version: 1, action: 'probe', runRoot: run, upstreamRoot: resolve('vendor/lemo-upstream') }, 'worker-state')).rejects.toThrow('LEMO_SDK_STATE_LINK');
     await expect(readFile(join(target, 'home'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
-  it('verifies all three actual upstream plugin hashes', async () => expect(await verifyPinnedLemoPlugin(resolve('vendor/lemo-upstream'))).toBe(resolve('vendor/lemo-upstream/plugin')));
+  it('verifies all three actual upstream plugin hashes', async () => expect(await verifyPinnedLemoPlugin(resolve('vendor/lemo-upstream'))).toBe(await realpath(resolve('vendor/lemo-upstream/plugin'))));
   it('rejects additional plugin hooks rather than executing them', async () => {
     const root = await fixture();
     await cp(resolve('vendor/lemo-upstream/plugin'), join(root, 'plugin'), { recursive: true });
