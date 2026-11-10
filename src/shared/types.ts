@@ -2518,6 +2518,18 @@ export interface BootstrapState {
   account: AccountProfile;
   activation: ActivationState;
   ui: UiPreferences;
+  /** Present only in the process run that quarantined a malformed database at startup. */
+  databaseRecovery?: DatabaseRecoveryEvent;
+}
+
+/** Startup fallback for a malformed database file. The quarantined file is never deleted. */
+export interface DatabaseRecoveryEvent {
+  kind: 'malformed-database';
+  /** Absolute path of the original file after it was renamed to `*.malformed`. */
+  quarantinedPath: string;
+  detectedAt: string;
+  /** True when a validated `*.tmp` snapshot replaced it; false when a new empty database was created. */
+  tempRecovered: boolean;
 }
 
 export type AppStatePatch =

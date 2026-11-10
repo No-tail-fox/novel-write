@@ -1,7 +1,7 @@
 import { resolveShortVideoMaterials, shortVideoMaterialsSchema } from './short-video-materials';
 import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
 import { defaultProjectModels, projectModelsSchema, validateProjectModels } from './project-models';
-import type { ProjectModels } from './types';
+import type { DatabaseRecoveryEvent, ProjectModels } from './types';
 import { createMusicMvDocument } from './music-mv-production';
 import { rebaseArtifactPathText } from './artifact-paths';
 import { preparePromptTemplateSave } from './workflow-prompt-runtime';
@@ -779,9 +779,12 @@ async function removeStaleDatabaseTemps(file: string, dependencies: FileDatabase
   }
 }
 
-async function quarantineMalformedDatabase(file: string, dependencies: FileDatabaseDependencies): Promise<void> {
+async function quarantineMalformedDatabase(file: string, dependencies: FileDatabaseDependencies): Promise<string> {
   const suffix = `${Date.now()}-${randomUUID()}.malformed`;
-  await dependencies.replaceFile(file, `${file}.${suffix}`);
+  const quarantined = `${file}.${suffix}`;
+  // Rename only: the quarantined copy is the user's last chance to recover data and is never deleted.
+  await dependencies.replaceFile(file, quarantined);
+  return quarantined;
 }
 
 function mergeConfig(input: unknown): AppConfig {
@@ -863,6 +866,12 @@ export class FileDatabase {
   private closed = false;
   private closePromise: Promise<void> | null = null;
   private themePreferenceUnversionedAtOpen = false;
+  private recoveryEvent: DatabaseRecoveryEvent | null = null;
+
+  /** Startup recovery from a malformed database file in this process run, if any. */
+  getRecoveryEvent(): DatabaseRecoveryEvent | null {
+    return this.recoveryEvent ? { ...this.recoveryEvent } : null;
+  }
 
   private constructor(
     private readonly file: string,
@@ -878,6 +887,7 @@ export class FileDatabase {
     const dependencies = resolveFileDatabaseDependencies(overrides);
     let database: Database | null = null;
     let primaryExists = true;
+    let quarantinedPath: string | null = null;
     try {
       database = openValidatedDatabase(SQL, await dependencies.readFile(file));
     } catch (error) {
@@ -886,7 +896,7 @@ export class FileDatabase {
       } else if (error && typeof error === 'object' && 'code' in error) {
         throw error;
       } else {
-        await quarantineMalformedDatabase(file, dependencies);
+        quarantinedPath = await quarantineMalformedDatabase(file, dependencies);
         primaryExists = false;
       }
     }
@@ -894,9 +904,16 @@ export class FileDatabase {
     if (!database && !primaryExists) {
       database = await recoverDatabaseTemp(file, SQL, dependencies);
     }
+    const recoveryEvent: DatabaseRecoveryEvent | null = quarantinedPath
+      ? { kind: 'malformed-database', quarantinedPath: resolve(quarantinedPath), detectedAt: new Date().toISOString(), tempRecovered: database !== null }
+      : null;
     database ??= new SQL.Database();
+    if (recoveryEvent) {
+      console.warn(`[storage] Malformed database quarantined to ${recoveryEvent.quarantinedPath}; ${recoveryEvent.tempRecovered ? 'restored the latest validated temp snapshot' : 'created a new empty database'}.`);
+    }
 
     const instance = new FileDatabase(file, resolve(artifactDirectory), database, SQL, dependencies, defaultPromptTemplates);
+    instance.recoveryEvent = recoveryEvent;
     try {
       instance.migrate();
       await instance.persist();

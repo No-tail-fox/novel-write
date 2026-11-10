@@ -65,7 +65,7 @@
 | G-3 | **✅ 已实现（模板/HTML 路线补齐；VOX/Lemo 沿用节点回执）**：`src/shared/llm-receipt-ledger.ts` 在任务目录写 `llm-receipts.jsonl`，每次付费 LLM 调用**发出前**记 `submitted`、结束后记 `settled`（received/rejected/unknown/not-sent，含 requestId、响应 sha256、usage，绝不存提示词/响应/密钥）；发现“已发出但从未结算”（应用中途退出）的同一请求时先拒绝一次并报 `PROVIDER_RESULT_UNKNOWN`，用户核对后再重试才会重发；日志写不进去不影响生成。幂等以“请求指纹”实现，没有向中转站发 Idempotency-Key 头（多数中转站不支持）【未核实】。测试 `tests/llm-receipt-ledger.test.ts`。原条目：**回执先于解析 + 幂等 key（全路线）**；`unknown` 时先查回执，再决定是否重发 | 账本只在没接生产的 `services/lemo-agent-worker/request-ledger.ts`、`messages-gateway.ts`；Lemo 规划回执在 `electron/lemo-plan-receipt.ts`；VOX 的 unknown 要人工触发 `retry-unknown`（`electron/vox-production-service.ts:163`）。路线图 P0-3（`:137`） | P0 | L | G-2 |
 | G-4 | **✅ 已实现**：`describeErrorCause` 沿 cause 链取消息/系统码/主机/HTTP 状态（脱敏、≤400 字），runner 失败消息变为 `HTML video <step> step failed: <原因>`，不改 `normalizeAppError` 语义（`tests/error-cause.test.ts`）。原条目：**HTML runner 保留底层错误**（附主机、错误码） | `src/shared/html-video-runner.ts:457-460` 用 `HTML video ${step} step failed.` 当默认值；**根因**在 `src/shared/app-error.ts:72-76`：普通 Error 如果没有 `CODE:` 前缀，`message = coded?.[2] \|\| defaults.message`，原始消息直接丢掉。建议在 runner 里把原因附在 `cause`/diagnostic 上，不要改全局 `normalizeAppError` 的语义（会影响所有调用方） | P0 | S | — |
 | G-5 | **✅ 已实现（代理项除外）**：`src/shared/tts-segment-synthesis.ts` 给 MiniMax/火山 legacy/火山 V3 加了分段并发上限（默认 2，可设 1–6，结果保序，首个失败中止同批）和逐段重试（按 G-2 分类器，最多 3 次，指数退避+抖动，遵守 Retry-After；鉴权/欠费/请求错误/审核/取消不重试；V3 每次新 request id，legacy 重试 reqid 加后缀；`TTS_RESPONSE_INCOMPLETE` 仍不重发）。测试 `tests/tts-segment-synthesis.test.ts`。**代理/直连未做**：全仓 `proxyUrl` 只存在于配置和界面，没有任何请求真正使用它（network-policy 不读代理），需要单独设计网络代理通道【未核实火山并发额度是否容许 2 路】。原条目：**TTS 链路加固**：单段并发上限、断线自动重试、代理/直连可配置 | 路线图 P0-5（`:139`）；实跑出现 ECONNRESET（`route-split…md:101,119`）。代理配置项是否已有【未核实】 | P0 | M | G-2 |
-| G-6 | **默认模型决策**：`claude-sonnet-5-5` 在 moeapi 当前 key 分组下返回 404，要么换分组，要么默认改成 `gemini-3.1-pro-preview` | `route-split…md:100`；`technical-roadmap.md:207-209`。代码里没有写死这个模型，问题在用户配置 | P0 | S | 需要用户决策 |
+| G-6 | **部分实现（决策待用户，ADR-11）**：不改用户默认模型；新增 `recommendFallbackModels`，从该端点拉到的模型清单里推荐同族、同档或更强的聊天模型，设置页在没有备选时提供“填入推荐备选”一键填入，配合 G-1 自动降级。默认模型换不换由用户决定。原条目：**默认模型决策**：`claude-sonnet-5-5` 在 moeapi 当前 key 分组下返回 404，要么换分组，要么默认改成 `gemini-3.1-pro-preview` | `route-split…md:100`；`technical-roadmap.md:207-209`。代码里没有写死这个模型，问题在用户配置 | P0 | S | 需要用户决策 |
 | G-7 | **unknown 节点自动策略 + 统一重试预算**（VOX DAG 和 HTML runner 两套） | `technical-roadmap.md:100,120`；P2-2 | P1 | M | G-3 |
 | G-8 | **✅ 已实现**：生图 524/504（中转站约 100 s 空闲断开）统一成 `IMAGE_RESULT_UNKNOWN:` 报错——说明图片可能已生成并计费、不会自动重发、建议核对后台或改用异步模式/降低分辨率；`isDefinitiveImageProviderFailure` 对它恒为 false（VOX/Lemo 节点保持 unknown），HTML 路线错误码为 `IMAGE_PROVIDER_RESULT_UNKNOWN`，界面摘要“生图网关超时断开，图片可能已生成并计费，未自动重发”。测试在 `tests/image-provider-error.test.ts`。原条目：**vllmproxy 524 的空闲超时兜底**（生图），结果未知时不自动重发 | `route-split…md:102,120`；基础设计 S1（`code-video-foundation.md:431`） | P1 | S | G-2、G-3 |
 | G-9 | 中转站能力探测：是否支持 `stream_options.include_usage`、reasoning/thinking、提示缓存，以及约 100 s 断流 | `code-video-foundation.md:482`（§13.4）；Lemo 成本取决于缓存（`lemo-faithful-mode.md:196`） | P3 | S | G-1 |
@@ -132,10 +132,10 @@
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
-| O-1 | **去掉整文档快照**：VOX 每个节点写 `{before: 整个文档, result}`；Lemo 每轮写一份 `journal.film` | `electron/main.ts:3221-3223`；`electron/lemo-upstream-agent.ts:255`；`technical-roadmap.md:118`（单个 100–120 KB × 每节点），`code-video-foundation.md:432`（约 1.45 GB） | P1（路线图 P2-3） | M | 恢复逻辑 `main.ts:3225-3231` 依赖 `before` 计算输入 hash，要一起改 |
+| O-1 | **✅ 已实现**：VOX 节点回执新格式 `{version:2, beforeHash, result}`（哈希算法与原 stripJournal+voxInputHash 一致，旧回执带 `before` 照常续跑）；Lemo 每轮 `turn-XXXX/result.json` 不再重复存 message，恢复时从 journal 拼回并用 `filmHash` 校验，旧格式照常读取。新文件 `electron/vox-production-receipt.ts`，测试 `tests/production-receipts.test.ts`。真实旧项目续跑与磁盘降幅【未核实】。原条目：**去掉整文档快照**：VOX 每个节点写 `{before: 整个文档, result}`；Lemo 每轮写一份 `journal.film` | `electron/main.ts:3221-3223`；`electron/lemo-upstream-agent.ts:255`；`technical-roadmap.md:118`（单个 100–120 KB × 每节点），`code-video-foundation.md:432`（约 1.45 GB） | P1（路线图 P2-3） | M | 恢复逻辑 `main.ts:3225-3231` 依赖 `before` 计算输入 hash，要一起改 |
 | O-2 | VideoSpec/Timeline 统一数据模型（只用于新项目） | grep `VideoSpec` 为 0；`technical-roadmap.md:165` | P2 | L | — |
 | O-3 | 统一执行器（场景并行、失败隔离、先配音后分镜） | `technical-roadmap.md:166`；目前是两套：`electron/vox-production-runtime.ts` 和 `src/shared/html-video-runner.ts` | P2 | L | O-2、G-7 |
-| O-4 | 数据库损坏的兜底：先隔离到 `.malformed`，再尝试恢复 temp，都失败就**静默开一个空库** | `src/shared/storage.ts:883-897`。UI 有没有提示用户【未核实】 | P2 | S | — |
+| O-4 | **✅ 已实现**：损坏库只重命名隔离、从不删除，并记录恢复事件（隔离路径、时间、是否从临时文件恢复）；经现有 `getBootstrap` 的 `databaseRecovery` 传到前端，显示一次性红色提示（同一隔离文件只提示一次）。测试 `tests/database-recovery.test.ts`。Electron 实机界面【未核实】。原条目：数据库损坏的兜底：先隔离到 `.malformed`，再尝试恢复 temp，都失败就**静默开一个空库** | `src/shared/storage.ts:883-897`。UI 有没有提示用户【未核实】 | P2 | S | — |
 | O-5 | 大文件拆分：`electron/main.ts` 6891 行、`src/shared/storage.ts` 5308、`src/shared/runner.ts` 3225、`electron/editorial-qa.ts` 3206、`electron/html-video-runtime.ts` 2700。`main.ts` 也是 B 类测试脆弱的根源 | 行数统计 | P3 | L | T-2 |
 | O-6 | 评估 better-sqlite3（先把大字段移出） | `code-video-foundation.md:446` | P3 | M | O-1 |
 
@@ -161,7 +161,7 @@
 | Q-4 | 本地模拟中转站做故障注入测试（ECONNRESET、TLS、524、429、截断） | P0-2 验收 `technical-roadmap.md:136`；`code-video-foundation.md:399` | P0 | M | G-2 |
 | Q-5 | 黄金帧测试、适配器契约测试 | `code-video-foundation.md:386-397` | P2 | M | E-2 |
 | Q-6 | 真实回归集（每条路线 2–3 个固定题材，人工触发，有预算，归档成片和响度），以 2026-11-10 那轮为第一版基线 | `technical-roadmap.md:187`；`code-video-foundation.md:421` | P3 | M | U-5 |
-| Q-7 | `licensing.test.ts` 在并行负载下不稳定 | 已知 | P2 | S | — |
+| Q-7 | **✅ 已修**：根因是租约过期测试只伪造了 Date，而 `LicenseService.now()` 还读真实 `performance.now()`，且 service 在伪造计时器前创建；现同时伪造 performance 并先伪造后创建。TLS 组同步调用 python，单独给 60 s。`vitest.config.ts` 全局 testTimeout 20 s / hookTimeout 30 s（高负载下 sql.js 用例偶发超 5 s）。断言未改；全量 4481 个通过，并发负载下 licensing 连跑 5 次全过。原条目：`licensing.test.ts` 在并行负载下不稳定 | 已知 | P2 | S | — |
 
 ### 2.7 打包发布
 

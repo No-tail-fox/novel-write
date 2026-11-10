@@ -370,17 +370,38 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
     observation = `Tool rejected; no success claimed: ${error instanceof Error ? error.message : String(error)}. Read actual files and correct the next action.`;
   }
   journal.turns.push({ index, reply: response.text, observation, tool, modelRequestId: response.requestId });
-  journal.film = { ...journal.film, turn: index, lastTool: tool, message: observation.slice(0, 12000) };
+  journal.film = { ...journal.film, turn: index, lastTool: tool, message: observation.slice(0, LEMO_TURN_MESSAGE_LIMIT) };
   await atomic(journalPath, journal);
-  await atomic(join(turnDir, 'result.json'), journal.film);
+  await atomic(join(turnDir, 'result.json'), lemoTurnReceipt(journal.film, index));
   return journal.film;
 }
 
+/**
+ * Per-turn receipt v2. The film's `message` (up to 12 000 chars) is exactly the journal turn's observation
+ * prefix, so it is not duplicated per turn; recovery rebuilds it from journal.json and checks `filmHash`.
+ * Legacy turn receipts (a bare film) remain readable.
+ */
+interface LemoTurnReceipt { receipt: 'lemo-turn'; version: 2; turn: number; filmHash: string; film: LemoUpstreamFilm }
+const LEMO_TURN_MESSAGE_LIMIT = 12000;
+const lemoFilmHash = (film: LemoUpstreamFilm) => hash(JSON.stringify(film));
+function lemoTurnReceipt(film: LemoUpstreamFilm, turn: number): LemoTurnReceipt {
+  // Overwriting the existing key keeps its position, so the rebuilt film hashes identically.
+  return { receipt: 'lemo-turn', version: 2, turn, filmHash: lemoFilmHash(film), film: { ...film, message: '' } };
+}
+const isLemoTurnReceipt = (value: unknown): value is LemoTurnReceipt => (value as LemoTurnReceipt | undefined)?.receipt === 'lemo-turn';
+
 /** Free recovery: a caller must never dispatch another model request to recover an acknowledged turn. */
 export async function recoverLemoUpstreamAgentTurn(root: string, index: number): Promise<LemoUpstreamFilm | undefined> {
-  const result = await readOptional<LemoUpstreamFilm>(join(root, `turn-${String(index).padStart(4, '0')}`, 'result.json'));
-  if (result) return result;
+  const stored = await readOptional<LemoUpstreamFilm | LemoTurnReceipt>(join(root, `turn-${String(index).padStart(4, '0')}`, 'result.json'));
+  if (stored && !isLemoTurnReceipt(stored)) return stored;
   const journal = await readOptional<Journal>(join(root, 'journal.json'));
+  if (stored) {
+    const turn = journal?.turns.find(item => item.index === index);
+    if (turn) {
+      const film = { ...stored.film, message: turn.observation.slice(0, LEMO_TURN_MESSAGE_LIMIT) };
+      if (lemoFilmHash(film) === stored.filmHash) return film;
+    }
+  }
   return journal?.film.turn === index ? journal.film : undefined;
 }
 export async function assertLemoUpstreamFilmCurrent(film: LemoUpstreamFilm, durationSeconds: number) {

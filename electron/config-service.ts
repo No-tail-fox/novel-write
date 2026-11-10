@@ -21,6 +21,7 @@ import type {
   BootstrapState,
   CursorPage,
   CursorRequest,
+  DatabaseRecoveryEvent,
   DraftTemplateSummary,
   HistoryListInput,
   HistoryPage,
@@ -49,6 +50,8 @@ export interface ConfigDatabase {
     config: AppConfig,
     options?: { legacyThemeCandidate?: boolean },
   ) => Promise<ThemePreferencePair>;
+  /** Malformed-database fallback recorded when the database was opened (FileDatabase). */
+  getRecoveryEvent?: () => DatabaseRecoveryEvent | null;
 }
 
 export interface ConfigVault {
@@ -197,6 +200,7 @@ export class ConfigService {
       this.options.database.listDraftTemplateSummaries(),
       this.options.vault.load(),
     ]);
+    const databaseRecovery = this.options.database.getRecoveryEvent?.() ?? null;
     return {
       ...metadata,
       revision,
@@ -208,6 +212,7 @@ export class ConfigService {
       voiceLabRecords,
       promptTemplates,
       draftTemplates,
+      ...(databaseRecovery ? { databaseRecovery } : {}),
     };
   }
 

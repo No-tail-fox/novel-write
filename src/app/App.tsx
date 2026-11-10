@@ -1,5 +1,5 @@
 import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, Suspense } from "react";
-import type { AppDelta, AppMutationResult, HistoryFamily, ShellView, ThemeName } from "../shared/types";
+import type { AppDelta, AppMutationResult, DatabaseRecoveryEvent, HistoryFamily, ShellView, ThemeName } from "../shared/types";
 import { createAppDeltaCoordinator, MAX_RENDERER_DELTA_BUFFER, type DeltaViewState, type RevisionGap } from "../shared/state-delta";
 import { applyAppMutationResult, applyBufferedMutationResults, applyHistorySelectionBarrier, applyLocalMutationResponse, authoritativeMissingRequestedTaskId, claimMutationResult, collectTaskEventPages, collectViralEventPages, createRequestGenerationCompletionQueue, createRequestGenerationGuard, historyEntityRevisionKey, historyResponseDisposition, mergeAuthoritativeSnapshotDetails, mergeReconciliationSlices, raiseMutationRevisionFloor, reduceCompletionTrackedState, shouldApplyDeltaViewTransition } from "../shared/state-reconciliation";
 import { applyStoredTheme, changeRuntimeTheme, revealThemedApplication, transitionRendererTheme, withRuntimeTheme } from "../features/settings/theme-controller";
@@ -13,6 +13,7 @@ import { makeLazyFallbackApi } from './lazy-browser-fallback';
 import type { RendererAppState as AppState } from "./route-types";
 import { AppRoutes } from './AppRoutes';
 import { AppShell } from './AppShell';
+import { DatabaseRecoveryNotice, acknowledgeDatabaseRecovery, pendingDatabaseRecovery } from './DatabaseRecoveryNotice';
 import { taskWorkspaceView, workspaceReturnViewForNavigation } from './navigation';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
 import { RouteLoadingState } from './RouteLoadingState';
@@ -104,6 +105,7 @@ function AppWorkspace() {
   const [requestedHtmlTaskId, setRequestedHtmlTaskId] = useState('');
   const [historyFamilyEpochs, setHistoryFamilyEpochs] = useState<HistoryFamilyEpochs>({});
   const [saveTone, setSaveTone] = useState<'saved' | 'saving' | 'dirty'>('saved');
+  const [databaseRecovery, setDatabaseRecovery] = useState<DatabaseRecoveryEvent | null>(null);
   const isBrowserPreview = !window.storydream && !window.storybound;
   const api = useMemo(() => window.storydream ?? window.storybound ?? makeLazyFallbackApi(setState), []);
   const shellAction = useAsyncAction();
@@ -632,6 +634,7 @@ function AppWorkspace() {
       if (disposed) return;
       applyStoredTheme(bootstrap.ui.theme);
       revealThemedApplication();
+      setDatabaseRecovery(pendingDatabaseRecovery(bootstrap.databaseRecovery));
       const replayed = coordinator.bootstrap({
         revision: bootstrap.revision,
         tasks: bootstrap.tasks.items,
@@ -817,6 +820,7 @@ function AppWorkspace() {
         isBrowserPreview={isBrowserPreview}
         busy={shellAction.busy}
         feedback={shellAction.feedback}
+        notice={databaseRecovery ? <DatabaseRecoveryNotice event={databaseRecovery} onDismiss={() => { acknowledgeDatabaseRecovery(databaseRecovery); setDatabaseRecovery(null); }} /> : null}
         navigate={navigate}
         openTaskDetail={openTaskDetail}
         minimizeWindow={minimizeWindow}

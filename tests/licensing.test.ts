@@ -16,6 +16,11 @@ import { createViralRuntimeProviders } from '../src/shared/viral-runtime';
 import { testOpenAiCompatibleImageModel } from '../src/shared/openai-image';
 import { testOpenAiCompatibleLlm } from '../src/shared/llm-provider';
 
+// These tests drive a real Python TLS server and run synchronous python CLI commands (execFileSync blocks the
+// worker). Alone they take 1-3 s; under a full parallel run each python start-up can take seconds, so the
+// default 5 s budget is a scheduling race, not a correctness signal. Assertions are unchanged.
+const REAL_PROCESS_TIMEOUT_MS = 60_000;
+
 describe('real TLS licensing and signed updates', () => {
   let directory: string, config: LicensePublicConfig, server: ChildProcess, license: LicenseService;
   const python = process.env.STORYDREAM_TEST_PYTHON || 'python';
@@ -27,7 +32,7 @@ describe('real TLS licensing and signed updates', () => {
     config = command('init', '--host', '127.0.0.1', '--port', '8443');
     server = spawn(python, ['-u', '-c', 'import sys; from server import LicenseStore, LicenseHTTPServer; s=LicenseHTTPServer(("127.0.0.1",0),LicenseStore(sys.argv[1])); print(s.server_address[1],flush=True); s.serve_forever()', join(directory, 'server')], { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const port = await new Promise<string>((accept, reject) => {
-      const timer = setTimeout(() => reject(new Error('TLS server startup timeout')), 10000);
+      const timer = setTimeout(() => reject(new Error('TLS server startup timeout')), 30000);
       server.stdout!.once('data', data => { clearTimeout(timer); accept(data.toString().trim()); });
       server.once('error', reject);
       server.once('exit', code => reject(new Error(`TLS server exited ${code}`)));
@@ -37,13 +42,13 @@ describe('real TLS licensing and signed updates', () => {
     license = new LicenseService({ config, vaultPath: join(directory, 'vault'), packaged: true, machineId: async () => createHash('sha256').update('test-machine').digest('hex'),
       encryption: { isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString() } });
     await license.initialize();
-  }, 20000);
+  }, REAL_PROCESS_TIMEOUT_MS);
   afterAll(async () => {
     setGenerationAuthorization(async () => undefined);
     license?.close();
     if (server && server.exitCode === null) { const exited = once(server, 'exit'); server.kill(); await exited; }
     if (directory) await rm(directory, { recursive: true, force: true });
-  });
+  }, REAL_PROCESS_TIMEOUT_MS);
   it('activates, remotely locks/revokes, and unbinds without trusting renderer state', async () => {
     await expect(license.requireActive()).rejects.toMatchObject({ code: 'LICENSE_REQUIRED' });
     const issued = command('issue', '--days', '1');
@@ -62,7 +67,7 @@ describe('real TLS licensing and signed updates', () => {
     await license.refresh();
     await license.release();
     await expect(license.requireActive()).rejects.toThrow();
-  }, 20000);
+  }, REAL_PROCESS_TIMEOUT_MS);
   it('checks signed manifests, resumes downloads, and rejects altered installer bytes', async () => {
     const source = join(directory, 'fixture.exe');
     const content = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(32768, 37)]);
@@ -103,10 +108,10 @@ describe('real TLS licensing and signed updates', () => {
     await expect(blocked.install()).rejects.toThrow('有任务正在运行');
     expect(blocked.installing).toBe(false);
     expect(quit).not.toHaveBeenCalled();
-  });
+  }, REAL_PROCESS_TIMEOUT_MS);
   it('rejects a mismatched certificate authority', async () => {
     await expect(new LicenseTransport({ ...config, caPem: '' }).json('/v1/health')).rejects.toThrow();
-  });
+  }, REAL_PROCESS_TIMEOUT_MS);
 });
 
 it('verifies Ed25519 signatures and rejects tampered/expired manifests', () => {
@@ -199,9 +204,12 @@ it('expires an offline lease, notifies the shell, and requires online verificati
       devices: [{ deviceId: device.deviceId, label: 'Expiry fixture', lastSeen: now }] });
     return { payload, signature: sign(null, Buffer.from(payload), keys.privateKey).toString('base64') };
   });
+  // LicenseService.now() also reads the monotonic clock (performance.now) to resist wall-clock rollback.
+  // Fake it together with Date and construct the services afterwards, so the 2 s lease window is
+  // driven only by advanceTimersByTimeAsync and not by how long key generation/IO takes under load.
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] });
   const service = new LicenseService(options);
   const restarted = new LicenseService(options);
-  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   try {
     await service.initialize();
     expect(service.status().status).toBe('active');

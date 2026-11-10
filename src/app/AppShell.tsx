@@ -33,6 +33,7 @@ export function AppShell({
   isBrowserPreview,
   busy,
   feedback,
+  notice,
   navigate,
   openTaskDetail,
   minimizeWindow,
@@ -55,6 +56,8 @@ export function AppShell({
   isBrowserPreview: boolean;
   busy: boolean;
   feedback: AsyncActionFeedback | null;
+  /** Persistent system notice (e.g. database recovery) shown above transient feedback. */
+  notice?: ReactNode;
   navigate: (view: ShellView) => void;
   openTaskDetail: (taskId: string) => void;
   minimizeWindow: () => void;
@@ -293,8 +296,9 @@ export function AppShell({
               onClick={toggleTheme}
             />
           </header>
-          {feedback ? (
+          {feedback || notice ? (
             <div className="global-action-banner">
+              {notice}
               <InlineActionFeedback feedback={feedback} />
             </div>
           ) : null}

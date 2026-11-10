@@ -5815,6 +5815,15 @@ section.error-dialog .error-dialog-head > div > strong {
   margin: 0;
 }
 
+.global-action-banner .database-recovery-notice {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.global-action-banner .database-recovery-notice + .inline-action-feedback {
+  margin-top: 8px;
+}
+
 .provider-config-note {
   grid-column: 1 / -1;
   display: flex;
