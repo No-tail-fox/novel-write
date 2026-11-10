@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
@@ -24,7 +24,7 @@ import {
 import { DirectorContinuityBadge } from '../src/features/director-desk/DirectorContinuityBadge';
 import { DirectorDeskWorkspace } from '../src/features/director-desk/DirectorDeskWorkspace';
 import { resolveFinalFilmFfmpeg } from '../electron/final-film-gate-runner';
-import { rawFrameFromDump, sampleMotionComicCutFrames } from '../electron/motion-comic-continuity-probe';
+import { continuityFrameArgs, rawFrameFromDump, sampleMotionComicCutFrames } from '../electron/motion-comic-continuity-probe';
 
 vi.mock('../src/ui', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/ui')>(),
@@ -187,5 +187,106 @@ describe('ffmpeg edge-frame sampling (C-2)', () => {
     expect(buildMotionComicShotContinuityAdvice({ ...frames!, ...ids }).level).toBe('good');
     const swapped = await sampleMotionComicCutFrames({ previousVideoPath: next, videoPath: next, ffmpegPath: binaries!.ffmpegPath });
     expect(buildMotionComicShotContinuityAdvice({ ...swapped!, ...ids }).level).toBe('jump');
+  }, 120_000);
+
+  it('asks ffmpeg to keep overwriting one frame of the final second, never a single tail frame', () => {
+    const last = continuityFrameArgs('in.mp4', 'last', 'out.rgba');
+    expect(last.slice(last.indexOf('-sseof'), last.indexOf('-sseof') + 2)).toEqual(['-sseof', '-1']);
+    expect(last).not.toContain('-frames:v');
+    expect(last.slice(-5)).toEqual(['-f', 'image2', '-update', '1', 'out.rgba']);
+    expect(continuityFrameArgs('in.mp4', 'first', 'out.rgba')).toContain('-frames:v');
+    const full = continuityFrameArgs('in.mp4', 'last-full', 'out.rgba');
+    expect(full).not.toContain('-sseof');
+    expect(full.slice(-5)).toEqual(['-f', 'image2', '-update', '1', 'out.rgba']);
+  });
+
+  /**
+   * Time-varying fixtures (not solid colour): the composition changes only in the final frames, and
+   * libx264 with one GOP + B-frames forces a real decode-from-keyframe seek.
+   */
+  function timeVaryingClip(dir: string, name: string, input: {
+    durationSec: number;
+    fps?: number;
+    /** Frame index from which the "left" composition replaces "top". */
+    switchAtFrame: number;
+    /** Extra audio seconds beyond the video stream (container longer than video). */
+    audioTailSec?: number;
+  }): string {
+    const fps = input.fps ?? 10;
+    const output = join(dir, name);
+    const top = 'x=0:y=0:w=64:h=32';
+    const left = 'x=0:y=0:w=32:h=64';
+    const audio = input.audioTailSec ? ['-f', 'lavfi', '-i', `sine=f=440:d=${input.durationSec + input.audioTailSec}`] : [];
+    const result = spawnSync(binaries!.ffmpegPath, [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-f', 'lavfi', '-i', `testsrc2=s=64x64:d=${input.durationSec}:r=${fps}`,
+      ...audio,
+      '-vf', [
+        'hue=s=0', 'eq=contrast=0.15:brightness=-0.25',
+        `drawbox=${top}:color=0xdcdcdc:t=fill:enable='lt(n,${input.switchAtFrame})'`,
+        `drawbox=${left}:color=0xdcdcdc:t=fill:enable='gte(n,${input.switchAtFrame})'`,
+        'format=yuv420p',
+      ].join(','),
+      '-c:v', 'libx264', '-g', '600', '-bf', '2', '-pix_fmt', 'yuv420p',
+      ...(input.audioTailSec ? ['-c:a', 'aac'] : []),
+      output,
+    ], { windowsHide: true, timeout: 60_000 });
+    expect(result.status, String(result.stderr)).toBe(0);
+    return output;
+  }
+
+  /** Mean luma of the top-right quadrant minus the bottom-left one: >0 for "top", <0 for "left". */
+  function layout(frame: RawFrame): 'top' | 'left' {
+    const luma = (x0: number, y0: number) => {
+      let sum = 0;
+      for (let y = y0; y < y0 + 12; y += 1) for (let x = x0; x < x0 + 12; x += 1) sum += frame.data[(y * frame.width + x) * 4];
+      return sum / 144;
+    };
+    return luma(18, 2) > luma(2, 18) ? 'top' : 'left';
+  }
+
+  it.skipIf(!binaries)('scores against the true last frame when only the final frames of the previous shot change', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opc-continuity-tail-'));
+    temp.push(dir);
+    // 3 s @ 10 fps: frames 0–26 "top", only the final 3 frames (27–29) "left". The first frame of the
+    // final second (frame 20) is still "top", so a single-frame `-sseof -1` grab would pick the wrong one.
+    const previous = timeVaryingClip(dir, 'previous.mp4', { durationSec: 3, switchAtFrame: 27 });
+    const startsLeft = timeVaryingClip(dir, 'starts-left.mp4', { durationSec: 2, switchAtFrame: 0 });
+    const startsTop = timeVaryingClip(dir, 'starts-top.mp4', { durationSec: 2, switchAtFrame: 15 });
+    const ids = { videoAssetVersionId: 'v2', previousShotId: 's1', previousVideoAssetVersionId: 'v1', computedAt: now };
+
+    const continuous = await sampleMotionComicCutFrames({ previousVideoPath: previous, videoPath: startsLeft, ffmpegPath: binaries!.ffmpegPath });
+    expect(continuous).toBeDefined();
+    expect(layout(continuous!.previousLastFrame)).toBe('left');
+    expect(layout(continuous!.firstFrame)).toBe('left');
+    expect(buildMotionComicShotContinuityAdvice({ ...continuous!, ...ids }).level).toBe('good');
+
+    const cut = await sampleMotionComicCutFrames({ previousVideoPath: previous, videoPath: startsTop, ffmpegPath: binaries!.ffmpegPath });
+    expect(layout(cut!.firstFrame)).toBe('top');
+    expect(buildMotionComicShotContinuityAdvice({ ...cut!, ...ids }).level).toBe('jump');
+
+    // Evidence for the regression this guards: the single-frame variant really returns the stale frame.
+    const single = join(dir, 'single.rgba');
+    const wrong = spawnSync(binaries!.ffmpegPath, [
+      '-hide_banner', '-loglevel', 'error', '-y', '-sseof', '-1', '-i', previous,
+      '-map', '0:v:0', '-an', '-vf', 'scale=32:32:flags=area,format=rgba', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgba', single,
+    ], { windowsHide: true, timeout: 60_000 });
+    expect(wrong.status, String(wrong.stderr)).toBe(0);
+    expect(layout(rawFrameFromDump(await readFile(single), 'first')!)).toBe('top');
+  }, 120_000);
+
+  it.skipIf(!binaries)('handles clips shorter than one second and containers whose audio outlasts the video', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'opc-continuity-edge-'));
+    temp.push(dir);
+    const startsLeft = timeVaryingClip(dir, 'starts-left.mp4', { durationSec: 1, switchAtFrame: 0 });
+    // 0.5 s: the -1 s tail window starts before zero.
+    const short = timeVaryingClip(dir, 'short.mp4', { durationSec: 0.5, switchAtFrame: 4 });
+    // Video ends at 2 s ("left" only in its last 2 frames) but AAC runs to 4 s: the tail window holds no video.
+    const longAudio = timeVaryingClip(dir, 'long-audio.mp4', { durationSec: 2, switchAtFrame: 18, audioTailSec: 2 });
+    for (const previous of [short, longAudio]) {
+      const frames = await sampleMotionComicCutFrames({ previousVideoPath: previous, videoPath: startsLeft, ffmpegPath: binaries!.ffmpegPath });
+      expect(frames, previous).toBeDefined();
+      expect(layout(frames!.previousLastFrame)).toBe('left');
+    }
   }, 120_000);
 });

@@ -73,6 +73,8 @@ const RETRYABLE_CODES = new Set([
   'RESUMABLE_TRANSFER_TRUNCATED',
 ]);
 const activeParts = new Set<string>();
+/** Part keys a cleanup sweep is deleting right now (see claimResumablePartForCleanup). */
+const cleanupClaims = new Map<string, Promise<void>>();
 
 class TransferRestart extends Error {
   readonly code = 'RESUMABLE_TRANSFER_RESTART';
@@ -88,13 +90,33 @@ export function resumablePartPaths(targetPath: string): { part: string; sidecar:
 
 /** True while this process is writing `partPath` (cleanup sweeps must leave it alone). */
 export function isResumablePartActive(partPath: string): boolean {
-  const wanted = resolve(partPath);
-  for (const active of activeParts) if (samePartPath(resolve(active), wanted)) return true;
-  return false;
+  return activeParts.has(partKey(partPath));
 }
 
-function samePartPath(left: string, right: string): boolean {
-  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+function partKey(partPath: string): string {
+  const absolute = resolve(partPath);
+  return process.platform === 'win32' ? absolute.toLowerCase() : absolute;
+}
+
+/**
+ * Synchronously reserves `partPath` (and its side record) for deletion by a cleanup sweep.
+ * Returns `null` when a download owns the part or another cleanup already holds it. While the claim is
+ * held, a download of the same target waits before it reads or opens any file, so a sweep can never
+ * unlink bytes between a download's resume check and its write. Always call the returned release.
+ */
+export function claimResumablePartForCleanup(partPath: string): (() => void) | null {
+  const key = partKey(partPath);
+  if (activeParts.has(key) || cleanupClaims.has(key)) return null;
+  let release!: () => void;
+  const claim = new Promise<void>((resolveClaim) => { release = resolveClaim; });
+  cleanupClaims.set(key, claim);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (cleanupClaims.get(key) === claim) cleanupClaims.delete(key);
+    release();
+  };
 }
 
 /**
@@ -126,12 +148,17 @@ export function detectVideoContainer(head: Uint8Array): VideoContainer | null {
 
 export async function resumableDownload(options: ResumableDownloadOptions): Promise<ResumableDownloadResult> {
   const { part, sidecar } = resumablePartPaths(options.targetPath);
-  if (activeParts.has(part)) throw new TransferFatal('RESUMABLE_TRANSFER_BUSY', '同一结果正在下载，请稍后再试。');
-  activeParts.add(part);
+  const key = partKey(part);
+  // Marked active synchronously (no await before this point): a sweep that has not claimed the part yet
+  // will now skip it; one that already claimed it is awaited below before any file is touched.
+  if (activeParts.has(key)) throw new TransferFatal('RESUMABLE_TRANSFER_BUSY', '同一结果正在下载，请稍后再试。');
+  activeParts.add(key);
   try {
+    const cleanup = cleanupClaims.get(key);
+    if (cleanup) await cleanup;
     return await runDownload(options, part, sidecar);
   } finally {
-    activeParts.delete(part);
+    activeParts.delete(key);
   }
 }
 

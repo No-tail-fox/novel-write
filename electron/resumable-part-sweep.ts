@@ -16,7 +16,7 @@
  */
 import { lstat, readdir, realpath, unlink } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
-import { isResumablePartActive } from './resumable-transfer';
+import { claimResumablePartForCleanup } from './resumable-transfer';
 import { managedHistoryFamilyRoot } from './managed-history-paths';
 
 export const RESUMABLE_PART_FILE_PATTERN = /^\.resume-[0-9a-f]{32}\.mp4\.part(?:\.json)?$/u;
@@ -83,18 +83,27 @@ export async function sweepStaleResumableParts(options: StaleResumablePartSweepO
       for (const name of names) {
         if (!RESUMABLE_PART_FILE_PATTERN.test(name)) continue;
         const file = join(directory, name);
+        const partPath = name.endsWith('.json') ? file.slice(0, -'.json'.length) : file;
+        // Claim first (synchronous check-and-reserve against downloads), then stat under the claim so the
+        // age decision describes the files as they are now, not as listed earlier. Age is judged per
+        // part+record PAIR (newest mtime wins): a record a download just rewrote keeps its old-looking part
+        // alive and vice versa, so the sweep never splits a live pair.
+        const release = claimResumablePartForCleanup(partPath);
+        if (!release) { result.kept += 1; continue; }
         try {
           const info = await lstat(file);
           if (!info.isFile() || info.isSymbolicLink()) continue;
-          const partPath = name.endsWith('.json') ? file.slice(0, -'.json'.length) : file;
-          if (isResumablePartActive(partPath)) { result.kept += 1; continue; }
-          const age = now - info.mtimeMs;
+          const sibling = await lstat(file === partPath ? `${partPath}.json` : partPath).catch(() => null);
+          const newest = Math.max(info.mtimeMs, sibling?.isFile() && !sibling.isSymbolicLink() ? sibling.mtimeMs : 0);
+          const age = now - newest;
           const stale = age > maxAgeMs || (orphaned && age > orphanGraceMs);
           if (!stale) { result.kept += 1; continue; }
           await unlink(file);
           result.removed.push(file);
         } catch (error) {
           if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') result.failed += 1;
+        } finally {
+          release();
         }
       }
     }
