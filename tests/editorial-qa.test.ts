@@ -298,13 +298,19 @@ describe('editorial Electron QA configuration', () => {
     const shellStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
     const newTaskStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
     const theme = await (await import('node:fs/promises')).readFile(new URL('../src/ui/theme.ts', import.meta.url), 'utf8');
+    const redesignStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/redesign.css', import.meta.url), 'utf8');
+    const stylesEntry = await (await import('node:fs/promises')).readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     for (const label of ['最小化', '最大化', '关闭']) {
       expect(shell).toContain(`label="${label}"`);
     }
     expect(iconButton).toContain('title = label');
     expect(iconButton).toContain('aria-label={label} title={title}');
-    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button:not\(\.fui-Button\),[\s\S]*?\.primary-action:not\(\.fui-Button\) \{[\s\S]*?color: var\(--shell-focus-contrast\);/u);
+    // Accent-filled primary actions use the contrast foreground both in the base shell rule and in the
+    // later-loaded redesign layer that restyles the non-Fluent buttons.
+    expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button,\s*\.app-shell\[data-editorial-shell\] \.primary-action \{[^}]*?background: var\(--shell-accent\);[^}]*?color: var\(--shell-focus-contrast\);/u);
+    expect(redesignStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button:not\(\.fui-Button\),\s*\.app-shell\[data-editorial-shell\] \.primary-action:not\(\.fui-Button\) \{[^}]*?background: var\(--shell-accent\);[^}]*?color: var\(--shell-focus-contrast\);/u);
+    expect(stylesEntry.indexOf("@import './styles/redesign.css';")).toBeGreaterThan(stylesEntry.indexOf("@import './styles/shell.css';"));
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.trial-activation-bar strong \{[\s\S]*?color: var\(--shell-text\);/u);
     expect(theme).toContain("colorNeutralForegroundOnBrand: '#101214'");
     expect(theme).toContain("colorNeutralForegroundOnBrand: '#ffffff'");

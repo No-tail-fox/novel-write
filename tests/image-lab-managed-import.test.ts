@@ -105,10 +105,11 @@ describe('managed image lab import', () => {
       expect(ipcInputSchemas['image-lab:add-record'].safeParse({ ...valid, ...field }).success).toBe(false);
     }
 
-    const [main, apiContract, preload] = await Promise.all([
+    const [main, apiContract, preload, inspection] = await Promise.all([
       readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
       readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/imported-image-inspection.ts', import.meta.url), 'utf8'),
     ]);
     const handler = main.slice(
       main.indexOf("trustedHandle('image-lab:add-record'"),
@@ -116,9 +117,13 @@ describe('managed image lab import', () => {
     );
     expect(main).toContain("import { importManagedImageLabRecord } from './image-lab-import';");
     expect(handler).toContain('importManagedImageLabRecord(');
-    expect(handler).toContain('appDataDir()');
+    // Imports land under the managed artifact root (which may be relocated away from appData).
+    expect(handler).toContain('artifactDataDir()');
     expect(handler).toContain('(record) => database.addImageLabRecord(record)');
-    expect(handler).toContain('nativeImage.createFromBuffer');
+    // Decoding moved to a shared inspector that still validates via nativeImage before the copy is accepted.
+    expect(main).toContain("import { inspectImportedImage } from './imported-image-inspection';");
+    expect(handler).toContain('inspectImage: inspectImportedImage');
+    expect(inspection).toContain('nativeImage.createFromBuffer');
     expect(handler).toContain('writeDestination: writeWindowsManagedFile');
     expect(handler).not.toContain('database.addImageLabRecord(input)');
     expect(apiContract).toContain('addImageLabRecord: (input: ImageLabImportInput)');

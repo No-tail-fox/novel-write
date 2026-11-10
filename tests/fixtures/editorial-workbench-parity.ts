@@ -11,14 +11,16 @@ function inventory(values: readonly string[], owner: string, consumer: string, t
 
 export const approvedEditorialInventories = {
   shellViews: inventory([
-    'projects', 'new-task', 'hot-board', 'queue', 'history', 'task-detail', 'editorial-collage', 'motion-comic', 'html-video',
-    'image-lab', 'voice-lab', 'video-lab', 'music-mv',
-    'book-selection', 'benchmark', 'person-assets', 'viral-analyzer', 'prompt-templates', 'draft-templates',
+    'projects', 'conversation-workbench', 'new-task', 'hot-board', 'queue', 'history', 'task-detail', 'editorial-collage',
+    'template-animation', 'motion-comic', 'html-video',
+    'image-lab', 'voice-lab', 'video-lab', 'music-lab', 'music-mv',
+    'book-selection', 'benchmark', 'person-assets', 'copy-studio', 'viral-analyzer', 'prompt-templates', 'draft-templates',
     'settings', 'account', 'activation',
   ], 'src/shared/types.ts', 'src/app/route-registry.ts', 'tests/route-registry.test.ts'),
   sidebarViews: inventory([
-    'projects', 'editorial-collage', 'motion-comic', 'html-video', 'music-mv', 'person-assets',
-    'image-lab', 'voice-lab', 'video-lab',
+    'projects', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv', 'person-assets',
+    'copy-studio', 'conversation-workbench',
+    'image-lab', 'voice-lab', 'video-lab', 'music-lab',
     'hot-board', 'benchmark', 'book-selection', 'viral-analyzer', 'prompt-templates', 'draft-templates',
     'queue', 'history', 'settings', 'account', 'activation',
   ], 'src/app/navigation.ts', 'src/app/AppShell.tsx', 'tests/route-registry.test.ts'),
@@ -35,7 +37,7 @@ export const approvedEditorialInventories = {
   htmlVideoFields: inventory([
     'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors', 'captionLayout',
     'bgmVolume', 'transitionType', 'sceneMotion', 'coverImageMode', 'coverTemplate', 'coverRatio', 'coverPrompt', 'draftTemplate',
-    'foreground', 'maxScenes', 'ratio',
+    'foreground', 'maxScenes', 'ratio', 'previewLongEdge', 'renderLongEdge',
   ], 'src/shared/html-video-control-manifest.ts', 'src/features/html-video/HtmlVideoPage.tsx', 'tests/html-video-control-manifest.test.ts'),
   imageSmartModes: inventory([
     'text-to-image', 'cover', 'blog-cover', 'podcast-cover', 'video-narration', 'two-host-podcast', 'reference-edit',

@@ -1,5 +1,8 @@
 import { readFile } from 'node:fs/promises';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { SelectField, StoryDreamProvider } from '../src/ui';
 import { parseDraftTemplate } from '@shared/draft-template-contract';
 import {
   draftFontCssFamily,
@@ -112,9 +115,24 @@ describe('draft font selection', () => {
       expect(source).toContain(`aria-label={\`${'${layerLabel}'}字体\`}`);
       expect(source).toContain(`layerLabel="${label.replace('字体', '')}"`);
     }
-    expect(source).toContain('draftFontGroups.map((group)');
-    expect(source).toContain('draftFontOptions.filter((option) => option.group === group).map((option)');
-    expect(source).toContain('<optgroup key={group} label={group}>');
+    // The font selector now delegates grouping to the shared SelectField; verify the page wires every
+    // font option with its group and preview family, then render that exact option list to prove grouping.
+    const pageOptionsMapping = 'options={draftFontOptions.map((option) => ({ value: option.value, label: option.label, group: option.group, style: { fontFamily: option.cssFamily } }))}';
+    expect(source).toContain(pageOptionsMapping);
     expect(source).toContain('style={{ fontFamily: draftFontCssFamily(value) }}');
+
+    const options = draftFontOptions.map((option) => ({ value: option.value, label: option.label, group: option.group, style: { fontFamily: option.cssFamily } }));
+    const html = renderToStaticMarkup(createElement(StoryDreamProvider, {
+      theme: 'light',
+      children: createElement(SelectField, { label: '字体', 'aria-label': '主标题字体', value: 'system', onChange: () => undefined, options }),
+    }));
+    expect(html).toContain('aria-label="主标题字体"');
+    const renderedGroups = [...html.matchAll(/<optgroup label="([^"]+)">([\s\S]*?)<\/optgroup>/gu)];
+    expect(renderedGroups.map((match) => match[1])).toEqual([...draftFontGroups]);
+    for (const [, group, body] of renderedGroups) {
+      const renderedLabels = [...body.matchAll(/<option [^>]*>([^<]*)<\/option>/gu)].map((match) => match[1]);
+      expect(renderedLabels, group).toEqual(draftFontOptions.filter((option) => option.group === group).map((option) => option.label));
+    }
+    expect(html.match(/<option /gu)).toHaveLength(draftFontOptions.length);
   });
 });

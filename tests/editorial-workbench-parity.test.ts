@@ -25,8 +25,17 @@ describe('editorial workbench functional parity inventory', () => {
       minimaxCloneVoiceFields: Object.keys(MINIMAX_CLONE_VOICE_FIELDS),
     };
 
+    // The approved createTaskInputFields order is the new-task stage order (locked by task-control-manifest.test.ts);
+    // the CreateTaskInput Pick union declaration order carries no meaning, so compare that inventory by exact membership.
+    const unorderedInventories = new Set(['createTaskInputFields']);
     for (const [name, approved] of Object.entries(approvedEditorialInventories)) {
-      expect(actual[name as keyof typeof actual], name).toEqual(approved.values);
+      const actualValues = actual[name as keyof typeof actual];
+      if (unorderedInventories.has(name)) {
+        expect(actualValues, `${name} has no duplicates`).toHaveLength(new Set(actualValues).size);
+        expect([...actualValues].sort(), name).toEqual([...approved.values].sort());
+      } else {
+        expect(actualValues, name).toEqual(approved.values);
+      }
       expect(new Set(approved.values).size, `${name} has no duplicates`).toBe(approved.values.length);
       expect(approved.owner.length, `${name} owner`).toBeGreaterThan(0);
       expect(approved.consumer.length, `${name} consumer`).toBeGreaterThan(0);

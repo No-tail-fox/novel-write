@@ -736,10 +736,14 @@ describe('managed history paths', () => {
   it('reaps pending managed quarantines before publishing the startup database instance', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const getDatabase = sourceSection(main, 'async function getDb', 'async function runHistoryGovernanceMutation');
+    // Managed history lives under the artifact root (which may be relocated away from appData),
+    // so both the backfill and the quarantine reap must target that same root.
+    expect(getDatabase).toContain('const artifacts = artifactDataDir()');
     expectSourceOrder(getDatabase, [
       'FileDatabase.open',
       'backfillLegacyManagedHistoryStorage(',
-      'reapHistoryQuarantines(dir, database)',
+      'artifacts,',
+      'reapHistoryQuarantines(artifacts, database)',
       'service.migrateLegacySecrets()',
       'db = database',
     ]);
@@ -758,11 +762,12 @@ describe('managed history paths', () => {
     ]);
     expect(startup).toContain('dbInitializationPromise ??= initializeDatabase()');
     expect(startup).toContain('return await initialization');
-    expect(startup.match(/reapHistoryQuarantines\(dir, database\)/gu)).toHaveLength(1);
+    expect(startup.match(/reapHistoryQuarantines\(/gu)).toHaveLength(1);
+    expect(startup.match(/reapHistoryQuarantines\(artifacts, database\)/gu)).toHaveLength(1);
     expectSourceOrder(startup, [
       'async function initializeDatabase()',
       'FileDatabase.open',
-      'reapHistoryQuarantines(dir, database)',
+      'reapHistoryQuarantines(artifacts, database)',
       'DATABASE_INITIALIZATION_CANCELLED',
       'db = database',
     ]);
@@ -910,10 +915,12 @@ describe('managed history paths', () => {
   it('starts task and viral work only from canonical database-owned keys', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const workDirHelpers = sourceSection(main, 'function taskWorkDir', 'function appDataDir');
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'task', task.managedStorageKey)");
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'viral-analysis', record.managedStorageKey)");
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'image-lab', record.managedStorageKey)");
-    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(appDataDir(), 'voice-lab', record.managedStorageKey)");
+    // Work directories resolve under the (possibly relocated) artifact root, never from caller ids.
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'task', task.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'viral-analysis', record.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'image-lab', record.managedStorageKey)");
+    expect(workDirHelpers).toContain("resolveManagedHistoryWorkDir(artifactDataDir(), 'voice-lab', record.managedStorageKey)");
+    expect(workDirHelpers).not.toContain('resolveManagedHistoryWorkDir(appDataDir()');
     expect(workDirHelpers).not.toContain("'tasks', task.id");
     expect(workDirHelpers).not.toContain("'viral-analyses', record.id");
     expect(workDirHelpers).not.toContain("'image-lab', id");
