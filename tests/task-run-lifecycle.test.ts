@@ -2172,6 +2172,9 @@ async function loadCreatedRunHandler(
     'resolveShortVideoMaterials',
     'preflightPixelleTask',
     'pixelleHostOptions',
+    'getConfigService',
+    'htmlVideoVideoSpecRenderEnabled',
+    'markHtmlVideoPipelineDataForCreation',
     `${compiledSource}\nreturn createdRunHandler;`,
   );
   const database = {
@@ -2217,6 +2220,9 @@ async function loadCreatedRunHandler(
     () => undefined,
     async () => undefined,
     () => ({}),
+    async () => ({ getRuntimeConfig: async () => ({}) }),
+    (await import('../src/shared/html-video-spec')).htmlVideoVideoSpecRenderEnabled,
+    (await import('../src/shared/html-video-spec')).markHtmlVideoPipelineDataForCreation,
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);
 }

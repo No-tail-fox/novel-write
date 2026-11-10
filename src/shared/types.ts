@@ -438,6 +438,8 @@ export interface AppConfig {
   };
   /** U-5: user-editable unit prices for the project cost panel. Absent on older configs (= nothing priced). */
   costPriceTable?: import('./project-cost').CostPriceTable;
+  /** O-3: “新建 HTML 视频使用新版渲染引擎”. Absent/non-false = on; only affects tasks created afterwards. */
+  htmlVideoVideoSpecRender?: boolean;
 }
 
 export interface ProjectModels {
@@ -935,6 +937,11 @@ export interface HtmlVideoPipelineDataV2 {
   config: HtmlVideoJobConfig;
   /** G-7: automatic step retries of the latest run (absent in older states). */
   retryBudget?: import('./retry-budget').RetryBudget;
+  /**
+   * O-3: VideoSpec architecture marker (`projectUsesVideoSpec`). Stamped only at creation when the
+   * “新建 HTML 视频使用新版渲染引擎” setting is on; absent on every older task (= legacy render).
+   */
+  videoSpecVersion?: number;
 }
 
 // Temporary read-only projection for the existing HTML video page. These

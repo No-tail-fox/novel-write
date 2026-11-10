@@ -7,8 +7,9 @@
  *   - 复检：`runFinalFilmGateSafely`（只做提示，从不抛错）。
  * TTS / LLM 创作由调用方注入，这里不接任何服务商。
  *
- * 只用于 VideoSpec 新项目（ADR-03，`videoSpecExecutorStrategy`）；**没有接入任何现有 IPC / 路线**，旧项目继续走
- * vox-production-runtime 与 html-video-runner。
+ * 只用于 VideoSpec 新项目（ADR-03，`videoSpecExecutorStrategy`）。2026-11-10 起，带 `videoSpecVersion` 的
+ * 新建 HTML 视频任务在出片步骤经 `html-video-spec-render` 走这里；旧项目继续走 vox-production-runtime 与
+ * html-video-runner 原有渲染器。
  */
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
@@ -36,6 +37,7 @@ import {
   createWritableFrameSink,
   ffmpegFrameInputArgs,
   type CaptureFrameFormat,
+  type CaptureSceneRequest,
   type CaptureTimeouts,
   type CaptureWindowFactory,
 } from './capture-host';
@@ -148,6 +150,10 @@ export interface CapturedSceneSegmentOptions {
   signal?: AbortSignal;
   onProgress?: (progress: { captured: number; total: number }) => void;
   timeoutMs?: number;
+  /** 采集校验开关（缺省沿用 CaptureHost 的严格默认值）。HTML 视频路线为与旧渲染器一致而放宽，见 html-video-spec-render。 */
+  capture?: Pick<CaptureSceneRequest, 'failOnPageErrors' | 'requireFonts' | 'durationToleranceFrames'>;
+  /** 采集结束后收到的页面错误（failOnPageErrors=false 时可能非空），用于记日志。 */
+  onPageErrors?: (sceneId: string, errors: readonly string[]) => void;
 }
 
 export async function encodeCapturedSceneSegment(options: CapturedSceneSegmentOptions): Promise<{ ref: string; frames: number }> {
@@ -169,9 +175,11 @@ export async function encodeCapturedSceneSegment(options: CapturedSceneSegmentOp
         ...(options.signal ? { signal: options.signal } : {}),
         ...(options.timeouts ? { timeouts: options.timeouts } : {}),
         ...(options.onProgress ? { onProgress: (progress: { captured: number; total: number }) => options.onProgress!({ captured: progress.captured, total: progress.total }) } : {}),
+        ...(options.capture ?? {}),
       });
       encoder.stdin.end();
       await encoder.done;
+      if (captured.pageErrors.length) options.onPageErrors?.(scene.id, captured.pageErrors);
       return { ref: options.outputPath, frames: captured.framesCaptured };
     } catch (error) {
       encoder.kill();
@@ -263,6 +271,90 @@ export async function muxVideoSpecFilm(options: MuxVideoSpecFilmOptions): Promis
   });
 }
 
+// ───────────────────────────── 转场封装（xfade） ─────────────────────────────
+
+/** ffmpeg xfade 支持的转场名（与 VideoSpec 的转场类型同名；`cut` 不做 xfade）。 */
+const XFADE_TRANSITIONS = new Set(['fade', 'dissolve', 'wipeleft', 'wiperight', 'slideleft', 'slideright']);
+
+export interface VideoSpecTransitionStep { type: string; frames: number }
+
+/**
+ * 转场规则（O-3 / E-1，“转场不改变时钟”）：
+ *  - 主轨仍然首尾相接，场景窗口与音频时间线完全一致，成片总帧数 = Σ场景帧数 = 音频长度；
+ *  - 场景 i 的转场时长 T = min(transitionIn.durationFrames, floor(全片最短片段帧数 / 2))（与旧 sidecar
+ *    “min(请求时长, 最短片段一半)” 的全局上限一致），T = 0 或类型为 cut 时硬切；
+ *  - 渲染时给前一片段尾部补 T 帧（定格它的最后一帧），xfade 的 offset = 场景 i 的 startFrame / fps，
+ *    所以场景 i 自己的第 0 帧仍在它的 startFrame 出现，和它的旁白对齐；旁白不做交叉淡化。
+ *  - 与旧版的差别：旧 sidecar 把相邻片段重叠 T 秒、成片缩短 T·(n−1)，旁白随之交叉淡化；新版不缩短。
+ * 返回值与 spec.scenes 对齐（下标 0 恒为 null）。
+ */
+export function videoSpecTransitionPlan(spec: VideoSpec): Array<VideoSpecTransitionStep | null> {
+  const shortest = Math.min(...spec.scenes.map(scene => scene.durationFrames));
+  const cap = Math.floor(shortest / 2);
+  return spec.scenes.map((scene, index) => {
+    const transition = scene.transitionIn;
+    if (index === 0 || !transition || !XFADE_TRANSITIONS.has(transition.type)) return null;
+    const frames = Math.min(transition.durationFrames, cap);
+    return frames > 0 ? { type: transition.type, frames } : null;
+  });
+}
+
+export interface XfadeMuxSegment { path: string; startFrame: number; durationFrames: number; transitionIn: VideoSpecTransitionStep | null }
+
+/** 带转场的封装参数（全局参数之后），导出供测试核对。 */
+export function muxVideoSpecFilmXfadeArgs(options: { segments: readonly XfadeMuxSegment[]; audioPath: string; outputPath: string; fps: number; totalFrames: number; crf?: number; audioBitrate?: string }): string[] {
+  const { segments, fps } = options;
+  const seconds = (frames: number) => Number((frames / fps).toFixed(6)).toString();
+  const filters: string[] = [];
+  segments.forEach((segment, index) => {
+    const pad = segments[index + 1]?.transitionIn?.frames ?? 0;
+    // xfade 要求输入是恒定帧率：先按帧号重排时间戳（N/(fps·TB)），再用 fps 滤镜声明帧率（顺序不能反，setpts 会清掉帧率）。
+    filters.push(`[${index}:v]${pad > 0 ? `tpad=stop_mode=clone:stop=${pad},` : ''}setpts=N/(${fps}*TB),fps=${fps}[s${index}]`);
+  });
+  let current = 's0';
+  for (let index = 1; index < segments.length; index += 1) {
+    const transition = segments[index].transitionIn;
+    const label = `x${index}`;
+    filters.push(transition
+      ? `[${current}][s${index}]xfade=transition=${transition.type}:duration=${seconds(transition.frames)}:offset=${seconds(segments[index].startFrame)}[${label}]`
+      : `[${current}][s${index}]concat=n=2:v=1:a=0[${label}]`);
+    current = label;
+  }
+  filters.push(`[${current}]${VIDEO_SPEC_SETPARAMS_FILTER}[vout]`);
+  return [
+    ...segments.flatMap(segment => ['-i', fileInput(segment.path)]),
+    '-i', fileInput(options.audioPath),
+    '-filter_complex', filters.join(';'),
+    '-map', '[vout]', '-map', `${segments.length}:a:0`,
+    '-frames:v', String(options.totalFrames), '-r', String(fps),
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', String(options.crf ?? 18), '-pix_fmt', 'yuv420p', ...VIDEO_SPEC_OUTPUT_COLOR_ARGS,
+    '-c:a', 'aac', '-b:a', options.audioBitrate ?? '256k', '-ar', '48000',
+    '-movflags', '+faststart', '-f', 'mp4', options.outputPath,
+  ];
+}
+
+/** 有转场时走 xfade 滤镜图，否则退回 concat（`muxVideoSpecFilm`，行为不变）。 */
+export async function muxVideoSpecFilmWithTransitions(options: Omit<MuxVideoSpecFilmOptions, 'segmentPaths'> & { spec: VideoSpec; segments: ReadonlyArray<{ sceneId: string; ref: string; startFrame: number; durationFrames: number }> }): Promise<{ ref: string }> {
+  const plan = videoSpecTransitionPlan(options.spec);
+  const transitionFor = new Map(options.spec.scenes.map((scene, index) => [scene.id, plan[index]] as const));
+  const ordered = [...options.segments].sort((a, b) => a.startFrame - b.startFrame);
+  const segments: XfadeMuxSegment[] = ordered.map((segment, index) => ({
+    path: segment.ref, startFrame: segment.startFrame, durationFrames: segment.durationFrames,
+    transitionIn: index === 0 ? null : transitionFor.get(segment.sceneId) ?? null,
+  }));
+  const { spec: _spec, segments: _segments, ...rest } = options;
+  if (segments.length < 2 || segments.every(segment => !segment.transitionIn)) {
+    return muxVideoSpecFilm({ ...rest, segmentPaths: segments.map(segment => segment.path) });
+  }
+  if (!Number.isSafeInteger(options.totalFrames) || options.totalFrames < 1) throw new AppError('VIDEO_SPEC_EXECUTOR_INPUT_INVALID', '总帧数必须是正整数。');
+  return atomicOutput(options.outputPath, async temp => {
+    await runFfmpeg(options.ffmpegPath, muxVideoSpecFilmXfadeArgs({ ...rest, segments, outputPath: temp }), {
+      cwd: dirname(options.outputPath), label: '成片封装（转场）', ...(options.signal ? { signal: options.signal } : {}), ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    });
+    return { ref: options.outputPath };
+  });
+}
+
 // ───────────────────────────── 检查点文件 ─────────────────────────────
 
 export async function saveVideoSpecExecutorCheckpointFile(path: string, checkpoint: VideoSpecExecutorCheckpoint): Promise<void> {
@@ -310,6 +402,10 @@ export interface VideoSpecExecutorRuntimeOptions {
   createCaptureWindow?: CaptureWindowFactory;
   captureFormat?: CaptureFrameFormat;
   captureTimeouts?: Partial<CaptureTimeouts>;
+  /** 采集校验开关（缺省 CaptureHost 严格默认值）。 */
+  captureRequest?: Pick<CaptureSceneRequest, 'failOnPageErrors' | 'requireFonts' | 'durationToleranceFrames'>;
+  /** 'xfade' = 按场景 transitionIn 做转场（见 `videoSpecTransitionPlan`）；缺省 'cut' = 原来的 concat 硬切。 */
+  transitions?: 'cut' | 'xfade';
   ffmpegPath?: string;
   pythonRoot?: string;
   /** false 关闭成片复检。 */
@@ -376,6 +472,8 @@ export function createVideoSpecExecutorRuntimeDeps(options: VideoSpecExecutorRun
           signal: request.signal, onProgress: request.onProgress,
           ...(options.captureFormat ? { format: options.captureFormat } : {}),
           ...(options.captureTimeouts ? { timeouts: options.captureTimeouts } : {}),
+          ...(options.captureRequest ? { capture: options.captureRequest } : {}),
+          ...(options.log ? { onPageErrors: (sceneId: string, errors: readonly string[]) => options.log!(`[video-spec] 场景 ${sceneId} 页面报错 ${errors.length} 条：${errors.slice(0, 3).join(' | ')}`) } : {}),
           ...(timeoutMs ? { timeoutMs } : {}),
         });
       }
@@ -406,6 +504,12 @@ export function createVideoSpecExecutorRuntimeDeps(options: VideoSpecExecutorRun
     async mux(request) {
       const mp4 = request.spec.outputs.find(output => output.kind === 'mp4');
       const outputPath = mp4 && mp4.kind === 'mp4' && mp4.path ? resolve(sourcePath(mp4.path)) : join(workDir, 'output', 'film.mp4');
+      if (options.transitions === 'xfade') {
+        return muxVideoSpecFilmWithTransitions({
+          ffmpegPath: await ffmpegPath(), spec: request.spec, segments: request.segments, audioPath: request.audioRef, outputPath,
+          fps: request.spec.canvas.fps, totalFrames: request.spec.durationFrames, signal: request.signal, ...(timeoutMs ? { timeoutMs } : {}),
+        });
+      }
       return muxVideoSpecFilm({
         ffmpegPath: await ffmpegPath(), segmentPaths: request.segments.map(segment => segment.ref), audioPath: request.audioRef, outputPath,
         fps: request.spec.canvas.fps, totalFrames: request.spec.durationFrames, signal: request.signal, ...(timeoutMs ? { timeoutMs } : {}),

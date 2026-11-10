@@ -80,6 +80,8 @@ import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint, synchronizeHtmlVideoEditorialArtifacts } from '../src/shared/html-video-runner';
 import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, applyHtmlVideoSceneStructureChange, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
 import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from '../src/shared/hyperframes';
+// O-3: new HTML video tasks render through the VideoSpec executor (marker + setting).
+import { htmlVideoUsesVideoSpec, htmlVideoVideoSpecRenderEnabled, markHtmlVideoPipelineDataForCreation } from '../src/shared/html-video-spec';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { assertNetworkUrl } from '../src/shared/network-policy';
@@ -1222,7 +1224,8 @@ async function runHtmlVideoTask(
       resolveCoverTemplate: (id) => database.getCustomCoverTemplateDetail(id),
       resolveDraftTemplate: (id) => database.getDraftTemplateDetail(id),
       createPreviews: runtime.createPreviews,
-      render: runtime.render,
+      // O-3: marked tasks (videoSpecVersion) use the VideoSpec render; everything else keeps the legacy render.
+      render: htmlVideoUsesVideoSpec(initialState) ? runtime.renderVideoSpec : runtime.render,
       consumeRenderArtifactDigest: runtime.consumeRenderArtifactDigest,
       onCheckpoint: async (state) => {
         lastState = state;
@@ -3384,12 +3387,14 @@ async function persistDirectorRenderFailure(
 
 trustedHandle('html-video:create-task', async (_event, input: CreateTaskInput) => {
   const database = await getDb();
+  // O-3: stamp videoSpecVersion on new tasks per “新建 HTML 视频使用新版渲染引擎” (absent = on).
+  const videoSpecRender = htmlVideoVideoSpecRenderEnabled(await (await getConfigService()).getRuntimeConfig());
   const task = await database.createTask({
     ...input,
     taskKind: 'story',
     taskType: 'html-video',
     pipelineStep: input.pipelineStep ?? 'rewrite',
-    pipelineData: input.pipelineData ?? '{}',
+    pipelineData: markHtmlVideoPipelineDataForCreation(input.pipelineData, videoSpecRender) ?? '{}',
   });
   const activityReservation = historyActivityRegistry.reserveActive('task', task.id);
   let reservationTransferred = false;

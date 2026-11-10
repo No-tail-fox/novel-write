@@ -773,6 +773,10 @@ function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
     config,
     // G-7: optional and tolerant — older states have none; a malformed budget is dropped, not fatal.
     ...(parseRetryBudget(value.retryBudget) ? { retryBudget: parseRetryBudget(value.retryBudget) } : {}),
+    // O-3: optional VideoSpec marker; older states have none (legacy render). Only positive integers are kept.
+    ...(typeof value.videoSpecVersion === 'number' && Number.isSafeInteger(value.videoSpecVersion) && value.videoSpecVersion >= 1
+      ? { videoSpecVersion: value.videoSpecVersion }
+      : {}),
   };
 }
 

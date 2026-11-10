@@ -874,6 +874,17 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             <CostPriceTableFields config={draft} onChange={(costPriceTable) => setSettingsDraft({ ...draft, costPriceTable })} />
           </SettingsCard>
         ) : null}
+        {section === 'creative' ? (
+          // O-3: new HTML video tasks render through the VideoSpec engine; absent = on, existing tasks unaffected.
+          <SettingsCard title="HTML 视频渲染" status={draft.htmlVideoVideoSpecRender === false ? '旧版引擎' : '新版引擎'}>
+            <SwitchField
+              checked={draft.htmlVideoVideoSpecRender !== false}
+              onChange={(_, data) => setSettingsDraft({ ...draft, htmlVideoVideoSpecRender: data.checked })}
+              label="新建 HTML 视频使用新版渲染引擎"
+            />
+            <div className="settings-help-text">只影响之后新建的 HTML 视频，已有任务保持创建时的渲染方式。新版只替换出片环节，分镜、生图、配音和工作室编辑不变。</div>
+          </SettingsCard>
+        ) : null}
         {section === 'webSearch' ? (
           <SettingsCard title="联网搜索" status={settingsStatusLabel(configTargetStatus('webSearch', draftWithCredentialStatus))}>
             <SwitchField

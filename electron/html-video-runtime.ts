@@ -13,6 +13,7 @@ import {
 import { resolveManagedHistoryWorkDir } from './managed-history-paths';
 import { preflightVideoRenderDisk } from './video-render-preflight';
 import { runFinalFilmGateSafely, type FinalFilmGateRunOptions } from './final-film-gate-runner';
+import { createHtmlVideoSpecFilmRenderer, type HtmlVideoSpecFilmRenderer } from './html-video-spec-render';
 import { resolveNormalizeAudio } from '../src/shared/loudness';
 import {
   buildHtmlVideoExportInput,
@@ -93,6 +94,8 @@ export interface ElectronHtmlVideoRuntimeOptions {
   hyperframesRuntimePath?: string;
   /** Advisory final-film gate after render (quality-gate.json). `false` disables; default runFinalFilmGateSafely. */
   finalFilmGate?: false | ((options: FinalFilmGateRunOptions) => Promise<unknown>);
+  /** O-3: VideoSpec film renderer used by `renderVideoSpec` (new tasks). Default: createHtmlVideoSpecFilmRenderer(). */
+  videoSpecRender?: HtmlVideoSpecFilmRenderer;
 }
 
 export interface HtmlVideoPublicationFileOperations {
@@ -122,6 +125,11 @@ export interface ElectronHtmlVideoRuntime {
   measureAudioDuration(path: string, signal?: AbortSignal): Promise<number>;
   createPreviews(input: HtmlVideoPreviewInput): Promise<HtmlVideoPreviewOutput>;
   render(input: HtmlVideoRenderInput): Promise<HtmlVideoOutput>;
+  /**
+   * O-3: render step for tasks marked `videoSpecVersion` (VideoSpec executor). Same inputs, artifacts
+   * (final.mp4, quality-gate.json) and trusted digest as `render`; failures are `VIDEO_SPEC_RENDER_*`.
+   */
+  renderVideoSpec(input: HtmlVideoRenderInput): Promise<HtmlVideoOutput>;
   consumeRenderArtifactDigest(
     output: HtmlVideoOutput,
     signal?: AbortSignal,
@@ -2376,6 +2384,139 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
             await (options.finalFilmGate ?? runFinalFilmGateSafely)({ route: 'html', filmPath: publishedPath, signal,
               expected: { durationMs: Math.round(composition.totalDurationS * 1000), fps: composition.fps, width: composition.canvas_w, height: composition.canvas_h,
                 audioExpected: true, loudnessTarget: resolveNormalizeAudio(composition.normalizeAudio) } });
+          } catch { /* advisory only */ }
+        }
+        return output;
+      }, options.stagingFileOperations);
+    },
+
+    // O-3 (2026-11-10): VideoSpec render for new tasks. The legacy `render` above is untouched; this path
+    // shares staging, publication, the trusted digest and the advisory gate, but renders through the
+    // VideoSpec executor (electron/html-video-spec-render.ts). No fallback to `render` on failure.
+    async renderVideoSpec(input) {
+      const signal = input.signal ?? options.signal;
+      throwIfAborted(signal);
+      const { workDir } = await validateHtmlVideoTaskDirectory(options.taskDirectory);
+      const bgmPath = options.bgmPath
+        ? await taskLocalFile(workDir, options.bgmPath)
+        : undefined;
+      const localInput = await resolveTaskLocalRuntimeMedia(workDir, input);
+      const savedSources = await loadHtmlVideoCompositionSources(workDir, input.compositions);
+      const coverPath = input.coverAsset
+        ? await taskLocalFile(workDir, input.coverAsset.path)
+        : undefined;
+      await validateHtmlVideoTaskDirectory(options.taskDirectory);
+      throwIfAborted(signal);
+      const renderFilm = options.videoSpecRender ?? createHtmlVideoSpecFilmRenderer();
+      return withHtmlVideoRuntimeStage(options.taskDirectory, 'render', async (stage, stageDir) => {
+        // Scene pages: the saved composition source, else the page the legacy renderer would build.
+        const composition = buildRuntimeComposition(options, localInput, fps, localInput.config.renderLongEdge ?? renderMaxLongEdge, stageDir, bgmPath, coverPath);
+        const stageHtmlDir = await ensureTaskLocalDirectory(stageDir, ['html-scenes']);
+        await stageHtmlVideoAnimationRuntimes(options, stageHtmlDir);
+        const scenePagePaths = new Map<number, string>();
+        for (const scene of composition.scenes) {
+          const htmlPath = join(stageHtmlDir, `scene-${String(scene.sceneId).padStart(3, '0')}.html`);
+          await writeFile(htmlPath, savedSources.get(scene.sceneId) ?? scene.html, 'utf8');
+          scenePagePaths.set(scene.sceneId, htmlPath);
+        }
+        const coverDurationS = composition.coverPath ? composition.coverDurationS ?? composition.scenes[0]?.duration ?? 2 : 0;
+        await preflightHtmlVideoRender({
+          workDir: stageDir,
+          canvas: { width: composition.canvas_w, height: composition.canvas_h },
+          fps,
+          durations: composition.scenes.map((scene) => scene.duration),
+          outputDurationS: composition.scenes.reduce((sum, scene) => sum + scene.duration, coverDurationS),
+          coverDurationS,
+        }, {
+          getAvailableDiskBytes: options.getAvailableDiskBytes,
+        });
+        const film = await renderFilm({
+          stageDir,
+          workDir,
+          title: options.taskTitle,
+          scenes: localInput.scenes,
+          voices: localInput.voices,
+          assets: localInput.assets,
+          config: localInput.config,
+          scenePagePaths,
+          canvas: { width: composition.canvas_w, height: composition.canvas_h },
+          runtimeFps: fps,
+          outputPath: composition.outputPath,
+          ...(bgmPath ? { bgmPath } : {}),
+          ...(coverPath ? { coverPath } : {}),
+          ...(signal ? { signal } : {}),
+        });
+        throwIfAborted(signal);
+        await validateHtmlVideoRuntimeStage(stage);
+        const outputPath = await taskLocalFile(stageDir, film.outputPath);
+        const expectedOutputPath = await taskLocalFile(stageDir, composition.outputPath);
+        if (relative(expectedOutputPath, outputPath)) {
+          throw new AppError('VIDEO_SPEC_RENDER_OUTPUT_INVALID', '新版渲染引擎的成片路径无效。', true);
+        }
+        const outputStat = await stat(outputPath);
+        if (!outputStat.isFile() || outputStat.size <= 0) {
+          throw new AppError('VIDEO_SPEC_RENDER_OUTPUT_INVALID', '新版渲染引擎的成片为空。', true);
+        }
+        throwIfAborted(signal);
+        const probedOutputIdentity = await pinHtmlVideoPublishedFileIdentity(
+          outputPath,
+          options.publicationFileOperations ?? {},
+          signal,
+        );
+        const probe = await options.probeMedia(stageDir, outputPath, signal);
+        throwIfAborted(signal);
+        await assertHtmlVideoPublishedFileIdentity(
+          outputPath,
+          probedOutputIdentity,
+          options.publicationFileOperations ?? {},
+          signal,
+        );
+        if (
+          probe.hasAudio !== true
+          || probe.hasVideo !== true
+          || probe.width !== film.width
+          || probe.height !== film.height
+          || typeof probe.duration !== 'number'
+          || !Number.isFinite(probe.duration)
+          || probe.duration <= 0
+        ) {
+          throw new AppError('VIDEO_SPEC_RENDER_OUTPUT_INVALID', '新版渲染引擎的成片未通过完整性校验。', true);
+        }
+        const expectedDurationS = film.durationMs / 1000;
+        if (Math.abs(probe.duration - expectedDurationS) > Math.max(0.5, expectedDurationS * 0.05)) {
+          throw new AppError('VIDEO_SPEC_RENDER_OUTPUT_DURATION_MISMATCH', '新版渲染引擎的成片时长与 VideoSpec 不一致。', true);
+        }
+        const [publishedFile] = await publishHtmlVideoStagedFiles(
+          options.taskDirectory,
+          stage,
+          [{
+            stagedPath: outputPath,
+            destinationPath: join(workDir, 'final.mp4'),
+            expectedIdentity: probedOutputIdentity,
+          }],
+          options.publicationFileOperations,
+          signal,
+        );
+        const publishedPath = publishedFile.path;
+        const { digest, ...publishedIdentity } = publishedFile.identity;
+        if (!digest) throw htmlVideoOutputChanged();
+        const output = Object.freeze({
+          path: publishedPath,
+          sizeBytes: Number(publishedIdentity.size),
+          durationSec: probe.duration,
+        });
+        renderArtifactProofs.set(output, {
+          path: publishedPath,
+          size: output.sizeBytes,
+          sha256: digest,
+          identity: publishedIdentity,
+        });
+        // Same advisory gate (quality-gate.json next to final.mp4) as the legacy path; never blocks delivery.
+        if (options.finalFilmGate !== false) {
+          try {
+            await (options.finalFilmGate ?? runFinalFilmGateSafely)({ route: 'html', filmPath: publishedPath, signal,
+              expected: { durationMs: film.durationMs, fps: film.fps, width: film.width, height: film.height,
+                audioExpected: true, loudnessTarget: film.loudnessNormalized } });
           } catch { /* advisory only */ }
         }
         return output;

@@ -295,6 +295,11 @@ export interface VoiceTimingOptions {
   minSceneMs?: number;
   /** 旁白后的尾部留白（毫秒），默认 0。 */
   tailPadMs?: number;
+  /**
+   * 个别场景的最短时长（毫秒，按场景 id），与 `minSceneMs` 取较大值。HTML 路线用它保留
+   * “有封面时第一个场景至少 6 s（开场蒙太奇）”的现有规则。
+   */
+  minSceneMsById?: Readonly<Record<string, number>>;
 }
 
 function timingError(message: string): AppError {
@@ -334,6 +339,8 @@ export function applyVoiceTimings(spec: VideoSpec, timings: ReadonlyMap<string, 
   const fps = spec.canvas.fps;
   const minSceneMs = sanitizeMs(options.minSceneMs ?? 800, '最短场景时长');
   const tailPadMs = sanitizeMs(options.tailPadMs ?? 0, '尾部留白');
+  const minById = new Map<string, number>();
+  for (const [sceneId, value] of Object.entries(options.minSceneMsById ?? {})) minById.set(sceneId, sanitizeMs(value, `场景 "${sceneId}" 的最短时长`));
   for (const [sceneId, timing] of timings) {
     if (!spec.scenes.some(scene => scene.id === sceneId)) throw timingError(`配音结果指向不存在的场景 "${sceneId}"。`);
     if (typeof timing.ref !== 'string' || !timing.ref.trim()) throw timingError(`场景 "${sceneId}" 的配音缺少文件引用。`);
@@ -354,7 +361,7 @@ export function applyVoiceTimings(spec: VideoSpec, timings: ReadonlyMap<string, 
     let end = index;
     while (end < spec.scenes.length && timings.has(spec.scenes[end].id)) end += 1;
     const run = spec.scenes.slice(index, end);
-    const durationsMs = run.map(scene => Math.max(minSceneMs, timings.get(scene.id)!.durationMs + tailPadMs));
+    const durationsMs = run.map(scene => Math.max(minSceneMs, minById.get(scene.id) ?? 0, timings.get(scene.id)!.durationMs + tailPadMs));
     const counts = allocateFrameCounts(durationsMs, fps);
     const runStartFrame = cursor;
     let clockMs = 0;
