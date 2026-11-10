@@ -22,9 +22,16 @@ export function summarizeErrorMessage(message: string): string {
   if (/LEMO_EDIT_LIMIT/iu.test(normalized)) return '已达单文件创作批次上限，工程已保存';
   if (/LEMO_EDIT_(?:INVALID|STALE|SIZE|EMPTY|NOOP|AMBIGUOUS)/iu.test(normalized)) return '本批修改未通过检查，上一批源码已保留';
   if (/LEMO_FILE_TRUNCATED/iu.test(normalized)) return '代码输出预算耗尽，已保留不完整源码';
-  if (/UND_ERR_CONNECT_TIMEOUT/iu.test(normalized)) return '服务连接超时';
-  if (/UND_ERR_SOCKET|ECONNRESET/iu.test(normalized)) return '网络连接中断';
-  if (/ENOTFOUND|EAI_AGAIN/iu.test(normalized)) return '服务域名解析失败';
+  // Network failures name the host and the system code, so the user knows which service dropped.
+  const host = [...normalized.matchAll(/\b((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?\b/giu)].map(m => m[1])
+    .find(name => !/\.(?:html?|m?js|cjs|json|png|jpe?g|webp|gif|mp[34]|wav|ts|tsx|md|txt|css|py|exe|dll|log)$/iu.test(name));
+  const at = host ? `与 ${host} ` : '';
+  if (/UND_ERR_CONNECT_TIMEOUT/iu.test(normalized)) return `${at}服务连接超时${host ? '（UND_ERR_CONNECT_TIMEOUT）' : ''}`;
+  const reset = normalized.match(/ECONNRESET|UND_ERR_SOCKET|ECONNREFUSED|EPIPE|ETIMEDOUT/iu)?.[0];
+  if (reset) return host ? `与 ${host} 连接中断（${reset.toUpperCase()}）` : '网络连接中断';
+  if (/ENOTFOUND|EAI_AGAIN/iu.test(normalized)) return host ? `服务域名解析失败：${host}` : '服务域名解析失败';
+  const gateway = normalized.match(/\b(?:HTTP|status|error)\s*\(?(52[0-4]|502|503|504)\)?/iu)?.[1];
+  if (gateway) return `${host ? host + ' ' : ''}上游网关错误 ${gateway}，结果可能未知`;
   if (/Image generation is not enabled for this group|分组未开通生图/iu.test(normalized)) return '图片服务分组未开通生图';
   if (/No available compatible accounts|No available channel for model\s|没有可用于模型.*上游账号或通道/iu.test(normalized)) {
     return '图片服务暂无可用账号';

@@ -379,7 +379,12 @@ async function openHiddenHtmlWindow(input: {
       } catch { /* Preserve the original failure when the renderer is unresponsive. */ }
     }
     if (!window.isDestroyed()) window.destroy();
-    if (readiness) throw new Error(      `${error instanceof Error ? error.message : String(error)} [${input.htmlPath}] ${readiness}`, { cause: error });
+    // Keep the user-facing message clean (no local paths, no doubled "Error:"); diagnostics travel as a property for logs.
+    if (readiness) {
+      const message = (error instanceof Error ? error.message : String(error)).replace(/^(?:Error:\s*)+/u, '');
+      console.warn('[html-video] scene readiness failed', input.htmlPath, readiness);
+      throw Object.assign(new Error(message, { cause: error }), { readinessDiagnostics: readiness });
+    }
     throw error;
   }
 }

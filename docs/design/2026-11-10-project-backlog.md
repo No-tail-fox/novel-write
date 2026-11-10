@@ -63,7 +63,7 @@
 | G-1 | **模型能力档案 + 自动降级链**：遇到 404 `model_not_found` / 503 时切换到备选模型，并写日志 | 路线图 `technical-roadmap.md:135`（P0-1）。代码里 `fallbackChain`/`model_not_found` 都 grep 不到；现有 `ModelProfile` 只是服务商配置（`electron/config-service.ts:168`、`src/shared/provider-profile-utils.ts:173`），不是能力档案 | P0 | M | — |
 | G-2 | **统一错误分类 + 退避重试**（网络断开、502/503/520/522/524、429、4xx、本地错误） | 目前只有 `fetchWithNetworkPolicy` 对 `UND_ERR_CONNECT_TIMEOUT` 重试一次（`src/shared/network-policy.ts:328-329`）；`ECONNRESET` 只映射成提示文案（`network-policy.ts:679`）。`src/ electron/` 里没有任何 524 处理 | P0 | M | — |
 | G-3 | **回执先于解析 + 幂等 key（全路线）**；`unknown` 时先查回执，再决定是否重发 | 账本只在没接生产的 `services/lemo-agent-worker/request-ledger.ts`、`messages-gateway.ts`；Lemo 规划回执在 `electron/lemo-plan-receipt.ts`；VOX 的 unknown 要人工触发 `retry-unknown`（`electron/vox-production-service.ts:163`）。路线图 P0-3（`:137`） | P0 | L | G-2 |
-| G-4 | **HTML runner 保留底层错误**（附主机、错误码） | `src/shared/html-video-runner.ts:457-460` 用 `HTML video ${step} step failed.` 当默认值；**根因**在 `src/shared/app-error.ts:72-76`：普通 Error 如果没有 `CODE:` 前缀，`message = coded?.[2] \|\| defaults.message`，原始消息直接丢掉。建议在 runner 里把原因附在 `cause`/diagnostic 上，不要改全局 `normalizeAppError` 的语义（会影响所有调用方） | P0 | S | — |
+| G-4 | **✅ 已实现**：`describeErrorCause` 沿 cause 链取消息/系统码/主机/HTTP 状态（脱敏、≤400 字），runner 失败消息变为 `HTML video <step> step failed: <原因>`，不改 `normalizeAppError` 语义（`tests/error-cause.test.ts`）。原条目：**HTML runner 保留底层错误**（附主机、错误码） | `src/shared/html-video-runner.ts:457-460` 用 `HTML video ${step} step failed.` 当默认值；**根因**在 `src/shared/app-error.ts:72-76`：普通 Error 如果没有 `CODE:` 前缀，`message = coded?.[2] \|\| defaults.message`，原始消息直接丢掉。建议在 runner 里把原因附在 `cause`/diagnostic 上，不要改全局 `normalizeAppError` 的语义（会影响所有调用方） | P0 | S | — |
 | G-5 | **TTS 链路加固**：单段并发上限、断线自动重试、代理/直连可配置 | 路线图 P0-5（`:139`）；实跑出现 ECONNRESET（`route-split…md:101,119`）。代理配置项是否已有【未核实】 | P0 | M | G-2 |
 | G-6 | **默认模型决策**：`claude-sonnet-5-5` 在 moeapi 当前 key 分组下返回 404，要么换分组，要么默认改成 `gemini-3.1-pro-preview` | `route-split…md:100`；`technical-roadmap.md:207-209`。代码里没有写死这个模型，问题在用户配置 | P0 | S | 需要用户决策 |
 | G-7 | **unknown 节点自动策略 + 统一重试预算**（VOX DAG 和 HTML runner 两套） | `technical-roadmap.md:100,120`；P2-2 | P1 | M | G-3 |
@@ -91,16 +91,16 @@
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
 | T-1 | **响度 −20.7 → −14 LUFS**（见 E-1） | 实测 `route-split…md:109`；`electron/director-renderer.ts:213` 只在 `authoring.owner === 'creative-production'` 时默认打开 `normalizeAudio` | P1 | M | E-1 |
-| T-2 | **老模板项目动效预览报 `InvalidModificationError`**（预览 iframe 里重复 `CSS.registerProperty`） | `route-split…md:58`；`src/features/director-desk/DirectorMotionPreview.tsx:98` 用 `srcDoc` 的 iframe；全仓 grep `registerProperty` 为 0，没有 shim。修法见 `technical-roadmap.md:147` | P1 | S | — |
+| T-2 | **✅ 已修复**：`css-register-property-shim.ts` 在 VOX/Lemo 原生场景代码之前注入，重复注册同名属性变为幂等，只吞 InvalidModificationError（`tests/css-register-property-shim.test.ts`）。原条目：**老模板项目动效预览报 `InvalidModificationError`**（预览 iframe 里重复 `CSS.registerProperty`） | `route-split…md:58`；`src/features/director-desk/DirectorMotionPreview.tsx:98` 用 `srcDoc` 的 iframe；全仓 grep `registerProperty` 为 0，没有 shim。修法见 `technical-roadmap.md:147` | P1 | S | — |
 | T-3 | 生图 524、配音 unknown 只能人工 `retry-unknown` | `route-split…md:120,127` | P1 | — | G-3、G-7 |
 
 **HTML 动画**
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
-| H-1 | 吞错（同 G-4）；配音失败的确切请求次数被 `HTML_VIDEO_VOICE_FAILED` 掩盖 | `route-split…md:121` | P0 | S | — |
+| H-1 | **✅ 已实现（随 G-4）**。原条目：吞错（同 G-4）；配音失败的确切请求次数被 `HTML_VIDEO_VOICE_FAILED` 掩盖 | `route-split…md:121` | P0 | S | — |
 | H-2 | 响度 −20.9 → −14 LUFS | `src/shared/html-video.ts:294`（`normalizeAudio` 需要显式打开）；实测 `route-split…md:110` | P1 | S | E-1 |
-| H-3 | 场景图片加载失败的错误被包了两层 `Error:`（捕获契约 2 个测试失败） | `tests/html-video.test.ts:1957`；`electron/html-video-scene-ready.ts:16` | P1 | S | — |
+| H-3 | **✅ 已修复**：诊断信息改为 `readinessDiagnostics` 属性和日志，消息去掉重复 `Error:` 和本地路径，`html-video` 2 个捕获契约测试恢复通过。原条目：场景图片加载失败的错误被包了两层 `Error:`（捕获契约 2 个测试失败） | `tests/html-video.test.ts:1957`；`electron/html-video-scene-ready.ts:16` | P1 | S | — |
 | H-4 | 分辨率/fps 默认值不一致：实测成片 1280×720；`html-video-runtime.ts:35` 默认 24，而 `:1012` 的兜底是 30 | 【未核实 720p 是否只是这次的配置】 | P2 | S | E-6 |
 | H-5 | 生图次数多（一条约 11 次），成本偏高 | `technical-roadmap.md:45,47` | P3 | M | U-5 |
 | H-6 | 用户需确认：P0-4 和 P1-1 都要改动 HTML 路线 | `technical-roadmap.md:212` | P0 | — | 用户决策 |
@@ -143,8 +143,8 @@
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
-| U-1 | **版本号写死**：设置页显示 V1.0.0，实际包版本 1.0.3 | `src/features/settings/SettingsPage.tsx:876`；`src/app/browser-fallback.ts:1108` | P1 | S | — |
-| U-2 | 错误详情显示底层原因（主机、错误码），比如"与 openspeech… 连接中断（ECONNRESET）" | `technical-roadmap.md:138`；`src/components/ErrorDetails.tsx:26` | P0 | S | G-4 |
+| U-1 | **✅ 已修复**：`src/app/app-version.ts` 从 package.json 读取，设置页和浏览器兜底都用它；`app-version` 测试改为行为断言。原条目：**版本号写死**：设置页显示 V1.0.0，实际包版本 1.0.3 | `src/features/settings/SettingsPage.tsx:876`；`src/app/browser-fallback.ts:1108` | P1 | S | — |
+| U-2 | **✅ 已实现**：摘要显示“与 <主机> 连接中断（ECONNRESET）”、DNS 失败主机、52x 网关错误“结果可能未知”。原条目：错误详情显示底层原因（主机、错误码），比如"与 openspeech… 连接中断（ECONNRESET）" | `technical-roadmap.md:138`；`src/components/ErrorDetails.tsx:26` | P0 | S | G-4 |
 | U-3 | **✅ 导入界面已实现**：在“自动制作设置”里导入图片/视频，填写出处、许可和画面说明，并提供“允许 AI 生成插画”开关和数量上限。剩余：纪实类风格在画面上标注来源（见 L-2b） | `CreativeProductionFields.tsx`；测试 `tests/lemo-material-ui.test.ts` | P1 | S | L-1 |
 | U-4 | 模型降级记录、unknown 处理策略对用户可见 | P0-1/P0-3 验收 | P1 | S | G-1、G-3 |
 | U-5 | 成本面板：按项目统计 LLM/生图/TTS 次数和估算费用 | `technical-roadmap.md:188` | P3 | M | G-3 |

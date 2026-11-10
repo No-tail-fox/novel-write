@@ -2,6 +2,7 @@ import { selectImageLabProfileConfig } from '../shared/image-lab-profile';
 import { defaultProjectModels, projectRuntimeConfig, validateProjectModels } from '../shared/project-models';
 import { preparePromptTemplateSave } from '../shared/workflow-prompt-runtime';
 import { cloneState, hydrateState, initialState } from './app-state';
+import { APP_VERSION } from './app-version';
 import { browserAssetLibrary } from './browser-asset-library';
 import { withoutStaleCustomStylePreview } from '../shared/custom-style-preview';
 import { stripConfigSecrets, type PublicAppState } from '../shared/config-secrets';
@@ -1105,7 +1106,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async activateLicense() { throw new Error('请在桌面端激活。'); },
     async refreshLicense() { throw new Error('请在桌面端验证授权。'); },
     async releaseLicense() { throw new Error('请在桌面端解绑。'); },
-    async getUpdateStatus() { return { currentVersion: '1.0.0', phase: 'idle' as const, release: null, announcements: [], downloaded: 0, required: false, message: '请在桌面端管理更新。' }; },
+    async getUpdateStatus() { return { currentVersion: APP_VERSION, phase: 'idle' as const, release: null, announcements: [], downloaded: 0, required: false, message: '请在桌面端管理更新。' }; },
     async checkForUpdate() { throw new Error('请在桌面端检查更新。'); },
     async downloadUpdate() { throw new Error('请在桌面端下载更新。'); },
     async installUpdate() { throw new Error('请在桌面端安装更新。'); },

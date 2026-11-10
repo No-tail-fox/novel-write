@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArtifactStorageSettings } from './ArtifactStorageSettings';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
+import { APP_VERSION_LABEL } from '../../app/app-version';
 import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Eye, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Music2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, ProviderModelListRequest, ShellView, ThemeName, TtsProviderProfile, VolcengineSpeaker } from "../../shared/types";
@@ -873,7 +874,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
         ) : null}
         {section === 'about' ? (
           <div className="diagnostics-card">
-            <LocalInfo title="视频故事创作助手" value="V1.0.0 · Windows · 本地数据目录" />
+            <LocalInfo title="视频故事创作助手" value={`${APP_VERSION_LABEL} · Windows · 本地数据目录`} />
             <div className="button-row">
               <Button disabled={settingsAction.busy} onClick={runDiagnostics}>检查诊断</Button>
               <Button icon={<Copy size={15} />} onClick={() => navigator.clipboard?.writeText(diagnostics)}>

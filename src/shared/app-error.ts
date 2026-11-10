@@ -91,6 +91,35 @@ export function normalizeAppError(error: unknown, defaults: AppErrorDefaults = {
   );
 }
 
+/**
+ * Human-readable underlying cause of an uncoded error: message, then the cause chain with
+ * system codes (ECONNRESET), host and HTTP status. Redacted and bounded; never changes
+ * normalizeAppError semantics, so callers opt in where a generic default would hide the reason.
+ */
+export function describeErrorCause(error: unknown, limit = 400): string | undefined {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5 && !seen.has(current); depth++) {
+    seen.add(current);
+    if (typeof current === 'string') { parts.push(current); break; }
+    if (typeof current !== 'object') break;
+    const item = current as { message?: unknown; code?: unknown; hostname?: unknown; host?: unknown; status?: unknown; cause?: unknown };
+    const message = typeof item.message === 'string' ? item.message.trim() : '';
+    const extras = [
+      typeof item.code === 'string' && /^[A-Z][A-Z0-9_]{1,40}$/u.test(item.code) && !message.includes(item.code) ? item.code : '',
+      typeof item.hostname === 'string' ? item.hostname : typeof item.host === 'string' ? item.host : '',
+      typeof item.status === 'number' ? `HTTP ${item.status}` : '',
+    ].filter(Boolean);
+    const text = [message, extras.length ? `(${extras.join(', ')})` : ''].filter(Boolean).join(' ');
+    if (text && !parts.some(part => part.includes(text))) parts.push(text);
+    current = item.cause;
+  }
+  const joined = redactErrorText(parts.join(' ← ')).replace(/\s+/gu, ' ').trim();
+  if (!joined) return undefined;
+  return joined.length > limit ? `${joined.slice(0, limit - 1)}…` : joined;
+}
+
 export function toAppErrorPayload(error: unknown, defaults: AppErrorDefaults = {}): AppErrorPayload {
   const normalized = normalizeAppError(error, defaults);
   return {

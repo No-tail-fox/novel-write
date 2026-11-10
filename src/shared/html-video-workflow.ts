@@ -186,10 +186,11 @@ export function htmlVideoUserFacingError(message: string): string {
   if (negativeSlot) {
     return `第 ${Number(negativeSlot[1]) + 1} 个场景的第 ${Number(negativeSlot[2]) + 1} 个前景素材位置编号不能为负数`;
   }
-  const match = /^HTML video (rewrite|plan|planning|assets|voice|preview|render) step failed\.?$/iu.exec(trimmed);
+  const match = /^HTML video (rewrite|plan|planning|assets|voice|preview|render) step failed(?:\.|:\s*(.+))?$/isu.exec(trimmed);
   if (!match) return message;
   const label = legacyHtmlVideoStepFailureLabels[match[1].toLowerCase()];
-  return `${label}失败。请从${label}重试。`;
+  // New checkpoints keep the underlying cause (host, error code) after the colon.
+  return match[2]?.trim() ? `${label}失败：${match[2].trim().replace(/[。.]$/u, '')}。请从${label}重试。` : `${label}失败。请从${label}重试。`;
 }
 
 export function fitHtmlVideoOutputSize(

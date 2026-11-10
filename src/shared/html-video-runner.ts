@@ -2,7 +2,7 @@ import { HTML_COMPOSITION_REVISION } from './html-video-composition';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, realpath, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { AppError, isCancellation, normalizeAppError } from './app-error';
+import { AppError, describeErrorCause, isCancellation, normalizeAppError } from './app-error';
 import {
   createHtmlVideoJobConfig,
   HTML_VIDEO_JOB_DEFAULTS,
@@ -454,9 +454,11 @@ async function runOwnedPipeline(
         throw await persistCheckpointPreservingPrimaryError(state, options, cancellation);
       }
 
+      // An uncoded Error (fetch failure, ECONNRESET, provider text) keeps its cause instead of a bare default.
+      const cause = error instanceof Error && !/^[A-Z][A-Z0-9_]{2,63}:/u.test(error.message) ? describeErrorCause(error) : undefined;
       const normalized = normalizeAppError(error, {
         code: `HTML_VIDEO_${step.toUpperCase()}_FAILED`,
-        message: `HTML video ${step} step failed.`,
+        message: cause ? `HTML video ${step} step failed: ${cause}` : `HTML video ${step} step failed.`,
       });
       state.steps[step] = {
         ...state.steps[step],
