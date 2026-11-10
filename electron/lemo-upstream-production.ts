@@ -12,6 +12,8 @@ import { stepLemoUpstreamAgent, recoverLemoUpstreamAgentTurn, LemoAgentImageUnkn
 import { sha256File, type LemoAssetInput, type LemoAssetMedia } from './lemo-upstream-assets';
 import { lemoAgentArchiveAssets, lemoAgentImagePolicy } from '../src/shared/creative-animation/agent-assets';
 import { lemoAgentMaxTurns } from '../src/shared/creative-animation/upstream-agent';
+import { lemoAgentMaxCost } from '../src/shared/creative-animation/agent-cost';
+import { createLemoAgentCostControl, type LemoAgentCostPricing } from './lemo-agent-cost';
 import { reviewLemoUpstreamProject } from './lemo-upstream-renderer';
 import { loadOpuscar98StyleReference, opuscar98Number, OPUSCAR98_SOURCE } from './lemo-opuscar98';
 
@@ -68,15 +70,18 @@ export function assertLemoLockedShotsRenderable(document: EditorialCollagePipeli
   });
   if (failures.length) throw new Error(`LEMO_LOCKED_SHOT_UNRENDERABLE: 保留的镜头没有可直接渲染的画面，无法拼回原生整片：${failures.join('；').slice(0, 1500)}。请解除这些镜头的锁定，或先补齐它们的画面后再制作。`);
 }
-export function createLemoUpstreamOperations(library: LemoProductionLibrary, work: string, model: LemoAgentOptions['model'], host?: LemoUpstreamMaterialHost) {
+export function createLemoUpstreamOperations(library: LemoProductionLibrary, work: string, model: LemoAgentOptions['model'], host?: LemoUpstreamMaterialHost, pricing?: LemoAgentCostPricing | (() => LemoAgentCostPricing | Promise<LemoAgentCostPricing>)) {
   const options = async (d: EditorialCollagePipelineData, node: VoxProductionNode): Promise<LemoAgentOptions> => {
     const styleId = resolveCreativeStyle(d.productionRun!.settings.authoring?.styleId, d.productionRun!.settings.presetId)?.slug ?? '';
     const base = lemoProductionContext(d, opuscar98Number(styleId) !== undefined ? await loadOpuscar98StyleReference(library.upstreamRoot, styleId) : undefined);
     const material = d.productionRun!.assetChannel ? await lemoMaterialContext(d, host) : undefined;
     const context = { ...base, ...material?.context };
-    return { root: lemoAgentRoot(work, context.runId), upstreamRoot: library.upstreamRoot, context,
+    const root = lemoAgentRoot(work, context.runId);
+    return { root, upstreamRoot: library.upstreamRoot, context,
       turn: Number(node.fileId), requestId: node.requestId, retryOfRequestId: node.retryOfRequestId, model,
       maxTurns: lemoAgentMaxTurns(d.productionRun!.settings.agentMaxTurns), ...(node.skipImage && node.retryOfRequestId ? { skipUnknownImage: true } : {}),
+      // L-4: cost budget/estimate from this run's receipts; outside the context hash and the model's messages.
+      ...(pricing ? { cost: createLemoAgentCostControl(root, lemoAgentMaxCost(d.productionRun!.settings.agentMaxCost), pricing) } : {}),
       ...(material?.assetHost ? { assetHost: material.assetHost } : {}), ...(material?.images ? { images: material.images } : {}),
       review: (filmDir, outputDir, times) => reviewLemoUpstreamProject({ ...library, filmDir, outputDir, times, width: context.width, height: context.height }) };
   };
@@ -89,7 +94,8 @@ export function createLemoUpstreamOperations(library: LemoProductionLibrary, wor
       if (!film && existsSync(join(input.root, `turn-${String(input.turn).padStart(4, '0')}`, 'response.json'))) {
         const mustNotCharge = async (): Promise<never> => { throw new Error('LEMO_RECOVERY_MUST_NOT_CHARGE'); };
         try {
-          film = await stepLemoUpstreamAgent({ ...input, model: mustNotCharge, ...(input.images ? { images: { ...input.images, recoveryOnly: true, generate: mustNotCharge } } : {}) });
+          // Free replay: estimate only, never a budget stop (a replay never submits a paid request anyway).
+          film = await stepLemoUpstreamAgent({ ...input, model: mustNotCharge, ...(input.cost ? { cost: { estimate: input.cost.estimate } } : {}), ...(input.images ? { images: { ...input.images, recoveryOnly: true, generate: mustNotCharge } } : {}) });
         } catch (error) {
           // A replay that would need a new paid image (or whose image outcome is unknown) stays unresolved.
           if (error instanceof LemoAgentImageUnknownError || /^LEMO_RECOVERY_MUST_NOT_CHARGE/.test((error as Error)?.message ?? '')) return undefined;

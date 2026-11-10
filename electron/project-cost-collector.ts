@@ -32,28 +32,35 @@ export async function readLemoTurnEvidence(workDir: string): Promise<LemoTurnEvi
   const root = join(workDir, 'vox-production', 'lemo-agent');
   const turns: LemoTurnEvidence[] = [];
   for (const run of (await list(root)).filter((entry) => entry.directory).slice(0, MAX_LEMO_RUNS)) {
-    const runDir = join(root, run.name);
-    for (const turnDir of (await list(runDir)).filter((entry) => entry.directory && /^turn-\d+$/u.test(entry.name)).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (turns.length >= MAX_LEMO_TURNS) return turns;
-      const directory = join(runDir, turnDir.name);
-      const files = (await list(directory)).filter((entry) => !entry.directory).map((entry) => entry.name);
-      const has = (name: string) => files.includes(name);
-      const submitted = has('submitted.json') ? await readJson<{ at?: string; requestId?: string }>(join(directory, 'submitted.json')) : undefined;
-      const response = has('response.json') ? await readJson<{ usage?: Record<string, unknown> }>(join(directory, 'response.json')) : undefined;
-      turns.push({
-        runId: run.name,
-        turn: Number(turnDir.name.slice(5)),
-        at: typeof submitted?.at === 'string' ? submitted.at : '',
-        submitted: has('submitted.json'),
-        ...(typeof submitted?.requestId === 'string' ? { submittedRequestId: submitted.requestId } : {}),
-        ...(has('response.json') ? { response: { ...(response?.usage ? { usage: response.usage } : {}) } } : {}),
-        ...(has('rejected.json') ? { rejected: await readJson<{ reason?: string; requestId?: string }>(join(directory, 'rejected.json')) ?? {} } : {}),
-        interrupted: has('interrupted.json'),
-        rejectedSubmissions: files.filter((name) => name.startsWith('rejected-submission-')).length,
-        ...(has('image.json') ? { image: await readJson<{ status?: string }>(join(directory, 'image.json')) ?? { status: 'submitted' } } : {}),
-        abandonedImages: files.filter((name) => name.startsWith('image-abandoned-')).length,
-      });
-    }
+    turns.push(...await readLemoRunTurnEvidence(join(root, run.name), run.name, MAX_LEMO_TURNS - turns.length));
+    if (turns.length >= MAX_LEMO_TURNS) return turns;
+  }
+  return turns;
+}
+
+/** Turn receipts of one Lemo v3 run directory (also used by the L-4 cost budget). Read-only. */
+export async function readLemoRunTurnEvidence(runDir: string, runId: string, limit = MAX_LEMO_TURNS): Promise<LemoTurnEvidence[]> {
+  const turns: LemoTurnEvidence[] = [];
+  for (const turnDir of (await list(runDir)).filter((entry) => entry.directory && /^turn-\d+$/u.test(entry.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (turns.length >= limit) return turns;
+    const directory = join(runDir, turnDir.name);
+    const files = (await list(directory)).filter((entry) => !entry.directory).map((entry) => entry.name);
+    const has = (name: string) => files.includes(name);
+    const submitted = has('submitted.json') ? await readJson<{ at?: string; requestId?: string }>(join(directory, 'submitted.json')) : undefined;
+    const response = has('response.json') ? await readJson<{ usage?: Record<string, unknown> }>(join(directory, 'response.json')) : undefined;
+    turns.push({
+      runId,
+      turn: Number(turnDir.name.slice(5)),
+      at: typeof submitted?.at === 'string' ? submitted.at : '',
+      submitted: has('submitted.json'),
+      ...(typeof submitted?.requestId === 'string' ? { submittedRequestId: submitted.requestId } : {}),
+      ...(has('response.json') ? { response: { ...(response?.usage ? { usage: response.usage } : {}) } } : {}),
+      ...(has('rejected.json') ? { rejected: await readJson<{ reason?: string; requestId?: string }>(join(directory, 'rejected.json')) ?? {} } : {}),
+      interrupted: has('interrupted.json'),
+      rejectedSubmissions: files.filter((name) => name.startsWith('rejected-submission-')).length,
+      ...(has('image.json') ? { image: await readJson<{ status?: string }>(join(directory, 'image.json')) ?? { status: 'submitted' } } : {}),
+      abandonedImages: files.filter((name) => name.startsWith('image-abandoned-')).length,
+    });
   }
   return turns;
 }

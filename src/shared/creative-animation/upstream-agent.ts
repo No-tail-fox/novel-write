@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lemoAgentCostProgressText, lemoAgentCostSnapshotSchema, lemoAgentMaxCost } from './agent-cost';
 
 export const LEMO_UPSTREAM_WORKFLOW = 3 as const;
 /** Default (and historical hard) turn limit; old projects without a setting keep exactly this. */
@@ -35,7 +36,7 @@ export function addLemoAgentUsage(total: LemoAgentUsage | undefined, turn: { inp
   return { inputTokens: (total?.inputTokens ?? 0) + turn.inputTokens, outputTokens: (total?.outputTokens ?? 0) + turn.outputTokens, reportedTurns: (total?.reportedTurns ?? 0) + 1 };
 }
 export const lemoAgentUsedTokens = (usage: LemoAgentUsage | undefined) => (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0);
-export interface LemoAgentBudgetSettings { agentMaxTurns?: number; agentMaxTokens?: number }
+export interface LemoAgentBudgetSettings { agentMaxTurns?: number; agentMaxTokens?: number; agentMaxCost?: number }
 /** Why an authoring (not ready) run may not buy another turn; undefined = may continue. */
 export function lemoAgentBudgetExhausted(film: Pick<LemoUpstreamFilm, 'turn' | 'status' | 'usage'> | undefined, settings: LemoAgentBudgetSettings | undefined): 'turns' | 'tokens' | undefined {
   if (!film || film.status === 'ready') return undefined;
@@ -61,10 +62,12 @@ export const lemoUpstreamFilmSchema = z.object({
   assetPreview: z.object({ id: z.string().min(1).max(64), path: z.string().min(1) }).strict().optional(),
   /** Cumulative provider-reported model usage for this run (absent on old projects / providers without usage). */
   usage: lemoAgentUsageSchema.optional(),
+  /** L-4 cost estimate of this run after its latest turn (U-5 price table; display only, never an input). */
+  cost: lemoAgentCostSnapshotSchema.optional(),
 }).strict();
 export type LemoUpstreamFilm = z.infer<typeof lemoUpstreamFilmSchema>;
-/** Progress line: "原生 Agent 第 N / M 轮 · 已用 X tokens（预算 Y）". Usage is provider-reported only; cost is not estimated. */
-export function lemoAgentProgressText(film: Pick<LemoUpstreamFilm, 'turn' | 'status' | 'usage'> | undefined, settings: LemoAgentBudgetSettings | undefined): string {
+/** Progress line: "原生 Agent 第 N / M 轮 · 已用 X tokens（预算 Y） · 约 ¥A / ¥B". Usage is provider-reported only. */
+export function lemoAgentProgressText(film: (Pick<LemoUpstreamFilm, 'turn' | 'status' | 'usage'> & Partial<Pick<LemoUpstreamFilm, 'cost'>>) | undefined, settings: LemoAgentBudgetSettings | undefined): string {
   const maxTurns = lemoAgentMaxTurns(settings?.agentMaxTurns), maxTokens = lemoAgentMaxTokens(settings?.agentMaxTokens);
   const turn = film?.turn ?? 0;
   const parts = [`原生 Agent 第 ${turn} / ${maxTurns} 轮${film?.status === 'ready' ? '（已完成审片）' : ''}`];
@@ -72,6 +75,8 @@ export function lemoAgentProgressText(film: Pick<LemoUpstreamFilm, 'turn' | 'sta
   if (film?.usage) parts.push(`已用 ${used.toLocaleString('en-US')} tokens（输入 ${film.usage.inputTokens.toLocaleString('en-US')} / 输出 ${film.usage.outputTokens.toLocaleString('en-US')}${film.usage.reportedTurns < turn ? `；${turn - film.usage.reportedTurns} 轮服务商未返回用量` : ''}）`);
   else if (turn) parts.push('服务商未返回 token 用量');
   if (maxTokens !== undefined) parts.push(`Token 预算 ${maxTokens.toLocaleString('en-US')}`);
+  const cost = lemoAgentCostProgressText(film?.cost, lemoAgentMaxCost(settings?.agentMaxCost));
+  if (cost) parts.push(cost);
   return parts.join(' · ');
 }
 

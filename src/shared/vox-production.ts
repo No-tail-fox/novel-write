@@ -8,6 +8,7 @@ import { isDefinitiveImageProviderFailure } from './image-provider-error';
 import { isDefinitiveLlmProviderRejection } from './llm-provider-error';
 import { LEMO_AGENT_IMAGE_DEFAULT, LEMO_AGENT_IMAGE_MAX, lemoAgentAssetErrors } from './creative-animation/agent-assets';
 import { LEMO_AGENT_TOKENS_LIMIT, LEMO_AGENT_TOKENS_MIN, LEMO_AGENT_TURNS_LIMIT, LEMO_AGENT_TURNS_MIN } from './creative-animation/upstream-agent';
+import { LEMO_AGENT_COST_MAX, LEMO_AGENT_COST_MIN } from './creative-animation/agent-cost';
 
 const id = z.string().min(1).max(256);
 export const VOX_PRODUCTION_PRESETS = [
@@ -33,6 +34,8 @@ export const voxProductionSettingsSchema = z.object({
   agentMaxTurns: z.number().int().min(LEMO_AGENT_TURNS_MIN).max(LEMO_AGENT_TURNS_LIMIT).optional(),
   /** Lemo v3 only: optional cumulative provider-reported token budget (input + output). */
   agentMaxTokens: z.number().int().min(LEMO_AGENT_TOKENS_MIN).max(LEMO_AGENT_TOKENS_LIMIT).optional(),
+  /** Lemo v3 only: optional cost budget (price-table currency, default CNY), estimated from the run's receipts. */
+  agentMaxCost: z.number().finite().min(LEMO_AGENT_COST_MIN).max(LEMO_AGENT_COST_MAX).optional(),
   music: voxProjectMusicSchema.optional(),
   lockedShotIds: z.array(id).max(500).default([]),
   authoring: z.object({ mode: z.enum(['template', 'ai-code', 'existing-assets']), styleId: z.string().min(1).max(120), brief: z.string().max(2000).optional() }).strict().optional(),
@@ -79,6 +82,8 @@ export function voxProductionSingleRequestNode(node: Pick<VoxProductionNode, 'ki
 
 export function isVoxProductionSubmissionRejection(node: VoxProductionNode, message: string): boolean {
   if (node.resultReceived) return false; // A local persistence failure cannot undo a paid result.
+  // L-4: the Lemo cost budget stops before the next paid call is submitted (the turn's saved reply replays free).
+  if (node.kind === 'film-edit' && node.id.startsWith('upstream-turn:') && message.startsWith('LEMO_AGENT_COST_LIMIT:')) return true;
   if (['image', 'film-material'].includes(node.kind)) return isDefinitiveImageProviderFailure(message);
   // Planning is one synchronous request. Do not infer outcomes for multi-request code/edit nodes.
   return voxProductionSingleRequestNode(node) && isDefinitiveLlmProviderRejection(message);
@@ -121,11 +126,11 @@ export const voxProductionControlSchema = z.object({ id, runId: id, action: z.en
 export const isLemoImageUnknownNode = (run: Pick<VoxProductionRun, 'authoringVersion'>, node: VoxProductionNode) =>
   run.authoringVersion === 3 && node.kind === 'film-edit' && voxProductionNodeStatus(node) === 'unknown' && /LEMO_IMAGE_REQUEST_UNKNOWN/u.test(node.error ?? '');
 export type VoxProductionControl = z.infer<typeof voxProductionControlSchema>;
-/** L-4: adopt the latest saved Lemo Agent budget (turns / tokens) on resume; nothing else in the run changes. */
-export function lemoAgentBudgetResume(run: VoxProductionRun, saved: Pick<VoxProductionSettings, 'agentMaxTurns' | 'agentMaxTokens'> | undefined): VoxProductionRun {
-  if (!saved || (saved.agentMaxTurns === run.settings.agentMaxTurns && saved.agentMaxTokens === run.settings.agentMaxTokens)) return run;
-  const { agentMaxTurns: _turns, agentMaxTokens: _tokens, ...settings } = run.settings;
-  return { ...run, settings: { ...settings, ...(saved.agentMaxTurns !== undefined ? { agentMaxTurns: saved.agentMaxTurns } : {}), ...(saved.agentMaxTokens !== undefined ? { agentMaxTokens: saved.agentMaxTokens } : {}) } };
+/** L-4: adopt the latest saved Lemo Agent budget (turns / tokens / cost) on resume; nothing else in the run changes. */
+export function lemoAgentBudgetResume(run: VoxProductionRun, saved: Pick<VoxProductionSettings, 'agentMaxTurns' | 'agentMaxTokens' | 'agentMaxCost'> | undefined): VoxProductionRun {
+  if (!saved || (saved.agentMaxTurns === run.settings.agentMaxTurns && saved.agentMaxTokens === run.settings.agentMaxTokens && saved.agentMaxCost === run.settings.agentMaxCost)) return run;
+  const { agentMaxTurns: _turns, agentMaxTokens: _tokens, agentMaxCost: _cost, ...settings } = run.settings;
+  return { ...run, settings: { ...settings, ...(saved.agentMaxTurns !== undefined ? { agentMaxTurns: saved.agentMaxTurns } : {}), ...(saved.agentMaxTokens !== undefined ? { agentMaxTokens: saved.agentMaxTokens } : {}), ...(saved.agentMaxCost !== undefined ? { agentMaxCost: saved.agentMaxCost } : {}) } };
 }
 
 export function voxProductionSettings(presetId: VoxProductionSettings['presetId'] = 'paper-explainer'): VoxProductionSettings {

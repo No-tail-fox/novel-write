@@ -117,7 +117,7 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       const settings = settingsFor(d);
       // Default-on settings keep the hashes of journals saved before this option existed.
       // Lemo Agent budgets are spending limits, never part of a paid step's inputs.
-      const { music: _music, agentMaxTurns: _turns, agentMaxTokens: _tokens, ...visualSettings } = settings;
+      const { music: _music, agentMaxTurns: _turns, agentMaxTokens: _tokens, agentMaxCost: _cost, ...visualSettings } = settings;
       const { generateImages, ...legacySettings } = visualSettings;
       const inputSettings = generateImages ? legacySettings : visualSettings;
       // Authoring changes how an approved visual brief is animated, not its paid planning inputs.

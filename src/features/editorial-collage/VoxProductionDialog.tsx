@@ -5,10 +5,10 @@ import { voxProductionInputErrors, voxProductionSettings, voxProductionSettingsS
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { CreativeProductionFields } from './CreativeProductionFields';
 import { ProjectMusicFields } from './ProjectMusicFields';
-import type { BgmItem } from '../../shared/types';
+import type { AppConfig, BgmItem } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 
-export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, onApply, onOpenUrl, onImportAsset, musicLibrary, api }: {
+export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, onApply, onOpenUrl, onImportAsset, musicLibrary, api, costConfig }: {
   document: EditorialCollagePipelineData; busy: boolean; onClose(): void;
   onStart(settings: VoxProductionSettings): Promise<void>;
   onApply(settings: VoxProductionSettings): Promise<void>;
@@ -17,6 +17,8 @@ export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, 
   onImportAsset?(kind: 'image' | 'video'): Promise<string | undefined>;
   musicLibrary: readonly BgmItem[];
   api: Pick<StoryDreamApi, 'importBgmAudio'>;
+  /** L-4: project runtime config, only for the cost-budget pricing warning. */
+  costConfig?: AppConfig;
 }) {
   const [settings, setSettings] = useState(document.productionSettings ?? { ...voxProductionSettings(), authoring: { mode: 'ai-code' as const, styleId: 'auto' } });
   const parsed = voxProductionSettingsSchema.safeParse(settings);
@@ -33,7 +35,7 @@ export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, 
     <Button variant="primary" disabled={busy || !parsed.success || Boolean(error)} onClick={() => parsed.success && void onStart(parsed.data)}>{busy ? '准备中…' : nativeAuthoring ? '按此风格创作全片' : '开始自动制作'}</Button>
   </>}>
     <div className="director-batch-dialog vox-production-form">
-      <CreativeProductionFields settings={settings} onChange={setSettings} onOpenUrl={onOpenUrl} document={document} busy={busy} onImportAsset={onImportAsset} />
+      <CreativeProductionFields settings={settings} onChange={setSettings} onOpenUrl={onOpenUrl} document={document} busy={busy} onImportAsset={onImportAsset} costConfig={costConfig} />
       <p className="vox-hint">{nativeAuthoring ? '保存设置只记录下一次制作的选择。点击“按此风格创作全片”，将用完整文案和所选风格重新编排画面、文字、材质与运动。已锁定镜头和手动代码会保留。' : '保存设置只记录下一次制作的选择。应用风格会更新现有镜头的构图、标题和运动，保留图片原材质；完整更新素材请开始自动制作。已锁定镜头和手动代码会保留。'}</p>
       {!nativeAuthoring && applyUnavailable && applyUnavailable !== error ? <p className="vox-hint" role="status">{applyUnavailable}</p> : null}
       <details className="vox-settings-disclosure"><summary>{nativeAuthoring ? '镜头实际风格与待创作状态' : '镜头实际风格与待应用状态'}</summary><ol>{shots.map((shot, index) => <li key={shot.id}>{shot.title || `镜头 ${index + 1}`} · {creativeStyleStatus(shot.animation, settings)}</li>)}</ol></details>

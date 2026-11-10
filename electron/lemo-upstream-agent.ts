@@ -10,6 +10,8 @@ import { readLemoUpstreamManifest, LEMO_UPSTREAM_REVISION } from './lemo-upstrea
 import type { LemoUpstreamReviewReceipt } from './lemo-upstream-renderer';
 import { LEMO_ASSET_DIR, LEMO_ASSET_MANIFEST, addGeneratedLemoAsset, hasLemoAssetChannel, readLemoAssetManifest, stageLemoAssets, verifyLemoAssets, type LemoAssetInput, type LemoAssetMedia } from './lemo-upstream-assets';
 import { lemoAttributionRequired, lemoMissingAttributions } from '../src/shared/creative-animation/agent-assets';
+import { lemoAgentCostExceeded, lemoAgentCostLimitMessage, type LemoAgentCostSnapshot } from '../src/shared/creative-animation/agent-cost';
+import { existsSync } from 'node:fs';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const textFile = /\.(?:html|m?js|css|json|md|txt|svg)$/i;
@@ -51,6 +53,24 @@ export interface LemoAgentOptions {
   skipUnknownImage?: boolean;
   /** Per-run turn limit (bounded; default LEMO_AGENT_MAX_TURNS). Not part of the context hash. */
   maxTurns?: number;
+  /** L-4 cost budget / estimate (U-5 price table). Not part of the context hash and never shown to the model. */
+  cost?: LemoAgentCostControl;
+}
+export interface LemoAgentCostControl {
+  /** Budget in the price-table currency; undefined = estimate only (no stop). */
+  maxCost?: number;
+  /** Read-only estimate of this run's spend from its own turn receipts; never dispatches anything. */
+  estimate(): Promise<LemoAgentCostSnapshot>;
+}
+export class LemoAgentCostLimitError extends Error {
+  constructor(readonly snapshot: LemoAgentCostSnapshot, readonly maxCost: number, turn: number) { super(lemoAgentCostLimitMessage(snapshot, maxCost, turn)); }
+}
+/** Called immediately before a NEW paid request (model turn or illustration); replays and recoveries never reach it. */
+async function assertLemoAgentCost(options: LemoAgentOptions, completedTurns: number) {
+  const cost = options.cost;
+  if (!cost || cost.maxCost === undefined) return;
+  const snapshot = await cost.estimate();
+  if (lemoAgentCostExceeded(snapshot, cost.maxCost)) throw new LemoAgentCostLimitError(snapshot, cost.maxCost, completedTurns);
 }
 export class LemoAgentUnknownRequestError extends Error {
   constructor() { super('LEMO_AGENT_REQUEST_UNKNOWN: 上轮请求已提交但未保存完整回执；先核对服务商结果，禁止自动重复收费。'); }
@@ -226,6 +246,8 @@ async function requestImage(options: LemoAgentOptions, film: LemoUpstreamFilm, a
     if (manifest.assets.some(entry => entry.id === action.id)) throw new Error(`LEMO_IMAGE_ID_TAKEN: "${action.id}" already exists in the manifest; choose a new id.`);
     if (generated.length >= policy.maxImages) throw new Error(`LEMO_IMAGE_BUDGET: all ${policy.maxImages} illustration(s) for this film are used. Reuse existing assets or draw it in code.`);
     if (options.images.recoveryOnly) throw new Error('LEMO_RECOVERY_MUST_NOT_CHARGE: image request not yet submitted');
+    // L-4: a priced illustration counts toward the cost budget; stop before submitting it (the reply replays free).
+    await assertLemoAgentCost(options, film.turn);
     receipt = { status: 'submitted', imageRequestId: randomUUID(), nodeRequestId: options.requestId, id: action.id, prompt: action.prompt, transparent: action.transparent };
     try { await writeFile(receiptPath, JSON.stringify(receipt), { encoding: 'utf8', flag: 'wx' }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LemoAgentImageUnknownError(); throw error; }
@@ -365,6 +387,9 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
     if (submitted && options.requestId && submitted.requestId !== options.requestId && ((rejected && submitted.requestId === rejected.requestId) || (options.retryOfRequestId && submitted.requestId === options.retryOfRequestId))) {
       await rename(join(turnDir, 'submitted.json'), join(turnDir, 'rejected-submission-' + randomUUID() + '.json')).catch(error => { if (!missing(error)) throw error; });
     }
+    // L-4: the cost budget is checked before a new model request is submitted. An existing submission
+    // (unknown result) is never resent and keeps its own LemoAgentUnknownRequestError below.
+    if (!existsSync(join(turnDir, 'submitted.json'))) await assertLemoAgentCost(options, journal.turns.length);
     try { await writeFile(join(turnDir, 'submitted.json'), JSON.stringify({ at: new Date().toISOString(), contextHash, index, requestId: options.requestId }), { encoding: 'utf8', flag: 'wx' }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LemoAgentUnknownRequestError(); throw error; }
     try {
@@ -390,7 +415,7 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
     // Local infrastructure failures are not an invitation to buy another model turn.
     // Keep response.json replayable; the same action resumes after the host is repaired.
     options.signal?.throwIfAborted();
-    if ((error as Error)?.name === 'AbortError' || error instanceof LemoAgentImageUnknownError
+    if ((error as Error)?.name === 'AbortError' || error instanceof LemoAgentImageUnknownError || error instanceof LemoAgentCostLimitError
       || /^LEMO_RECOVERY_MUST_NOT_CHARGE/.test((error as Error)?.message ?? '')
       || /^(?:EACCES|EPERM|ENOSPC|EMFILE|ENFILE|EIO|EROFS|EBUSY)$/.test((error as NodeJS.ErrnoException)?.code ?? '')) throw error;
     observation = `Tool rejected; no success claimed: ${error instanceof Error ? error.message : String(error)}. Read actual files and correct the next action.`;
@@ -398,7 +423,9 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
   journal.turns.push({ index, reply: response.text, observation, tool, modelRequestId: response.requestId });
   // L-4: provider-reported usage only (replays read the same saved response, so totals are deterministic).
   const usage = lemoUsageFromResponse(response.usage);
-  journal.film = { ...journal.film, turn: index, lastTool: tool, message: observation.slice(0, LEMO_TURN_MESSAGE_LIMIT), ...(usage ? { usage: addLemoAgentUsage(journal.film.usage, usage) } : {}) };
+  // L-4: display-only cost snapshot from this run's receipts (a failed estimate keeps the previous one).
+  const cost = options.cost ? await options.cost.estimate().catch(() => undefined) : undefined;
+  journal.film = { ...journal.film, turn: index, lastTool: tool, message: observation.slice(0, LEMO_TURN_MESSAGE_LIMIT), ...(usage ? { usage: addLemoAgentUsage(journal.film.usage, usage) } : {}), ...(cost ? { cost } : {}) };
   await atomic(journalPath, journal);
   await atomic(join(turnDir, 'result.json'), lemoTurnReceipt(journal.film, index));
   return journal.film;

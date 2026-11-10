@@ -12,7 +12,7 @@ const statuses = { pending: '等待', running: '执行中', completed: '已完�
 export function VoxProductionProgress({ run, shots = [], upstreamFilm, busy, onClose, onControl }: {
   shots?: readonly EditorialCollageShot[];
   /** Lemo v3 film state (turn and provider-reported usage) for the "第 N / M 轮" budget line. */
-  upstreamFilm?: Pick<LemoUpstreamFilm, 'runId' | 'turn' | 'status' | 'usage'>;
+  upstreamFilm?: Pick<LemoUpstreamFilm, 'runId' | 'turn' | 'status' | 'usage'> & Partial<Pick<LemoUpstreamFilm, 'cost'>>;
   run: VoxProductionRun; busy: boolean; onClose(): void;
   onControl(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence'>): Promise<void>;
 }) {

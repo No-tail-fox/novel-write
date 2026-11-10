@@ -5,10 +5,12 @@ import { VOX_PRODUCTION_PRESETS, type VoxProductionSettings } from '../../shared
 import { LEMO_AGENT_ASSET_LIMIT, LEMO_AGENT_IMAGE_DEFAULT, LEMO_AGENT_IMAGE_MAX, LEMO_ASSET_VIDEO_MAX_SECONDS, lemoStyleRequiresRealMaterial } from '../../shared/creative-animation/agent-assets';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { LEMO_AGENT_MAX_TURNS, LEMO_AGENT_TURNS_LIMIT, lemoAgentMaxTurns } from '../../shared/creative-animation/upstream-agent';
+import { LEMO_AGENT_COST_MAX, LEMO_AGENT_COST_MIN, lemoAgentCostPricingWarning, lemoAgentCostUnit, lemoAgentMaxCost } from '../../shared/creative-animation/agent-cost';
+import type { AppConfig } from '../../shared/types';
 import { CreativeStyleCover, CreativeStyleFilm } from './CreativeStylePreview';
 
 /** Creation and project settings deliberately edit the same persisted inputs. */
-export function CreativeProductionFields({ settings, onChange, onOpenUrl, document, busy = false, showNarration = true, onImportAsset }: {
+export function CreativeProductionFields({ settings, onChange, onOpenUrl, document, busy = false, showNarration = true, onImportAsset, costConfig }: {
   settings: VoxProductionSettings;
   onChange(settings: VoxProductionSettings): void;
   onOpenUrl(url: string): Promise<void>;
@@ -17,6 +19,8 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   showNarration?: boolean;
   /** Lemo material channel: import a local image/video into the project; resolves with the new asset id. */
   onImportAsset?(kind: 'image' | 'video'): Promise<string | undefined>;
+  /** Project runtime config (price table + models) for the L-4 "未定价" warning next to the cost budget. */
+  costConfig?: AppConfig;
 }) {
   const preset = VOX_PRODUCTION_PRESETS.find(item => item.id === settings.presetId)!;
   const style = resolveCreativeStyle(settings.authoring?.styleId, settings.presetId);
@@ -29,6 +33,12 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   const evidenceStyle = lemo && lemoStyleRequiresRealMaterial(authoring.styleId, settings.presetId);
   const agentImages = settings.agentImages ?? { enabled: false, maxImages: LEMO_AGENT_IMAGE_DEFAULT };
   const maxTurns = lemoAgentMaxTurns(settings.agentMaxTurns);
+  const [costText, setCostText] = useState(settings.agentMaxCost !== undefined ? String(settings.agentMaxCost) : '');
+  const costInvalid = Boolean(costText.trim()) && lemoAgentMaxCost(Number(costText)) !== Number(costText);
+  // L-4: models the price table cannot price are not constrained by the cost budget; say so next to the field.
+  const costWarning = lemo && settings.agentMaxCost !== undefined ? lemoAgentCostPricingWarning(costConfig, { images: agentImages.enabled && !evidenceStyle }) : undefined;
+  // The budget is in the price table's currency (default CNY = 元); other currencies show their ISO code.
+  const { currency: costCurrency, unit: costUnit } = lemoAgentCostUnit(costConfig);
   const [importing, setImporting] = useState<'image' | 'video' | null>(null);
   const [importError, setImportError] = useState('');
   const importAsset = async (kind: 'image' | 'video') => {
@@ -57,8 +67,19 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
         onChange={(_, event) => { const value = Number(event.value); const { agentMaxTurns: _turns, ...rest } = settings; onChange(value === LEMO_AGENT_MAX_TURNS ? rest : { ...rest, agentMaxTurns: value }); }} />
       <SelectField label="Token 预算" value={String(settings.agentMaxTokens ?? '')} disabled={busy}
         options={[{ value: '', label: '不限（仅受轮数上限约束）' }, ...[...new Set([500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000, 20_000_000, ...(settings.agentMaxTokens ? [settings.agentMaxTokens] : [])])].sort((a, b) => a - b).map(value => ({ value: String(value), label: `${(value / 1_000_000).toLocaleString('zh-CN')}M tokens` }))]}
-        hint="按服务商返回的输入+输出 token 累计；服务商不返回用量时无法计入。达到预算会停止并可续跑，不估算费用。"
+        hint="按服务商返回的输入+输出 token 累计；服务商不返回用量时无法计入。达到预算会停止并可续跑。按金额限制请用下方“费用预算”。"
         onChange={(_, event) => { const { agentMaxTokens: _tokens, ...rest } = settings; onChange(event.value ? { ...rest, agentMaxTokens: Number(event.value) } : rest); }} />
+      <TextField label={`费用预算（${costUnit}）`} type="number" value={costText} disabled={busy} placeholder="不限" data-lemo-cost-budget="" data-currency={costCurrency}
+        validationMessage={costInvalid ? `需在 ${LEMO_AGENT_COST_MIN}–${LEMO_AGENT_COST_MAX.toLocaleString('en-US')} ${costUnit}之间（最多两位小数）；当前保存的是${settings.agentMaxCost !== undefined ? ` ${settings.agentMaxCost} ${costUnit}` : '“不限”'}。` : undefined}
+        hint={`选填，留空为不限；单位跟随“成本单价”的币种（${costCurrency}）。这是累计估算：每次付费调用前，按“成本单价”估算本次制作中已收到结果的文本模型和插画调用，累计达到预算后不再提交新的付费调用。它不是硬性费用上限：预算未用完时发出的最后一次请求可能超出剩余额度，实际账单以服务商为准。停止后工程保留，调高预算并保存，再点“重试失败步骤”续跑，已完成的轮次不重复计费。未定价的模型只计次数，不受预算约束；结果未知的调用不计入，也不会重发。`}
+        onChange={(_, event) => {
+          setCostText(event.value);
+          const { agentMaxCost: _cost, ...rest } = settings;
+          if (!event.value.trim()) { onChange(rest); return; }
+          const value = Number(event.value);
+          if (lemoAgentMaxCost(value) === value) onChange({ ...rest, agentMaxCost: value });
+        }} />
+      {costWarning ? <p className="vox-hint" role="status" data-lemo-cost-warning="">费用预算无法完全生效：{costWarning}</p> : null}
     </> : <CheckboxField label="自动生成图片" checked={settings.generateImages} disabled={busy} onChange={(_, event) => onChange({ ...settings, generateImages: event.checked === true })} />}
     <PreviewSelectField label="视觉风格" value={authoring.styleId} disabled={busy} detailLabel="播放样片" showSelectedPreview selectedPreviewHint="LemoLab 官方封面 · 点击播放样片"
       options={[

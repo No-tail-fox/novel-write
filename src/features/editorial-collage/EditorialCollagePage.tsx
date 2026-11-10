@@ -1220,7 +1220,7 @@ export function EditorialCollagePage({
         <div className="director-structure-preview" aria-live="polite"><strong>{createStructure}</strong>{createPlan.plan ? <span>预计朗读至少 {formatScriptDuration(createPlan.plan.minimumDurationMs)} · {createReadingSpeed}</span> : null}</div>
       </> : null}
       {createStep === 1 ? <>
-        <CreativeProductionFields settings={createProduction} onChange={setCreateProduction} onOpenUrl={api.openHotBoardUrl} busy={projectAction.busy} showNarration={false} />
+        <CreativeProductionFields settings={createProduction} onChange={setCreateProduction} onOpenUrl={api.openHotBoardUrl} busy={projectAction.busy} showNarration={false} costConfig={modelConfig} />
         {!createNativeAuthoring ? <details className="vox-settings-disclosure"><summary>生成服务与素材一致性</summary><div className="vox-production-fields">
           <p>项目生图模型：{providerStatus.label} · {providerStatus.model}</p>
           <CheckboxField label="锁定跨镜头 Seed 与风格参考" checked={createSeedLocked} onChange={(_, data) => setCreateSeedLocked(Boolean(data.checked))} />
@@ -1260,7 +1260,7 @@ export function EditorialCollagePage({
           : productionRun?.status === 'paused' ? '已暂停' : undefined;
   return <div data-editorial-collage-workbench="true">
     <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} />
-    {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} onImportAsset={importProductionAsset} musicLibrary={state.config.jianying.bgmLibrary} api={api} /> : null}
+    {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} onImportAsset={importProductionAsset} musicLibrary={state.config.jianying.bgmLibrary} api={api} costConfig={modelConfig} /> : null}
     {musicOpen && musicSettings ? <Dialog key={document.id} open title="整片背景音乐" onOpenChange={open => { if (!projectAction.busy) setMusicOpen(open); }} actions={<>
       <Button disabled={projectAction.busy} onClick={() => setMusicOpen(false)}>取消</Button>
       <Button variant="primary" disabled={projectAction.busy || productionRunning} onClick={() => void saveProductionSettings(musicSettings)}>保存音乐</Button>

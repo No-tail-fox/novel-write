@@ -4,6 +4,7 @@ import { bindPixelleTaskVideo, loadPixelleCatalog, preflightPixelleTask, prepare
 import { prepareShortVideoOutputs, renderShortVideo } from './short-video-renderer';
 import { projectRuntimeConfig, selectedLanguageConfig } from '../src/shared/project-models';
 import { collectProjectCostReport } from './project-cost-collector';
+import { projectCostModelHints } from '../src/shared/project-cost-sources';
 import { workflowPrompt } from '../src/shared/workflow-prompt-runtime';
 import { setWorkflowPromptTemplateProvider } from '../src/shared/workflow-prompt-runtime';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, session, shell, type Cookie, type IpcMainInvokeEvent } from 'electron';
@@ -2588,7 +2589,8 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
           return agentImageResult(request, record);
         },
       } satisfies LemoAgentImages } : {}),
-    });
+    // L-4: Lemo cost budget priced with the user's U-5 price table and this project's models (read-only estimate).
+    }, { priceTable: config.costPriceTable, hints: projectCostModelHints(config) });
     return createVoxProductionRuntime({
       ...upstreamOperations,
       nativePlanningVersion: 1,
