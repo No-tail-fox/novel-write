@@ -84,7 +84,7 @@
 | L-5 | **✅ 已实现（随 E-5）**：Lemo 成片收尾后跑同一闸门（时长/24 fps/色彩/响度/黑帧），外加 §11 署名检查：工程源码搜 `lemo ?lab|opus 5.5`（排除 LICENSE/CREDITS/`LIB=`），缺 CREDITS 警告，CC BY 素材必须在 CREDITS 写明来源和 CC BY。`LEMO_EXPORT_DURATION_MISMATCH` 硬拦截不变。原条目：交付后由宿主复检（G6）：时长、24 fps、色彩标签、−14±1 LUFS、黑帧，外加上游 §11 署名 grep | `lemo-faithful-mode.md:176-179`。时长闸门已有（`LEMO_EXPORT_DURATION_MISMATCH`，`technical-roadmap.md:196`），其余几项【未核实】 | P2 | M | E-5 |
 | L-6 | 预览一致性测试：`still.mjs` 和应用内预览在同一时刻各截一帧，比较感知哈希 | `lemo-faithful-mode.md:181` | P3 | S | — |
 | L-7 | **⛔ 阻塞**：需要联网拉取上游 `143f387a` 的本地 checkout，且按约定不修改 vendored 树；拿到 checkout 后执行 `node scripts/import-lemo-upstream.mjs <checkout>` 并更新哈希清单与测试。原条目：上游同步到 `143f387a`（自带 Git Bash 分支），更新哈希清单 | `lemo-faithful-mode.md:144,216`（F0）；`vendor/lemo-upstream/storydream-upstream.json` 仍是 `f171360…`，代码里没有 `143f387a` | P3 | M | — |
-| L-8 | 官方 Agent SDK（H1）生产接线 + 协议转换网关（F2/F3） | worker 目前只做探测（`findings.md:190`，`electron/lemo-agent-runtime.ts:3` 只引入了 probe 类型）；`messages-gateway.ts` 只接 Anthropic Messages；生产仍是"每轮一个动作"的自研循环（`electron/lemo-upstream-agent.ts:97`）。条款需法务确认（`lemo-faithful-mode.md:117`） | P3 | L | 法务、产品决策 |
+| L-8 | **⛔ 阻塞（法务 + 产品决策）**：官方 Agent SDK 条款是否允许本产品用法未确认（`lemo-faithful-mode.md:117`）；在确认前不做生产接线，现有自研循环（含 L-4 轮数/Token 上限、G-7 重试预算）继续服务。原条目：官方 Agent SDK（H1）生产接线 + 协议转换网关（F2/F3） | worker 目前只做探测（`findings.md:190`，`electron/lemo-agent-runtime.ts:3` 只引入了 probe 类型）；`messages-gateway.ts` 只接 Anthropic Messages；生产仍是"每轮一个动作"的自研循环（`electron/lemo-upstream-agent.ts:97`）。条款需法务确认（`lemo-faithful-mode.md:117`） | P3 | L | 法务、产品决策 |
 
 **模板动画（Remotion）**
 
@@ -114,7 +114,7 @@
 | C-1 | **✅ 已随 Q-1 解决**：`tests/motion-comic-live-sample.test.ts` 现 4/4 通过。原条目：**漫剧真实样本回放失败**（S13–S16 句段不存在） | `tests/motion-comic-live-sample.test.ts`（3 个失败） | P1 | S–M | — |
 | C-2 | 远程连续性、口型、完整上传下载恢复都没验收 | `design-qa.md:132,147` | P3 | L | — |
 | S-1 | MoneyPrinter 网络素材检索没接入（代码里没有 pexels/pixabay），专用素材服务的密钥也缺 | `task_plan.md:11,108,132`；`docs/plans/2026-10-24-creative-animation/remaining-work-implementation-plan-2026-10-31.md` §3 | P2 | L | 素材服务密钥 |
-| S-2 | 剪映应用实际打开草稿，以及真实 AI 美术/听审验收 | `task_plan.md:12,110,180` | P2 | M | — |
+| S-2 | **⛔ 阻塞（需人工 + 真实环境）**：需要在装有剪映的机器上人工打开草稿，并由人做 AI 美术/听审；无法离线完成。草稿结构已有自动测试覆盖【未核实其与当前剪映版本兼容】。原条目：剪映应用实际打开草稿，以及真实 AI 美术/听审验收 | `task_plan.md:12,110,180` | P2 | M | — |
 
 ### 2.3 渲染 / 混流
 
@@ -126,7 +126,7 @@
 | E-4 | **✅ 已修**：时长补齐、hard-cut（含分组）、xfade、溶解转场、封面重编码都补上 `tv/bt709/bt709/iec61966-2-1`（与场景段编码一致，transfer 沿用 sRGB），封面加 RGB→limited BT.709 转换；临时合成 ffprobe 确认标签保留。外部视频转码 `normalize_scene_video` 未加【未核实】。原条目：核实色彩标签：场景段已设 bt709/tv（`storybound-sidecar.ts:1728-1732`），Lemo 用 `LEMO_COLOR`（`lemo-upstream-video.ts:439`）；但时长补齐那次重编码只写了 `-pix_fmt yuv420p`，没带色彩参数（`storybound-sidecar.ts:1884-1893`），可能把标签丢掉 | 历史问题见 `code-video-foundation.md:467`。需要对新成片跑一次 ffprobe【未核实】 | P1 | S | — |
 | E-5 | **✅ 已实现（只提示，不拦交付）**：`src/shared/final-film-gate.ts` + `electron/final-film-gate-runner.ts`，三条路线导出后在成片旁写 `quality-gate.json`：时长 ≤1 帧、h264+AAC、分辨率、帧率/可变帧率、色彩标签、音轨缺失、−14±1 LUFS / TP ≤ −1、首/中/尾帧黑帧（暗但有亮部给警告）。可取消、有超时，出错记 `status:error` 不影响导出。HTML 路线导出会多出检查时间。结果尚未进 UI/审片报告；打包版能否找到 ffmpeg【未核实】。已知：Lemo 默认（忠实 mux.sh）重编码会丢 primaries/trc 标签，真实 Lemo 成片预计出 `FINAL_GATE_COLOR` 警告；改成 `color:'bt709'` 会做 pc→tv 像素转换，偏离忠实模式，暂不改，需产品决定。原条目：统一质量闸门：首/中/尾帧黑帧检查、缺字体、错误码前缀、续跑 | `technical-roadmap.md:192-201` | P2 | M | E-1 |
 | E-6 | fps 决策（24 还是 30）；采集帧格式（管道 BGRA 还是 JPEG q95）用基准测试决定 | `code-video-foundation.md:443,445,476` | P3 | S | — |
-| E-7 | GSAP 许可风险：现在打包的是 3.12.5（devDependencies），生成代码建议改用 WAAPI/CSS/Anime.js | `code-video-foundation.md:479`，待法务确认 | P2 | M | 法务 |
+| E-7 | **✅ 离线部分已实现 / ⛔ 待法务**：`tests/gsap-license-containment.test.ts` 把 GSAP 限定在宿主自己的 HTML 路线模板和 HyperFrames 运行时（白名单 7 个文件）；模型提示只让模型输出场景计划，不写 GSAP；新架构 `scene-runtime` 适配器不依赖 GSAP；THIRD_PARTY_NOTICES 已注明待审。阻塞条件：GreenSock 标准许可是否允许在商业桌面应用里分发，需法务确认；若不允许，要替换 HTML 路线的宿主时间轴和 HF runtime（L 级）。原条目：GSAP 许可风险：现在打包的是 3.12.5（devDependencies），生成代码建议改用 WAAPI/CSS/Anime.js | `code-video-foundation.md:479`，待法务确认 | P2 | M | 法务 |
 
 ### 2.4 编排 / 存储
 
