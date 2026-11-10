@@ -1,6 +1,6 @@
 # StoryDream 剩余工作盘点（backlog review）
 
-> **状态更新（同日，素材通道/生图通道提交之后）**：L-1 素材通道、L-2 可选生图通道、U-3 素材导入界面（来源/许可）已实现，见 §2.2。新增测试 `tests/lemo-upstream-assets.test.ts`（14 个）、`tests/lemo-material-ui.test.ts`（3 个），并在 `tests/lemo-upstream-production.test.ts` 补了 2 个；三套 tsc 都通过。全量 vitest 的历史失败没有变化（见 §1.2 末尾的复测记录）。其余条目仍是盘点时的状态。本文下面的行号以盘点时的 `f30be99` 为准。
+> **当前实施与审核状态（提交 `0243e81`）**：§2 各行记录实现结果和剩余外部验收条件；下方 §0、§1 的初始问题及行号是 `f30be99` 时的历史盘点，不代表当前状态。最近一次完整 `node scripts/verify.mjs`：Lemo/Pixelle 上游哈希、三套 tsc、eslint 全部通过；421 个测试文件、5048 个用例全部通过，已知失败基线为空，报告结束原因为 passed、未处理异常为 0。新建 HTML 视频已默认接入 VideoSpec，旧任务不迁移；费用预算、生图复用失败边界、音乐代理分类、素材库路径与取消时序、真实尾帧及续传清理竞态已补齐。真实 Electron 新链路采集验证仍在收集；付费服务、法务、证书、服务器及人工审片限制以各行标注为准。未移动或删除用户文件、未跟踪文档和既有 worktree。
 
 - 仓库：`I:\opc`，分支 `feat/route-split-opuscar98`，HEAD `f30be99`（2026-11-10）
 - 方法：只读分析。读了 `docs/design/*`、`docs/plans/*`、根目录 md；在 `src/ electron/ scripts/ services/` 里 grep 核对代码；跑了全量 vitest 和三套 tsc。没有改源码、没有提交、没有运行应用、没有发起网络/付费调用。
