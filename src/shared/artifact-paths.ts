@@ -4,7 +4,7 @@ export const ARTIFACT_STORAGE_DIRECTORIES = Object.freeze([
   'tasks', 'viral-analyses', 'image-lab', 'voice-lab', 'pending-task-covers',
   'video-lab', 'music-lab', 'music-voices', 'music-enhanced', 'bgm',
   'person-assets', 'scene-video-library', 'asset-library', 'vox-templates',
-  'motion-comic-planning', 'custom-style-previews',
+  'motion-comic-planning', 'custom-style-previews', 'stock-media',
 ] as const);
 
 /** Rebase managed paths only; configuration, external imports and relative paths stay intact. */

@@ -1,4 +1,5 @@
 import { shortVideoMaterialsSchema } from './short-video-materials';
+import { stockMediaDownloadRequestSchema, stockMediaSearchRequestSchema } from './stock-media';
 import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
 import { z } from 'zod';
 import { projectModelsSchema } from './project-models';
@@ -1199,6 +1200,8 @@ export const ipcInputSchemas = {
   'pixelle:catalog': z.void(),
   'local-video:select': z.void(),
   'short-video-materials:select': z.void(),
+  'stock-media:search': stockMediaSearchRequestSchema,
+  'stock-media:download': stockMediaDownloadRequestSchema,
   'motion-comic-source:select': z.void(),
   'local-audio:select': z.enum(['managed-bgm', 'video-reference']).optional(),
   'local-subtitle-timestamps:select': z.void(),

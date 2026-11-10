@@ -1,0 +1,318 @@
+/**
+ * S-1 stock media: download safety and IPC wiring, exercised against the local mock relay only
+ * (127.0.0.1, ephemeral port). No real Pexels/Pixabay request is ever made.
+ */
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { StockMediaService, detectStockMediaContainer } from '../electron/stock-media-service';
+import { startMockRelay, type MockRelay } from './helpers/mock-relay';
+import { ipcInputSchemas } from '../src/shared/ipc-contract';
+import { INVOKE_CHANNELS } from '../src/shared/storydream-api';
+import { isSecretId, extractConfigSecrets, stripConfigSecrets, applyConfigSecrets } from '../src/shared/config-secrets';
+import { ARTIFACT_STORAGE_DIRECTORIES } from '../src/shared/artifact-paths';
+import { defaultConfig } from '../src/shared/config';
+import { normalizeAppConfig } from '../src/shared/config-utils';
+import type { AppConfig } from '../src/shared/types';
+
+const MP4 = '\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41' + 'x'.repeat(200);
+const MP4_OTHER = '\0\0\0\x18ftypisom\0\0\x02\0isomiso2mp41' + 'y'.repeat(200);
+const HTML = '<!DOCTYPE html><html><head><title>Access denied</title></head><body>please log in</body></html>';
+const KEY = 'pk-test-secret-123456';
+
+let relay: MockRelay;
+const directories: string[] = [];
+beforeAll(async () => { relay = await startMockRelay(); });
+afterAll(async () => { await relay.close(); });
+afterEach(async () => {
+  relay.reset();
+  for (const dir of directories.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+
+async function managedDir() {
+  const dir = await mkdtemp(join(tmpdir(), 'stock-media-')); directories.push(dir);
+  return join(dir, 'stock-media');
+}
+
+function pexelsPayload(videos: Array<{ id: number; path: string; width?: number; height?: number }>) {
+  return {
+    page: 1, per_page: videos.length, total_results: videos.length,
+    videos: videos.map(video => ({
+      id: video.id, width: video.width ?? 1920, height: video.height ?? 1080,
+      url: `${relay.origin}/page/${video.id}`, image: `${relay.origin}/thumb/${video.id}.jpg`, duration: 12,
+      user: { id: 1, name: `Author ${video.id}`, url: `${relay.origin}/@author` },
+      video_files: [{ id: video.id * 10, quality: 'hd', file_type: 'video/mp4', width: video.width ?? 1920, height: video.height ?? 1080, link: `${relay.origin}${video.path}` }],
+    })),
+  };
+}
+
+function service(dir: string, options: Partial<ConstructorParameters<typeof StockMediaService>[0]> = {}) {
+  return new StockMediaService({
+    resolveApiKey: async provider => (provider === 'pexels' ? KEY : ''),
+    managedDirectory: () => dir,
+    baseUrls: { pexels: relay.origin, pixabay: relay.origin },
+    allowLoopbackHttp: true,
+    ...options,
+  });
+}
+
+async function searchOne(svc: StockMediaService, routes: Record<string, () => { status: number; body: string; headers?: Record<string, string> }>, videos = [{ id: 1, path: '/files/1.mp4' }]) {
+  relay.setHandler((request) => {
+    if (request.url.startsWith('/videos/search')) return { kind: 'json', body: pexelsPayload(videos) };
+    const route = routes[request.url];
+    return route ? { kind: 'text', ...route() } : undefined;
+  });
+  return svc.search({ provider: 'pexels', query: 'city', orientation: 'landscape', kind: 'video' });
+}
+
+async function listing(dir: string) {
+  return (await readdir(dir).catch(() => [] as string[])).sort();
+}
+
+describe('stock media search (mock relay)', () => {
+  it('sends the key only in the Authorization header and maps the documented query', async () => {
+    const dir = await managedDir();
+    const result = await searchOne(service(dir), {});
+    expect(result.items).toHaveLength(1);
+    const request = relay.requests[0];
+    expect(request.headers.authorization).toBe(KEY);
+    const url = new URL(request.url, relay.origin);
+    expect(url.pathname).toBe('/videos/search');
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({ query: 'city', orientation: 'landscape', page: '1', per_page: '20' });
+    expect(request.url).not.toContain(KEY);
+  });
+
+  it('throws 未配置素材站密钥 without any network call when no key is configured', async () => {
+    const svc = service(await managedDir(), { resolveApiKey: async () => '' });
+    await expect(svc.search({ query: 'city', orientation: 'landscape', kind: 'video' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_KEY_MISSING' });
+    await expect(svc.search({ provider: 'pixabay', query: 'city', orientation: 'landscape', kind: 'video' })).rejects.toThrow('未配置素材站密钥');
+    expect(relay.requests).toHaveLength(0);
+  });
+
+  it('classifies 401, 429 with Retry-After and empty results; never echoes the Pixabay key', async () => {
+    const svc = service(await managedDir(), { resolveApiKey: async () => KEY });
+    relay.enqueue({ kind: 'json', status: 401, body: { error: 'Unauthorized' } });
+    await expect(svc.search({ provider: 'pexels', query: 'a', orientation: 'landscape', kind: 'video' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_KEY_INVALID' });
+    relay.enqueue({ kind: 'rate-limit', retryAfter: '7' });
+    await expect(svc.search({ provider: 'pexels', query: 'a', orientation: 'landscape', kind: 'video' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_RATE_LIMITED', retryAfterMs: 7000, retryable: true });
+    relay.enqueue({ kind: 'json', body: { total: 0, totalHits: 0, hits: [] } });
+    await expect(svc.search({ provider: 'pixabay', query: 'zzz', orientation: 'landscape', kind: 'video' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_NO_RESULTS' });
+    expect(relay.requests[2].url).toContain(`key=${KEY}`);
+    relay.enqueue({ kind: 'text', status: 400, body: '[ERROR 400] "key" is invalid' });
+    const failure = await svc.search({ provider: 'pixabay', query: 'a', orientation: 'landscape', kind: 'video' }).catch((error: Error) => error);
+    expect(failure).toMatchObject({ code: 'STOCK_MEDIA_KEY_INVALID' });
+    expect(String((failure as Error).message)).not.toContain(KEY);
+  });
+
+  it('honours a caller AbortSignal and the search timeout', async () => {
+    const svc = service(await managedDir(), { searchTimeoutMs: 50 });
+    relay.enqueue({ kind: 'slow-headers', delayMs: 500 });
+    await expect(svc.search({ provider: 'pexels', query: 'a', orientation: 'landscape', kind: 'video' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_TIMEOUT' });
+    const controller = new AbortController(); controller.abort(new Error('user cancelled'));
+    await expect(svc.search({ provider: 'pexels', query: 'a', orientation: 'landscape', kind: 'video' }, controller.signal)).rejects.toThrow('user cancelled');
+  });
+});
+
+describe('stock media safe download (mock relay)', () => {
+  it('downloads atomically, writes a source manifest and never re-downloads the same provider id', async () => {
+    const dir = await managedDir();
+    const svc = service(dir, { now: () => new Date('2026-10-31T00:00:00.000Z') });
+    await searchOne(svc, { '/files/1.mp4': () => ({ status: 200, body: MP4, headers: { 'content-type': 'video/mp4' } }) });
+    const first = await svc.download({ provider: 'pexels', kind: 'video', id: '1', ratio: '16:9' });
+    expect(first.reused).toBeNull();
+    expect(first.path).toBe(join(dir, 'pexels-video-1.mp4'));
+    expect(await readFile(first.path, 'latin1')).toBe(MP4);
+    const manifest = JSON.parse(await readFile(first.manifestPath, 'utf8'));
+    expect(manifest).toMatchObject({
+      provider: 'pexels', id: '1', author: 'Author 1', sourceUrl: `${relay.origin}/page/1`,
+      license: { name: 'Pexels License', attributionRequired: false }, downloadedAt: '2026-10-31T00:00:00.000Z',
+      sha256: first.sha256, fileName: 'pexels-video-1.mp4',
+    });
+    expect(JSON.stringify(manifest)).not.toContain(KEY);
+    expect(await listing(dir)).toEqual(['pexels-video-1.mp4', 'pexels-video-1.source.json']);
+
+    const downloads = relay.requests.filter(request => request.url === '/files/1.mp4').length;
+    const fresh = service(dir); // e.g. after restart / re-export: nothing cached in memory
+    const again = await fresh.download({ provider: 'pexels', kind: 'video', id: '1' });
+    expect(again).toMatchObject({ reused: 'provider-id', path: first.path, sha256: first.sha256 });
+    expect(relay.requests.filter(request => request.url === '/files/1.mp4').length).toBe(downloads);
+  });
+
+  it('deduplicates identical content downloaded under another id', async () => {
+    const dir = await managedDir();
+    const svc = service(dir);
+    await searchOne(svc, {
+      '/files/1.mp4': () => ({ status: 200, body: MP4, headers: { 'content-type': 'video/mp4' } }),
+      '/files/2.mp4': () => ({ status: 200, body: MP4, headers: { 'content-type': 'video/mp4' } }),
+    }, [{ id: 1, path: '/files/1.mp4' }, { id: 2, path: '/files/2.mp4' }]);
+    const first = await svc.download({ provider: 'pexels', kind: 'video', id: '1' });
+    const second = await svc.download({ provider: 'pexels', kind: 'video', id: '2' });
+    expect(second).toMatchObject({ reused: 'content', path: first.path, sha256: first.sha256 });
+    expect(await listing(dir)).toEqual(['pexels-video-1.mp4', 'pexels-video-1.source.json', 'pexels-video-2.source.json']);
+  });
+
+  it('re-downloads when the managed file was corrupted instead of trusting a stale manifest', async () => {
+    const dir = await managedDir();
+    const svc = service(dir);
+    let body = MP4;
+    await searchOne(svc, { '/files/1.mp4': () => ({ status: 200, body, headers: { 'content-type': 'video/mp4' } }) });
+    const first = await svc.download({ provider: 'pexels', kind: 'video', id: '1' });
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(first.path, MP4_OTHER);
+    body = MP4;
+    const repaired = await svc.download({ provider: 'pexels', kind: 'video', id: '1' });
+    expect(repaired.reused).toBeNull();
+    expect(await readFile(repaired.path, 'latin1')).toBe(MP4);
+  });
+
+  it('refuses an HTML page pretending to be a video, by content type and by magic bytes', async () => {
+    const dir = await managedDir();
+    const svc = service(dir);
+    await searchOne(svc, {
+      '/files/1.mp4': () => ({ status: 200, body: HTML, headers: { 'content-type': 'text/html' } }),
+      '/files/2.mp4': () => ({ status: 200, body: HTML, headers: { 'content-type': 'video/mp4' } }),
+    }, [{ id: 1, path: '/files/1.mp4' }, { id: 2, path: '/files/2.mp4' }]);
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '1' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_NOT_MEDIA' });
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '2' })).rejects.toThrow('网页');
+    expect(await listing(dir)).toEqual([]);
+  });
+
+  it('refuses oversize files by Content-Length and while streaming', async () => {
+    const dir = await managedDir();
+    const svc = service(dir, { maxBytes: { video: 100 } });
+    await searchOne(svc, { '/files/1.mp4': () => ({ status: 200, body: MP4, headers: { 'content-type': 'video/mp4' } }) });
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '1' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_TOO_LARGE' });
+    expect(await listing(dir)).toEqual([]);
+
+    const streaming = service(dir, {
+      maxBytes: { video: 100 },
+      fetch: async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(MP4)); controller.close(); } }), { status: 200, headers: { 'content-type': 'video/mp4' } }),
+    });
+    (streaming as unknown as { items: Map<string, unknown> }).items = (svc as unknown as { items: Map<string, unknown> }).items;
+    await expect(streaming.download({ provider: 'pexels', kind: 'video', id: '1' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_TOO_LARGE' });
+    expect(await listing(dir)).toEqual([]);
+  });
+
+  it('follows same-host redirects but refuses redirects to http or unexpected hosts without fetching them', async () => {
+    const dir = await managedDir();
+    const svc = service(dir);
+    await searchOne(svc, {
+      '/files/1.mp4': () => ({ status: 302, body: '', headers: { location: '/cdn/1.mp4' } }),
+      '/cdn/1.mp4': () => ({ status: 200, body: MP4, headers: { 'content-type': 'video/mp4' } }),
+      '/files/2.mp4': () => ({ status: 302, body: '', headers: { location: 'http://videos.pexels.com/2.mp4' } }),
+      '/files/3.mp4': () => ({ status: 307, body: '', headers: { location: 'https://evil.example.com/3.mp4' } }),
+    }, [{ id: 1, path: '/files/1.mp4' }, { id: 2, path: '/files/2.mp4' }, { id: 3, path: '/files/3.mp4' }]);
+    const ok = await svc.download({ provider: 'pexels', kind: 'video', id: '1' });
+    expect(ok.manifest.downloadUrl).toBe(`${relay.origin}/cdn/1.mp4`);
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '2' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_REDIRECT_REJECTED' });
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '3' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_REDIRECT_REJECTED' });
+    expect(await listing(dir)).toEqual(['pexels-video-1.mp4', 'pexels-video-1.source.json']);
+  });
+
+  it('production policy refuses non-https and off-provider download links', async () => {
+    const dir = await managedDir();
+    const svc = service(dir, { allowLoopbackHttp: false });
+    const items = (svc as unknown as { items: Map<string, unknown> }).items;
+    const base = { provider: 'pexels', kind: 'video', author: 'a', authorUrl: '', sourceUrl: '', previewUrl: '', width: 1920, height: 1080, license: { name: 'Pexels License', url: '', attributionRequired: false } };
+    items.set('pexels:video:9', { ...base, id: '9', downloadUrl: 'http://videos.pexels.com/9.mp4', renditions: [{ url: 'http://videos.pexels.com/9.mp4', width: 1920, height: 1080 }] });
+    items.set('pexels:video:8', { ...base, id: '8', downloadUrl: `${relay.origin}/x.mp4`, renditions: [{ url: `${relay.origin}/x.mp4`, width: 1920, height: 1080 }] });
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '9' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_URL_REJECTED' });
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '8' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_URL_REJECTED' });
+    expect(relay.requests).toHaveLength(0);
+  });
+
+  it('refuses ids that were not returned by a recent search', async () => {
+    const svc = service(await managedDir());
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '424242' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_ITEM_UNKNOWN' });
+    expect(relay.requests).toHaveLength(0);
+  });
+
+  it('cancelling mid-download leaves no partial file and no manifest', async () => {
+    const dir = await managedDir();
+    const controller = new AbortController();
+    const svc = service(dir, {
+      fetch: async (_url, init) => new Response(new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(new TextEncoder().encode(MP4));
+          setTimeout(() => controller.abort(new Error('用户取消下载')), 20);
+          init?.signal?.addEventListener('abort', () => stream.error(init.signal?.reason));
+        },
+      }), { status: 200, headers: { 'content-type': 'video/mp4' } }),
+    });
+    const helper = service(dir);
+    await searchOne(helper, {});
+    (svc as unknown as { items: Map<string, unknown> }).items = (helper as unknown as { items: Map<string, unknown> }).items;
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '1' }, controller.signal)).rejects.toThrow('用户取消下载');
+    expect(await listing(dir)).toEqual([]);
+  });
+
+  it('download failures on the CDN map to an expired link, not a bad key', async () => {
+    const dir = await managedDir();
+    const svc = service(dir);
+    await searchOne(svc, { '/files/1.mp4': () => ({ status: 403, body: 'Forbidden' }) });
+    await expect(svc.download({ provider: 'pexels', kind: 'video', id: '1' })).rejects.toMatchObject({ code: 'STOCK_MEDIA_LINK_EXPIRED' });
+    expect(await listing(dir)).toEqual([]);
+  });
+});
+
+describe('stock media magic bytes', () => {
+  it('recognises supported containers and flags HTML/JSON', () => {
+    const bytes = (text: string) => new Uint8Array(Buffer.from(text, 'latin1'));
+    expect(detectStockMediaContainer(bytes(MP4))).toBe('mp4');
+    expect(detectStockMediaContainer(bytes('\0\0\0\x14ftypqt  \0\0\0\0qt  '))).toBe('mov');
+    expect(detectStockMediaContainer(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0, 0, 0, 0, 0]))).toBe('webm');
+    expect(detectStockMediaContainer(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]))).toBe('jpg');
+    expect(detectStockMediaContainer(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]))).toBe('png');
+    expect(detectStockMediaContainer(bytes(`  ${HTML}`))).toBe('html');
+    expect(detectStockMediaContainer(bytes('{"error":"not found"}'))).toBe('html');
+    expect(detectStockMediaContainer(bytes('GIF89a.........'))).toBeNull();
+  });
+});
+
+describe('stock media IPC / config contract', () => {
+  it('registers both channels with strict input schemas', () => {
+    expect(INVOKE_CHANNELS).toContain('stock-media:search');
+    expect(INVOKE_CHANNELS).toContain('stock-media:download');
+    expect(ipcInputSchemas['stock-media:search'].safeParse({ query: 'city', orientation: 'portrait', kind: 'video' }).success).toBe(true);
+    expect(ipcInputSchemas['stock-media:search'].safeParse({ query: '', orientation: 'portrait', kind: 'video' }).success).toBe(false);
+    expect(ipcInputSchemas['stock-media:download'].safeParse({ provider: 'pexels', kind: 'video', id: '1', ratio: '9:16' }).success).toBe(true);
+    // The renderer may never hand the main process a URL or a path.
+    expect(ipcInputSchemas['stock-media:download'].safeParse({ provider: 'pexels', kind: 'video', id: '1', url: 'https://evil.example.com' }).success).toBe(false);
+    expect(ipcInputSchemas['stock-media:download'].safeParse({ provider: 'pexels', kind: 'video', id: '../../etc' }).success).toBe(false);
+  });
+
+  it('wires preload, browser fallback and main handlers', async () => {
+    const [preload, fallback, main] = await Promise.all([
+      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../src/app/browser-fallback.ts', import.meta.url), 'utf8'),
+      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+    ]);
+    expect(preload).toContain("invokeTrusted('stock-media:search', input)");
+    expect(preload).toContain("invokeTrusted('stock-media:download', input)");
+    expect(fallback).toContain('async searchStockMedia()');
+    expect(fallback).toContain('async downloadStockMedia()');
+    expect(main).toContain("trustedHandle('stock-media:search'");
+    expect(main).toContain("trustedHandle('stock-media:download'");
+    expect(ARTIFACT_STORAGE_DIRECTORIES).toContain('stock-media');
+  });
+
+  it('keeps stock-media keys in the vault only; old configs round-trip unchanged', () => {
+    expect(isSecretId('stockMedia/pexels/apiKey')).toBe(true);
+    expect(isSecretId('stockMedia/pixabay/apiKey')).toBe(true);
+    expect(isSecretId('stockMedia/other/apiKey')).toBe(false);
+    const withKeys = { ...structuredClone(defaultConfig), stockMedia: { pexelsApiKey: 'pexels-secret', pixabayApiKey: 'pixabay-secret' } } as AppConfig;
+    const secrets = extractConfigSecrets(withKeys);
+    expect(secrets).toMatchObject({ 'stockMedia/pexels/apiKey': 'pexels-secret', 'stockMedia/pixabay/apiKey': 'pixabay-secret' });
+    const stripped = stripConfigSecrets(withKeys);
+    expect(JSON.stringify(stripped)).not.toContain('pexels-secret');
+    expect(JSON.stringify(stripped)).not.toContain('pixabay-secret');
+    expect(applyConfigSecrets(stripped, secrets)).toEqual(withKeys);
+    expect(normalizeAppConfig(stripped)).toHaveProperty('stockMedia');
+
+    const old = structuredClone(defaultConfig);
+    expect(extractConfigSecrets(old)['stockMedia/pexels/apiKey']).toBeUndefined();
+    expect(stripConfigSecrets(old)).not.toHaveProperty('stockMedia');
+    expect(applyConfigSecrets(stripConfigSecrets(old), extractConfigSecrets(old))).toEqual(old);
+  });
+});

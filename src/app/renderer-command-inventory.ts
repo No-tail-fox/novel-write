@@ -1197,6 +1197,12 @@ export const rendererCommandInventory = {
   selectShortVideoMaterials: command(
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'addShortVideoMaterials', 'onClick={handleAdd}', '添加混剪视频', 'tests/short-video-materials.test.ts', 'src/features/tasks/ShortVideoMaterialFields.tsx', { disabled: 'disabled={picking || value.files.length >= 100}', loading: "picking ? '正在选择素材…'", error: 'addError' }, 'src/features/tasks/ShortVideoMaterialFields.tsx', undefined, [{ source: 'src/features/tasks/NewTaskPage.tsx', evidence: 'onAdd={addShortVideoMaterials}' }]),
   ),
+  searchStockMedia: command(
+    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'runSearch', 'onClick={() => void runSearch()}', '检索素材', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={searching || !query.trim()}', loading: "searching ? '正在检索…'", error: 'searchError' }),
+  ),
+  downloadStockMedia: command(
+    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'addItem', 'onClick={() => void addItem(item)}', '添加', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={Boolean(addingId)', loading: "'正在下载…'", error: 'addError' }),
+  ),
   selectLocalVideo: command(
     owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('video')", '添加视频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || draft.referenceVideoPaths.length >= referenceLimits.videos}', loading: 'pickingImage', error: 'submitError' }),
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'selectPixelleVideo', 'onClick={handleSelectVideo}', '选择本地视频', 'tests/pixelle-task.test.ts', 'src/features/tasks/PixelleTemplateFields.tsx', { disabled: 'disabled={pickingVideo}', loading: "pickingVideo ? '正在选择视频…'", error: 'videoSelectionError' }, 'src/features/tasks/PixelleTemplateFields.tsx', undefined, [{ source: 'src/features/tasks/NewTaskPage.tsx', evidence: 'onSelectVideo={selectPixelleVideo}' }]),

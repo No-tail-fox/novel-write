@@ -330,6 +330,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'pixelle:catalog',
   'local-video:select',
   'short-video-materials:select',
+  'stock-media:search',
+  'stock-media:download',
   'motion-comic-source:select',
   'local-audio:select',
   'local-subtitle-timestamps:select',
@@ -568,6 +570,8 @@ export type StoryDreamApi = {
   getPixelleCatalog: () => Promise<import('./pixelle').PixelleCatalog>;
   selectLocalVideo: () => Promise<string | null>;
   selectShortVideoMaterials: () => Promise<string[]>;
+  searchStockMedia: (input: import('./stock-media').StockMediaSearchRequest) => Promise<import('./stock-media').StockMediaSearchResult>;
+  downloadStockMedia: (input: import('./stock-media').StockMediaDownloadRequest) => Promise<import('./stock-media').StockMediaDownloadResult>;
   selectMotionComicSourceFile: () => Promise<LocalTextFile | null>;
   importBgmAudio: () => Promise<ManagedBgmImport | null>;
   selectLocalAudio: {

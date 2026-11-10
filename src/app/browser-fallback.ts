@@ -1938,6 +1938,12 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async selectShortVideoMaterials() {
       return [];
     },
+    async searchStockMedia() {
+      throw new Error('STOCK_MEDIA_KEY_MISSING: 浏览器预览不能在线检索素材，请在桌面应用中配置素材站密钥。');
+    },
+    async downloadStockMedia() {
+      throw new Error('STOCK_MEDIA_KEY_MISSING: 浏览器预览不能下载素材，请在桌面应用中使用。');
+    },
     async selectMotionComicSourceFile() {
       return null;
     },

@@ -1,0 +1,47 @@
+{
+  "_comment": "Shape from https://pixabay.com/api/docs/#api_search_videos (documentation example, 【未核实】 against the live API). Values are synthetic.",
+  "total": 4692,
+  "totalHits": 500,
+  "hits": [
+    {
+      "id": 125,
+      "pageURL": "https://pixabay.com/videos/id-125/",
+      "type": "film",
+      "tags": "flowers, yellow, blossom",
+      "duration": 12,
+      "videos": {
+        "large": { "url": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_large.mp4", "width": 3840, "height": 2160, "size": 6615235, "thumbnail": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_large.jpg" },
+        "medium": { "url": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_medium.mp4", "width": 1920, "height": 1080, "size": 3562083, "thumbnail": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_medium.jpg" },
+        "small": { "url": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_small.mp4", "width": 1280, "height": 720, "size": 2356123, "thumbnail": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_small.jpg" },
+        "tiny": { "url": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_tiny.mp4", "width": 960, "height": 540, "size": 1150234, "thumbnail": "https://cdn.pixabay.com/video/2015/08/08/125-135736646_tiny.jpg" }
+      },
+      "views": 4462,
+      "downloads": 1464,
+      "likes": 18,
+      "comments": 0,
+      "user_id": 1281706,
+      "user": "Coverr-Free-Footage",
+      "userImageURL": "https://cdn.pixabay.com/user/2015/10/16/09-28-45-303_250x250.png"
+    },
+    {
+      "id": 126,
+      "pageURL": "https://pixabay.com/videos/id-126/",
+      "type": "film",
+      "tags": "long",
+      "duration": 95,
+      "videos": {
+        "large": { "url": "", "width": 0, "height": 0, "size": 0, "thumbnail": "" },
+        "medium": { "url": "https://cdn.pixabay.com/video/2016/01/01/126_medium.mp4", "width": 1920, "height": 1080, "size": 9000000, "thumbnail": "https://cdn.pixabay.com/video/2016/01/01/126_medium.jpg" }
+      },
+      "user_id": 2,
+      "user": "LongClip"
+    },
+    {
+      "id": 127,
+      "pageURL": "https://pixabay.com/videos/id-127/",
+      "duration": 5,
+      "videos": {},
+      "user": "NoRenditions"
+    }
+  ]
+}

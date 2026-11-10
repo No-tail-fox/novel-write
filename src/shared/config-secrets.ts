@@ -19,6 +19,8 @@ export type SecretId =
   | 'speechToText/apiKey'
   | `speechToText/${string}/apiKey`
   | 'ima/apiKey'
+  | 'stockMedia/pexels/apiKey'
+  | 'stockMedia/pixabay/apiKey'
   | 'viralVision/apiKey'
   | `viralVision/${string}/apiKey`;
 
@@ -36,13 +38,18 @@ export type PublicAppState = Omit<AppState, 'config'> & {
   secretStatus: SecretStatus;
 };
 
+interface StockMediaKeyFields {
+  pexelsApiKey?: string;
+  pixabayApiKey?: string;
+}
+
 interface SecretSlot {
   id: SecretId;
   read: () => string | undefined;
   write: (value: string) => void;
 }
 
-const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|(?:video|music)\/[^/]+\/apiKey|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|(?:speechToText|viralVision)\/(?:[^/]+\/)?apiKey|ima\/apiKey)$/u;
+const SECRET_ID_PATTERN = /^(?:llm\/[^/]+\/apiKey|image\/[^/]+\/(?:apiKey|gptImage\/apiKey|jimeng\/(?:sessionId|accessKeyId|secretAccessKey)|customImage\/apiKey)|(?:video|music)\/[^/]+\/apiKey|tts\/[^/]+\/(?:accessKey|volcengine\/(?:apiKey|accessKeyId|secretAccessKey|accessKey)|minimax\/apiKey)|(?:speechToText|viralVision)\/(?:[^/]+\/)?apiKey|ima\/apiKey|stockMedia\/(?:pexels|pixabay)\/apiKey)$/u;
 
 export function isSecretId(value: string): value is SecretId {
   return value.length <= 1024 && SECRET_ID_PATTERN.test(value);
@@ -123,6 +130,11 @@ function secretSlots(config: AppConfig): SecretSlot[] {
   add('speechToText/apiKey', () => config.speechToText.apiKey, (value) => { config.speechToText.apiKey = value; });
   add('ima/apiKey', () => config.ima.apiKey, (value) => { config.ima.apiKey = value; });
   add('viralVision/apiKey', () => config.viral.vision.apiKey, (value) => { config.viral.vision.apiKey = value; });
+  // Optional stock-media keys (S-1). Old configs have no `stockMedia` block and load unchanged;
+  // the values live only in the encrypted vault and are blanked by stripConfigSecrets.
+  const stock = config as AppConfig & { stockMedia?: StockMediaKeyFields };
+  add('stockMedia/pexels/apiKey', () => stock.stockMedia?.pexelsApiKey, (value) => { stock.stockMedia = { ...stock.stockMedia, pexelsApiKey: value }; });
+  add('stockMedia/pixabay/apiKey', () => stock.stockMedia?.pixabayApiKey, (value) => { stock.stockMedia = { ...stock.stockMedia, pixabayApiKey: value }; });
 
   const llmIds = new Set<string>();
   for (const profile of config.llmProfiles) {

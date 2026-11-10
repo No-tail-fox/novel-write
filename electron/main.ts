@@ -149,6 +149,7 @@ import { importManagedImageLabRecord } from './image-lab-import';
 import { AssetLibraryStore } from './asset-library-store';
 import { inspectImportedImage } from './imported-image-inspection';
 import { importManagedBgm, resolveManagedBgmFilePath, resolveRuntimeManagedBgmLibrary } from './managed-bgm';
+import { createStockMediaService } from './stock-media-service';
 import { writeWindowsManagedFile } from './windows-managed-file';
 import type { LocalSubtitleTimestampFile, LocalTextFile } from '../src/shared/storydream-api';
 import { captureEditorialQa, resolveEditorialQaConfig } from './editorial-qa';
@@ -6470,6 +6471,14 @@ trustedHandle('short-video-materials:select', async () => {
   });
   return result.canceled ? [] : result.filePaths;
 });
+
+// S-1 stock media: keys come from the encrypted vault; files land under <artifactDataDir>/stock-media.
+const stockMediaService = createStockMediaService({
+  resolveSecret: async (secretId) => (await getConfigService()).resolveSecret(secretId, ''),
+  dataDirectory: artifactDataDir,
+});
+trustedHandle('stock-media:search', (_event, input) => stockMediaService.search(input));
+trustedHandle('stock-media:download', (_event, input) => stockMediaService.download(input));
 
 trustedHandle('motion-comic-source:select', selectMotionComicSourceFile);
 

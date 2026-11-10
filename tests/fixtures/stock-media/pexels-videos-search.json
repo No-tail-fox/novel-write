@@ -1,0 +1,62 @@
+{
+  "_comment": "Shape from https://www.pexels.com/api/documentation/#videos-search (documentation example, 【未核实】 against the live API). Values are synthetic.",
+  "page": 1,
+  "per_page": 2,
+  "total_results": 3,
+  "url": "https://www.pexels.com/videos/",
+  "next_page": "https://api.pexels.com/videos/search/?page=2&per_page=2&query=city",
+  "videos": [
+    {
+      "id": 1448735,
+      "width": 3840,
+      "height": 2160,
+      "url": "https://www.pexels.com/video/video-of-forest-1448735/",
+      "image": "https://images.pexels.com/videos/1448735/free-video-1448735.jpg?fit=crop&w=1200&h=630&auto=compress&cs=tinysrgb",
+      "duration": 32,
+      "full_res": null,
+      "tags": [],
+      "avg_color": null,
+      "user": { "id": 574687, "name": "Ruvim Miksanskiy", "url": "https://www.pexels.com/@digitech" },
+      "video_files": [
+        { "id": 58649, "quality": "sd", "file_type": "video/mp4", "width": 640, "height": 360, "fps": 25, "link": "https://videos.pexels.com/video-files/1448735/1448735-sd_640_360_25fps.mp4" },
+        { "id": 58650, "quality": "hd", "file_type": "video/mp4", "width": 1920, "height": 1080, "fps": 25, "link": "https://videos.pexels.com/video-files/1448735/1448735-hd_1920_1080_25fps.mp4" },
+        { "id": 58651, "quality": "uhd", "file_type": "video/mp4", "width": 3840, "height": 2160, "fps": 25, "link": "https://videos.pexels.com/video-files/1448735/1448735-uhd_3840_2160_25fps.mp4" },
+        { "id": 58652, "quality": "hd", "file_type": "video/mp4", "width": 1280, "height": 720, "fps": 25, "link": "http://videos.pexels.com/video-files/1448735/insecure.mp4" },
+        { "id": 58653, "quality": null, "file_type": "video/mp4", "width": null, "height": null, "link": "https://videos.pexels.com/video-files/1448735/hls.m3u8" }
+      ],
+      "video_pictures": [
+        { "id": 133236, "picture": "https://images.pexels.com/videos/1448735/pictures/preview-0.jpg", "nr": 0 }
+      ]
+    },
+    {
+      "id": 2499611,
+      "width": 1080,
+      "height": 1920,
+      "url": "https://www.pexels.com/video/2499611/",
+      "image": "https://images.pexels.com/videos/2499611/free-video-2499611.jpg",
+      "duration": 18,
+      "user": { "id": 1, "name": "Portrait Author", "url": "https://www.pexels.com/@portrait" },
+      "video_files": [
+        { "id": 1, "quality": "hd", "file_type": "video/mp4", "width": 1080, "height": 1920, "fps": 30, "link": "https://videos.pexels.com/video-files/2499611/2499611-hd_1080_1920_30fps.mp4" }
+      ],
+      "video_pictures": []
+    },
+    {
+      "id": "not-a-number",
+      "width": 100,
+      "height": 100
+    },
+    {
+      "id": 999,
+      "width": 1920,
+      "height": 1080,
+      "url": "https://www.pexels.com/video/999/",
+      "image": "https://images.pexels.com/videos/999/x.jpg",
+      "duration": 10,
+      "user": { "id": 2, "name": "Offsite", "url": "https://www.pexels.com/@offsite" },
+      "video_files": [
+        { "id": 3, "quality": "hd", "file_type": "video/mp4", "width": 1920, "height": 1080, "link": "https://evil.example.com/video.mp4" }
+      ]
+    }
+  ]
+}

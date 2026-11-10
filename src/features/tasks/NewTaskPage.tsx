@@ -1,5 +1,7 @@
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { ShortVideoMaterialFields } from './ShortVideoMaterialFields';
+import { StockMediaSearchPanel } from './StockMediaSearchPanel';
+import { configuredStockMediaProviders } from '../../shared/stock-media';
 import { appendShortVideoMaterialFiles, shortVideoMaterialsSchema, type ShortVideoMaterials } from '../../shared/short-video-materials';
 import { PixelleTemplateFields } from './PixelleTemplateFields';
 import type { PixelleCatalog, PixelleTaskOptions, PixelleVisualTemplateRef } from '../../shared/pixelle';
@@ -1229,6 +1231,7 @@ export function NewTaskPage({
               <div className="new-task-material-options">
                 <Segmented label="素材来源" value={materialSource} options={['ai', 'local', 'video']} labels={['AI 生图', '本地人物素材', '素材混剪']} onChange={(value) => setMaterialSource(value as 'ai' | 'local' | 'video')} />
                 {materialSource === 'video' ? <ShortVideoMaterialFields templateControlsFit={Boolean(visualTemplateRef)} value={shortVideoMaterials} onChange={setShortVideoMaterials} onAdd={addShortVideoMaterials} /> : null}
+                {materialSource === 'video' ? <StockMediaSearchPanel api={api} ratio={ratio} configuredProviders={configuredStockMediaProviders(state.secretStatus)} value={shortVideoMaterials} onChange={setShortVideoMaterials} /> : null}
                 {materialSource === 'local' && !pixelleSkipsImages ? (
                   <SelectField label="本地人物素材" value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)} options={[
                     { value: '', label: '请选择人物' },

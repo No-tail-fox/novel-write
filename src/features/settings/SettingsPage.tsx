@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArtifactStorageSettings } from './ArtifactStorageSettings';
 import { CostPriceTableFields } from './CostPriceTableFields';
+import { StockMediaKeyFields } from './StockMediaKeyFields';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { APP_VERSION_LABEL } from '../../app/app-version';
 import { AlertTriangle, ArrowLeft, Bot, CheckCircle2, Copy, Database, Eye, Film, FlaskConical, FolderOpen, Globe2, Image as ImageIcon, Info, KeyRound, Loader2, Mic2, Music2, Palette, Save, Search, Sparkles, Upload, Wand2, XCircle } from "lucide-react";
@@ -864,6 +865,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             ) : null}
           </SettingsCard>
         ) : null}
+        {section === 'creative' ? <StockMediaKeyFields secrets={secrets} /> : null}
         {section === 'creative' ? (
           <SettingsCard title="成本单价" status={draft.costPriceTable?.rows.length ? `${draft.costPriceTable.rows.length} 个模型` : '未填写'}>
             <CostPriceTableFields config={draft} onChange={(costPriceTable) => setSettingsDraft({ ...draft, costPriceTable })} />
