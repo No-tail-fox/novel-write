@@ -32,7 +32,7 @@ afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { rec
 async function options() { const outputDir = await mkdtemp(join(tmpdir(), 'lemo-abort-')); roots.push(outputDir); return { outputDir, upstreamRoot: '', threeRoot: '', filmDir: '', timeoutMs: 80 }; }
 describe('native capture cancellation', () => {
   it('aborts and awaits the encoder before closing the source or reporting timeout', async () => {
-    await expect(exportLemoUpstreamProject({ ...await options(), durationSeconds: 1, fps: 1 })).rejects.toThrow('LEMO_REVIEW_TIMEOUT');
+    await expect(exportLemoUpstreamProject({ ...await options(), durationSeconds: 1, fps: 1, engine: 'electron' })).rejects.toThrow('LEMO_REVIEW_TIMEOUT');
     expect(state.events).toEqual(['destroy', 'encoder-aborted', 'encoder-cleaned', 'source-closed']);
   });
   it('settles a never-resolving readiness script when the caller aborts', async () => {

@@ -114,10 +114,10 @@ export function formatTaskOperationTime(value: string, now = Date.now()): string
   return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${clock}`;
 }
 
-export function taskHistoryTypeLabel(task: Pick<TaskSummary, 'taskType' | 'track'>): string {
+export function taskHistoryTypeLabel(task: Pick<TaskSummary, 'taskType' | 'track'> & { productionRoute?: TaskSummary['productionRoute'] }): string {
   if (task.taskType === 'html-video') return 'HTML 动画';
   if (task.track === 'music-mv') return '音乐 MV';
-  if (task.taskType === 'editorial-collage') return '创意动画';
+  if (task.taskType === 'editorial-collage') return task.productionRoute === 'template' ? '模板动画' : '创意动画';
   if (task.taskType === 'motion-comic') return 'AI 漫剧';
   if (task.taskType === 'music-mv') return '音乐 MV';
   return taskTrackLabelById.get(task.track) ?? task.track;

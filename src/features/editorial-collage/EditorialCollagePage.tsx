@@ -24,7 +24,7 @@ import { editorialShotTitle } from '../../shared/editorial-storytelling';
 import { COPYWRITING_TRACKS, copywritingTrack } from '../../shared/copywriting-tracks';
 import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLES, editorialWritingStyle, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
 import { CreativeProductionFields } from './CreativeProductionFields';
-import { clearCreativeRoute, creativeRouteMode, peekCreativeRoute } from './creative-route';
+import { editorialProductionRoute, taskProductionRoute, type EditorialProductionRoute } from '../../shared/creative-animation/production-route';
 import { ProjectMusicFields } from './ProjectMusicFields';
 import { creativeStyle, creativeStyleSupportsMode, resolveCreativeStyle } from '../../shared/creative-animation/styles';
 import { DirectorOptionPreview, DIRECTOR_SUBTITLE_OPTIONS } from '../director-desk/DirectorOptionPreview';
@@ -103,18 +103,30 @@ export function EditorialCollagePage({
   requestedTaskId,
   onRequestedTaskHandled,
   navigate,
+  openProjectInView,
   openSettings,
   returnView = 'history',
+  route = 'lemo',
 }: {
+  /** 创意动画 (Lemo) and 模板动画 (Remotion templates) are separate pages over the same project storage. */
+  route?: EditorialProductionRoute;
   api: StoryDreamApi;
   state: AppState;
   applyState: ApplyMutationResult;
   requestedTaskId: string;
   onRequestedTaskHandled: (taskId: string) => void;
   navigate?: (view: ShellView) => void;
+  /** Hands a project of the other route to its page while keeping the project request (plain navigate drops it). */
+  openProjectInView?: (view: Extract<ShellView, 'editorial-collage' | 'template-animation'>, taskId: string) => void;
   returnView?: ShellView;
   openSettings?: (section: SettingsSection, returnView: ShellView, taskId?: string) => void;
 }) {
+  // The shell recreates these callbacks on every render; read them through refs so effects keyed on them don't re-run.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const openProjectInViewRef = useRef(openProjectInView);
+  openProjectInViewRef.current = openProjectInView;
+  const canRedirect = Boolean(navigate || openProjectInView);
   const projectAction = useAsyncAction();
   const providerAction = useAsyncAction();
   const copyAction = useAsyncAction();
@@ -163,15 +175,15 @@ export function EditorialCollagePage({
   const [createVoiceId, setCreateVoiceId] = useState('');
   const [createSubtitleStyle, setCreateSubtitleStyle] = useState<string>(LEMO_FOLLOW_STYLE_SUBTITLES);
   const [createSeedLocked, setCreateSeedLocked] = useState(true);
-  const requestedRouteRef = useRef(peekCreativeRoute());
-  const [createProduction, setCreateProduction] = useState<VoxProductionSettings>(() => ({ ...voxProductionSettings(), authoring: { mode: creativeRouteMode(peekCreativeRoute()), styleId: 'auto' } }));
-  useEffect(() => clearCreativeRoute(), []);
+  const routeMode = route === 'template' ? 'template' as const : 'ai-code' as const;
+  const routeLabel = route === 'template' ? '模板动画' : '创意动画';
+  const [createProduction, setCreateProduction] = useState<VoxProductionSettings>(() => ({ ...voxProductionSettings(), authoring: { mode: routeMode, styleId: 'auto' } }));
   const createNativeAuthoring = createProduction.authoring?.mode === 'ai-code';
   const createEffectiveSubtitleStyle = !createNativeAuthoring && createSubtitleStyle === LEMO_FOLLOW_STYLE_SUBTITLES ? DIRECTOR_SUBTITLE_OPTIONS[0] : createSubtitleStyle;
   const createProductionValid = voxProductionSettingsSchema.safeParse(createProduction).success;
   const [dirty, setDirty] = useState(false);
   const projectLeave = useUnsavedChanges({
-    id: 'editorial-project', label: '创意动画项目', dirty, busy: projectAction.busy,
+    id: 'editorial-project', label: `${routeLabel}项目`, dirty, busy: projectAction.busy,
     onSave: saveProject,
     onDiscard: () => {
       const saved = savedDocumentRef.current;
@@ -184,7 +196,7 @@ export function EditorialCollagePage({
   const modelConfig = useProjectModelConfig(state.config, selectedProjectModels);
   const selectedProviderProfileId = selectedProjectModels.imageProfileId;
   const creationDraft = useWorkspaceDraft({
-    id: 'editorial-create', label: '创意动画新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim() || createTrack !== 'general' || createWritingStyleId !== DEFAULT_EDITORIAL_WRITING_STYLE),
+    id: route === 'template' ? 'template-animation-create' : 'editorial-create', label: `${routeLabel}新建草稿`, enabled: createOpen && Boolean(createTitle.trim() || createSource.trim() || createRequirements.trim() || createTrack !== 'general' || createWritingStyleId !== DEFAULT_EDITORIAL_WRITING_STYLE),
     busy: projectAction.busy || copyAction.busy,
     value: { createModelsJson: JSON.stringify(createModels), createTitle, createSource, createRequirements, createTrack, createWritingStyleId, createRatio, createDurationMs: createDurationMs === 'auto' ? 30_000 : createDurationMs, createFullText: createDurationMs === 'auto', createStyleId, createLayoutTemplate, createMotionPreset, createVoiceId, createSubtitleStyle, createSeedLocked, createProductionJson: JSON.stringify(createProduction) },
     restore: (draft) => {
@@ -197,16 +209,18 @@ export function EditorialCollagePage({
       setCreateSubtitleStyle(draft.createSubtitleStyle); setCreateSeedLocked(draft.createSeedLocked);
       try {
         const parsed = voxProductionSettingsSchema.safeParse(JSON.parse(draft.createProductionJson));
-        // An explicit entry (创意动画 / 模板动画) wins over the draft's production mode; the rest of the draft is kept.
-        const route = requestedRouteRef.current;
-        if (parsed.success) setCreateProduction(route && parsed.data.authoring && parsed.data.authoring.mode !== creativeRouteMode(route)
-          ? { ...parsed.data, authoring: { ...parsed.data.authoring, mode: creativeRouteMode(route), styleId: creativeStyleSupportsMode(creativeStyle(parsed.data.authoring.styleId), creativeRouteMode(route)) ? parsed.data.authoring.styleId : 'auto' } }
-          : parsed.data);
+        // The page's route always wins over the draft's production mode; the rest of the draft is kept.
+        if (parsed.success) {
+          const authoring = parsed.data.authoring ?? { mode: routeMode, styleId: 'auto' };
+          setCreateProduction(authoring.mode !== routeMode
+            ? { ...parsed.data, authoring: { ...authoring, mode: routeMode, styleId: creativeStyleSupportsMode(creativeStyle(authoring.styleId), routeMode) ? authoring.styleId : 'auto' } }
+            : { ...parsed.data, authoring });
+        }
       } catch { /* Older drafts keep their original image settings and use creative defaults. */ }
     },
   });
 
-  const projects = useMemo(() => state.tasks.filter((task) => task.taskType === 'editorial-collage' && !task.archivedAt).slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)), [state.tasks]);
+  const projects = useMemo(() => state.tasks.filter((task) => task.taskType === 'editorial-collage' && taskProductionRoute(task) === route && !task.archivedAt).slice().sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)), [route, state.tasks]);
   const providerProfiles = useMemo(() => resolveDirectorImageProviderOptions(modelConfig, state.secretStatus), [modelConfig, state.secretStatus]);
   const imageProviderOptions = useMemo(() => providerProfiles.map((profile) => ({
     value: profile.profileId,
@@ -251,7 +265,7 @@ export function EditorialCollagePage({
   }, [activeProjectId, api, outputAsset?.id, outputAssetPath]);
   const resolveHistoryOutputMedia = useCallback((path: string) =>
     resolveDirectorOutputMediaUrl(api, activeProjectId, path), [activeProjectId, api]);
-  const projectOptions = useMemo(() => projects.map((task) => ({ id: task.id, title: task.title || '未命名 创意动画项目', meta: `创建于 ${new Date(task.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` })), [projects]);
+  const projectOptions = useMemo(() => projects.map((task) => ({ id: task.id, title: task.title || `未命名 ${routeLabel}项目`, meta: `创建于 ${new Date(task.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` })), [projects]);
   const directorAssets = useMemo<DirectorAsset[]>(() => {
     if (!document) return [];
     const styleAssets = document.assets.filter((asset) => asset.kind === 'image' && asset.localPath && asset.assetId.startsWith('style-candidate-'));
@@ -362,33 +376,44 @@ export function EditorialCollagePage({
     generationRequestsRef.current.clear();
   }, []);
 
-  const openProject = useCallback(async (taskId: string) => {
+  /** Resolves to the other route's view when the project belongs to it (the caller navigates there instead). */
+  const openProject = useCallback(async (taskId: string): Promise<Extract<ShellView, 'editorial-collage' | 'template-animation'> | undefined> => {
     const request = ++projectOpenRequestRef.current;
     generationRequestsRef.current.clear();
     setLoadingProjectId(taskId);
     const result = await projectAction.run(async () => {
       const task = await api.getTaskDetail(taskId);
-      if (!task || task.taskType !== 'editorial-collage') throw new Error('创意动画项目不存在或已被移除。');
+      if (!task || task.taskType !== 'editorial-collage') throw new Error(`${routeLabel}项目不存在或已被移除。`);
       const project = parseEditorialCollagePipelineData(task.pipelineData);
+      const projectRoute = task.taskKind === 'music-mv' ? 'lemo' : editorialProductionRoute(project.productionSettings);
+      if (projectRoute !== route && canRedirect) return { redirect: projectRoute === 'template' ? 'template-animation' as const : 'editorial-collage' as const };
       if (task.errorMessage && !project.productionRun) projectAction.reportError(new Error(task.errorMessage));
-      return project;
+      return { project };
     });
     if (request !== projectOpenRequestRef.current) return;
     setLoadingProjectId('');
     if (!result.ok) return;
-    setDocument(result.value);
-    documentRef.current = result.value;
-    savedDocumentRef.current = result.value;
+    if ('redirect' in result.value) return result.value.redirect;
+    const project = result.value.project;
+    setDocument(project);
+    documentRef.current = project;
+    savedDocumentRef.current = project;
     setActiveProjectId(taskId);
     setProductionIntent('');
     setProductionOpen(false);
     setMusicOpen(false);
     setMusicSettings(null);
     setProductionDetailsOpen(false);
-    setSelectedShotId(result.value.beats[0]?.shots[0]?.id ?? '');
+    setSelectedShotId(project.beats[0]?.shots[0]?.id ?? '');
     setCreateOpen(false);
     setDirty(false);
-  }, [api, projectAction.run]);
+    return undefined;
+  }, [api, canRedirect, projectAction.run, route, routeLabel]);
+
+  const handOffProject = useCallback((view: Extract<ShellView, 'editorial-collage' | 'template-animation'>, taskId: string) => {
+    if (openProjectInViewRef.current) openProjectInViewRef.current(view, taskId);
+    else navigateRef.current?.(view);
+  }, []);
 
   // Main-process saves publish task updates; polling also recovers a missed event.
   // Unmount and project selection never send cancellation.
@@ -416,10 +441,19 @@ export function EditorialCollagePage({
     return () => { disposed = true; unsubscribe(); window.clearInterval(timer); };
   }, [activeProjectId, api]);
 
+  // Open each requested project once: re-running on unrelated re-renders would start a second open while the first
+  // still holds the busy project action, and the superseded/busy pair leaves the page on the recovery screen.
+  const handledRequestRef = useRef('');
   useEffect(() => {
-    if (!requestedTaskId) return;
-    void openProject(requestedTaskId).finally(() => onRequestedTaskHandled(requestedTaskId));
-  }, [onRequestedTaskHandled, openProject, requestedTaskId]);
+    if (!requestedTaskId || handledRequestRef.current === requestedTaskId) return;
+    handledRequestRef.current = requestedTaskId;
+    // A project of the other route is handed to its own page, which then consumes the request.
+    void openProject(requestedTaskId).then(
+      (redirect) => { if (redirect) handOffProject(redirect, requestedTaskId); else onRequestedTaskHandled(requestedTaskId); },
+      () => onRequestedTaskHandled(requestedTaskId),
+    );
+  }, [handOffProject, onRequestedTaskHandled, openProject, requestedTaskId]);
+  useEffect(() => { if (!requestedTaskId) handledRequestRef.current = ''; }, [requestedTaskId]);
 
   function mutateDocument(update: (current: EditorialCollagePipelineData) => EditorialCollagePipelineData) {
     const current = documentRef.current;
@@ -699,11 +733,11 @@ export function EditorialCollagePage({
   async function createProject() {
     const submittedDraft = creationDraft.snapshot();
     const result = await projectAction.run(async () => {
-      const mutation = await api.createEditorialCollage({ projectModels: createModels, title: createTitle, sourceText: createSource, ratio: createRatio, durationMs: createDurationMs, writingStyleId: createWritingStyleId, writingRequirements: [createTrack !== 'general' ? `内容赛道：${copywritingTrack(createTrack).label}` : '', createRequirements].filter(Boolean).join('\n') });
+      const mutation = await api.createEditorialCollage({ projectModels: createModels, title: createTitle, sourceText: createSource, ratio: createRatio, durationMs: createDurationMs, productionRoute: route, writingStyleId: createWritingStyleId, writingRequirements: [createTrack !== 'general' ? `内容赛道：${copywritingTrack(createTrack).label}` : '', createRequirements].filter(Boolean).join('\n') });
       applyState(mutation);
-      if (!mutation || mutation.kind !== 'task-upsert') throw new Error('创意动画项目已保存，但未返回可打开的任务记录。');
+      if (!mutation || mutation.kind !== 'task-upsert') throw new Error(`${routeLabel}项目已保存，但未返回可打开的任务记录。`);
       const task = await api.getTaskDetail(mutation.task.id);
-      if (!task) throw new Error('创意动画项目已创建，但无法重新读取。');
+      if (!task) throw new Error(`${routeLabel}项目已创建，但无法重新读取。`);
       const created = parseEditorialCollagePipelineData(task.pipelineData);
       const style = created.styleCandidates.find((candidate) => candidate.id === createStyleId) ?? created.styleCandidates[0];
       const configured: EditorialCollagePipelineData = rebuildEditorialTimeline({
@@ -728,9 +762,9 @@ export function EditorialCollagePage({
       const savedMutation = await api.saveEditorialCollage({ id: task.id, expectedUpdatedAt: configured.updatedAt, document: configured });
       applyState(savedMutation);
       const savedTask = await api.getTaskDetail(task.id);
-      if (!savedTask) throw new Error('创意动画项目创建预检保存后无法重新读取。');
+      if (!savedTask) throw new Error(`${routeLabel}项目创建预检保存后无法重新读取。`);
       return { id: task.id, document: parseEditorialCollagePipelineData(savedTask.pipelineData) };
-    }, { successMessage: '创意动画项目已创建。' });
+    }, { successMessage: `${routeLabel}项目已创建。` });
     if (!result.ok) return;
     if (!creationDraft.complete(submittedDraft)) return;
     setActiveProjectId(result.value.id);
@@ -750,7 +784,7 @@ export function EditorialCollagePage({
     const mutation = await api.saveEditorialCollage({ id: nextDocument.id, expectedUpdatedAt: nextDocument.updatedAt, document: nextDocument });
     applyState(mutation);
     const task = await api.getTaskDetail(nextDocument.id);
-    if (!task) throw new Error('创意动画项目保存后无法重新读取。');
+    if (!task) throw new Error(`${routeLabel}项目保存后无法重新读取。`);
     const saved = parseEditorialCollagePipelineData(task.pipelineData);
     acceptSavedDocument(saved, baseline);
     return saved;
@@ -774,7 +808,7 @@ export function EditorialCollagePage({
   ): Promise<EditorialCollagePipelineData> {
     const pending = persistQueueRef.current.then(async () => {
       const latest = documentRef.current;
-      if (!latest || latest.id !== projectId) throw new Error('创意动画项目已切换，本次生成结果未写入其他项目。');
+      if (!latest || latest.id !== projectId) throw new Error(`${routeLabel}项目已切换，本次生成结果未写入其他项目。`);
       const next = update(latest);
       if (optimistic) {
         documentRef.current = next;
@@ -792,7 +826,7 @@ export function EditorialCollagePage({
     if (!current) return false;
     const result = await projectAction.run(async () => {
       return enqueueProjectMutation(current.id, (latest) => latest);
-    }, { successMessage: '创意动画项目已保存。' });
+    }, { successMessage: `${routeLabel}项目已保存。` });
     return result.ok && documentRef.current === result.value;
   }
 
@@ -858,7 +892,7 @@ export function EditorialCollagePage({
 
   async function recheckSubtitles(input: DirectorSubtitleRecheckRequest) {
     const current = documentRef.current;
-    if (!current || current.id !== input.id) throw new Error('请先打开当前 创意动画项目。');
+    if (!current || current.id !== input.id) throw new Error(`请先打开当前 ${routeLabel}项目。`);
     const result = await projectAction.run(() => api.recheckDirectorSubtitles({ ...input, expectedUpdatedAt: current.updatedAt }), { successMessage: '字幕局部复检已完成。' });
     if (!result.ok) throw result.error ?? new Error('字幕局部复检失败。');
     const task = await api.getTaskDetail(current.id);
@@ -868,7 +902,7 @@ export function EditorialCollagePage({
 
   async function recheckMedia(input: DirectorMediaRecheckRequest) {
     const current = documentRef.current;
-    if (!current || current.id !== input.id) throw new Error('请先打开当前 创意动画项目。');
+    if (!current || current.id !== input.id) throw new Error(`请先打开当前 ${routeLabel}项目。`);
     const result = await projectAction.run(() => api.recheckDirectorMedia({ ...input, expectedUpdatedAt: current.updatedAt }), { successMessage: '媒体局部复检已完成。' });
     if (!result.ok) throw result.error ?? new Error('媒体局部复检失败。');
     const task = await api.getTaskDetail(current.id);
@@ -878,13 +912,13 @@ export function EditorialCollagePage({
 
   async function generateShot(shotId: string) {
     const initial = documentRef.current;
-    if (!initial) throw new Error('当前 创意动画镜头不存在。');
+    if (!initial) throw new Error(`当前 ${routeLabel}镜头不存在。`);
     if (!providerStatus.connected) throw new Error(providerStatus.unavailableReason ?? '图片服务未配置。');
     const prepared = prepareEditorialLayerGeneration(initial, shotId);
     if (prepared !== initial) await enqueueProjectMutation(initial.id, (latest) => prepareEditorialLayerGeneration(latest, shotId));
     const current = documentRef.current;
     const shot = current?.beats.flatMap((beat) => beat.shots).find((candidate) => candidate.id === shotId);
-    if (!current || !shot || current.id !== initial.id) throw new Error('当前 创意动画镜头不存在。');
+    if (!current || !shot || current.id !== initial.id) throw new Error(`当前 ${routeLabel}镜头不存在。`);
     if (shot.productionRecipe === 'paper-cut') {
       if (!providerStatus.supportsReferenceImages) throw new Error('原画参考分层需要支持参考图的图片服务，请先切换图片服务。');
       if (!current.assets.some(asset => asset.id === shot.keyframeAssetVersionId && asset.kind === 'image' && asset.localPath)) await generateShotImage(current, shotId);
@@ -947,7 +981,7 @@ export function EditorialCollagePage({
   async function generateStyleCandidate(styleId: string) {
     const current = documentRef.current;
     const candidate = current?.styleCandidates.find((item) => item.id === styleId);
-    if (!current || !candidate) throw new Error('当前 创意动画风格候选不存在。');
+    if (!current || !candidate) throw new Error(`当前 ${routeLabel}风格候选不存在。`);
     if (!providerStatus.connected) throw new Error(providerStatus.unavailableReason ?? '图片服务未配置。');
     const input: DirectorStyleCandidateInput = directorStyleCandidateInput(current, styleId);
     const recordId = `director-vox-style-${crypto.randomUUID()}`;
@@ -990,7 +1024,7 @@ export function EditorialCollagePage({
   async function generateVoice(shotId: string) {
     const current = documentRef.current;
     const shot = shots.find((candidate) => candidate.id === shotId);
-    if (!current || !shot) throw new Error('当前 创意动画镜头不存在。');
+    if (!current || !shot) throw new Error(`当前 ${routeLabel}镜头不存在。`);
     if (!voiceStatus.connected) throw new Error(voiceStatus.unavailableReason ?? '旁白服务未配置。');
     const input = editorialVoiceInput(current, shotId, voiceStatus);
     if (!input.text.trim()) throw new Error('当前镜头没有可生成的旁白文本。');
@@ -1035,10 +1069,10 @@ export function EditorialCollagePage({
 
   async function generateVideo(shotId: string) {
     const projectId = documentRef.current?.id;
-    if (!projectId) throw new Error('当前 创意动画项目不存在。');
+    if (!projectId) throw new Error(`当前 ${routeLabel}项目不存在。`);
     const pending = persistQueueRef.current.then(async () => {
       const latest = documentRef.current;
-      if (!latest || latest.id !== projectId) throw new Error('创意动画项目已切换，本次视频生成已取消。');
+      if (!latest || latest.id !== projectId) throw new Error(`${routeLabel}项目已切换，本次视频生成已取消。`);
       const current = await persistProject(latest);
       try {
         const response = await api.generateDirectorShotVideo({
@@ -1076,13 +1110,13 @@ export function EditorialCollagePage({
   async function renderProject() {
     await persistQueueRef.current;
     let current = documentRef.current;
-    if (!current) throw new Error('当前 创意动画项目不存在。');
+    if (!current) throw new Error(`当前 ${routeLabel}项目不存在。`);
     if (dirty) current = await enqueueProjectMutation(current.id, (latest) => latest);
     try {
       const response = await api.renderDirectorProject({ id: current.id });
       applyState(response.mutation);
       const task = await api.getTaskDetail(current.id);
-      if (!task) throw new Error('创意动画成片已生成，但项目无法重新读取。');
+      if (!task) throw new Error(`${routeLabel}成片已生成，但项目无法重新读取。`);
       const saved = parseEditorialCollagePipelineData(task.pipelineData);
       acceptSavedDocument(saved, current);
     } catch (error) {
@@ -1095,12 +1129,12 @@ export function EditorialCollagePage({
   async function exportAnimationShot(shotId:string) {
     await persistQueueRef.current;
     let current=documentRef.current;
-    if(!current)throw new Error('当前 创意动画项目不存在。');
+    if(!current)throw new Error(`当前 ${routeLabel}项目不存在。`);
     if(dirty)current=await enqueueProjectMutation(current.id,latest=>latest);
     return api.exportVoxAnimationShot({id:current.id,shotId,expectedUpdatedAt:current.updatedAt});
   }
 
-  if (loadingProjectId) return <div data-editorial-collage-workbench="true"><DirectorProjectLoading mode="vox" /></div>;
+  if (loadingProjectId) return <div data-editorial-collage-workbench="true"><DirectorProjectLoading mode="vox" voxLabel={routeLabel} /></div>;
 
   if (createOpen) {
     return <div data-editorial-collage-workbench="true">
@@ -1185,7 +1219,7 @@ export function EditorialCollagePage({
     </DirectorCreateWizard></div>;
   }
 
-  if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" errorMessage={actionError} onNewProject={startCreate} /></div>;
+  if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" voxLabel={routeLabel} errorMessage={actionError} onNewProject={startCreate} /></div>;
 
   const productionRun = document.productionRun;
   const productionRunning = productionRun?.status === 'running';
@@ -1217,6 +1251,7 @@ export function EditorialCollagePage({
     <DirectorDeskWorkspace
       mode="vox"
       musicVideo={isMusicVideo}
+      voxLabel={routeLabel}
       projectTitle={document.title}
       projectMeta={`${projects.length} 个项目`}
       episodeTitle={isMusicVideo ? "音乐 MV · 主歌曲" : "解释叙事 · 01"}
@@ -1289,7 +1324,7 @@ export function EditorialCollagePage({
       ratio={document.ratio}
       onRatioChange={updateRatio}
       onStageChange={(stage) => { if (stage === '剧本') setSourceOpen(true); }}
-      onSelectProject={(id) => { void projectLeave.requestLeave(() => openProject(id)); }}
+      onSelectProject={(id) => { void projectLeave.requestLeave(async () => { const redirect = await openProject(id); if (redirect) handOffProject(redirect, id); }); }}
       onAddShot={isMusicVideo ? undefined : addShot}
       onRemoveShot={isMusicVideo ? undefined : removeShot}
       onMoveShot={isMusicVideo ? undefined : moveShot}

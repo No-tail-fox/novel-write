@@ -50,6 +50,7 @@ export function AppRoutes({
   settingsReturnView,
   returnFromSettings,
   openTaskDetail,
+  openEditorialProjectInView,
   taskDetailReturnView,
   isHistoryTombstoned,
   historyFamilyEpochs,
@@ -77,6 +78,7 @@ export function AppRoutes({
   settingsReturnView?: ShellView;
   returnFromSettings: () => void;
   openTaskDetail: (taskId: string, returnView?: ShellView) => void;
+  openEditorialProjectInView?: (view: Extract<ShellView, 'editorial-collage' | 'template-animation'>, taskId: string) => void;
   taskDetailReturnView: ShellView;
   isHistoryTombstoned: (family: HistoryFamily, id: string) => boolean;
   historyFamilyEpochs: Partial<Record<HistoryFamily, number>>;
@@ -132,7 +134,7 @@ export function AppRoutes({
       {activeView === 'video-lab' ? <VideoLabPage api={api} state={state} openSettings={(preset) => { setVideoSettingsPreset(preset); openSettings('video', 'video-lab'); }} /> : null}
       {activeView === 'music-lab' ? <MusicLabPage api={api} applyState={applyState} musicConfig={state.config.music} openSettings={() => openSettings('music', 'music-lab')} onUseInMv={(song) => { setMusicMvHandoff({ ...song, id: crypto.randomUUID() }); navigate('music-mv'); }} /> : null}
       {activeView === 'music-mv' ? <MusicMvPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, taskDetailReturnView)} isBrowserPreview={isBrowserPreview} initialMusic={musicMvHandoff} onInitialMusicHandled={(id) => setMusicMvHandoff((current) => current?.id === id ? undefined : current)} /> : null}
-      {activeView === 'editorial-collage' ? <EditorialCollagePage api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
+      {activeView === 'editorial-collage' || activeView === 'template-animation' ? <EditorialCollagePage key={activeView} route={activeView === 'template-animation' ? 'template' : 'lemo'} api={api} state={state} applyState={applyState} requestedTaskId={requestedEditorialCollageTaskId} onRequestedTaskHandled={onRequestedEditorialCollageTaskHandled} navigate={navigate} openProjectInView={openEditorialProjectInView} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'motion-comic' ? <MotionComicPage api={api} state={state} applyState={applyState} requestedTaskId={requestedMotionComicTaskId} onRequestedTaskHandled={onRequestedMotionComicTaskHandled} navigate={navigate} openSettings={openSettings} returnView={taskDetailReturnView} /> : null}
       {activeView === 'html-video' ? <HtmlVideoPage api={api} state={state} applyState={applyState} refreshTaskDetail={refreshTaskDetail} requestedTaskId={requestedHtmlTaskId} onRequestedTaskHandled={onRequestedHtmlTaskHandled} onActiveTaskChange={onActiveHtmlTaskChange} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'viral-analyzer' ? <ViralAnalyzerPage api={api} state={state} applyState={applyState} refreshViralEvents={refreshViralEvents} onActiveAnalysisChange={onActiveViralAnalysisChange} openTaskDetail={openTaskDetail} isBrowserPreview={isBrowserPreview} /> : null}

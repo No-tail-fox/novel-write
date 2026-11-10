@@ -143,6 +143,8 @@ import { parseDraftTemplate } from './draft-template-contract';
 import { draftTemplates, normalizeDraftTemplate } from './templates';
 import { builtinDraftTemplateUpdates } from './draft-template-migration';
 import { normalizeTaskOutputTargets } from './task-output';
+import { voxProductionSettings } from './vox-production';
+import { TEMPLATE_ANIMATION_CATEGORY, editorialTemplateRouteSql, editorialProductionRoute, editorialProductionRouteFromPipelineData, type EditorialProductionRoute } from './creative-animation/production-route';
 import { isOrdinaryTask, parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import {
   normalizeDirectorBatchConcurrency,
@@ -424,7 +426,8 @@ const taskSummaryColumns = `
   script_format, podcast_image_mode, podcast_speaker_a, ordinary_cover_asset_json,
   project_cover_override_path AS project_cover_path,
   podcast_speaker_b, cover_image_mode, cover_template_id, cover_page_enabled, cover_page_text, auto_borrow_image, html_video_foreground,
-  substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview
+  substr(input_text, 1, ${TASK_INPUT_PREVIEW_LIMIT}) AS input_preview,
+  production_route
 `;
 const viralAnalysisSummaryColumns = `
   id, archived_at, managed_storage_key, url, platform, title, status, current_stage, progress, run_generation, result_generation,
@@ -1525,9 +1528,11 @@ export class FileDatabase {
       ['managed_storage_key', 'TEXT DEFAULT NULL'],
       ['is_favorite', 'INTEGER NOT NULL DEFAULT 0'],
       ['run_generation', 'INTEGER DEFAULT 0'],
+      ['production_route', 'TEXT DEFAULT NULL'],
     ] as const) {
       addColumnIfMissing(this.db, 'tasks', column, definition);
     }
+    this.ensureProductionRouteTriggers();
     addColumnIfMissing(this.db, 'task_events', 'run_generation', 'INTEGER DEFAULT 0');
     addColumnIfMissing(this.db, 'prompt_templates', 'data_json', "TEXT DEFAULT '{}'");
     addColumnIfMissing(this.db, 'prompt_templates', 'summary_json', "TEXT DEFAULT '{}'");
@@ -1774,6 +1779,25 @@ export class FileDatabase {
         [template.name, template.isDefault ? 1 : 0, template.canvas.width, template.canvas.height, template.canvas.ratio, row.id],
       );
     }
+  }
+
+  /**
+   * Keeps tasks.production_route (创意动画 'lemo' / 模板动画 'template') in step with pipeline_data inside SQLite,
+   * so list reads and the project-type filter never parse project JSON. Rows written before the column existed
+   * (or by an older build without the triggers) are backfilled; versioned trigger names let a later rule replace this one.
+   */
+  private ensureProductionRouteTriggers(): void {
+    const version = 'v1';
+    const existing = getRows<{ name: string }>(this.db, "SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'tasks_production_route_%'");
+    const current = existing.filter(({ name }) => name.endsWith(`_${version}`)).length === 2;
+    for (const { name } of existing) if (!name.endsWith(`_${version}`)) this.db.run(`DROP TRIGGER IF EXISTS "${name.replace(/"/g, '')}"`);
+    const update = `UPDATE tasks SET production_route = ${productionRouteSql('NEW.')} WHERE id = NEW.id;`;
+    this.db.run(`CREATE TRIGGER IF NOT EXISTS tasks_production_route_insert_${version} AFTER INSERT ON tasks BEGIN ${update} END`);
+    this.db.run(`CREATE TRIGGER IF NOT EXISTS tasks_production_route_update_${version} AFTER UPDATE OF pipeline_data, task_type, task_kind ON tasks BEGIN ${update} END`);
+    this.db.run(current
+      ? `UPDATE tasks SET production_route = ${productionRouteSql()} WHERE production_route IS NULL
+          AND trim(coalesce(task_type, '')) = 'editorial-collage' AND coalesce(task_kind, '') != 'music-mv'`
+      : `UPDATE tasks SET production_route = ${productionRouteSql()}`);
   }
 
   private backfillPromptTemplateSummaries(): void {
@@ -2712,7 +2736,10 @@ export class FileDatabase {
         writingStyleId: validated.writingStyleId,
         writingRequirements: validated.writingRequirements,
       });
-      const document = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt, validated.durationMs);
+      const starter = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt, validated.durationMs);
+      const document = validated.productionRoute
+        ? { ...starter, productionSettings: { ...voxProductionSettings(), authoring: { mode: validated.productionRoute === 'template' ? 'template' as const : 'ai-code' as const, styleId: 'auto' } } }
+        : starter;
       this.db.run(
         `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
         [document.stage, JSON.stringify(document), task.id],
@@ -2757,6 +2784,11 @@ export class FileDatabase {
       }
       if (validated.document.id !== validated.id || validated.document.createdAt !== current.createdAt) {
         throw new Error('EDITORIAL_COLLAGE_IDENTITY_MISMATCH: Project identity fields cannot be changed.');
+      }
+      // 创意动画 / 模板动画 is the project type: once chosen it cannot be switched by a later save.
+      if (task.taskKind !== 'music-mv' && current.productionSettings?.authoring
+        && editorialProductionRoute(current.productionSettings) !== editorialProductionRoute(validated.document.productionSettings)) {
+        throw new Error('EDITORIAL_ROUTE_LOCKED: 创意动画与模板动画是不同的项目类型，已创建的项目不能切换，请新建对应类型的项目。');
       }
       if (validated.document.updatedAt !== validated.expectedUpdatedAt) {
         throw new Error('EDITORIAL_COLLAGE_REVISION_MISMATCH: The document revision must match expectedUpdatedAt.');
@@ -4074,7 +4106,7 @@ export class FileDatabase {
     }
     if (request.taskType) {
       filters.push({
-        sql: `CASE WHEN task_kind = 'music-mv' THEN 'music-mv' ELSE ${normalizedTaskTypeSql()} END = ?`,
+        sql: `CASE WHEN task_kind = 'music-mv' THEN 'music-mv' WHEN production_route = 'template' THEN '${TEMPLATE_ANIMATION_CATEGORY}' ELSE ${normalizedTaskTypeSql()} END = ?`,
         params: [request.taskType],
       });
     }
@@ -4794,11 +4826,17 @@ function rowToBenchmarkPost(row: Record<string, unknown>): BenchmarkPost {
 
 function rowToTask(row: Record<string, unknown>): Task {
   let pipelineData = String(row.pipeline_data ?? '{}');
-  if (normalizeLegacyTaskType(row.task_type, row.task_kind) === 'editorial-collage') {
+  const editorial = normalizeLegacyTaskType(row.task_type, row.task_kind) === 'editorial-collage';
+  if (editorial) {
     try { pipelineData = JSON.stringify(restoreEditorialCollagePipelineData(pipelineData)); }
     catch { /* Preserve invalid source data for the project's recovery/error view. */ }
   }
+  // The trigger-maintained column is authoritative; a row read before the backfill derives it from the stored settings.
+  const productionRoute: EditorialProductionRoute | undefined = !editorial || normalizeTaskKind(row.task_kind) === 'music-mv' ? undefined
+    : row.production_route === 'template' || row.production_route === 'lemo' ? row.production_route
+    : editorialProductionRouteFromPipelineData(String(row.pipeline_data ?? ''));
   return {
+    ...(productionRoute ? { productionRoute } : {}),
     id: String(row.id),
     archivedAt: row.archived_at ? String(row.archived_at) : null,
     managedStorageKey: row.managed_storage_key ? String(row.managed_storage_key) : null,
@@ -4889,6 +4927,12 @@ function parseOrdinaryCoverAsset(value: unknown): OrdinaryTaskCoverAsset | null 
   } catch {
     return null;
   }
+}
+
+/** 创意动画 (lemo) / 模板动画 (template) of an editorial row, NULL for every other row. */
+function productionRouteSql(prefix = ''): string {
+  return `CASE WHEN trim(coalesce(${prefix}task_type, '')) = 'editorial-collage' AND coalesce(${prefix}task_kind, '') != 'music-mv'
+    THEN CASE WHEN ${editorialTemplateRouteSql(`pipeline_data`)} THEN 'template' ELSE 'lemo' END END`;
 }
 
 function normalizedTaskTypeSql(): string {

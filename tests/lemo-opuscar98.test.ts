@@ -12,7 +12,6 @@ import { loadOpuscar98StyleReference } from '../electron/lemo-opuscar98';
 import { preflightLemoUpstream } from '../electron/lemo-upstream-production';
 import { stepLemoUpstreamAgent, type LemoAgentOptions } from '../electron/lemo-upstream-agent';
 import { taskCreationTarget } from '../src/features/tasks/TaskCreationTypePicker';
-import { clearCreativeRoute, creativeRouteMode, peekCreativeRoute } from '../src/features/editorial-collage/creative-route';
 
 const upstreamRoot = resolve('vendor/lemo-upstream');
 const library = { upstreamRoot, threeRoot: resolve('node_modules/three') };
@@ -99,13 +98,9 @@ describe('OPUSCAR 98 generation path', () => {
 });
 
 describe('three code-animation entries', () => {
-  it('routes 创意动画 to Lemo and 模板动画 to the template route on the shared creative page', () => {
+  it('routes 创意动画, HTML 动画 and 模板动画 to their own pages', () => {
     expect(taskCreationTarget('vox')).toBe('editorial-collage');
-    expect(creativeRouteMode(peekCreativeRoute())).toBe('ai-code');
-    expect(taskCreationTarget('template-animation')).toBe('editorial-collage');
-    expect(creativeRouteMode(peekCreativeRoute())).toBe('template');
-    clearCreativeRoute();
-    expect(creativeRouteMode(peekCreativeRoute())).toBe('ai-code');
+    expect(taskCreationTarget('template-animation')).toBe('template-animation');
     expect(taskCreationTarget('html-video')).toBe('html-video');
   });
 });

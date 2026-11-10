@@ -1190,6 +1190,9 @@ describe('product shell ui', () => {
       'music-lab',
       'music-mv',
       'editorial-collage',
+      // The route branch and the page's route prop.
+      'template-animation',
+      'template-animation',
       'motion-comic',
       'html-video',
       'viral-analyzer',
@@ -1199,7 +1202,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(25);
+    expect(new Set(routedViews).size).toBe(26);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {

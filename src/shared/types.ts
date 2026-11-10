@@ -9,6 +9,7 @@ export const SHELL_VIEWS = [
   'history',
   'task-detail',
   'editorial-collage',
+  'template-animation',
   'motion-comic',
   'html-video',
   'image-lab',
@@ -501,6 +502,8 @@ export interface Task {
   outroCta?: string | null;
   lockIntroSentences?: number;
   taskType?: string;
+  /** editorial-collage only: 创意动画 (lemo) or 模板动画 (template); derived from the stored production settings. */
+  productionRoute?: 'lemo' | 'template';
   pipelineStep?: string;
   pipelineData?: string;
   targetLength?: number;
@@ -1305,7 +1308,7 @@ export type HistoryListRequest =
   | ({
       family: 'task';
       filter: HistoryArchiveFilter;
-      taskType?: 'story' | 'music-mv' | 'html-video' | 'editorial-collage' | 'motion-comic';
+      taskType?: 'story' | 'music-mv' | 'html-video' | 'editorial-collage' | 'template-animation' | 'motion-comic';
       favorite?: boolean;
       query?: string;
       cursor?: string | null;

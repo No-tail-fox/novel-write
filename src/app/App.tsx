@@ -703,6 +703,16 @@ function AppWorkspace() {
     persistActiveViewPreference(view);
   }
 
+  /** 创意动画 ⇄ 模板动画 hand-off: the opening page found the project belongs to the other route; keep the project request. */
+  function openEditorialProjectInView(view: Extract<ShellView, 'editorial-collage' | 'template-animation'>, taskId: string) {
+    activeViewRef.current = view;
+    startTransition(() => {
+      setRequestedEditorialCollageTaskId(taskId);
+      setActiveView(view);
+    });
+    persistActiveViewPreference(view);
+  }
+
   function openSettings(section: SettingsSection, returnView: ShellView, taskId?: string) {
     void navigation.requestLeave(() => {
       setSettingsEntry({ section, returnView, taskId, taskReturnView: taskDetailReturnView });
@@ -744,14 +754,14 @@ function AppWorkspace() {
       if (!lookup.ok) return;
       task = lookup.value;
     }
-    const targetView = taskWorkspaceView(task.taskType);
+    const targetView = taskWorkspaceView(task.taskType, task.productionRoute);
     setTaskDetailReturnView(returnView);
     selectedTaskIdRef.current = targetView === 'task-detail' ? taskId : null;
     activeHtmlTaskIdRef.current = targetView === 'html-video' ? taskId : null;
     activeViewRef.current = targetView;
     startTransition(() => {
       setSelectedTaskId(targetView === 'task-detail' ? taskId : null);
-      setRequestedEditorialCollageTaskId(targetView === 'editorial-collage' ? taskId : '');
+      setRequestedEditorialCollageTaskId(targetView === 'editorial-collage' || targetView === 'template-animation' ? taskId : '');
       setRequestedMotionComicTaskId(targetView === 'motion-comic' ? taskId : '');
       setRequestedHtmlTaskId(targetView === 'html-video' ? taskId : '');
       setActiveView(targetView);
@@ -835,6 +845,7 @@ function AppWorkspace() {
             settingsReturnView={settingsEntry?.returnView}
             returnFromSettings={returnFromSettings}
             openTaskDetail={openTaskDetail}
+            openEditorialProjectInView={openEditorialProjectInView}
             taskDetailReturnView={taskDetailReturnView}
             isHistoryTombstoned={isHistoryTombstoned}
             historyFamilyEpochs={historyFamilyEpochs}

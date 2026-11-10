@@ -138,11 +138,11 @@ export function DirectorCreateWizard({
   );
 }
 
-export function DirectorProjectLoading({ mode }: { mode: DirectorDeskMode }) {
+export function DirectorProjectLoading({ mode, voxLabel = '创意动画' }: { mode: DirectorDeskMode; voxLabel?: string }) {
   return (
     <div className="director-project-loading" role="status" aria-live="polite">
       <Loader2 className="director-spin" size={24} />
-      <strong>正在恢复{mode === 'vox' ? '创意动画' : ' AI 漫剧'}项目</strong>
+      <strong>正在恢复{mode === 'vox' ? voxLabel : ' AI 漫剧'}项目</strong>
       <span>正在读取镜头、版本和本地素材，完成前不会显示空白工作台。</span>
     </div>
   );
@@ -152,18 +152,20 @@ export function DirectorProjectRecovery({
   mode,
   errorMessage,
   onNewProject,
+  voxLabel = '创意动画',
 }: {
   mode: DirectorDeskMode;
+  voxLabel?: string;
   errorMessage?: string;
   onNewProject: () => void;
 }) {
   return (
     <div className="director-project-recovery" data-director-project-recovery data-director-mode={mode}>
       <CircleAlert size={24} />
-      <strong>{mode === 'vox' ? '无法打开 创意动画项目' : '无法打开 AI 漫剧项目'}</strong>
+      <strong>{mode === 'vox' ? `无法打开 ${voxLabel}项目` : '无法打开 AI 漫剧项目'}</strong>
       <span role={errorMessage ? 'alert' : undefined}>{errorMessage || '项目不存在、已归档或本地数据暂时不可用。'}</span>
       <Toolbar aria-label="项目恢复操作">
-        <Button variant="primary" icon={<Plus size={14} />} onClick={onNewProject}>{mode === 'vox' ? '新建 创意动画项目' : '新建 AI 漫剧系列'}</Button>
+        <Button variant="primary" icon={<Plus size={14} />} onClick={onNewProject}>{mode === 'vox' ? `新建 ${voxLabel}项目` : '新建 AI 漫剧系列'}</Button>
       </Toolbar>
     </div>
   );

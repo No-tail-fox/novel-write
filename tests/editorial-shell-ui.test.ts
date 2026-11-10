@@ -8,7 +8,7 @@ describe('editorial workbench shell', () => {
     const shell = await source('../src/app/AppShell.tsx');
     expect(shell).not.toContain('director-quick-launch');
     expect(productionNavItems.map(({ view, label }) => [view, label])).toEqual([
-      ['editorial-collage', '创意动画'], ['motion-comic', 'AI 漫剧'],
+      ['editorial-collage', '创意动画'], ['template-animation', '模板动画'], ['motion-comic', 'AI 漫剧'],
       ['html-video', 'HTML 动画'], ['music-mv', '音乐 MV'],
     ]);
     expect(primaryNavGroups.find((group) => group.id === 'projects')?.items.slice(1)).toEqual(productionNavItems);
@@ -17,7 +17,7 @@ describe('editorial workbench shell', () => {
   it('preserves the independent create action and every registered navigable route exactly once', () => {
     const views = navigationItems.map((item) => item.view);
     expect(views).toEqual([
-      'new-task', 'projects', 'editorial-collage', 'motion-comic', 'html-video', 'music-mv',
+      'new-task', 'projects', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv',
       'person-assets', 'copy-studio', 'conversation-workbench',
       'image-lab', 'voice-lab', 'video-lab', 'music-lab',
       'hot-board', 'benchmark', 'book-selection', 'viral-analyzer',

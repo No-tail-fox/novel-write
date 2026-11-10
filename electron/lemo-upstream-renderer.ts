@@ -4,7 +4,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { encodeHtmlFrames } from './html-video-frame-stream';
 import { htmlVideoFrameCaptureTimeoutMs } from '../src/shared/video-render-budget';
-import { serveLemoUpstreamProject, type LemoSourceOptions } from './lemo-upstream-source';
+import { readLemoUpstreamManifest, serveLemoUpstreamProject, type LemoSourceOptions } from './lemo-upstream-source';
+import {
+  defaultLemoUpstreamPythonRoot, defaultLemoUpstreamRenderCacheDir, extractLemoFrames, probeLemoMedia,
+  resolveLemoUpstreamRenderRuntime, runLemoUpstreamVideo, stageLemoUpstreamRenderRoot,
+} from './lemo-upstream-video';
 
 export interface LemoUpstreamReviewOptions extends LemoSourceOptions {
   outputDir: string;
@@ -26,11 +30,26 @@ export interface LemoUpstreamReviewReceipt {
   failedFonts: string[];
   technicalPassed: boolean;
   aestheticReview: false;
+  /** Set by the export path: which picture engine produced the film. */
+  engine?: 'upstream-video.mjs' | 'electron';
+  /** Upstream engine only: full video.mjs stdout/stderr, page warnings, wall-clock render time. */
+  logPath?: string;
+  warnings?: string[];
+  renderSeconds?: number;
 }
 
+export type LemoUpstreamExportEngine = 'upstream' | 'electron';
 export interface LemoUpstreamExportOptions extends Omit<LemoUpstreamReviewOptions, 'times'> {
   durationSeconds: number;
   fps?: number;
+  /** 'upstream' (default): vendored core/render/video.mjs, unchanged. 'electron': legacy offscreen capture. No fallback between them. */
+  engine?: LemoUpstreamExportEngine;
+  /** Bundled Python runtime (Playwright driver node, headless shell, ffmpeg). Default: `<dirname(upstreamRoot)>/python`. */
+  pythonRoot?: string;
+  /** Shared cache for the ffmpeg.exe alias and the staged render root. Default: `<os tmp>/storydream-lemo-upstream-render`. */
+  cacheDir?: string;
+  /** video.mjs --workers (upstream default 3). */
+  workers?: number;
 }
 
 export async function exportLemoUpstreamProject(options: LemoUpstreamExportOptions): Promise<{ outputPath: string; receipt: LemoUpstreamReviewReceipt }> {
@@ -38,9 +57,75 @@ export async function exportLemoUpstreamProject(options: LemoUpstreamExportOptio
   if (!Number.isInteger(fps) || fps < 1 || fps > 60 || !Number.isFinite(options.durationSeconds) || options.durationSeconds <= 0) throw new Error('LEMO_EXPORT_CLOCK');
   const count = Math.ceil(options.durationSeconds * fps);
   const outputPath = join(options.outputDir, 'native-picture.mp4');
-  const receipt = await runLemoUpstreamProject({ ...options, times: [0], timeoutMs: options.timeoutMs ?? htmlVideoFrameCaptureTimeoutMs(count) + 120000 }, { fps, count, duration: options.durationSeconds, outputPath });
+  const timeoutMs = options.timeoutMs ?? htmlVideoFrameCaptureTimeoutMs(count) + 120000;
+  const engine = options.engine ?? 'upstream';
+  if (engine !== 'upstream' && engine !== 'electron') throw new Error(`LEMO_EXPORT_ENGINE: ${String(engine)}`);
+  const receipt = engine === 'electron'
+    ? await runLemoUpstreamProject({ ...options, times: [0], timeoutMs }, { fps, count, duration: options.durationSeconds, outputPath })
+    : await runUpstreamVideoExport({ ...options, timeoutMs }, { fps, duration: options.durationSeconds, outputPath });
   if (!receipt.technicalPassed) throw new Error('LEMO_EXPORT_FAILED: ' + [...receipt.errors, ...receipt.missingResources.map(r => r.path)].join('; '));
   return { outputPath, receipt };
+}
+
+const pageLine = /^\[page\] optional file missing: (\S+) \((\d{3}),/;
+/** Missing optional files and page console errors that upstream page.mjs only warns about (it already fails hard on script/document 404 and page errors). */
+export function parseUpstreamPageLog(stderr: string) {
+  const missingResources: Array<{ path: string; status: number }> = [], warnings: string[] = [];
+  for (const line of stderr.split(/\r?\n/)) {
+    const missing = pageLine.exec(line);
+    if (missing) {
+      let path = missing[1]; try { path = new URL(missing[1]).pathname; } catch { /* keep raw */ }
+      if (missingResources.length < 200) missingResources.push({ path, status: Number(missing[2]) });
+    } else if (/^\[(?:page|note)\]/.test(line) && warnings.length < 100 && !warnings.includes(line)) warnings.push(line.slice(0, 1500));
+  }
+  return { missingResources, warnings };
+}
+
+/** Picture via the unchanged upstream renderer (bundled node + headless shell + ffmpeg); same receipt/review.json as the Electron path. */
+async function runUpstreamVideoExport(options: LemoUpstreamExportOptions & { timeoutMs: number }, video: { fps: number; duration: number; outputPath: string }): Promise<LemoUpstreamReviewReceipt> {
+  const width = options.width ?? 1920, height = options.height ?? 1080;
+  if (![width, height].every(value => Number.isInteger(value) && value >= 16 && value <= 8192 && value % 2 === 0)) throw new Error('LEMO_CANVAS_SIZE');
+  options.signal?.throwIfAborted();
+  const manifest = await readLemoUpstreamManifest(options.upstreamRoot);
+  const receipt: LemoUpstreamReviewReceipt = { revision: manifest.revision, entry: options.filmDir, width, height,
+    frames: [], errors: [], missingResources: [], failedFonts: [], technicalPassed: false, aestheticReview: false, engine: 'upstream-video.mjs' };
+  try {
+    await mkdir(options.outputDir, { recursive: true });
+    const cacheDir = options.cacheDir ?? defaultLemoUpstreamRenderCacheDir();
+    const runtime = await resolveLemoUpstreamRenderRuntime({ pythonRoot: options.pythonRoot ?? defaultLemoUpstreamPythonRoot(options.upstreamRoot), cacheDir });
+    options.signal?.throwIfAborted();
+    const root = await stageLemoUpstreamRenderRoot({ upstreamRoot: options.upstreamRoot, threeRoot: options.threeRoot, resourceRoot: options.resourceRoot,
+      playwrightCorePath: runtime.playwrightCorePath, cacheDir });
+    options.signal?.throwIfAborted();
+    const logPath = join(options.outputDir, 'render.log');
+    receipt.logPath = logPath;
+    const started = Date.now();
+    const result = await runLemoUpstreamVideo({ runtime, upstreamRoot: root, filmDir: options.filmDir, outPath: video.outputPath, fps: video.fps,
+      workers: options.workers, width, height, signal: options.signal, timeoutMs: options.timeoutMs, logPath, scratchDir: join(cacheDir, 'out') });
+    receipt.renderSeconds = (Date.now() - started) / 1000;
+    const page = parseUpstreamPageLog(result.stderr);
+    receipt.missingResources = page.missingResources;
+    receipt.warnings = page.warnings;
+    // video.mjs renders round(window.DUR * fps) frames.
+    receipt.durationSeconds = result.frames / video.fps;
+    if (Math.abs(receipt.durationSeconds - video.duration) > 1 / video.fps) throw new Error(`LEMO_EXPORT_DURATION_MISMATCH: ${receipt.durationSeconds} != ${video.duration}`);
+    const probe = await probeLemoMedia(runtime.ffmpegPath, video.outputPath, options.signal);
+    if (probe.video?.codec !== 'h264') throw new Error(`LEMO_EXPORT_CODEC: ${probe.video?.codec ?? 'none'}`);
+    if (probe.video.width !== width || probe.video.height !== height) throw new Error(`LEMO_CAPTURE_SIZE: ${probe.video.width}x${probe.video.height}`);
+    const indexes = [...new Set([0, Math.floor(result.frames / 2), result.frames - 1])];
+    const stills = indexes.map((index, order) => ({ index, time: index / video.fps, path: join(options.outputDir, `frame-${order}-${(index / video.fps).toFixed(3)}.png`) }));
+    await extractLemoFrames(runtime.ffmpegPath, video.outputPath, stills, options.signal);
+    receipt.frames = stills.map(({ time, path }) => ({ time, path }));
+    // Upstream semantics: the process result decides; optional-file 404s stay visible in the receipt.
+    receipt.technicalPassed = true;
+  } catch (error) {
+    receipt.errors.push(error instanceof Error ? error.message : String(error));
+  } finally {
+    await mkdir(options.outputDir, { recursive: true }).catch(() => {});
+    await writeFile(join(options.outputDir, 'review.json'), JSON.stringify(receipt, null, 2) + '\n', 'utf8');
+  }
+  options.signal?.throwIfAborted();
+  return receipt;
 }
 
 export function reviewLemoUpstreamProject(options: LemoUpstreamReviewOptions): Promise<LemoUpstreamReviewReceipt> {
@@ -56,7 +141,7 @@ async function runLemoUpstreamProject(options: LemoUpstreamReviewOptions, video?
   const source = await serveLemoUpstreamProject(options);
   let window: BrowserWindow | undefined;
   const receipt: LemoUpstreamReviewReceipt = { revision: source.manifest.revision, entry: options.filmDir, width, height,
-    frames: [], errors: [], missingResources: source.failures, failedFonts: [], technicalPassed: false, aestheticReview: false };
+    frames: [], errors: [], missingResources: source.failures, failedFonts: [], technicalPassed: false, aestheticReview: false, ...(video ? { engine: 'electron' as const } : {}) };
   const partition = session.fromPartition(`lemo-upstream-${randomUUID()}`);
   const captureError = (message: string) => { if (receipt.errors.length < 100 && !receipt.errors.includes(message)) receipt.errors.push(message); };
   const controller = new AbortController();

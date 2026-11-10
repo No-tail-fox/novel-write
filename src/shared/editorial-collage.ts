@@ -187,6 +187,7 @@ export interface EditorialCollageCreateInput {
   durationMs?: EditorialCollageStarterDurationMs;
   writingStyleId?: EditorialWritingStyleId;
   writingRequirements?: string;
+  productionRoute?: 'lemo' | 'template';
 }
 
 export interface EditorialCollageSaveInput {
@@ -482,6 +483,8 @@ export const editorialCollageCreateInputSchema = z.object({
   durationMs: z.union([z.literal(15_000), z.literal(30_000), z.literal(60_000), z.literal('auto')]).optional(),
   writingStyleId: z.enum(EDITORIAL_WRITING_STYLE_IDS).optional(),
   writingRequirements: boundedText(8_000).optional(),
+  /** 创意动画 (lemo) or 模板动画 (template); written into the starter production settings so the project type is fixed from the first save. */
+  productionRoute: z.enum(['lemo', 'template']).optional(),
 }).strict();
 
 export const editorialCollageSaveInputSchema = z.object({

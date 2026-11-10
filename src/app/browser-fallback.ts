@@ -36,6 +36,7 @@ import {
   editorialCollageSaveInputSchema,
   parseEditorialCollagePipelineData,
 } from '../shared/editorial-collage';
+import { editorialProductionRouteFromPipelineData } from '../shared/creative-animation/production-route';
 import {
   MOTION_COMIC_TASK_TYPE,
   createMotionComicDraft,
@@ -625,11 +626,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         if (request.status && task.status !== request.status) return false;
         if (request.statuses && !request.statuses.includes(task.status)) return false;
         if (request.favorite !== undefined && Boolean(task.isFavorite) !== request.favorite) return false;
-        const taskType = task.taskType?.trim() || (task.taskKind === 'music-mv' ? 'music-mv' : 'story');
+        const storedType = task.taskType?.trim() || (task.taskKind === 'music-mv' ? 'music-mv' : 'story');
+        // Same category rule as storage: 模板动画 is an editorial project on the template route.
+        const taskType = storedType === 'editorial-collage' && task.taskKind !== 'music-mv'
+          && editorialProductionRouteFromPipelineData(task.pipelineData) === 'template' ? 'template-animation' : storedType;
         if (request.taskType && taskType !== request.taskType) return false;
         return matchesFallbackQuery(request.query, [task.title, task.inputText, task.aiKeyword]);
       });
-      return fallbackHistoryPage('task', tasks.map(taskToSummary));
+      return fallbackHistoryPage('task', tasks.map(task => taskToSummary(task.taskType === 'editorial-collage' && task.taskKind !== 'music-mv'
+        ? { ...task, productionRoute: editorialProductionRouteFromPipelineData(task.pipelineData) } : task)));
     },
     async setProjectModels(id, models) {
       const state = read();

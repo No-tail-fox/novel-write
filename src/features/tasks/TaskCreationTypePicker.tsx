@@ -1,7 +1,6 @@
 import { Clapperboard, Code2, Images, LayoutTemplate, Music, WandSparkles } from 'lucide-react';
 import type { ShellView } from '../../shared/types';
 import { Button } from '../../ui';
-import { requestCreativeRoute } from '../editorial-collage/creative-route';
 
 export type TaskCreationType = 'smart-video' | 'vox' | 'template-animation' | 'motion-comic' | 'html-video' | 'music-mv';
 
@@ -16,10 +15,8 @@ const taskCreationTypes = [
 ] as const satisfies readonly { id: TaskCreationType; label: string; description: string; icon: typeof WandSparkles }[];
 
 export function taskCreationTarget(type: TaskCreationType): ShellView {
-  if (type === 'vox' || type === 'template-animation') {
-    requestCreativeRoute(type === 'vox' ? 'lemo' : 'template');
-    return 'editorial-collage';
-  }
+  if (type === 'vox') return 'editorial-collage';
+  if (type === 'template-animation') return 'template-animation';
   if (type === 'motion-comic') return 'motion-comic';
   if (type === 'html-video') return 'html-video';
   if (type === 'music-mv') return 'music-mv';

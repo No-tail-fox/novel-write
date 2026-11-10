@@ -192,8 +192,8 @@ export function AppShell({
                   type="button"
                   disabled={busy}
                   onClick={() => openTaskDetail(task.id)}
-                  onMouseEnter={() => preloadRouteIntent(taskWorkspaceView(task.taskType))}
-                  onFocus={() => preloadRouteIntent(taskWorkspaceView(task.taskType))}
+                  onMouseEnter={() => preloadRouteIntent(taskWorkspaceView(task.taskType, task.productionRoute))}
+                  onFocus={() => preloadRouteIntent(taskWorkspaceView(task.taskType, task.productionRoute))}
                 >
                   <strong>{task.title || '未命名任务'}</strong>
                   <span>{statusLabel(task.status)} · {taskProgressLabel(task)}</span>

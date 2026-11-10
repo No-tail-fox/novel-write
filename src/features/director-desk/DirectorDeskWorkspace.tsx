@@ -265,6 +265,8 @@ export interface DirectorOutputHistoryItem {
 export interface DirectorDeskWorkspaceProps {
   mode: DirectorDeskMode;
   musicVideo?: boolean;
+  /** 创意动画 or 模板动画 for vox projects. */
+  voxLabel?: string;
   projectTitle: string;
   projectMeta: string;
   episodeTitle: string;
@@ -440,6 +442,7 @@ const assetTabItems = [
 export function DirectorDeskWorkspace({
   mode,
   musicVideo = false,
+  voxLabel = '创意动画',
   projectTitle,
   projectMeta,
   episodeTitle,
@@ -1562,7 +1565,7 @@ export function DirectorDeskWorkspace({
           <span className="director-header-message" role={statusError ? 'alert' : undefined} title={statusError ?? feedback ?? providerLabel}>{statusError ?? feedback ?? (providerConnected ? `${providerLabel} 已配置` : '等待图片服务')}</span>
           {statusError ? <Dialog title="操作未完成" trigger={<IconButton label="查看错误详情" icon={<CircleAlert size={15} />} variant="subtle" density="compact" />} actions={<Button onClick={() => setStatusDetailOpen(false)}>关闭</Button>} open={statusDetailOpen} onOpenChange={setStatusDetailOpen}><p className="director-error-detail">{statusError}</p></Dialog> : null}
           {!providerConnected && onConfigureProvider ? <Button className="director-provider-action" density="compact" variant="secondary" icon={<Settings2 size={13} />} onClick={onConfigureProvider}>配置图片服务</Button> : null}
-          {onNewProject ? <IconButton label={musicVideo ? '新建音乐 MV' : mode === 'vox' ? '新建 创意动画项目' : '新建 AI 漫剧项目'} icon={<Plus size={15} />} variant="subtle" density="compact" disabled={batchActive} onClick={onNewProject} /> : null}
+          {onNewProject ? <IconButton label={musicVideo ? '新建音乐 MV' : mode === 'vox' ? `新建 ${voxLabel}项目` : '新建 AI 漫剧项目'} icon={<Plus size={15} />} variant="subtle" density="compact" disabled={batchActive} onClick={onNewProject} /> : null}
           <IconButton className="director-pane-toggle director-pane-toggle--left" label="显示项目与镜头" aria-controls="director-objects" aria-expanded={leftPaneOpen} icon={<PanelLeft size={15} />} variant={leftPaneOpen ? 'secondary' : 'subtle'} density="compact" onClick={() => togglePane('left')} />
           {!processOutline ? <IconButton className="director-pane-toggle director-pane-toggle--inspector" label="显示镜头检查器" aria-controls="director-inspector" aria-expanded={inspectorOpen} icon={<PanelRight size={15} />} variant={inspectorOpen ? 'secondary' : 'subtle'} density="compact" onClick={() => togglePane('inspector')} /> : null}
           <IconButton label="项目设置" icon={<Settings2 size={15} />} variant="subtle" density="compact" disabled={!onOpenSettings} onClick={onOpenSettings} />
@@ -1570,7 +1573,7 @@ export function DirectorDeskWorkspace({
           <Menu
             trigger={<IconButton label="更多操作" icon={<MoreHorizontal size={16} />} variant="subtle" density="compact" />}
             options={[
-              ...(onNewProject ? [{ id: 'new-project', label: musicVideo ? '新建音乐 MV' : mode === 'vox' ? '新建 创意动画项目' : '新建 AI 漫剧项目', icon: <Plus size={14} />, disabled: batchActive, onSelect: onNewProject }] : []),
+              ...(onNewProject ? [{ id: 'new-project', label: musicVideo ? '新建音乐 MV' : mode === 'vox' ? `新建 ${voxLabel}项目` : '新建 AI 漫剧项目', icon: <Plus size={14} />, disabled: batchActive, onSelect: onNewProject }] : []),
               { id: 'save', label: dirty ? '保存当前版本' : '当前版本已保存', icon: <Save size={14} />, disabled: !dirty || batchActive, onSelect: onSave },
               ...(onOpenOutput && outputUrl ? [{ id: 'output', label: '打开导出目录', icon: <Download size={14} />, disabled: outputBusy, onSelect: () => void openOutput() }] : []),
             ]}
@@ -2126,7 +2129,7 @@ function RenderStrategyInspector({
       options={[
         { value: 'deterministic-layers', label: <span className="director-engine-option"><Layers3 size={13} />本地拼贴动画</span> },
         { value: 'living-poster', label: <span className="director-engine-option"><Video size={13} />图生视频</span> },
-        { value: 'remotion', label: <span className="director-engine-option"><Sparkles size={13} />创意动画</span> },
+        { value: 'remotion', label: <span className="director-engine-option"><Sparkles size={13} />模板动画</span> },
       ]}
       onChange={(value) => onUpdate(shot.id, { renderStrategy: value, ...(value === 'remotion' ? {animation:shot.animation??createVoxAnimation(shot.title,shot.subtitle)} : {}) })}
     />

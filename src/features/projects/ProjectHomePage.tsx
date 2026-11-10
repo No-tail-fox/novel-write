@@ -46,7 +46,8 @@ const projectTypeOptions = [
   { value: 'story', label: '短片生成' },
   { value: 'music-mv', label: '音乐 MV' },
   { value: 'html-video', label: 'HTML 动画' },
-  { value: 'editorial-collage', label: '创意动画 / 模板动画' },
+  { value: 'editorial-collage', label: '创意动画' },
+  { value: 'template-animation', label: '模板动画' },
   { value: 'motion-comic', label: 'AI 漫剧' },
 ] as const;
 

@@ -1,5 +1,5 @@
 import { CheckboxField, PreviewSelectField, SelectField, TextAreaField, TextField, Button } from '../../ui';
-import { CREATIVE_STYLES, LEMO_LIBRARY_STYLES, OPUSCAR98_STYLES, creativeStyle, creativeStyleSupportsMode, resolveCreativeStyle } from '../../shared/creative-animation/styles';
+import { CREATIVE_STYLES, LEMO_LIBRARY_STYLES, OPUSCAR98_STYLES, creativeStyleSupportsMode, resolveCreativeStyle } from '../../shared/creative-animation/styles';
 import { VOX_PRODUCTION_PRESETS, type VoxProductionSettings } from '../../shared/vox-production';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { CreativeStyleCover, CreativeStyleFilm } from './CreativeStylePreview';
@@ -23,15 +23,10 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   const updateRow = (index: number, patch: Partial<VoxProductionSettings['data'][number]>) => onChange({ ...settings, data: settings.data.map((row, i) => i === index ? { ...row, ...patch } : row) });
   const updateArchive = (index: number, patch: Partial<VoxProductionSettings['archives'][number]>) => onChange({ ...settings, archives: settings.archives.map((row, i) => i === index ? { ...row, ...patch } : row) });
   return <div className="vox-production-fields">
-    <SelectField label="制作方式" value={authoring.mode} disabled={busy}
-      options={[{ value: 'ai-code', label: 'Lemo 创意动画（推荐）' }, { value: 'template', label: 'Remotion 模板动画' }]}
-      hint={authoring.mode === 'ai-code' ? 'Lemo：导演型 AI 按上游 Lemo 文档整片创作，自己读风格、写代码、看静帧、修改；66 种完整风格 + OPUSCAR 98 的 98 种轻量风格。最终输出一部连续影片。' : 'Remotion 模板：画面规划 → 背景与主体分层 → 去底 → 跟随旁白编排图文、图表与运动。用已适配的 59 种风格和模板，稳定、可批量，不调用 Lemo 全片创作。'}
-      onChange={(_, event) => {
-        const mode = event.value as 'ai-code' | 'template';
-        // The template route only renders adapted styles; fall back to automatic matching instead of a blocked choice.
-        const styleId = creativeStyleSupportsMode(creativeStyle(authoring.styleId), mode) || authoring.styleId === 'auto' ? authoring.styleId : 'auto';
-        onChange({ ...settings, authoring: { ...authoring, mode, styleId } });
-      }} />
+    {/* 创意动画 and 模板动画 are separate project types: the route is fixed at creation and never switched here. */}
+    <p className="vox-hint" data-production-route={authoring.mode === 'ai-code' ? 'lemo' : 'template'}>{authoring.mode === 'ai-code'
+      ? 'Lemo 创意动画：导演型 AI 按上游 Lemo 文档整片创作，自己读风格、写代码、看静帧、修改；66 种完整风格 + OPUSCAR 98 的 98 种轻量风格。最终输出一部连续影片。'
+      : 'Remotion 模板动画：画面规划 → 背景与主体分层 → 去底 → 跟随旁白编排图文、图表与运动。用已适配的 59 种风格和模板，稳定、可批量。'}</p>
     <CheckboxField label="自动生成图片" checked={settings.generateImages} disabled={busy} onChange={(_, event) => onChange({ ...settings, generateImages: event.checked === true })} />
     {authoring.mode === 'ai-code' ? <p className="vox-hint">按导演方案准备插画和已有图片，再与代码绘制画面组合。真实证据需导入并填写出处与许可；生成插画不能替代真实资料。</p> : null}
     <PreviewSelectField label="视觉风格" value={authoring.styleId} disabled={busy} detailLabel="播放样片" showSelectedPreview selectedPreviewHint="LemoLab 官方封面 · 点击播放样片"

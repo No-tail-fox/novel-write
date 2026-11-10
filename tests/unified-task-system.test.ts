@@ -32,7 +32,7 @@ describe('unified StoryDream task system', () => {
     ]);
 
     expect(shell).not.toContain('director-quick-launch');
-    expect(shell).toContain('preloadRouteIntent(taskWorkspaceView(task.taskType))');
+    expect(shell).toContain('preloadRouteIntent(taskWorkspaceView(task.taskType, task.productionRoute))');
     const production = navigation.slice(navigation.indexOf('export const productionNavItems'), navigation.indexOf('export const assetLabNavItems'));
     const labs = navigation.slice(navigation.indexOf('export const assetLabNavItems'), navigation.indexOf('export const templateSystemNavItems'));
     expect(production).toContain("view: 'editorial-collage'");

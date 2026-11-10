@@ -1,7 +1,7 @@
 import type { HistoryArchiveFilter, TaskSummary } from '../../shared/types';
 import type { HistoryPageRequestController } from '../history/use-history-page';
 
-export type ProjectTaskType = 'all' | 'story' | 'music-mv' | 'html-video' | 'editorial-collage' | 'motion-comic';
+export type ProjectTaskType = 'all' | 'story' | 'music-mv' | 'html-video' | 'editorial-collage' | 'template-animation' | 'motion-comic';
 export type ProjectLayout = 'grid' | 'list';
 
 export interface ProjectHomeView {

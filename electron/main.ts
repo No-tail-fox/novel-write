@@ -30,7 +30,8 @@ import { MotionComicScriptBatchService } from './motion-comic-script-batch-servi
 import { VoxProductionService, voxInputHash } from './vox-production-service';
 import { createVoxProductionRuntime } from './vox-production-runtime';
 import { createLemoUpstreamOperations, preflightLemoUpstream } from './lemo-upstream-production';
-import { prepareLemoUpstreamPicture } from './lemo-upstream-picture';
+import { LEMO_PICTURE_FPS, prepareLemoUpstreamPicture } from './lemo-upstream-picture';
+import { defaultLemoUpstreamPythonRoot, finalizeLemoUpstreamFilm, lemoFilmGrain, resolveLemoUpstreamRenderRuntime } from './lemo-upstream-video';
 import { listVoxProductionProjects } from './vox-production-projects';
 import { resolveCreativeStyle } from '../src/shared/creative-animation/styles';
 import { loadCreativeStyleReference, lemoEditReference } from './creative-style-references';
@@ -3986,7 +3987,9 @@ function lemoProductionLibrary() {
   const upstreamRoot = app.isPackaged ? join(process.resourcesPath, 'lemo-upstream') : resolve(__dirname, '../../vendor/lemo-upstream');
   const threeRoot = app.isPackaged ? join(process.resourcesPath, 'lemo-upstream-deps/three') : resolve(__dirname, '../../node_modules/three');
   const resourceRoot = app.isPackaged ? join(app.getPath('userData'), 'lemo-upstream/resources') : resolve(__dirname, '../../.artifacts/lemo-upstream/resources');
-  return { upstreamRoot, threeRoot, ...(existsSync(join(resourceRoot, 'resources.json')) ? { resourceRoot } : {}) };
+  // video.mjs runs with the Playwright node/browser/ffmpeg shipped in resources/python (vendor/python in dev).
+  return { upstreamRoot, threeRoot, pythonRoot: defaultLemoUpstreamPythonRoot(upstreamRoot), cacheDir: join(appDataDir(), 'cache', 'lemo-upstream-render'),
+    ...(existsSync(join(resourceRoot, 'resources.json')) ? { resourceRoot } : {}) };
 }
 
 async function renderDirectorProject(input: DirectorRenderRequest, productionOwner?: string) {
@@ -4048,6 +4051,16 @@ async function renderDirectorProject(input: DirectorRenderRequest, productionOwn
       scenes,
       signal: renderController.signal,
     });
+    // Lemo v3 films finish like upstream: mux.sh (two-pass loudnorm −14 LUFS, grain, x264 crf 19, AAC 256k).
+    // Music MVs keep the song's own loudness (normalizeAudio: false above), so they are not re-muxed.
+    if (upstreamVideoPath && task.taskKind !== 'music-mv' && document.workflowKind === 'editorial-collage' && document.upstreamFilm) {
+      const library = lemoProductionLibrary();
+      const runtime = await resolveLemoUpstreamRenderRuntime({ pythonRoot: library.pythonRoot, cacheDir: library.cacheDir });
+      const mux = await finalizeLemoUpstreamFilm(result.outputPath, { ffmpegPath: runtime.ffmpegPath, fps: LEMO_PICTURE_FPS,
+        grain: await lemoFilmGrain(document.upstreamFilm.directory), signal: renderController.signal });
+      for (const warning of mux.warnings) console.warn('[lemo-mux]', warning);
+      result.sizeBytes = (await stat(result.outputPath)).size;
+    }
     const finishedAt = new Date().toISOString();
     const sha256 = await hashDirectorRenderOutput(result.outputPath, result.sizeBytes);
     const outputAsset = {

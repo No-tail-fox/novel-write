@@ -537,7 +537,7 @@ const taskHistoryListSchema = z.union([
     .object({
       ...historyBaseShape,
       family: z.literal('task'),
-      taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'motion-comic']).optional(),
+      taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'template-animation', 'motion-comic']).optional(),
       favorite: z.boolean().optional(),
       status: taskStatusValueSchema.optional(),
     })
@@ -546,7 +546,7 @@ const taskHistoryListSchema = z.union([
     .object({
       ...historyBaseShape,
       family: z.literal('task'),
-      taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'motion-comic']).optional(),
+      taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'template-animation', 'motion-comic']).optional(),
       favorite: z.boolean().optional(),
       statuses: taskHistoryStatusesSchema,
     })

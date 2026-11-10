@@ -3,11 +3,15 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { directorCanvasForRatio, type DirectorRenderDocument } from '../src/shared/director-render';
+import { DIRECTOR_VISUAL_FPS } from '../src/shared/production-visual-continuity';
 import { assertLemoUpstreamFilmCurrent } from './lemo-upstream-agent';
-import { exportLemoUpstreamProject } from './lemo-upstream-renderer';
+import { exportLemoUpstreamProject, type LemoUpstreamExportEngine } from './lemo-upstream-renderer';
 import { readLemoUpstreamManifest, type LemoSourceOptions } from './lemo-upstream-source';
 
-type Library = Omit<LemoSourceOptions, 'filmDir'>;
+/** pythonRoot / cacheDir / engine / workers are optional; defaults are documented on exportLemoUpstreamProject. */
+/** Upstream video.mjs / mux.sh default and the director render's output rate: no 30→24 frame dropping. */
+export const LEMO_PICTURE_FPS = DIRECTOR_VISUAL_FPS;
+type Library = Omit<LemoSourceOptions, 'filmDir'> & { pythonRoot?: string; cacheDir?: string; engine?: LemoUpstreamExportEngine; workers?: number };
 interface CacheReceipt { version: 1; key: string; captureId: string; bytes: number; sha256: string }
 async function digest(path: string) {
   const hash = createHash('sha256');
@@ -40,16 +44,17 @@ export async function prepareLemoUpstreamPicture(library: Library, work: string,
   await assertLemoUpstreamFilmCurrent(film, durationSeconds);
   const canvas = directorCanvasForRatio(document.ratio);
   const manifest = await readLemoUpstreamManifest(library.upstreamRoot);
-  // v3 invalidates missing/full-range color profiles; Chromium needs explicit sRGB/BT.709.
-  const key = createHash('sha256').update(JSON.stringify({ version: 3, runId: film.runId,
-    sourceHash: film.sourceHash, revision: manifest.revision, durationSeconds, ...canvas, fps: 30 })).digest('hex');
+  // v3 invalidated missing/full-range color profiles; v4 switches the picture to the unchanged upstream video.mjs.
+  const engine = library.engine ?? 'upstream';
+  const key = createHash('sha256').update(JSON.stringify({ version: 4, engine: engine === 'upstream' ? 'upstream-video.mjs' : 'electron', runId: film.runId,
+    sourceHash: film.sourceHash, revision: manifest.revision, durationSeconds, ...canvas, fps: LEMO_PICTURE_FPS })).digest('hex');
   const directory = join(work, 'vox-production', 'lemo-exports', key);
   const cached = await cachedPicture(directory, key);
   signal?.throwIfAborted();
   if (cached) { await assertLemoUpstreamFilmCurrent(film, durationSeconds); return cached; }
   const captureId = randomUUID();
   const picture = await exportLemoUpstreamProject({ ...library, filmDir: film.directory,
-    outputDir: join(directory, captureId), durationSeconds, ...canvas, fps: 30, signal });
+    outputDir: join(directory, captureId), durationSeconds, ...canvas, fps: LEMO_PICTURE_FPS, signal });
   signal?.throwIfAborted();
   await assertLemoUpstreamFilmCurrent(film, durationSeconds);
   if (!picture.receipt.technicalPassed) throw new Error('LEMO_EXPORT_FAILED: 原生画面技术检查未通过。');
