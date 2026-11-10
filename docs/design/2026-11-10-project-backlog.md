@@ -172,7 +172,7 @@
 | P-3 | 在干净 Windows 上做安装验收：`vendor/python`（含 playwright-browsers）、Lemo render root 暂存、ffmpeg 别名都要在安装目录/用户目录下跑通 | `task_plan.md:181`；`electron/lemo-upstream-video.ts:61,165`【未核实安装版】 | P1 | M | — |
 | P-4 | SDK worker 和原生 CLI（约 301 MB）没进 `extraResources`（只有走 H1 时才需要） | `findings.md:192` | P3 | S | L-8 |
 | P-5 | **✅ 已处理**：`*.bak` 已忽略；硬编码版本由 U-1 的 `app-version` 行为测试守住。原条目：`package.json.bak` 遗留；发版前检查硬编码版本（U-1） | 仓库根目录 | P2 | S | — |
-| P-6 | 第三方署名覆盖：HyperFrames Apache-2.0、Lemo 样片 CC-BY-4.0 | `THIRD_PARTY_NOTICES.md`；`code-video-foundation.md:461` 【未核实覆盖是否完整】 | P2 | S | — |
+| P-6 | **✅ 已补齐**：`THIRD_PARTY_NOTICES.md` 新增 HyperFrames（Apache-2.0，构建时随 runtime 复制 `HYPERFRAMES_LICENSE.txt`）、GSAP（标准免费许可，法务待定 E-7）、内置 Python/Playwright 段落；新增 `tests/third-party-notices.test.ts` 防止构建复制的运行时缺署名。Python 各包逐一许可审计【未核实】。原条目：第三方署名覆盖：HyperFrames Apache-2.0、Lemo 样片 CC-BY-4.0 | `THIRD_PARTY_NOTICES.md`；`code-video-foundation.md:461` 【未核实覆盖是否完整】 | P2 | S | — |
 
 ### 2.8 仓库整理（只给建议，没有删除任何东西）
 
@@ -187,10 +187,10 @@
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 |
 |---|---|---|---|---|
-| D-1 | README 过时（2026-06）：没写三条路线、vendor 导入、内置 Python/Playwright、`tsconfig.scripts.json`、测试命令和已知失败 | `README.md:1-44` | P2 | S |
-| D-2 | 根目录过程文件（`task_plan.md`、`progress.md`、`findings.md`、`*_music_mv_sync.md`、`storybound_gap_*`、`design-qa.md`）→ 移到 `docs/archive/`，并把还没完成的项迁进本清单 | 根目录 | P2 | S |
-| D-3 | 修正 `route-split…md:133-134` 的测试结论（全量实际失败 44 个） | §1.2 | P2 | S |
-| D-4 | 汇总路线图"风险与待决策"（`technical-roadmap.md:205-217`）、基础设计 §12、faithful §9，做成一份决策记录（ADR） | — | P1 | S |
+| D-1 | **✅ 已重写**：三条路线、vendor 导入、内置 Python/Playwright、三套 tsc、eslint、`verify` 闸门与已知失败基线、付费调用可靠性规则。原条目：README 过时（2026-06）：没写三条路线、vendor 导入、内置 Python/Playwright、`tsconfig.scripts.json`、测试命令和已知失败 | `README.md:1-44` | P2 | S |
+| D-2 | **✅ 按 ADR-04 改为索引**：不移动文件，新建 `docs/archive/README.md` 列出每份过程文件的性质和未完成项对应的 backlog 条目（S-1/S-2/M-1/Q-6 等）。原条目：根目录过程文件（`task_plan.md`、`progress.md`、`findings.md`、`*_music_mv_sync.md`、`storybound_gap_*`、`design-qa.md`）→ 移到 `docs/archive/`，并把还没完成的项迁进本清单 | 根目录 | P2 | S |
+| D-3 | **✅ 已更正**：在原文 §4 追加更正说明（全量当时 19 文件 44 用例失败，现由 verify 基线管理）。原条目：修正 `route-split…md:133-134` 的测试结论（全量实际失败 44 个） | §1.2 | P2 | S |
+| D-4 | **✅ 已完成**：`docs/design/2026-11-10-decision-record.md`，10 条已决定（响度、HTML 可改、新架构只用于新项目、只加 gitignore、unknown 不重发、同端点降级、Lemo 可选生图、shim 只作用于场景、sql.js、色彩标签）、7 条待决定（默认模型、GSAP、H1/H2、配音、fps、采集格式、Lemo 预算）和 3 条环境事项。原条目：汇总路线图"风险与待决策"（`technical-roadmap.md:205-217`）、基础设计 §12、faithful §9，做成一份决策记录（ADR） | — | P1 | S |
 
 ---
 

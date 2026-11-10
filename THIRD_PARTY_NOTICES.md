@@ -87,3 +87,20 @@ The sample story is not included in StoryDream.
 - Complete 313-file upstream Git tree, including all 31 original HTML templates, is preserved byte-for-byte in `vendor/pixelle-upstream`; SHA-256 inventory: `storydream-upstream.json`.
 - Apache-2.0, Copyright (C) 2025 AIDC-AI. Original `LICENSE` and `NOTICE` are retained unchanged. StoryDream adapters live outside the upstream tree.
 - Third-party fonts and media retain their own licenses. Remote URLs referenced by a template are not bundled resources or proof of redistribution rights.
+
+## HyperFrames
+
+- Project: https://github.com/heygen-com/hyperframes (`@hyperframes/core`, `@hyperframes/lint`, `@hyperframes/player` 0.8.40).
+- License: Apache License 2.0; the package `LICENSE` ships as `dist-electron/electron/HYPERFRAMES_LICENSE.txt` (copy in `THIRD_PARTY_LICENSES/Apache-2.0.txt`).
+- Bundled: `hyperframe.runtime.iife.js` is copied unmodified to `dist-electron/electron/hyperframe.runtime.gsap.iife.js` and drives seekable playback of HTML-route scenes. Authoring rules in `src/shared/html-video-authoring.ts` are StoryDream text informed by the HyperFrames documentation.
+
+## GSAP
+
+- Project: https://gsap.com, package `gsap` 3.12.5; `dist/gsap.min.js` is copied unmodified to `dist-electron/electron/gsap.min.js`.
+- License: GreenSock Standard "no charge" license, https://gsap.com/standard-license (not an OSI license; the package ships no license file). Redistribution inside a commercial desktop app is pending legal review (backlog E-7); new generated code should prefer WAAPI/CSS animation.
+
+## Bundled Python runtime and Playwright browsers (local installs only)
+
+- `vendor/python` is a locally installed CPython distribution (PSF License, `vendor/python/LICENSE.txt`) with site-packages such as faster-whisper, CTranslate2, PyAV, onnxruntime and others. Each package keeps its own license in its `*.dist-info` directory; these files are distributed with the runtime unchanged.
+- `vendor/python/playwright-browsers` contains Playwright-managed Chromium, headless shell and FFmpeg builds (BSD-style Chromium license and LGPL FFmpeg build as published by Microsoft Playwright). They are used only for local rendering and capture.
+- Neither directory is tracked in Git; a release build must carry the license files found in those directories. 【未核实】 a complete per-package license audit has not been performed.

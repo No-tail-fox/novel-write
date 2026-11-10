@@ -132,4 +132,5 @@
 - **tsc：**`tsconfig.json`、`tsconfig.electron.json`、`tsconfig.scripts.json` 全部通过。
 - **相关测试：**15 个文件，438 个用例中 435 个通过。剩下 3 个失败在基线 `8b70b05` 上同样失败：`html-video` 的 2 个 capture contract 用例和 `product-shell-ui` 的 1 个，都不是本次引入的。
 - **全量对比：**与基线相比没有新增失败；基线中的 10 个失败已被修复。
+- **更正（2026-11-10 backlog 复核，D-3）：**上面“相关 15 个文件只有 3 个失败”只统计了相关文件。当时全量实际是 **19 个文件、44 个用例失败**（共 4362 个用例，见 `docs/design/2026-11-10-project-backlog.md` §1.2），多数是重构后过时的源码字符串断言。这些失败随后在 Q-1 中处理完毕；现在由 `node scripts/verify.mjs` 对照 `tests/known-failures.json`，只拦截新增失败。
 - **上游渲染集成测试：**`tests/lemo-upstream-video.integration.test.ts` 用真实 vendored runtime 渲染 1 秒样片、完成混流、测试取消时清理整棵进程树，并覆盖超过 260 字符的输出目录。

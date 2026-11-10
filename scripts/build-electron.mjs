@@ -89,6 +89,8 @@ await copyFile(
   'node_modules/@hyperframes/core/dist/hyperframe.runtime.iife.js',
   'dist-electron/electron/hyperframe.runtime.gsap.iife.js',
 );
+// P-6: the copied runtimes ship with their license texts (gsap publishes its license only as a URL, see THIRD_PARTY_NOTICES.md).
+await copyFile('node_modules/@hyperframes/core/LICENSE', 'dist-electron/electron/HYPERFRAMES_LICENSE.txt');
 
 await build({entryPoints: ['src/features/vox-animation/runtime.tsx'], outfile: 'dist-electron/electron/vox-animation-runtime.js', bundle: true, platform: 'browser', format: 'iife', target: 'chrome120', define: {'process.env.NODE_ENV': '"production"'}, minify: true});
 await copyFile('src/features/vox-animation/THIRD_PARTY_NOTICES.md', 'dist-electron/electron/VOX_THIRD_PARTY_NOTICES.md');
