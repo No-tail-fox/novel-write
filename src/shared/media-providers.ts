@@ -12,6 +12,7 @@ import { buildOpenAiImageEditFormData } from './openai-image-edit';
 import { isArkModelApiKey, normalizeVolcengineTtsApiSettings, normalizeVolcengineV3Speaker, VOLCENGINE_TTS_ARK_KEY_MESSAGE } from './volcengine-tts';
 import { defaultPodcastSpeakersForProvider, normalizeRuntimeTtsProvider, type RuntimeTtsProvider, volcengineResourceIdForTaskSpeaker } from './tts-voices';
 import { splitPodcastDialogue, type PodcastDialogueTurn } from './podcast-dialogue';
+import { synthesizeTtsSegments, ttsProviderHttpError, type TtsSegmentSynthesisOptions } from './tts-segment-synthesis';
 
 type ImageGenerator = (scenes: StoryboardScene[], prompts: ImagePrompt[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
 type NarrationSynthesizer = (scenes: StoryboardScene[], task: Task, signal?: AbortSignal) => Promise<SceneAsset[]>;
@@ -100,7 +101,11 @@ export function getConfiguredImageConcurrency(config: AppConfig): number {
   return Math.max(1, Math.min(6, Math.floor(Number.isFinite(value) ? value : 1)));
 }
 
-export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir: string): NarrationSynthesizer {
+/**
+ * `segmentOptions` bounds how many TTS segments are in flight (default 2) and how transient
+ * failures are retried (default 3 attempts); see `tts-segment-synthesis.ts`.
+ */
+export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir: string, segmentOptions: TtsSegmentSynthesisOptions = {}): NarrationSynthesizer {
   return async (scenes, task, signal) => {
     const taskProvider = task.ttsProvider && task.ttsProvider !== 'mock' ? normalizeRuntimeTtsProvider(task.ttsProvider) : null;
     const provider = taskProvider ?? normalizeRuntimeTtsProvider(config.tts.provider);
@@ -148,6 +153,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
         cluster: volcengine.cluster || 'volcano_tts',
         endpoint: volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
         signal,
+        segmentOptions,
       });
     }
     return synthesizeMiniMaxNarration({
@@ -158,6 +164,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       model: minimax.model ?? '',
       voiceId: taskProvider ? task.speaker : minimax.voiceId ?? '',
       signal,
+      segmentOptions,
     });
   };
 }
@@ -604,23 +611,23 @@ async function synthesizeMiniMaxNarration(input: {
   model: string;
   voiceId: string;
   signal?: AbortSignal;
+  segmentOptions?: TtsSegmentSynthesisOptions;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
     throw new Error('MiniMax TTS API key is missing; cannot generate real narration audio.');
   }
   const outputDir = join(input.workDir, 'provider-audio');
   await mkdir(outputDir, { recursive: true });
-  const assets: SceneAsset[] = [];
+  const segments = input.scenes.flatMap((scene) => narrationTurnsForScene(scene, input.task, input.voiceId, 'minimax'));
 
-  for (const scene of input.scenes) {
-    const turns = narrationTurnsForScene(scene, input.task, input.voiceId, 'minimax');
-    for (const turn of turns) {
+  return synthesizeTtsSegments(segments, async (turn, signal) => {
+    const scene = turn.scene;
     const response = await fetchWithTimeout('https://api.minimaxi.com/v1/t2a_v2', {
       generation: true,
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'MiniMax TTS request',
-      signal: input.signal,
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${input.apiKey}`,
@@ -644,7 +651,7 @@ async function synthesizeMiniMaxNarration(input: {
       }),
     });
     if (!response.ok) {
-      throw new Error(`MiniMax TTS API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+      throw ttsProviderHttpError('MiniMax TTS API error', response, await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES));
     }
     const body = await readJsonBounded<{
       data?: { audio?: string };
@@ -659,12 +666,10 @@ async function synthesizeMiniMaxNarration(input: {
       throw new Error('MiniMax TTS response did not include audio data.');
     }
     const bytes = decodeAudioPayload(audio);
-      const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
+    const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
     await writeFile(path, bytes);
-      assets.push(sceneAssetForTurn(scene.id, path, turn));
-    }
-  }
-  return assets;
+    return sceneAssetForTurn(scene.id, path, turn);
+  }, { ...input.segmentOptions, signal: input.signal, label: ttsSegmentLabel });
 }
 
 async function synthesizeVolcengineNarration(input: {
@@ -680,6 +685,7 @@ async function synthesizeVolcengineNarration(input: {
   cluster: string;
   endpoint: string;
   signal?: AbortSignal;
+  segmentOptions?: TtsSegmentSynthesisOptions;
 }): Promise<SceneAsset[]> {
   if (input.apiVersion === 'v3') {
     return synthesizeVolcengineV3Narration(input);
@@ -689,18 +695,18 @@ async function synthesizeVolcengineNarration(input: {
   }
   const outputDir = join(input.workDir, 'provider-audio');
   await mkdir(outputDir, { recursive: true });
-  const assets: SceneAsset[] = [];
   const endpoint = input.endpoint.includes('/api/v3/') ? 'https://openspeech.bytedance.com/api/v1/tts' : input.endpoint;
+  const segments = input.scenes.flatMap((scene) => narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine'));
 
-  for (const scene of input.scenes) {
-    const turns = narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine');
-    for (const turn of turns) {
+  return synthesizeTtsSegments(segments, async (turn, signal, attempt) => {
+    const scene = turn.scene;
+    const reqid = `${input.task.id}-${scene.id}-${turn.turnIndex ?? 1}`;
     const response = await fetchWithTimeout(endpoint, {
       generation: true,
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS request',
-      signal: input.signal,
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${input.accessKey}`,
@@ -714,25 +720,24 @@ async function synthesizeVolcengineNarration(input: {
           speed_ratio: input.task.ttsSpeed,
         },
         request: {
-          reqid: `${input.task.id}-${scene.id}-${turn.turnIndex ?? 1}`,
+          // Retries get a distinct reqid so the provider never sees a duplicate request id.
+          reqid: attempt > 1 ? `${reqid}-r${attempt}` : reqid,
           text: turn.text,
           operation: 'query',
         },
       }),
     });
     if (!response.ok) {
-      throw new Error(`Volcengine TTS API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+      throw ttsProviderHttpError('Volcengine TTS API error', response, await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES));
     }
     const body = await readJsonBounded<{ code?: number; message?: string; data?: string }>(response, PROVIDER_RESPONSE_MAX_BYTES);
     if (body.code !== 3000 || !body.data) {
       throw new Error(`Volcengine TTS API error: ${body.message ?? body.code ?? 'missing audio data'}`);
     }
-      const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
+    const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
     await writeFile(path, Buffer.from(body.data, 'base64'));
-      assets.push(sceneAssetForTurn(scene.id, path, turn));
-    }
-  }
-  return assets;
+    return sceneAssetForTurn(scene.id, path, turn);
+  }, { ...input.segmentOptions, signal: input.signal, label: ttsSegmentLabel });
 }
 
 async function synthesizeVolcengineV3Narration(input: {
@@ -744,6 +749,7 @@ async function synthesizeVolcengineV3Narration(input: {
   speaker: string;
   endpoint: string;
   signal?: AbortSignal;
+  segmentOptions?: TtsSegmentSynthesisOptions;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
     throw new Error('Volcengine TTS API key is required for V3 narration audio.');
@@ -751,24 +757,24 @@ async function synthesizeVolcengineV3Narration(input: {
   if (isArkModelApiKey(input.apiKey)) {
     throw new Error(VOLCENGINE_TTS_ARK_KEY_MESSAGE);
   }
+  const apiKey = input.apiKey;
   const outputDir = join(input.workDir, 'provider-audio');
   await mkdir(outputDir, { recursive: true });
-  const assets: SceneAsset[] = [];
+  const segments = input.scenes.flatMap((scene) => narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine'));
 
-  for (const scene of input.scenes) {
-    const turns = narrationTurnsForScene(scene, input.task, input.speaker, 'volcengine');
-    for (const turn of turns) {
+  return synthesizeTtsSegments(segments, async (turn, signal) => {
+    const scene = turn.scene;
     const requestId = randomUUID();
-      const speaker = normalizeVolcengineV3Speaker(turn.voiceId);
+    const speaker = normalizeVolcengineV3Speaker(turn.voiceId);
     const response = await fetchWithTimeout(input.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional', {
       generation: true,
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS V3 request',
-      signal: input.signal,
+      signal,
       headers: {
         'Content-Type': 'application/json',
-        'X-Api-Key': input.apiKey,
+        'X-Api-Key': apiKey,
         'X-Api-Resource-Id': input.resourceId || 'seed-tts-2.0',
         'X-Api-Request-Id': requestId,
       },
@@ -786,15 +792,19 @@ async function synthesizeVolcengineV3Narration(input: {
       }),
     });
     if (!response.ok) {
-      throw new Error(`Volcengine TTS V3 API error (${response.status}): ${await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES)}`);
+      throw ttsProviderHttpError('Volcengine TTS V3 API error', response, await readTextBounded(response, PROVIDER_RESPONSE_MAX_BYTES));
     }
+    // An incomplete 200 stream throws TTS_RESPONSE_INCOMPLETE, which the classifier treats as
+    // a local (never-retried) failure, so a partial paid response is not silently resubmitted.
     const bytes = await decodeVolcengineV3Audio(response);
-      const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
+    const path = join(outputDir, audioFileName(scene.id, turn, 'mp3'));
     await writeFile(path, bytes);
-      assets.push(sceneAssetForTurn(scene.id, path, turn));
-    }
-  }
-  return assets;
+    return sceneAssetForTurn(scene.id, path, turn);
+  }, { ...input.segmentOptions, signal: input.signal, label: ttsSegmentLabel });
+}
+
+function ttsSegmentLabel(turn: TtsTurn): string {
+  return `scene ${turn.scene.id}${turn.turnIndex ? ` turn ${turn.turnIndex}` : ''}`;
 }
 
 interface VolcengineV3AudioState {
