@@ -137,7 +137,7 @@
 | O-3 | 统一执行器（场景并行、失败隔离、先配音后分镜） | `technical-roadmap.md:166`；目前是两套：`electron/vox-production-runtime.ts` 和 `src/shared/html-video-runner.ts` | P2 | L | O-2、G-7 |
 | O-4 | **✅ 已实现**：损坏库只重命名隔离、从不删除，并记录恢复事件（隔离路径、时间、是否从临时文件恢复）；经现有 `getBootstrap` 的 `databaseRecovery` 传到前端，显示一次性红色提示（同一隔离文件只提示一次）。测试 `tests/database-recovery.test.ts`。Electron 实机界面【未核实】。原条目：数据库损坏的兜底：先隔离到 `.malformed`，再尝试恢复 temp，都失败就**静默开一个空库** | `src/shared/storage.ts:883-897`。UI 有没有提示用户【未核实】 | P2 | S | — |
 | O-5 | 大文件拆分：`electron/main.ts` 6891 行、`src/shared/storage.ts` 5308、`src/shared/runner.ts` 3225、`electron/editorial-qa.ts` 3206、`electron/html-video-runtime.ts` 2700。`main.ts` 也是 B 类测试脆弱的根源 | 行数统计 | P3 | L | T-2 |
-| O-6 | 评估 better-sqlite3（先把大字段移出） | `code-video-foundation.md:446` | P3 | M | O-1 |
+| O-6 | **✅ 已评估：暂不迁移**：`scripts/bench-sqljs.ts` 在 72 MB 真实库副本上测得单次提交约 114 ms（export ×2 + 原子写），`tasks.pipeline_data`/`input_text` 占全库 82%。结论和重评阈值（提交 >300 ms、库 >200 MB 等）见 `docs/design/2026-11-10-sqlite-evaluation.md`；建议先移出大字段。better-sqlite3 的 Electron 41 预编译包和实际提交频率【未核实】。原条目：评估 better-sqlite3（先把大字段移出） | `code-video-foundation.md:446` | P3 | M | O-1 |
 
 ### 2.5 UI / UX
 
