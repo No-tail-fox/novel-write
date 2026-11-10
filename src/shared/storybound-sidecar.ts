@@ -362,6 +362,14 @@ function safeProcessDetail(value: unknown): string {
 export const SIDECAR_OUTPUT_COLOR_ARGS = Object.freeze(['-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'iec61966-2-1'] as const);
 /** RGB → limited-range BT.709 conversion + tags for still inputs (covers), identical to the scene-segment encode. */
 export const SIDECAR_STILL_TO_BT709_FILTER = 'scale=in_range=auto:out_range=tv:out_color_matrix=bt709:flags=accurate_rnd+full_chroma_int,format=yuv420p,setparams=range=limited:colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1';
+/**
+ * Appended to the end of every composition re-encode's video chain (hard cut, xfade, visual transition, duration pad).
+ * The bundled ffmpeg 7.1 negotiates `-color_range` / `-colorspace` through the filter graph, but takes primaries and
+ * transfer from the frames: `SIDECAR_OUTPUT_COLOR_ARGS` alone yields `tv, bt709/unknown/unknown` for an untagged input.
+ * Only primaries/transfer are stamped (metadata, pixel-neutral); range and matrix stay with the output args, which
+ * convert a full-range / BT.601 input instead of mislabelling it. See docs/design/2026-11-10-color-tag-screening.md.
+ */
+export const SIDECAR_OUTPUT_COLOR_TAG_FILTER = 'setparams=color_primaries=bt709:color_trc=iec61966-2-1';
 const pythonStringList = (values: readonly string[]) => `[${values.map(value => JSON.stringify(value)).join(', ')}]`;
 
 const pythonSidecarScript = String.raw`import errno
@@ -388,6 +396,8 @@ LOUDNORM_TARGET_FILTER = "${loudnormTargetFilter()}"
 LOUDNORM_MEASURE_FILTER = "${loudnormMeasureFilter()}"
 # Colour tags written by every re-encode, identical to the scene-segment encode so later passes never drop them.
 OUTPUT_COLOR_ARGS = ${pythonStringList(SIDECAR_OUTPUT_COLOR_ARGS)}
+# Frame-level primaries/transfer at the end of each composition video chain (ffmpeg 7.1 drops them from the args alone).
+OUTPUT_COLOR_TAG_FILTER = "${SIDECAR_OUTPUT_COLOR_TAG_FILTER}"
 storybound_scratch_token = ""
 
 
@@ -1375,6 +1385,8 @@ def _compose_xfade_batch(segment_paths, output_path, transition_type, transition
         current_audio = next_audio
         scene_duration = durations[index] if index < len(durations) and durations[index] > 0 else transition_duration
         elapsed = max(transition_duration, elapsed + scene_duration - transition_duration)
+    filters.append(f"{current_video}{OUTPUT_COLOR_TAG_FILTER}[vtagged]")
+    current_video = "[vtagged]"
     run_composition_ffmpeg([
         *inputs,
         "-filter_complex",
@@ -1476,7 +1488,7 @@ def hard_cut_filter_graph(segment_paths, durations, fps=24, frame_counts=None):
         video_inputs.append(f"[v{index}]")
         audio_inputs.append(f"[a{index}]")
     # Keep AAC padding and fractional video frames off the authored audio clock.
-    filters.append("".join(video_inputs) + f"concat=n={len(segment_paths)}:v=1:a=0[vout]")
+    filters.append("".join(video_inputs) + f"concat=n={len(segment_paths)}:v=1:a=0,{OUTPUT_COLOR_TAG_FILTER}[vout]")
     filters.append("".join(audio_inputs) + f"concat=n={len(segment_paths)}:v=0:a=1[aout]")
     return inputs, filters
 
@@ -1575,7 +1587,7 @@ def _compose_with_visual_transitions(segment_paths, output_path, durations, tran
             filters = [
                 f"[0:v]reverse,trim=end_frame=1,loop=loop={int(math.ceil(duration * fps)) + 2}:size=1:start=0,setpts=N/({fps}*TB),fps={fps},setsar=1,settb=AVTB[held]",
                 f"[1:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={video_frame_duration},trim=end_frame={frame_count},fps={fps},setsar=1,settb=AVTB[incoming]",
-                f"[held][incoming]xfade=transition=fade:duration={duration}:offset=0,trim=end_frame={frame_count}[out]",
+                f"[held][incoming]xfade=transition=fade:duration={duration}:offset=0,trim=end_frame={frame_count},{OUTPUT_COLOR_TAG_FILTER}[out]",
             ]
             prepared[index] = os.path.join(directory, f"scene-{index}.mp4")
             run_composition_ffmpeg([
@@ -1910,7 +1922,7 @@ def generate_compose_render(payload):
         duration_path = os.path.join(work_dir, "_source_duration.mp4")
         run_ffmpeg([
             "-i", source_path,
-            "-vf", f"tpad=stop_mode=clone:stop_duration={target_duration}",
+            "-vf", f"tpad=stop_mode=clone:stop_duration={target_duration},{OUTPUT_COLOR_TAG_FILTER}",
             "-af", "apad",
             "-t", str(target_duration),
             "-pix_fmt", "yuv420p",

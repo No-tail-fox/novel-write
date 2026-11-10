@@ -416,7 +416,7 @@ print(json.dumps(cases))
       expect(script).toContain('"-af", "apad"');
       expect(script).toContain('target_duration = float(payload.get("total_duration_s") or 0)');
       expect(script).toContain('def _compose_with_hard_cuts');
-      expect(script).toContain('concat=n={len(segment_paths)}:v=1:a=0[vout]');
+      expect(script).toContain('concat=n={len(segment_paths)}:v=1:a=0,{OUTPUT_COLOR_TAG_FILTER}[vout]');
       expect(script).toContain('concat=n={len(segment_paths)}:v=0:a=1[aout]');
       expect(script).toContain('if transition_type in ("cut", "none")');
     } finally {

@@ -603,6 +603,82 @@ export async function finalizeLemoUpstreamFilm(path: string, options: { ffmpegPa
   }
 }
 
+// ———————————————————————— opt-in, metadata-only colour retag (NOT used by the faithful default) ————————————————————————
+//
+// docs/design/2026-11-10-color-tag-screening.md. The faithful mux (buildMuxArgs color:'default') adds no colour args, so it
+// keeps whatever the input frames carry: a raw video.mjs picture is `yuvj420p(pc, bt470bg/unknown/unknown)`, while the
+// production input (director capture → storybound sidecar) is already `tv, bt709/bt709/iec61966-2-1`. This rewrites only the
+// SPS VUI with the h264_metadata bitstream filter (`-c copy`): slice data, audio and timing stay byte-identical. Nothing calls
+// it by default; the product decides whether faithful films may carry it.
+
+/** H.264 VUI code points (ITU-T H.264 Tables E-3 / E-4 / E-5) accepted by `h264_metadata`. */
+const H264_VUI_CODES = {
+  primaries: { bt709: 1, bt470bg: 5, smpte170m: 6 },
+  transfer: { bt709: 1, smpte170m: 6, 'iec61966-2-1': 13 },
+  matrix: { bt709: 1, bt470bg: 5, smpte170m: 6 },
+} as const;
+
+export interface LemoColorRetagTags {
+  primaries?: keyof typeof H264_VUI_CODES.primaries;
+  transfer?: keyof typeof H264_VUI_CODES.transfer;
+  /** Relabels the YCbCr matrix WITHOUT converting pixels: only correct when the picture really uses that matrix. */
+  matrix?: keyof typeof H264_VUI_CODES.matrix;
+  /** Relabels the range WITHOUT converting pixels: only correct when the samples really are in that range. */
+  range?: 'tv' | 'pc';
+}
+
+/**
+ * Recommended preset: describe what the faithful picture really is (sRGB browser capture → BT.709 primaries, sRGB transfer)
+ * and leave range / matrix exactly as encoded. On a raw video.mjs picture this gives `pc, bt470bg/bt709/iec61966-2-1`
+ * (the final-film gate still flags range/matrix — that needs mux color:'bt709', a pixel conversion).
+ */
+export const LEMO_FAITHFUL_COLOR_RETAG: Readonly<LemoColorRetagTags> = Object.freeze({ primaries: 'bt709', transfer: 'iec61966-2-1' });
+
+/** `h264_metadata=` option string, e.g. `colour_primaries=1:transfer_characteristics=13`. */
+export function buildH264ColorMetadataFilter(tags: LemoColorRetagTags): string {
+  const parts: string[] = [];
+  if (tags.range !== undefined) {
+    if (tags.range !== 'tv' && tags.range !== 'pc') throw new Error(`LEMO_COLOR_RETAG_INVALID: range ${String(tags.range)}`);
+    parts.push(`video_full_range_flag=${tags.range === 'pc' ? 1 : 0}`);
+  }
+  const code = (table: Record<string, number>, value: string | undefined, label: string, key: string) => {
+    if (value === undefined) return;
+    if (!Object.prototype.hasOwnProperty.call(table, value)) throw new Error(`LEMO_COLOR_RETAG_INVALID: ${label} ${value}`);
+    parts.push(`${key}=${table[value]}`);
+  };
+  code(H264_VUI_CODES.primaries, tags.primaries, 'primaries', 'colour_primaries');
+  code(H264_VUI_CODES.transfer, tags.transfer, 'transfer', 'transfer_characteristics');
+  code(H264_VUI_CODES.matrix, tags.matrix, 'matrix', 'matrix_coefficients');
+  if (!parts.length) throw new Error('LEMO_COLOR_RETAG_INVALID: no tag requested');
+  return `h264_metadata=${parts.join(':')}`;
+}
+
+/** Stream-copy argument vector: every stream copied, only the H.264 SPS VUI rewritten. */
+export function buildLemoColorRetagArgs(inputPath: string, outputPath: string, tags: LemoColorRetagTags = LEMO_FAITHFUL_COLOR_RETAG): string[] {
+  return ['-y', '-hide_banner', '-loglevel', 'error', '-i', inputPath, '-map', '0', '-c', 'copy', '-bsf:v', buildH264ColorMetadataFilter(tags),
+    '-movflags', '+faststart', outputPath];
+}
+
+/**
+ * Opt-in post-mux retag of a finished film, in place (sibling temp file + atomic rename). Not wired into
+ * finalizeLemoUpstreamFilm: call it explicitly after the faithful mux if the product accepts VUI-only changes.
+ */
+export async function retagLemoFilmColorMetadata(path: string, options: { ffmpegPath: string; tags?: LemoColorRetagTags; signal?: AbortSignal; timeoutMs?: number }): Promise<{ outputPath: string; filter: string }> {
+  const target = resolve(path);
+  const tags = options.tags ?? LEMO_FAITHFUL_COLOR_RETAG;
+  const filter = buildH264ColorMetadataFilter(tags);
+  const sibling = join(dirname(target), `.${basename(target, extname(target))}.retag-${randomUUID()}${extname(target) || '.mp4'}`);
+  try {
+    const result = await runProcess(options.ffmpegPath, buildLemoColorRetagArgs(target, sibling, tags), { signal: options.signal, timeoutMs: options.timeoutMs ?? 10 * 60_000 });
+    if (result.code !== 0) throw new Error(`LEMO_COLOR_RETAG_FAILED: ${tail(result.stderr, 4)}`);
+    options.signal?.throwIfAborted();
+    await rename(sibling, target);
+    return { outputPath: target, filter };
+  } finally {
+    await rm(sibling, { force: true }).catch(() => {});
+  }
+}
+
 /** mux.sh: "grain … use 0 for pixel/vector styles". Reads the film's STYLE.md / TREATMENT.md. */
 export async function lemoFilmGrain(filmDir: string): Promise<number> {
   let names: string[] = [];
