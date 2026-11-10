@@ -27,7 +27,9 @@ import { createHtmlVideoCoverAsset, type HtmlVideoCoverImageProcessor } from './
 import { resolveVolcengineTtsApiVersion } from './volcengine-tts';
 import { HTML_VIDEO_SCENE_TEMPLATES } from './html-video-scene-templates';
 import { copyFile, mkdir } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, isAbsolute, join } from 'node:path';
+import { isDefaultImageBudget, planHtmlVideoImageBudget, type HtmlImageBudgetSlot } from './image-budget';
+import { HTML_REUSED_IMAGE_MARKER } from './project-cost-sources';
 import type { AppConfig, BackgroundRemovalMetadata, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createFileLlmReceiptJournal, withLlmReceiptJournal } from './llm-receipt-ledger';
@@ -67,6 +69,8 @@ interface HtmlVideoAssetGeneratorOptions {
    * call; later slots get a private copy of the file (so a single-slot regenerate never alters both).
    */
   dedupeIdenticalPrompts?: boolean;
+  /** H-5 follow-up: task directory used to resolve relative `existingAssets` sources for budget reuse. */
+  workDir?: string;
 }
 
 interface HtmlVoiceRequest {
@@ -183,6 +187,7 @@ export function createHtmlVideoRuntimeProviders(
           prepareForegroundAsset: options.prepareForegroundAsset,
           imageConcurrency: providers.imageConcurrency,
           dedupeIdenticalPrompts: true,
+          workDir,
         })
       : async () => {
           throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置图片服务。');
@@ -207,6 +212,27 @@ export function adaptHtmlVideoCoverGenerator(
   prepareCoverImage: HtmlVideoCoverImageProcessor,
 ): NonNullable<HtmlVideoRunnerOptions['generateCover']> {
   return async (input) => {
+    if (input.reuseSourcePath) {
+      // H-5 follow-up: the image budget reuses a scene image for the cover; no provider call.
+      // `.reuse-` in the name keeps the cost panel from counting it as a paid image.
+      const relativePath = `covers/cover-auto-r${input.revision}${HTML_REUSED_IMAGE_MARKER}scene.png`;
+      await mkdir(join(workDir, 'covers'), { recursive: true });
+      const prepared = await prepareCoverImage({
+        sourcePath: isAbsolute(input.reuseSourcePath) ? input.reuseSourcePath : join(workDir, input.reuseSourcePath),
+        destinationPath: join(workDir, relativePath),
+        dimensions: input.dimensions,
+        signal: input.signal,
+      });
+      return createHtmlVideoCoverAsset({
+        revision: input.revision,
+        mode: 'auto',
+        path: relativePath,
+        ...prepared,
+        ratio: input.ratio,
+        templateId: input.template.id,
+        createdAt: new Date().toISOString(),
+      });
+    }
     const runtimeTask = {
       ...applyHtmlTaskConfig(task, input.config),
       ratio: input.ratio,
@@ -274,10 +300,22 @@ export function adaptHtmlVideoAssetGenerator(
     const assets = new Array<HtmlVideoAsset>(requests.length);
     // H-5: first generation per identical prompt (raw provider file, before foreground processing).
     const generatedByPrompt = new Map<string, Promise<string>>();
-    await runHtmlAssetRequestsWithConcurrency(requests, options.imageConcurrency ?? 1, async (request, index) => {
-      const existing = existingBySlot.get(htmlVideoAssetSlotKey({ sceneIndex: request.scene.index, kind: request.kind, slot: request.slot }));
+    // H-5 follow-up: image budget plan (absent / standard without a cap → no plan, unchanged path).
+    const budget = isDefaultImageBudget(input.config.imageBudget)
+      ? undefined
+      : planHtmlVideoImageBudget(validatedInput.scenes, input.config, { includeCover: false });
+    const budgetKey = (slot: HtmlImageBudgetSlot) => htmlVideoAssetSlotKey({ sceneIndex: slot.sceneIndex, kind: slot.assetKind as HtmlVideoAsset['kind'], slot: slot.slotIndex });
+    const omittedSlots = new Set(budget?.omit.map(budgetKey) ?? []);
+    const reuseFromSlot = new Map(budget?.reuse.map((entry) => [budgetKey(entry.slot), budgetKey(entry.from)] as const) ?? []);
+    const sourceBySlot = new Map<string, string>();
+    const requestIndex = new Map(requests.map((request, index) => [request, index] as const));
+    const worker = async (request: HtmlAssetRequest, index: number): Promise<void> => {
+      const slotKey = htmlVideoAssetSlotKey({ sceneIndex: request.scene.index, kind: request.kind, slot: request.slot });
+      if (omittedSlots.has(slotKey)) return;
+      const existing = existingBySlot.get(slotKey);
       if (existing) {
         assets[index] = existing;
+        if (budget) sourceBySlot.set(slotKey, options.workDir && !isAbsolute(existing.src) ? join(options.workDir, existing.src) : existing.src);
         return;
       }
       const ratio = request.kind === 'bg' ? runtimeTask.ratio : '1:1';
@@ -303,8 +341,13 @@ export function adaptHtmlVideoAssetGenerator(
       };
       const promptKey = `${request.kind}\u0000${ratio}\u0000${request.prompt.trim().replace(/\s+/gu, ' ')}`;
       const original = options.dedupeIdenticalPrompts && request.prompt.trim() ? generatedByPrompt.get(promptKey) : undefined;
+      const budgetSourceKey = reuseFromSlot.get(slotKey);
+      const budgetSource = budgetSourceKey ? sourceBySlot.get(budgetSourceKey) : undefined;
       let src: string;
-      if (original) {
+      if (budgetSource) {
+        // Reused slot: private copy of the planned source image, no provider call.
+        src = await reuseHtmlAssetFile(budgetSource, request.syntheticId) ?? await generate();
+      } else if (original) {
         src = await reuseHtmlAssetFile(await original, request.syntheticId) ?? await generate();
       } else {
         const pending = generate();
@@ -314,6 +357,7 @@ export function adaptHtmlVideoAssetGenerator(
         }
         src = await pending;
       }
+      if (budget) sourceBySlot.set(slotKey, src);
       let transparency: HtmlVideoAsset['transparency'];
       let backgroundRemoval: BackgroundRemovalMetadata | undefined;
       if (request.kind === 'fg') {
@@ -350,8 +394,19 @@ export function adaptHtmlVideoAssetGenerator(
       };
       assets[index] = asset;
       await input.onAssetGenerated?.(asset);
-    });
-    return assets;
+    };
+    if (!budget) {
+      await runHtmlAssetRequestsWithConcurrency(requests, options.imageConcurrency ?? 1, worker);
+      return assets;
+    }
+    // Budgeted: generate the planned sources first, then fill reused slots from them (copies only).
+    const byOriginalIndex = (request: HtmlAssetRequest) => worker(request, requestIndex.get(request)!);
+    const isReused = (request: HtmlAssetRequest) => reuseFromSlot.has(htmlVideoAssetSlotKey({ sceneIndex: request.scene.index, kind: request.kind, slot: request.slot }));
+    const sources = requests.filter((request) => !isReused(request));
+    const reused = requests.filter(isReused);
+    await runHtmlAssetRequestsWithConcurrency(sources, options.imageConcurrency ?? 1, byOriginalIndex);
+    await runHtmlAssetRequestsWithConcurrency(reused, options.imageConcurrency ?? 1, byOriginalIndex);
+    return assets.filter((asset): asset is HtmlVideoAsset => Boolean(asset));
   };
 }
 

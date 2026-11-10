@@ -8,7 +8,10 @@ import type { PixelleCatalog, PixelleTaskOptions, PixelleVisualTemplateRef } fro
 import { pixelleOptionsSchema, pixelleRefSchema, pixelleRatio, pixelleUsesVideo, resolvePixelleTask } from '../../shared/pixelle-task';
 import type { TaskOutputTarget } from '../../shared/types';
 import { ProjectModelFields } from '../projects/ProjectModelFields';
-import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
+import { defaultProjectModels, projectRuntimeConfig, readProjectModelsDraft } from '../../shared/project-models';
+import { describeImageBudget, IMAGE_BUDGET_MODES, imageBudgetFromControl, planTemplateImageBudget, type ImageBudgetMode } from '../../shared/image-budget';
+import { imageBudgetEstimateText } from '../../shared/project-cost-sources';
+import { ImageBudgetField } from './ImageBudgetField';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Link2, Loader2, Play, Plus, RotateCcw, Save, Search, Trash2, Upload, Wand2 } from 'lucide-react';
 import { FormField as Field } from '../../components/FormField';
@@ -259,6 +262,8 @@ export function NewTaskPage({
   const [coverPageText, setCoverPageText] = useState('');
   const [manualCoverAsset, setManualCoverAsset] = useState<OrdinaryTaskCoverSelection | null>(null);
   const [autoBorrowImage, setAutoBorrowImage] = useState(false);
+  const [imageBudgetMode, setImageBudgetMode] = useState<ImageBudgetMode>('standard');
+  const [imageBudgetMaxImages, setImageBudgetMaxImages] = useState('');
   const [podcastImageMode, setPodcastImageMode] = useState('multi');
   const [podcastSpeakers, setPodcastSpeakers] = useState<PodcastSpeakerPair>('kazai-dayi');
   const [running, setRunning] = useState(false);
@@ -306,6 +311,18 @@ export function NewTaskPage({
   const ttsVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider, state.minimaxCloneVoices);
   const podcastVoiceDefaults = defaultPodcastSpeakersForProvider(ttsProvider, podcastSpeakers);
   const storyboardScenePreviewRange = storyboardSceneCountPreviewRange(inputText, targetLength);
+  // H-5 follow-up: 生图张数 live estimate (same planner as the runner and the U-5 cost panel).
+  const showImageBudget = materialSource === 'ai' && !(videoForm === 'two-host-podcast' && podcastImageMode === 'single');
+  const imageBudgetSceneCount = Number(storyboardSceneCount) > 0 ? Math.round(Number(storyboardSceneCount)) : storyboardScenePreviewRange?.target;
+  const imageBudgetEstimate = showImageBudget && imageBudgetSceneCount
+    ? imageBudgetEstimateText(
+        planTemplateImageBudget(Array.from({ length: imageBudgetSceneCount }, (_, index) => index + 1), {
+          cover: coverImageMode === 'auto',
+          policy: imageBudgetFromControl(imageBudgetMode, imageBudgetMaxImages),
+        }).expectedCalls,
+        (() => { try { return projectRuntimeConfig(state.config, projectModels); } catch { return state.config; } })(),
+      )
+    : undefined;
   const storyDreamCoverTemplateIds = ['cinematic-poster', 'podcast-cover'];
   const coverTemplateOptions = state.customCoverTemplates.map((template) => [template.id, template.name, template.description]);
   const coverTemplateSelectOptions = coverTemplateOptions.length
@@ -411,6 +428,8 @@ export function NewTaskPage({
         coverPageText,
         manualCoverAsset: manualCoverAsset ?? undefined,
         autoBorrowImage,
+        imageBudgetMode,
+        imageBudgetMaxImages,
         podcastImageMode,
         podcastSpeakers,
         selectedSearchSourceIds,
@@ -462,6 +481,8 @@ export function NewTaskPage({
       if (restored.length) setPlatformVariants(Array.from(new Set(restored)));
     }
     if (typeof values.versionsPerPlatform === 'number' && Number.isFinite(values.versionsPerPlatform)) setVersionsPerPlatform(Math.max(1, Math.min(3, Math.round(values.versionsPerPlatform))));
+    if (IMAGE_BUDGET_MODES.includes(values.imageBudgetMode as ImageBudgetMode)) setImageBudgetMode(values.imageBudgetMode as ImageBudgetMode);
+    if (typeof values.imageBudgetMaxImages === 'string') setImageBudgetMaxImages(values.imageBudgetMaxImages);
     if (values.rewriteIntensity === 'standard' || values.rewriteIntensity === 'deep' || values.rewriteIntensity === 'original') setRewriteIntensity(values.rewriteIntensity);
     if (values.narrativePov === 'keep-original' || values.narrativePov === 'first-person' || values.narrativePov === 'third-person') setNarrativePov(values.narrativePov);
     if (typeof values.keepPromotion === 'boolean') setKeepPromotion(values.keepPromotion);
@@ -695,6 +716,7 @@ export function NewTaskPage({
     processingMode, platformVariants, versionsPerPlatform, rewriteIntensity, narrativePov, keepPromotion, productInfo, materialSource,
     materialPerson, fixedIntro, outroCta, lockIntroSentences, ttsSpeed, targetLength,
     storyboardSceneCount, publishMode, videoForm, coverImageMode, coverTemplateId, coverPageEnabled, coverPageText, manualCoverAsset, autoBorrowImage,
+    imageBudgetMode, imageBudgetMaxImages,
     podcastImageMode, podcastSpeakers, selectedSearchSourceIds, searchContext, researchCopy,
   ]);
 
@@ -1043,7 +1065,7 @@ export function NewTaskPage({
         outputTargets,
         pausePoints: [pausePoint],
         processingMode,
-        pipelineData: createOrdinaryTaskPipelineData({ platformVariants, versionsPerPlatform }),
+        pipelineData: createOrdinaryTaskPipelineData({ platformVariants, versionsPerPlatform, imageBudget: showImageBudget ? imageBudgetFromControl(imageBudgetMode, imageBudgetMaxImages) : undefined }),
         referenceImagePath,
         rewriteIntensity,
         narrativePov,
@@ -1360,6 +1382,16 @@ export function NewTaskPage({
                     : <span className="hint-text">{supportsImageQuality ? `使用默认：${imageGenerationQualityLabel(configuredImageQuality)}质量` : '质量由即梦服务控制'}</span>}
                 </div>
               </div>
+              {showImageBudget ? (
+                <ImageBudgetField
+                  mode={imageBudgetMode}
+                  maxImages={imageBudgetMaxImages}
+                  estimate={imageBudgetEstimate}
+                  onModeChange={setImageBudgetMode}
+                  onMaxImagesChange={setImageBudgetMaxImages}
+                  disabled={running}
+                />
+              ) : null}
               <Segmented label="暂停确认" value={pausePoint} options={NEW_TASK_PAUSE_OPTIONS.map(([id]) => id)} labels={NEW_TASK_PAUSE_OPTIONS.map(([, label]) => label)} onChange={(value) => setPausePoint(value as PausePoint)} />
               <div className="new-task-field-grid">
                 <Segmented label="配音模型" value={ttsProvider} options={['volcengine', 'minimax']} labels={['豆包', 'MiniMax']} onChange={handleTtsProviderChange} />
@@ -1430,6 +1462,7 @@ export function NewTaskPage({
             <div><dt>草稿模板</dt><dd>{draftTemplateLabel(templateId, state.draftTemplates)}</dd></div>
             <div><dt>片头封面</dt><dd>{coverPageEnabled ? `${coverImageMode === 'manual' ? (manualCoverAsset?.originalName ?? '待导入') : 'AI 单独生成'} · ${coverPageTextSummary}` : '关闭'}</dd></div>
             <div><dt>失败补位</dt><dd>{autoBorrowImage ? '已启用' : '关闭'}</dd></div>
+            {showImageBudget ? <div><dt>生图张数</dt><dd>{describeImageBudget(imageBudgetFromControl(imageBudgetMode, imageBudgetMaxImages))}</dd></div> : null}
           </dl>
           <div className="new-task-readiness">
             <span className={selectedTaskLlmProfileId ? 'ready' : ''}><Check size={15} />LLM {selectedTaskLlmProfileId ? '已配置' : '未配置'}</span>

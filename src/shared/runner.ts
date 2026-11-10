@@ -28,6 +28,8 @@ import { ORDINARY_TASK_COVER_PAGE_DURATION_MS, validateOrdinaryTaskCoverAsset } 
 import { executeTaskOutputs, outputFingerprint } from './task-output-runner';
 import type { TaskDeliverables } from './types';
 import { ordinaryTaskPipelineOptions } from './ordinary-task-options';
+import { describeImageBudget, isDefaultImageBudget, planTemplateImageBudget, type ImageBudgetPolicy } from './image-budget';
+import { HTML_REUSED_IMAGE_MARKER } from './project-cost-sources';
 
 export interface RunTaskOptions {
   appDataDir: string;
@@ -80,6 +82,8 @@ interface PipelineState {
     requestedAt: string;
     context?: Partial<PipelineArtifact>;
   };
+  /** H-5 follow-up: scenes the image budget fills by copying a generated scene image (absent on old tasks). */
+  imageBudgetReuse?: Array<{ sceneId: number; from: number }>;
 }
 
 interface LlmJsonStepRequest {
@@ -2123,7 +2127,13 @@ async function ensureImages(input: {
   const ordinaryCoverTemplate = isOrdinaryTask(task)
     ? resolveOrdinaryCoverTemplate(task.coverImageMode ?? 'off', task.coverTemplateId, options.customCoverTemplates ?? [])
     : null;
-  if (shouldGenerateCoverImage(task) && pipeline.assets.cover.length === 0) {
+  // H-5 follow-up: 生图张数 (absent / standard without a cap → undefined → unchanged path).
+  const imageBudget = templateImageBudget(task, options);
+  const budgetPlan = imageBudget
+    ? planTemplateImageBudget(artifact.scenes.map((scene) => scene.id), { cover: task.coverImageMode === 'auto', policy: imageBudget })
+    : undefined;
+  const coverReuse = budgetPlan?.reuse.find((entry) => entry.slot.kind === 'cover');
+  if (shouldGenerateCoverImage(task) && pipeline.assets.cover.length === 0 && !coverReuse) {
     if (!options.generateImages) {
       throw new Error('Image provider is not configured; cannot create a cover image asset.');
     }
@@ -2197,16 +2207,45 @@ async function ensureImages(input: {
     return;
   }
   const missing = missingScenes(artifact.scenes, pipeline.assets.images);
+  // H-5 follow-up: the reuse plan is fixed when the image step starts with no scene images. It is
+  // persisted, so a resumed run copies instead of calling the provider. Single-scene regeneration
+  // drops the scene from the stored plan (pipeline-cache), so that scene calls the provider again.
+  if (budgetPlan && pipeline.assets.images.length === 0) {
+    pipeline.imageBudgetReuse = budgetPlan.reuse
+      .filter((entry) => entry.slot.kind === 'scene')
+      .map((entry) => ({ sceneId: entry.slot.sceneId, from: entry.from.sceneId }));
+  }
+  const sceneIds = new Set(artifact.scenes.map((scene) => scene.id));
+  const plannedReuse = new Map(
+    (budgetPlan ? pipeline.imageBudgetReuse ?? [] : [])
+      .filter((entry) => sceneIds.has(entry.sceneId) && sceneIds.has(entry.from) && entry.sceneId !== entry.from)
+      .map((entry) => [entry.sceneId, entry.from] as const),
+  );
+  const finalizeBudgetCover = async () => {
+    if (!coverReuse || !shouldGenerateCoverImage(task) || pipeline.assets.cover.length > 0) return;
+    const source = pipeline.assets.images.find((asset) => asset.sceneId === coverReuse.from.sceneId) ?? pipeline.assets.images[0];
+    if (!source) return;
+    const coverPath = join(input.workDir, 'cover-image.png');
+    await copyFile(source.path, coverPath);
+    pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
+    await emit('cover_ready', 4, 'Producer', `封面复用第 ${source.sceneId} 个分镜的图片（生图张数：${describeImageBudget(imageBudget)}，未调用生图模型）`, { path: coverPath, reusedFrom: source.sceneId });
+  };
   if (missing.length === 0 && pipeline.assets.images.length >= artifact.scenes.length) {
+    await finalizeBudgetCover();
     await markStep(4, 'completed');
     return;
   }
+  const toGenerate = plannedReuse.size ? missing.filter((scene) => !plannedReuse.has(scene.id)) : missing;
+  const toReuse = plannedReuse.size ? missing.filter((scene) => plannedReuse.has(scene.id)) : [];
   await db.updateTask(task.id, { currentStep: 4, retryFromStep: 4 });
   await heartbeatTask(db, task.id, options, 4, 'image generation');
   await markStep(4, 'running');
-  await emit('step_start', 4, 'Producer', '批量生成真实图片素材', { missingSceneIds: missing.map((scene) => scene.id) });
+  await emit('step_start', 4, 'Producer', '批量生成真实图片素材', {
+    missingSceneIds: toGenerate.map((scene) => scene.id),
+    ...(imageBudget ? { imageBudget: describeImageBudget(imageBudget), reuseSceneIds: toReuse.map((scene) => scene.id) } : {}),
+  });
   let persistImageQueue = Promise.resolve();
-  await runWithConcurrency(missing, options.imageConcurrency ?? 1, async (scene) => {
+  await runWithConcurrency(toGenerate, options.imageConcurrency ?? 1, async (scene) => {
     throwIfAborted(options.signal);
     let generatedImages: SceneAsset[];
     try {
@@ -2236,6 +2275,22 @@ async function ensureImages(input: {
     throwIfAborted(options.signal);
   });
   await persistImageQueue;
+  if (toReuse.length) {
+    const reusedIds: number[] = [];
+    for (const scene of toReuse) {
+      throwIfAborted(options.signal);
+      const source = pipeline.assets.images.find((asset) => asset.sceneId === plannedReuse.get(scene.id));
+      if (!source) continue; // source failed: auto-borrow (if enabled) or the unresolved check handles it
+      const reused = await materializeBudgetReuseImage(input.workDir, scene.id, source);
+      pipeline.assets.images = mergeAssets(pipeline.assets.images, [reused]);
+      pipeline.assets.imageErrors = removeImageErrors(pipeline.assets.imageErrors, [scene.id]);
+      reusedIds.push(scene.id);
+    }
+    if (reusedIds.length) {
+      await markStep(4, 'running', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n') });
+      await emit('image_budget_reused', 4, 'Producer', `生图张数（${describeImageBudget(imageBudget)}）：${reusedIds.length} 个分镜复用已生成图片，未调用生图模型`, { sceneIds: reusedIds });
+    }
+  }
   if (task.autoBorrowImage) {
     const unresolved = missingScenes(artifact.scenes, pipeline.assets.images);
     if (unresolved.length > 0 && pipeline.assets.images.length === 0) {
@@ -2261,6 +2316,7 @@ async function ensureImages(input: {
   if (unresolved.length > 0) {
     throw new Error(`Image provider did not return usable assets for scenes: ${unresolved.map((scene) => scene.id).join(', ')}.`);
   }
+  await finalizeBudgetCover();
   await markStep(4, 'completed', { outputPath: pipeline.assets.images.map((asset) => asset.path).join('\n'), error: undefined });
   await emit('step_complete', 4, 'Producer', task.autoBorrowImage ? '真实图片素材与相邻镜头补位已完成' : '真实图片素材已生成', {
     count: pipeline.assets.images.length,
@@ -2618,6 +2674,28 @@ function findBorrowSource(scenes: StoryboardScene[], assets: SceneAsset[], targe
     if (asset) return asset;
   }
   return null;
+}
+
+/**
+ * H-5 follow-up: private copy `NNN.reuse-MMM<ext>` for a scene the image budget fills from a generated
+ * scene image. `.reuse-` keeps the cost panel from counting it; the scene can still be regenerated alone.
+ */
+async function materializeBudgetReuseImage(workDir: string, sceneId: number, source: SceneAsset): Promise<SceneAsset> {
+  const extension = extname(source.path).toLowerCase() || '.png';
+  const outputDir = join(workDir, 'provider-images');
+  const from = source.borrowedFrom ?? source.sceneId;
+  const path = join(outputDir, `${String(sceneId).padStart(3, '0')}${HTML_REUSED_IMAGE_MARKER}${String(from).padStart(3, '0')}${extension}`);
+  await mkdir(outputDir, { recursive: true });
+  await copyFile(source.path, path);
+  return { sceneId, path, borrowedFrom: from };
+}
+
+/** H-5 follow-up: the template-route image budget, only where scene images come from the AI provider. */
+function templateImageBudget(task: Task, options: RunTaskOptions): ImageBudgetPolicy | undefined {
+  if (task.shortVideoMaterials || task.materialSource === 'local' || usesSinglePodcastCover(task)) return undefined;
+  if (task.visualTemplateRef && options.pixelleTemplate && (options.pixelleTemplate.type === 'static' || pixelleUsesVideo(options.pixelleTemplate, task.pixelleOptions))) return undefined;
+  const policy = ordinaryTaskPipelineOptions(task).imageBudget;
+  return isDefaultImageBudget(policy) ? undefined : policy;
 }
 
 async function materializeBorrowedImage(workDir: string, sceneId: number, source: SceneAsset): Promise<SceneAsset> {

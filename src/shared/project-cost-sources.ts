@@ -1,5 +1,12 @@
 import type { AppConfig } from './types';
-import { llmUsageTokens, type CostKind, type CostLedgerEntry, type CostOutcome, type ProjectCostImageEstimate } from './project-cost';
+import {
+  estimateCostEntry, findCostPrice, formatCostAmount, llmUsageTokens, normalizeCostPriceTable,
+  type CostKind, type CostLedgerEntry, type CostOutcome, type ProjectCostImageEstimate,
+} from './project-cost';
+import {
+  describeImageBudget, isDefaultImageBudget, normalizeImageBudgetPolicy, planHtmlVideoImageBudget, planTemplateImageBudget,
+  type ImageBudgetPolicy,
+} from './image-budget';
 
 /**
  * U-5 / H-5: pure normalizers from each route's existing records into cost ledger rows.
@@ -151,7 +158,7 @@ export function costEntriesFromHtmlPipeline(data: unknown, hints: CostModelHints
     if (!asset || text(asset.src).includes(HTML_REUSED_IMAGE_MARKER)) continue;
     entries.push({ kind: 'image', ...hints.image, outcome: 'received', images: 1, at, source: `html-asset:${text(asset.kind)}` });
   }
-  if (text(object(state.coverAsset)?.mode) === 'auto') entries.push({ kind: 'image', ...hints.image, outcome: 'received', images: 1, at: text(object(state.coverAsset)?.createdAt), source: 'html-cover' });
+  if (text(object(state.coverAsset)?.mode) === 'auto' && !text(object(state.coverAsset)?.path).includes(HTML_REUSED_IMAGE_MARKER)) entries.push({ kind: 'image', ...hints.image, outcome: 'received', images: 1, at: text(object(state.coverAsset)?.createdAt), source: 'html-cover' });
   for (const raw of array(state.voices)) {
     const voice = object(raw);
     if (!voice) continue;
@@ -170,13 +177,15 @@ export function costEntriesFromProviderFiles(files: { images: number; audio: num
 }
 
 /** H-5: images the current plan will request, so the user sees it before starting. */
-export function expectedProjectImages(task: { storyboardSceneCount?: number; targetScenes?: number }, data: unknown, maxAgentImages?: number): ProjectCostImageEstimate | undefined {
+export function expectedProjectImages(task: { storyboardSceneCount?: number; targetScenes?: number; coverImageMode?: string }, data: unknown, maxAgentImages?: number): ProjectCostImageEstimate | undefined {
   const kind = projectCostPipelineKind(data);
   const value = object(data);
   if (kind === 'html' && value) {
     const scenes = array(value.scenes).map(object).filter((scene): scene is Json => Boolean(scene));
     if (!scenes.length) return undefined;
     const config = object(value.config) ?? {};
+    const budget = normalizeImageBudgetPolicy(config.imageBudget);
+    if (!isDefaultImageBudget(budget)) return expectedBudgetedHtmlImages(scenes, config, budget!);
     const keys: string[] = [];
     for (const scene of scenes) {
       keys.push(htmlAssetPromptKey('bg', text(object(scene.background)?.prompt)));
@@ -196,5 +205,46 @@ export function expectedProjectImages(task: { storyboardSceneCount?: number; tar
     return { count: nodes.length, basis: 'plan', label: `预计生图 ${nodes.length} 张` };
   }
   const scenes = task.storyboardSceneCount || task.targetScenes;
+  const templateBudget = normalizeImageBudgetPolicy(value?.imageBudget);
+  if (scenes && scenes > 0 && !isDefaultImageBudget(templateBudget)) {
+    const plan = planTemplateImageBudget(Array.from({ length: scenes }, (_, index) => index + 1), { cover: task.coverImageMode === 'auto', policy: templateBudget });
+    return { count: plan.expectedCalls, basis: 'plan', label: `预计生图 ${plan.expectedCalls} 张（${describeImageBudget(templateBudget)}）` };
+  }
   return scenes && scenes > 0 ? { count: scenes, basis: 'plan', label: `预计生图 ${scenes} 张（每个分镜 1 张）` } : undefined;
+}
+
+function expectedBudgetedHtmlImages(scenes: Json[], config: Json, budget: ImageBudgetPolicy): ProjectCostImageEstimate {
+  const planScenes = scenes.map((scene, position) => ({
+    index: typeof scene.index === 'number' ? scene.index : position,
+    elements: array(scene.elements).map(object).filter((element): element is Json => Boolean(element))
+      .map((element, slot) => ({ slot: typeof element.slot === 'number' ? element.slot : slot, prompt: text(element.prompt) })),
+    prompt: text(object(scene.background)?.prompt),
+  }));
+  const plan = planHtmlVideoImageBudget(planScenes, {
+    foreground: config.foreground !== false,
+    coverImageMode: text(config.coverImageMode),
+    imageBudget: budget,
+  });
+  const keys = plan.generate.filter((slot) => slot.assetKind !== 'cover').map((slot) => {
+    const scene = planScenes.find((item) => item.index === slot.sceneIndex);
+    return slot.assetKind === 'bg'
+      ? htmlAssetPromptKey('bg', scene?.prompt ?? '')
+      : htmlAssetPromptKey('fg', scene?.elements.find((element) => element.slot === slot.slotIndex)?.prompt ?? '');
+  });
+  const cover = plan.generate.length - keys.length;
+  const count = plan.expectedCalls, unique = new Set(keys).size + cover;
+  return { count, unique, basis: 'plan', label: `预计生图 ${count} 张（${describeImageBudget(budget)}）${unique < count ? `（相同提示词去重后 ${unique} 张）` : ''}` };
+}
+
+/**
+ * H-5 follow-up: live "预计生图 N 张（约 ¥X）" text for the 生图张数 control. Uses the U-5 price table
+ * with the same matching rule as the cost panel. Without a matching price, only the count is shown.
+ */
+export function imageBudgetEstimateText(count: number, config: Pick<AppConfig, 'costPriceTable' | 'imageProvider' | 'jimeng' | 'customImage' | 'gptImage' | 'image'> | null | undefined): string {
+  const base = `预计生图 ${count} 张`;
+  if (!config) return base;
+  const table = normalizeCostPriceTable(config.costPriceTable);
+  const hint = projectCostModelHints(config as AppConfig).image;
+  const unit = estimateCostEntry({ kind: 'image', ...hint, outcome: 'received', images: 1, at: '' }, findCostPrice(table, { kind: 'image', ...hint }));
+  return unit === undefined ? base : `${base}（约 ${formatCostAmount(unit * count, table.currency)}）`;
 }

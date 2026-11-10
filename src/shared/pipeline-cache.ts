@@ -19,6 +19,8 @@ interface PipelineStateFile {
   deliverables?: import('./types').TaskDeliverables;
   draft?: TaskArtifactSnapshot['draft'];
   rerun?: TaskStepRerunMarker;
+  /** H-5 follow-up: image-budget reuse plan written by the runner (absent on old tasks). */
+  imageBudgetReuse?: Array<{ sceneId: number; from: number }>;
 }
 
 interface TaskStepRerunMarker {
@@ -213,6 +215,10 @@ export async function markSceneImagesForRegeneration(statePath: string, sceneIds
 
     state.assets.images = remainingImages;
     state.assets.imageErrors = (state.assets.imageErrors ?? []).filter((item) => !requested.has(Number(item.sceneId)));
+    // H-5 follow-up: a scene the user regenerates calls the provider again instead of re-copying.
+    if (Array.isArray(state.imageBudgetReuse)) {
+      state.imageBudgetReuse = state.imageBudgetReuse.filter((entry) => !requested.has(Number(entry?.sceneId)));
+    }
     state.steps['4'] = pendingStep(state.steps['4'], imageOutputPath(remainingImages));
     state.steps['6'] = pendingStep(state.steps['6']);
     markDagPending(state, 4);

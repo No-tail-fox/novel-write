@@ -5,7 +5,7 @@ import { createFileLlmReceiptJournal } from '../src/shared/llm-receipt-ledger';
 import { costEntriesFromLlmReceipts, normalizeCostPriceTable, summarizeProjectCost, type CostLedgerEntry, type ProjectCostReport } from '../src/shared/project-cost';
 import {
   costEntriesFromHtmlPipeline, costEntriesFromLemoTurns, costEntriesFromProviderFiles, costEntriesFromVoxDocument,
-  expectedProjectImages, projectCostModelHints, projectCostPipelineKind, type LemoTurnEvidence,
+  expectedProjectImages, HTML_REUSED_IMAGE_MARKER, projectCostModelHints, projectCostPipelineKind, type LemoTurnEvidence,
 } from '../src/shared/project-cost-sources';
 import { projectRuntimeConfig } from '../src/shared/project-models';
 import type { AppConfig, Task } from '../src/shared/types';
@@ -15,7 +15,7 @@ import type { AppConfig, Task } from '../src/shared/types';
  * Never writes, never calls a provider; unreadable records are skipped (and noted), not fatal.
  */
 
-export type ProjectCostTask = Pick<Task, 'id'> & Partial<Pick<Task, 'pipelineData' | 'projectModels' | 'storyboardSceneCount' | 'targetScenes'>>;
+export type ProjectCostTask = Pick<Task, 'id'> & Partial<Pick<Task, 'pipelineData' | 'projectModels' | 'storyboardSceneCount' | 'targetScenes' | 'coverImageMode'>>;
 
 const MAX_LEMO_RUNS = 50;
 const MAX_LEMO_TURNS = 400;
@@ -59,7 +59,8 @@ export async function readLemoTurnEvidence(workDir: string): Promise<LemoTurnEvi
 }
 
 async function countProviderFiles(workDir: string): Promise<{ images: number; audio: number }> {
-  const images = (await list(join(workDir, 'provider-images'))).filter((entry) => !entry.directory && /\.(png|jpe?g|webp)$/iu.test(entry.name)).length;
+  // H-5 follow-up: `.reuse-` copies (image budget / identical prompt) are not provider calls.
+  const images = (await list(join(workDir, 'provider-images'))).filter((entry) => !entry.directory && /\.(png|jpe?g|webp)$/iu.test(entry.name) && !entry.name.includes(HTML_REUSED_IMAGE_MARKER)).length;
   const audio = (await list(join(workDir, 'provider-audio'))).filter((entry) => !entry.directory && /\.(mp3|wav|m4a|aac|ogg|flac|pcm)$/iu.test(entry.name)).length;
   return { images, audio };
 }

@@ -385,9 +385,11 @@ async function regenerateHtmlVideoEditorialAsset(
     if (target.kind === 'fg' && requestedScene.elements.length === 0) {
       throw new Error(`HTML_VIDEO_ELEMENT_NOT_FOUND: ${target.sceneIndex}/${target.slot}`);
     }
+    // H-5 follow-up: a single requested slot always calls the provider, whatever the image budget.
+    const { imageBudget: _imageBudget, ...singleSlotConfig } = pipeline.config;
     const generated = await providers.generateAssets({
       scenes: [requestedScene],
-      config: { ...pipeline.config, foreground: target.kind === 'fg' },
+      config: { ...singleSlotConfig, foreground: target.kind === 'fg' },
     });
     const selected = generated.find((asset) => asset.kind === target.kind && asset.slot === target.slot);
     if (!selected) throw new Error('HTML_VIDEO_ASSET_GENERATION_FAILED: 图片服务没有返回目标素材。');

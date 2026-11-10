@@ -59,6 +59,7 @@ import type {
   HtmlVideoVisibleStep,
   HtmlVideoVoiceClip,
 } from './types';
+import { htmlVideoCoverReusesScene, htmlVideoForegroundEnabled } from './image-budget';
 
 export interface HtmlVideoCoverGenerationInput {
   taskTitle: string;
@@ -70,6 +71,11 @@ export interface HtmlVideoCoverGenerationInput {
   prompt: string;
   config: HtmlVideoJobConfig;
   signal?: AbortSignal;
+  /**
+   * H-5 follow-up: the image budget reuses this scene image for the cover. The generator must
+   * prepare the cover from it without calling the image provider.
+   */
+  reuseSourcePath?: string;
 }
 
 export interface ResolveHtmlVideoCoverForRenderInput {
@@ -277,6 +283,13 @@ export async function resolveHtmlVideoCoverForRender(
   }
 
   const summary = input.state.scenes[0]?.narration ?? input.taskTitle;
+  // H-5 follow-up: under 省图 / 极省 (or a reached cap) the cover reuses the first scene image.
+  // An explicit "重新生成封面" (force) always calls the provider.
+  const reuseSource = !input.force && htmlVideoCoverReusesScene(input.state.scenes, input.state.config)
+    ? [...input.state.assets]
+        .filter((asset) => asset.kind === 'bg')
+        .sort((left, right) => left.sceneIndex - right.sceneIndex)[0]
+    : undefined;
   const generated = validateHtmlVideoCoverAsset(await input.generateCover({
     taskTitle: input.taskTitle,
     summary,
@@ -288,6 +301,7 @@ export async function resolveHtmlVideoCoverForRender(
       || buildHtmlVideoCoverPrompt({ taskTitle: input.taskTitle, summary, template, ratio }),
     config: structuredClone(input.state.config),
     signal: input.signal,
+    ...(reuseSource ? { reuseSourcePath: reuseSource.src } : {}),
   }));
   if (generated.mode !== 'auto' || generated.ratio !== ratio || generated.templateId !== templateId) {
     throw new AppError('HTML_VIDEO_COVER_PROVIDER_INVALID', 'Automatic HTML video cover artifact does not match the request.');
@@ -810,11 +824,12 @@ async function validateAssets(
 ): Promise<HtmlVideoAsset[]> {
   const parsedAssets = validateHtmlVideoAssets(value, state.scenes, state.config);
   const assets = validatePatchedState(state, { assets: parsedAssets }).assets;
+  const foreground = htmlVideoForegroundEnabled(state.scenes, state.config);
   for (const scene of state.scenes) {
     if (!assets.some((asset) => asset.sceneIndex === scene.index && asset.kind === 'bg')) {
       throw new Error(`HTML video assets are missing a background for scene ${scene.index}.`);
     }
-    if (state.config.foreground !== false && scene.elements.length > 0 && !assets.some((asset) => asset.sceneIndex === scene.index && asset.kind === 'fg')) {
+    if (foreground && scene.elements.length > 0 && !assets.some((asset) => asset.sceneIndex === scene.index && asset.kind === 'fg')) {
       throw new Error(`HTML video assets are missing a foreground for scene ${scene.index}.`);
     }
   }

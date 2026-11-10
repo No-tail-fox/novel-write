@@ -44,6 +44,7 @@ import { htmlVideoCaptionColorsEqual, htmlVideoCaptionLayoutEqual } from './html
 import { normalizeHtmlVideoCoverMode, validateHtmlVideoCoverAsset } from './html-video-cover';
 import { upgradeHtmlSceneComposition } from './html-video-composition';
 import { parseRetryBudget } from './retry-budget';
+import { htmlVideoForegroundEnabled, isDefaultImageBudget, sameImageBudget } from './image-budget';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
 export const MAX_HTML_VIDEO_PIPELINE_FILE_BYTES = MAX_HTML_VIDEO_PIPELINE_JSON_CHARS * 4;
@@ -425,6 +426,11 @@ export function applyHtmlVideoConfigChanges(
             currentValue as HtmlVideoJobConfig['captionLayout'],
             nextValue as HtmlVideoJobConfig['captionLayout'],
           )
+      : change.field === 'imageBudget'
+        ? sameImageBudget(
+            currentValue as HtmlVideoJobConfig['imageBudget'],
+            nextValue as HtmlVideoJobConfig['imageBudget'],
+          )
       : currentValue === nextValue;
     if (!unchanged) {
       changedFields.push(change.field as HtmlVideoEditableConfigField);
@@ -443,6 +449,8 @@ export function applyHtmlVideoConfigChanges(
   }, HTML_VIDEO_CONTROL_MANIFEST_V1[changedFields[0]].invalidateFrom as HtmlVideoVisibleStep);
   const invalidated = invalidateHtmlVideoPipeline(pipeline, invalidateFrom);
   invalidated.config = { ...invalidated.config, ...configChanges };
+  // H-5 follow-up: switching back to 标准 removes the key, so the config matches a never-budgeted task.
+  if ('imageBudget' in configChanges && isDefaultImageBudget(invalidated.config.imageBudget)) delete invalidated.config.imageBudget;
   invalidated.revision = pipeline.revision + 1;
   delete invalidated.configSnapshotHash;
 
@@ -627,7 +635,7 @@ export function validateHtmlVideoScenePlans(
 export function validateHtmlVideoAssets(
   value: unknown,
   scenes: HtmlVideoScenePlan[],
-  config: Pick<HtmlVideoJobConfig, 'foreground'> = {},
+  config: Pick<HtmlVideoJobConfig, 'foreground' | 'imageBudget'> = {},
   field = 'assets',
   options: { requireComplete?: boolean } = {},
 ): HtmlVideoAsset[] {
@@ -635,14 +643,23 @@ export function validateHtmlVideoAssets(
   const rawAssets = requireBoundedArray(value, field, maximum);
   if (rawAssets.length === 0) return [];
 
+  // H-5 follow-up: an image budget may drop the foreground layer; absent budget = config.foreground.
+  const foreground = htmlVideoForegroundEnabled(scenes, config);
   const expected = new Set<string>();
   for (const scene of scenes) {
     expected.add(assetKey(scene.index, 'bg', 0));
-    if (config.foreground !== false) {
+    if (foreground) {
       for (const element of scene.elements) expected.add(assetKey(scene.index, 'fg', element.slot));
     }
   }
-  if (options.requireComplete !== false && rawAssets.length !== expected.size) {
+  // Under a budget, foreground images of declared elements stay valid even when the layer is not
+  // required (a later scene edit can flip the cap decision); only the required set must be complete.
+  const allowed = new Set(expected);
+  if (!isDefaultImageBudget(config.imageBudget) && config.foreground !== false) {
+    for (const scene of scenes) for (const element of scene.elements) allowed.add(assetKey(scene.index, 'fg', element.slot));
+  }
+  const budgeted = allowed.size !== expected.size;
+  if (options.requireComplete !== false && !budgeted && rawAssets.length !== expected.size) {
     throw invalidPipeline(`${field} does not contain the complete expected asset set`);
   }
 
@@ -650,9 +667,12 @@ export function validateHtmlVideoAssets(
   const seen = new Set<string>();
   for (const asset of assets) {
     const key = assetKey(asset.sceneIndex, asset.kind, asset.slot);
-    if (!expected.has(key)) throw invalidPipeline(`${field} contains an unknown scene, kind, or slot`);
+    if (!allowed.has(key)) throw invalidPipeline(`${field} contains an unknown scene, kind, or slot`);
     if (seen.has(key)) throw invalidPipeline(`${field} contains a duplicate scene, kind, or slot`);
     seen.add(key);
+  }
+  if (options.requireComplete !== false && budgeted && [...expected].some((key) => !seen.has(key))) {
+    throw invalidPipeline(`${field} does not contain the complete expected asset set`);
   }
   return assets;
 }

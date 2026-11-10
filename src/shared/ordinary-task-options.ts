@@ -1,4 +1,5 @@
 import type { ContentPlatform, Task } from './types';
+import { compactImageBudgetPolicy, type ImageBudgetPolicy } from './image-budget';
 
 export interface OrdinaryTaskPipelineOptions {
   version: 1;
@@ -9,6 +10,8 @@ export interface OrdinaryTaskPipelineOptions {
     preset: 'editorial-montage' | 'cinematic-cuts' | 'timeline-reveal';
     durationSec: number;
   };
+  /** H-5 follow-up: 生图张数. Absent = standard (old projects and the default stay byte-identical). */
+  imageBudget?: ImageBudgetPolicy;
 }
 
 export const DEFAULT_ORDINARY_TASK_PIPELINE_OPTIONS: OrdinaryTaskPipelineOptions = {
@@ -46,6 +49,7 @@ function normalizeOrdinaryTaskPipelineOptions(input: Partial<OrdinaryTaskPipelin
   const preset = opening?.preset === 'cinematic-cuts' || opening?.preset === 'timeline-reveal'
     ? opening.preset
     : 'editorial-montage';
+  const imageBudget = compactImageBudgetPolicy(input.imageBudget);
   return {
     version: 1,
     platformVariants: platforms.length ? platforms : [...DEFAULT_ORDINARY_TASK_PIPELINE_OPTIONS.platformVariants],
@@ -55,5 +59,6 @@ function normalizeOrdinaryTaskPipelineOptions(input: Partial<OrdinaryTaskPipelin
       preset,
       durationSec: Math.max(4, Math.min(8, Number(opening?.durationSec) || DEFAULT_ORDINARY_TASK_PIPELINE_OPTIONS.openingSequence.durationSec)),
     },
+    ...(imageBudget ? { imageBudget } : {}),
   };
 }

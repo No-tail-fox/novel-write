@@ -25,6 +25,7 @@ export const HTML_VIDEO_CONTROL_FIELDS = [
   'ratio',
   'previewLongEdge',
   'renderLongEdge',
+  'imageBudget',
 ] as const satisfies readonly (keyof HtmlVideoJobConfig)[];
 
 export type HtmlVideoControlField = typeof HTML_VIDEO_CONTROL_FIELDS[number];
@@ -51,6 +52,7 @@ export const HTML_VIDEO_EDITABLE_CONTROL_FIELDS = [
   'ratio',
   'previewLongEdge',
   'renderLongEdge',
+  'imageBudget',
 ] as const satisfies readonly HtmlVideoEditableConfigField[];
 export type HtmlVideoControlAvailability = 'editable' | 'read-only-compatible';
 export type HtmlVideoControlUiLocation = 'parameters' | 'voice' | 'caption' | 'preview' | 'render' | 'cover' | 'draft';
@@ -175,5 +177,10 @@ export const HTML_VIDEO_CONTROL_MANIFEST_V1 = {
   ratio: entry('ratio', {
     schema: 'ratio', uiLocation: 'parameters', legacyMirror: 'ratio',
     consumerStages: ['assets', 'preview', 'render'], invalidateFrom: 'assets', availability: 'editable',
+  }),
+  // H-5 follow-up: 生图张数. The assets stage plans scene/foreground images; the render stage plans the cover.
+  imageBudget: entry('imageBudget', {
+    schema: 'image-budget', uiLocation: 'parameters', legacyMirror: null,
+    consumerStages: ['assets', 'render'], invalidateFrom: 'assets', availability: 'editable',
   }),
 } as const satisfies { [K in keyof HtmlVideoJobConfig]-?: HtmlVideoControlManifestEntry };

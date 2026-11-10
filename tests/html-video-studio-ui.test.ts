@@ -332,7 +332,7 @@ describe('HTML video editorial studio', () => {
       source('../src/shared/html-video-control-manifest.ts'),
     ]);
     expect(manifest).toContain('HTML_VIDEO_CONTROL_MANIFEST_V1');
-    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(22);
+    expect((manifest.match(/availability: 'editable'/g) ?? []).length).toBe(23);
     expect(page).toContain('htmlVideoSteps.map');
     expect(page).toContain('taskProgressLabel');
     expect(page).toContain("setTaskStatus('paused')");

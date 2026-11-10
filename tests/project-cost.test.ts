@@ -12,7 +12,7 @@ import {
   costEntriesFromLlmReceipts, formatCostAmount, llmUsageTokens, normalizeCostPriceTable, summarizeProjectCost, type CostLedgerEntry, type CostPriceTable,
 } from '@shared/project-cost';
 import {
-  costEntriesFromHtmlPipeline, costEntriesFromLemoTurns, costEntriesFromVoxDocument, expectedProjectImages, projectCostModelHints, type CostModelHints,
+  costEntriesFromHtmlPipeline, costEntriesFromLemoTurns, costEntriesFromVoxDocument, expectedProjectImages, imageBudgetEstimateText, projectCostModelHints, type CostModelHints,
 } from '@shared/project-cost-sources';
 import { adaptHtmlVideoAssetGenerator } from '@shared/task-runtime-providers';
 import type { RunTaskOptions } from '@shared/runner';
@@ -196,6 +196,43 @@ describe('U-5 cost collection from existing records', () => {
     expect(expectedProjectImages({}, vox)).toMatchObject({ count: 2, basis: 'plan' });
     expect(expectedProjectImages({}, { beats: [], productionRun: { authoringVersion: 3, nodes: [] } }, 6)).toMatchObject({ count: 6, basis: 'upper-bound' });
     expect(expectedProjectImages({ targetScenes: 0 }, undefined)).toBeUndefined();
+  });
+
+  it('H-5 follow-up: the expected image count follows the image budget plan on both routes', () => {
+    const scenes = Array.from({ length: 6 }, (_, index) => ({ index: index + 1, background: { prompt: `背景 ${index + 1}` }, elements: [{ slot: 0, prompt: `主体 ${index + 1}` }] }));
+    const html = (imageBudget?: unknown) => ({ version: 2, steps: {}, assets: [], voices: [], scenes, config: { foreground: true, coverImageMode: 'auto', ...(imageBudget ? { imageBudget } : {}) } });
+    expect(expectedProjectImages({}, html())).toMatchObject({ count: 13, label: '预计生图 13 张' });
+    expect(expectedProjectImages({}, html({ mode: 'standard' }))).toMatchObject({ count: 13, label: '预计生图 13 张' });
+    expect(expectedProjectImages({}, html({ mode: 'economy' }))).toMatchObject({ count: 6, label: '预计生图 6 张（省图（每个分镜 1 张，封面复用））' });
+    expect(expectedProjectImages({}, html({ mode: 'minimal' }))).toMatchObject({ count: 2 });
+    expect(expectedProjectImages({}, html({ mode: 'standard', maxImages: 4 }))).toMatchObject({ count: 4 });
+
+    const ordinary = (imageBudget?: unknown) => JSON.parse(JSON.stringify({ version: 1, platformVariants: ['douyin'], ...(imageBudget ? { imageBudget } : {}) }));
+    expect(expectedProjectImages({ storyboardSceneCount: 9, coverImageMode: 'auto' }, ordinary())).toMatchObject({ count: 9, label: '预计生图 9 张（每个分镜 1 张）' });
+    expect(expectedProjectImages({ storyboardSceneCount: 9, coverImageMode: 'auto' }, ordinary({ mode: 'minimal' }))).toMatchObject({ count: 3 });
+    expect(expectedProjectImages({ storyboardSceneCount: 9 }, ordinary({ mode: 'economy', maxImages: 5 }))).toMatchObject({ count: 5 });
+    expect(expectedProjectImages({ storyboardSceneCount: 9, coverImageMode: 'auto' }, ordinary({ mode: 'standard', maxImages: 20 }))).toMatchObject({ count: 10 });
+  });
+
+  it('H-5 follow-up: the live estimate prices images with the user price table', () => {
+    const config = normalizeAppConfig(defaultConfig);
+    const priced = { ...config, imageProvider: 'custom' as const, customImage: { ...config.customImage, model: 'img-1' }, costPriceTable: table };
+    expect(imageBudgetEstimateText(6, priced)).toBe(`预计生图 6 张（约 ${formatCostAmount(1.2, 'CNY')}）`);
+    expect(imageBudgetEstimateText(6, { ...priced, costPriceTable: { currency: 'CNY', rows: [] } })).toBe('预计生图 6 张');
+    expect(imageBudgetEstimateText(0, undefined)).toBe('预计生图 0 张');
+  });
+
+  it('H-5 follow-up: reused images (.reuse-) are not counted as paid image calls', async () => {
+    const work = await temp();
+    await mkdir(join(work, 'provider-images'));
+    for (const name of ['001.png', '004.png', '002.reuse-001.png', '003.reuse-001.png']) await writeFile(join(work, 'provider-images', name), 'x');
+    const report = await collectProjectCostReport({ task: { id: 'task-reuse', storyboardSceneCount: 4 }, workDir: work, config: normalizeAppConfig(defaultConfig), now: () => new Date(at) });
+    expect(report.summary.kinds.find(kind => kind.kind === 'image')).toMatchObject({ calls: 2, images: 2 });
+    const pipeline = { version: 2, steps: {}, voices: [], scenes: [], config: {}, assets: [
+      { sceneIndex: 1, kind: 'bg', slot: 0, src: 'provider-images/001.png', prompt: 'a' },
+      { sceneIndex: 2, kind: 'bg', slot: 0, src: 'provider-images/001.reuse-002.png', prompt: 'a' },
+    ], coverAsset: { mode: 'auto', path: 'covers/cover-auto-r1.reuse-scene.png', revision: 1 } };
+    expect(costEntriesFromHtmlPipeline(pipeline, hints).filter(entry => entry.kind === 'image').reduce((sum, entry) => sum + (entry.images ?? 0), 0)).toBe(1);
   });
 
   it('derives model hints from the active image / TTS provider config', () => {

@@ -75,6 +75,9 @@ export interface NewTaskDraftValues {
   coverPageText?: string;
   manualCoverAsset?: OrdinaryTaskCoverSelection;
   autoBorrowImage?: boolean;
+  /** H-5 follow-up: 生图张数 control (absent = 标准). */
+  imageBudgetMode?: string;
+  imageBudgetMaxImages?: string;
   podcastImageMode?: string;
   podcastSpeakers?: PodcastSpeakerPair;
   selectedSearchSourceIds?: string[];

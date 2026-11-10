@@ -1,5 +1,8 @@
 import { ProjectModelFields, ProjectModelBar } from '../projects/ProjectModelFields';
-import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
+import { defaultProjectModels, projectRuntimeConfig, readProjectModelsDraft } from '../../shared/project-models';
+import { describeImageBudget, estimateHtmlVideoImageCalls, IMAGE_BUDGET_MODES, imageBudgetFromControl, planHtmlVideoImageBudget, sameImageBudget, type ImageBudgetMode, type ImageBudgetPolicy } from '../../shared/image-budget';
+import { imageBudgetEstimateText } from '../../shared/project-cost-sources';
+import { ImageBudgetField } from '../tasks/ImageBudgetField';
 import { COPYWRITING_TRACKS } from '../../shared/copywriting-tracks';
 import { EDITORIAL_WRITING_STYLES, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -74,6 +77,8 @@ export function HtmlVideoPage({
   const [ratio, setRatio] = useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio);
   const [maxScenes, setMaxScenes] = useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes);
   const [foreground, setForeground] = useState<boolean>(HTML_VIDEO_JOB_DEFAULTS.foreground);
+  const [imageBudgetMode, setImageBudgetMode] = useState<ImageBudgetMode>('standard');
+  const [imageBudgetMaxImages, setImageBudgetMaxImages] = useState('');
   const [bgmId, setBgmId] = useState(resolveDefaultBgmId(state.config));
   const [ttsProvider, setTtsProvider] = useState<TtsProvider>(() => normalizeRuntimeTtsProvider(state.config.tts.provider));
   const [voiceId, setVoiceId] = useState(() => defaultTaskSpeakerForProvider(state.config.tts.provider, state.config));
@@ -102,7 +107,7 @@ export function HtmlVideoPage({
   const { requestLeave } = useWorkspaceNavigation();
   const creationDraft = useWorkspaceDraft({
     id: 'html-video-create', label: 'HTML 动画新建草稿', enabled: pageMode === 'create', busy: running,
-    value: { projectModelsJson: JSON.stringify(projectModels), copy, aiKeyword, extraRequirements, copyTrack, writingStyleId, style, ratio, maxScenes, foreground, bgmId, ttsProvider, voiceId, ttsSpeed, bgmVolume, transitionType, sceneMotion, coverImageMode, coverTemplate, coverRatio, draftTemplate },
+    value: { projectModelsJson: JSON.stringify(projectModels), copy, aiKeyword, extraRequirements, copyTrack, writingStyleId, style, ratio, maxScenes, foreground, bgmId, ttsProvider, voiceId, ttsSpeed, bgmVolume, transitionType, sceneMotion, coverImageMode, coverTemplate, coverRatio, draftTemplate, imageBudgetMode, imageBudgetMaxImages },
     restore: (draft) => {
       setProjectModels(current => readProjectModelsDraft(draft.projectModelsJson, current));
       setCopyTrack(draft.copyTrack ?? 'general'); setWritingStyleId(draft.writingStyleId ?? 'documentary');
@@ -111,10 +116,18 @@ export function HtmlVideoPage({
       setBgmId(draft.bgmId); setTtsProvider(draft.ttsProvider); setVoiceId(draft.voiceId); setTtsSpeed(draft.ttsSpeed);
       setBgmVolume(draft.bgmVolume); setTransitionType(draft.transitionType); setSceneMotion(draft.sceneMotion);
       setCoverImageMode(draft.coverImageMode); setCoverTemplate(draft.coverTemplate); setCoverRatio(draft.coverRatio); setDraftTemplate(draft.draftTemplate);
+      setImageBudgetMode(IMAGE_BUDGET_MODES.includes(draft.imageBudgetMode as ImageBudgetMode) ? draft.imageBudgetMode as ImageBudgetMode : 'standard');
+      setImageBudgetMaxImages(typeof draft.imageBudgetMaxImages === 'string' ? draft.imageBudgetMaxImages : '');
       if (draft.copy) setCopyMode('paste');
     },
   });
   const bgmOptions = validBgmItems(state.config);
+  // H-5 follow-up: 生图张数 (scenes are not planned yet → estimate at the scene limit).
+  const createImageBudget = imageBudgetFromControl(imageBudgetMode, imageBudgetMaxImages);
+  const createImageBudgetEstimate = imageBudgetEstimateText(
+    estimateHtmlVideoImageCalls(maxScenes, { foreground, coverImageMode, imageBudget: createImageBudget }),
+    safeProjectRuntimeConfig(state.config, projectModels),
+  ) + '（按场景上限估算）';
   const createVoiceOptions = ttsVoiceOptionsForProvider(ttsProvider, state.minimaxCloneVoices);
   const createStyleOptions = editableHtmlVideoStyleOptions(state.customStyles, style);
   const htmlTasks = state.tasks.filter(isHtmlVideoTask);
@@ -525,6 +538,7 @@ export function HtmlVideoPage({
           bgmId,
           maxScenes,
           foreground,
+          ...(createImageBudget ? { imageBudget: createImageBudget } : {}),
           ttsProvider,
           voiceId,
           ttsSpeed,
@@ -749,6 +763,9 @@ export function HtmlVideoPage({
                   </div>
                   <div data-html-video-create-field="foreground">
                     <CheckboxField label="生成前景图" checked={foreground} onChange={(_, data) => setForeground(data.checked === true)} />
+                  </div>
+                  <div data-html-video-create-field="imageBudget">
+                    <ImageBudgetField mode={imageBudgetMode} maxImages={imageBudgetMaxImages} estimate={createImageBudgetEstimate} onModeChange={setImageBudgetMode} onMaxImagesChange={setImageBudgetMaxImages} />
                   </div>
                   <div data-html-video-create-field="transitionType">
                     <SelectField label="转场" value={transitionType} onChange={(event) => setTransitionType(event.target.value as HtmlVideoTransition)} options={HTML_VIDEO_TRANSITIONS.map((value) => ({ value, label: HTML_VIDEO_TRANSITION_LABELS[value] }))} />
@@ -1024,6 +1041,8 @@ interface HtmlVideoEditableValues {
   draftTemplate: string;
   previewLongEdge: 720 | 1080 | '';
   renderLongEdge: 1080 | 1920 | '';
+  imageBudgetMode: ImageBudgetMode;
+  imageBudgetMaxImages: string;
 }
 
 function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableValues {
@@ -1042,7 +1061,28 @@ function editableHtmlVideoValues(config: HtmlVideoJobConfig): HtmlVideoEditableV
     renderLongEdge: config.renderLongEdge ?? '',
     ratio: (config.ratio ?? HTML_VIDEO_JOB_DEFAULTS.ratio) as HtmlVideoEditableValues['ratio'],
     draftTemplate: config.draftTemplate ?? '',
+    imageBudgetMode: config.imageBudget?.mode ?? 'standard',
+    imageBudgetMaxImages: config.imageBudget?.maxImages === undefined ? '' : String(config.imageBudget.maxImages),
   };
+}
+
+/** H-5 follow-up: policy from the 生图张数 control, keeping a stored shareEvery for 极省. */
+function editedImageBudget(current: ImageBudgetPolicy | undefined, mode: ImageBudgetMode, maxImagesText: string): ImageBudgetPolicy | undefined {
+  const next = imageBudgetFromControl(mode, maxImagesText);
+  return next?.mode === 'minimal' && current?.mode === 'minimal' && current.shareEvery !== undefined ? { ...next, shareEvery: current.shareEvery } : next;
+}
+
+function safeProjectRuntimeConfig(config: AppConfig, models: ReturnType<typeof defaultProjectModels>): AppConfig {
+  try { return projectRuntimeConfig(config, models); } catch { return config; }
+}
+
+/** Planned scenes when the task has them (same plan the runner uses), otherwise the scene limit. */
+function htmlVideoEditorImageBudgetEstimate(task: Task, appConfig: AppConfig, config: Pick<HtmlVideoJobConfig, 'foreground' | 'coverImageMode' | 'imageBudget'>, maxScenes: number): string {
+  const runtimeConfig = task.projectModels ? safeProjectRuntimeConfig(appConfig, task.projectModels) : appConfig;
+  const { data, error } = safeParseHtmlVideoPipelineData(task.pipelineData, task.inputText);
+  const planned = !error && data.current !== 'rewrite' ? data.scenes : [];
+  if (planned.length) return imageBudgetEstimateText(planHtmlVideoImageBudget(planned, config).expectedCalls, runtimeConfig);
+  return imageBudgetEstimateText(estimateHtmlVideoImageCalls(maxScenes, config), runtimeConfig) + '（按场景上限估算）';
 }
 
 function editableHtmlVideoStyleOptions(customStyles: CustomStyle[], currentStyle: string): TemplateOption[] {
@@ -1081,6 +1121,11 @@ function HtmlVideoConfigEditor({
   const htmlVideoStyleChoices = editableHtmlVideoStyleOptions(customStyles, values.style);
   const voiceOptions = ttsVoiceOptionsForProvider(values.ttsProvider, cloneVoices);
   const disabled = task.status === 'pending' || task.status === 'running' || htmlVideoConfigAction.busy;
+  const imageBudgetEstimate = htmlVideoEditorImageBudgetEstimate(task, appConfig, {
+    foreground: values.foreground,
+    coverImageMode: config.coverImageMode,
+    imageBudget: editedImageBudget(config.imageBudget, values.imageBudgetMode, values.imageBudgetMaxImages),
+  }, values.maxScenes);
 
   function setValue<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -1102,6 +1147,11 @@ function HtmlVideoConfigEditor({
       if (values[field] !== initial[field]) {
         changes.push({ field, value: values[field] } as HtmlVideoConfigChange);
       }
+    }
+    // H-5 follow-up: 生图张数 is one object field (mode + optional cap); keep any stored shareEvery.
+    const nextImageBudget = editedImageBudget(config.imageBudget, values.imageBudgetMode, values.imageBudgetMaxImages);
+    if (!sameImageBudget(nextImageBudget, config.imageBudget)) {
+      changes.push({ field: 'imageBudget', value: nextImageBudget ?? { mode: 'standard' } });
     }
     if (changes.length === 0) {
       setMessage('参数没有变化。');
@@ -1155,6 +1205,9 @@ function HtmlVideoConfigEditor({
         </div>
         <div data-html-video-edit-field="foreground">
           <CheckboxField label="生成前景图" checked={values.foreground} disabled={disabled} onChange={(_, data) => setValue('foreground', data.checked === true)} />
+        </div>
+        <div data-html-video-edit-field="imageBudget">
+          <ImageBudgetField mode={values.imageBudgetMode} maxImages={values.imageBudgetMaxImages} estimate={imageBudgetEstimate} disabled={disabled} onModeChange={(value) => setValue('imageBudgetMode', value)} onMaxImagesChange={(value) => setValue('imageBudgetMaxImages', value)} />
         </div>
         <div data-html-video-edit-field="maxScenes">
           <TextField label="场景上限" type="number" min={1} max={30} step={1} value={String(values.maxScenes)} onChange={(event) => setValue('maxScenes', Number(event.target.value))} disabled={disabled} />

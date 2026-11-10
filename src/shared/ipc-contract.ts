@@ -38,6 +38,13 @@ import {
   parseHtmlVideoPipelineData,
 } from './html-video-workflow';
 import { HTML_VIDEO_EDITABLE_CONTROL_FIELDS } from './html-video-control-manifest';
+import {
+  IMAGE_BUDGET_MAX_IMAGES_MAX,
+  IMAGE_BUDGET_MAX_IMAGES_MIN,
+  IMAGE_BUDGET_MODES,
+  IMAGE_BUDGET_SHARE_EVERY_MAX,
+  IMAGE_BUDGET_SHARE_EVERY_MIN,
+} from './image-budget';
 import { INVOKE_CHANNELS, type InvokeChannel } from './storydream-api';
 import { MAX_ORDINARY_TASK_COVER_PAGE_TEXT_LENGTH, ORDINARY_TASK_COVER_RATIOS } from './ordinary-task-cover';
 import { MAX_HYPERFRAMES_SOURCE_BYTES } from './hyperframes';
@@ -406,6 +413,14 @@ const htmlVideoConfigChangeSchema = z.discriminatedUnion('field', [
   z.object({ field: z.literal('ratio'), value: z.enum(HTML_VIDEO_RATIOS) }).strict(),
   z.object({ field: z.literal('previewLongEdge'), value: z.union([z.literal(720), z.literal(1080)]) }).strict(),
   z.object({ field: z.literal('renderLongEdge'), value: z.union([z.literal(1080), z.literal(1920)]) }).strict(),
+  z.object({
+    field: z.literal('imageBudget'),
+    value: z.object({
+      mode: z.enum(IMAGE_BUDGET_MODES),
+      maxImages: nonNegativeInteger.min(IMAGE_BUDGET_MAX_IMAGES_MIN).max(IMAGE_BUDGET_MAX_IMAGES_MAX).optional(),
+      shareEvery: nonNegativeInteger.min(IMAGE_BUDGET_SHARE_EVERY_MIN).max(IMAGE_BUDGET_SHARE_EVERY_MAX).optional(),
+    }).strict(),
+  }).strict(),
 ]);
 
 export const htmlVideoConfigUpdateSchema = bounded(z

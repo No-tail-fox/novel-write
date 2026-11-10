@@ -46,6 +46,7 @@ const APPROVED_HTML_VIDEO_FIELDS = [
   'ratio',
   'previewLongEdge',
   'renderLongEdge',
+  'imageBudget',
 ] as const satisfies readonly (keyof HtmlVideoJobConfig)[];
 
 const fullCustomConfig: Required<HtmlVideoJobConfig> = {
@@ -78,6 +79,7 @@ const fullCustomConfig: Required<HtmlVideoJobConfig> = {
   maxScenes: 12,
   ratio: '4:3',
   previewLongEdge:720,renderLongEdge:1920,
+  imageBudget: { mode: 'minimal', maxImages: 4, shareEvery: 2 },
 };
 
 describe('HTML video control manifest', () => {
@@ -165,6 +167,7 @@ describe('HTML video control manifest', () => {
       maxScenes: 'targetScenes|storyboardSceneCount',
       ratio: 'ratio',
       previewLongEdge:null,renderLongEdge:null,
+      imageBudget: null,
     });
   });
 
@@ -344,7 +347,7 @@ describe('HTML video control manifest', () => {
     const expected: Record<HtmlVideoVisibleStep, Partial<HtmlVideoJobConfig>> = {
       rewrite: { maxScenes: 12 },
       planning: { maxScenes: 12 },
-      assets: { style: 'custom-editorial-film', foreground: false, ratio: '4:3' },
+      assets: { style: 'custom-editorial-film', foreground: false, ratio: '4:3', imageBudget: fullCustomConfig.imageBudget },
       voice: { voiceId: 'voice-custom', ttsProvider: 'minimax', ttsSpeed: 1.25 },
       preview: {
         previewLongEdge:720,
@@ -358,6 +361,7 @@ describe('HTML video control manifest', () => {
       },
       render: {
         renderLongEdge:1920,
+        imageBudget: fullCustomConfig.imageBudget,
         bgmId: 'bgm-custom',
         captionPreset: 'editorial',
         captionAnim: 'pop',

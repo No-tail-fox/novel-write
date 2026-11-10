@@ -11,6 +11,7 @@ import {
   validateHtmlVideoCaptionPreset,
 } from './html-video-captions';
 import { normalizeHtmlVideoCoverMode, normalizeHtmlVideoCoverRatio } from './html-video-cover';
+import { parseImageBudgetPolicy } from './image-budget';
 
 export const HTML_VIDEO_MAX_SCENES = 30;
 export const HTML_VIDEO_TTS_SPEED_MIN = 0.1;
@@ -127,6 +128,7 @@ export const HTML_VIDEO_JOB_DEFAULTS = {
   draftTemplate: undefined,
   previewLongEdge: undefined,
   renderLongEdge: undefined,
+  imageBudget: undefined,
   foreground: true,
   maxScenes: 8,
   ratio: '9:16',
@@ -201,6 +203,12 @@ export function preserveHtmlVideoJobConfig(value: unknown): HtmlVideoJobConfig {
       }
     } else if (field === 'coverPrompt') {
       result.coverPrompt = requireBoundedString(current, field, 16_384);
+    } else if (field === 'imageBudget') {
+      try {
+        result.imageBudget = parseImageBudgetPolicy(current);
+      } catch (error) {
+        throw invalidConfig(error instanceof Error ? error.message : `${field} is invalid`);
+      }
     } else {
       result[field] = requireBoundedString(current, field);
     }
@@ -286,6 +294,7 @@ function cloneHtmlVideoJobConfig(config: HtmlVideoJobConfig): HtmlVideoJobConfig
     ...config,
     ...(config.captionColors ? { captionColors: { ...config.captionColors } } : {}),
     ...(config.captionLayout ? { captionLayout: { ...config.captionLayout } } : {}),
+    ...(config.imageBudget ? { imageBudget: { ...config.imageBudget } } : {}),
   };
 }
 

@@ -865,6 +865,8 @@ export type HtmlVideoEditableConfigField =
   | 'captionLayout'
   | 'bgmVolume'
   | 'transitionType'
+  /** H-5 follow-up: 生图张数. Absent = standard (unchanged behaviour). */
+  imageBudget?: import('./image-budget').ImageBudgetPolicy;
   | 'sceneMotion'
   | 'coverImageMode'
   | 'coverTemplate'
@@ -889,6 +891,7 @@ export type HtmlVideoConfigChange =
   | { field: 'captionLayout'; value: HtmlVideoCaptionLayout }
   | { field: 'bgmVolume'; value: 'soft' | 'medium' | 'loud' }
   | { field: 'transitionType'; value: 'fade' | 'dissolve' | 'wipeleft' | 'wiperight' | 'slideleft' | 'slideright' }
+  | 'imageBudget'
   | { field: 'sceneMotion'; value: HtmlVideoSceneMotion }
   | { field: 'coverImageMode'; value: HtmlVideoCoverMode }
   | { field: 'coverTemplate'; value: string }
@@ -913,6 +916,7 @@ export interface HtmlVideoPipelineDataV2 {
   voices: HtmlVideoVoiceClip[];
   compositions: HtmlVideoCompositionSnapshot[];
   coverAsset?: HtmlVideoCoverAsset;
+  | { field: 'imageBudget'; value: import('./image-budget').ImageBudgetPolicy }
   output?: HtmlVideoOutput;
   config: HtmlVideoJobConfig;
   /** G-7: automatic step retries of the latest run (absent in older states). */
