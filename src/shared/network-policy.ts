@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP, type LookupFunction } from 'node:net';
-import { Agent, type Dispatcher } from 'undici';
+import { Agent, ProxyAgent, type Dispatcher } from 'undici';
 
 export type NetworkPurpose = 'public-research' | 'ima-api' | 'ima-document' | 'provider-api';
 
@@ -39,6 +39,13 @@ export interface NetworkFetchOptions extends RequestInit, NetworkPolicyOverrides
   retryConnectTimeout?: boolean;
   /** Observe bounded body bytes as they arrive; redirects are never observed. */
   onResponseChunk?: (chunk: Uint8Array, response: Response) => void;
+  /**
+   * G-5: optional HTTP(S) forward proxy (`http://[user:pass@]host:port`). Empty/whitespace = direct connection.
+   * Target URL policy (scheme, host, redirects, byte limit, header filtering) still applies. When the policy
+   * forbids private targets the target host is still resolved and validated locally before sending, but the
+   * proxy resolves the host again by itself (TOCTOU: a hostile DNS answer seen only by the proxy is not caught).
+   */
+  proxyUrl?: string;
 }
 
 export interface PinnedLookup {
@@ -136,6 +143,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
       'idempotency-key',
       'authorization',
       'content-type',
+      'if-range',
       'range',
       'user-agent',
       'x-api-key',
@@ -143,7 +151,6 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
       'x-api-resource-id',
       'x-client-source',
       'x-app-id',
-      'if-range',
       'x-content-sha256',
       'x-date',
       'x-resource-id',
@@ -244,6 +251,7 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
     maxBytes,
     timeoutMs,
     signal,
+    proxyUrl,
     ...requestInit
   } = options;
   const policy = getNetworkPolicy(purpose, {
@@ -253,6 +261,7 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
     maxBytes,
     timeoutMs,
   });
+  const proxy = normalizeProxyUrl(proxyUrl);
   let currentUrl = assertUrlAgainstPolicy(input, purpose, policy);
   const providerStartedLocal = purpose === 'provider-api' && isExplicitLocalTarget(currentUrl);
   let method = (requestInit.method ?? 'GET').toUpperCase();
@@ -275,8 +284,9 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
       if (controller.signal.aborted) throw abortReason(controller.signal);
       currentUrl = assertUrlAgainstPolicy(currentUrl, purpose, policy);
       const pinned = createPinnedLookup(currentUrl, policy, lookup ?? defaultNetworkLookup);
-      if (lookup) await pinned.resolve();
-      const dispatcher = new Agent({
+      // Through a proxy the pinned lookup never runs for the target, so validate its DNS answer up front.
+      if (lookup || (proxy && !(policy.allowPrivate && policy.allowLoopback))) await pinned.resolve();
+      const dispatcher = proxy ? createProxyDispatcher(proxy, policy) : new Agent({
         // Keep transport limits aligned with the overall request deadline.
         headersTimeout: policy.timeoutMs,
         bodyTimeout: policy.timeoutMs,
@@ -325,9 +335,13 @@ export async function fetchWithNetworkPolicy(input: string | URL, options: Netwo
         return rebuildResponse(response, bytes, currentUrl.href, redirects > 0);
       } catch (error) {
         if (controller.signal.aborted) throw abortReason(controller.signal);
-        const failure = unwrapNetworkPolicyCause(error, currentUrl);
+        const failure = (proxy && !response ? proxyConnectFailure(error, proxy, currentUrl) : undefined)
+          ?? unwrapNetworkPolicyCause(error, currentUrl);
+        const failureCode = failure instanceof NetworkPolicyError
+          ? failure.code === 'NETWORK_PROXY_FAILED' ? (failure as NetworkPolicyError & { proxyCauseCode?: string }).proxyCauseCode : failure.code
+          : undefined;
         if (!response && retryConnectTimeout && purpose === 'provider-api' && connectRetries === 0
-          && failure instanceof NetworkPolicyError && failure.code === 'UND_ERR_CONNECT_TIMEOUT'
+          && failureCode === 'UND_ERR_CONNECT_TIMEOUT'
           && isReplayableBody(body)) {
           // This connector error happens before HTTP is sent. Never replay a lost response.
           connectRetries += 1;
@@ -690,4 +704,107 @@ function unwrapNetworkPolicyCause(error: unknown, url: URL): unknown {
 
 function networkError(code: string, message: string): NetworkPolicyError & NodeJS.ErrnoException {
   return new NetworkPolicyError(code, message) as NetworkPolicyError & NodeJS.ErrnoException;
+}
+
+export interface NormalizedProxy {
+  /** Proxy origin without credentials. */
+  url: URL;
+  /** `Basic …` value for Proxy-Authorization when the configured URL carried credentials. */
+  authorization?: string;
+}
+
+/**
+ * G-5: validate a configured proxy. Empty/whitespace → `null` (direct connection). A bare `host:port` is read
+ * as `http://host:port`. Only http/https proxies are supported; loopback/private proxy hosts are allowed.
+ * Error messages never echo the raw value because it may contain credentials.
+ */
+export function normalizeProxyUrl(value: string | undefined | null): NormalizedProxy | null {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    throw networkError('NETWORK_PROXY_INVALID', '代理地址格式无效，请填写 http://主机:端口 或 https://主机:端口。');
+  }
+  if (/^socks/iu.test(url.protocol)) {
+    throw networkError('NETWORK_PROXY_UNSUPPORTED', `暂不支持 ${url.protocol.replace(/:$/u, '')} 代理，请改用 HTTP/HTTPS 代理地址。`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw networkError('NETWORK_PROXY_INVALID', `代理地址协议 ${url.protocol || '(none)'} 不受支持，只支持 http:// 或 https://。`);
+  }
+  if (!normalizedHostname(url)) throw networkError('NETWORK_PROXY_INVALID', '代理地址缺少主机名。');
+  let authorization: string | undefined;
+  if (url.username || url.password) {
+    let user: string;
+    let pass: string;
+    try {
+      user = decodeURIComponent(url.username);
+      pass = decodeURIComponent(url.password);
+    } catch {
+      throw networkError('NETWORK_PROXY_INVALID', '代理地址中的用户名或密码编码无效。');
+    }
+    authorization = `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`;
+  }
+  const clean = new URL(`${url.protocol}//${url.host}`);
+  return { url: clean, ...(authorization ? { authorization } : {}) };
+}
+
+/** Proxy address for logs/errors: scheme + host + port only, never credentials or path. */
+export function redactProxyUrl(value: string | undefined | null): string {
+  try {
+    const proxy = normalizeProxyUrl(value);
+    return proxy ? `${proxy.url.protocol}//${proxy.url.host}` : '';
+  } catch {
+    return '(无效代理地址)';
+  }
+}
+
+function createProxyDispatcher(proxy: NormalizedProxy, policy: NetworkPolicy): ProxyAgent {
+  const connectTimeout = Math.min(30_000, policy.timeoutMs);
+  return new ProxyAgent({
+    uri: proxy.url.href,
+    ...(proxy.authorization ? { token: proxy.authorization } : {}),
+    headersTimeout: policy.timeoutMs,
+    bodyTimeout: policy.timeoutMs,
+    // ProxyAgent ignores `connect`; these connector options carry the timeout to the proxy socket and the tunnelled TLS.
+    proxyTls: { timeout: connectTimeout },
+    requestTls: { timeout: connectTimeout },
+  });
+}
+
+// Errors that can only happen while reaching the proxy or establishing the CONNECT tunnel, i.e. before any byte
+// of the target request is sent. Socket resets stay "unknown": once tunnelled they may follow a sent request.
+const PROXY_CONNECT_CODES = new Set([
+  'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_PRX_TLS',
+]);
+
+function proxyConnectFailure(error: unknown, proxy: NormalizedProxy, url: URL): NetworkPolicyError | undefined {
+  let cause: unknown = error;
+  const seen = new Set<unknown>();
+  let code: string | undefined;
+  let tunnelStatus: number | undefined;
+  while (cause instanceof Error && !seen.has(cause)) {
+    seen.add(cause);
+    if (cause instanceof NetworkPolicyError) return undefined;
+    const causeCode = (cause as NodeJS.ErrnoException).code;
+    const statusMatch = /Proxy response \((\d{3})\) !== 200/u.exec(cause.message);
+    if (statusMatch) tunnelStatus = Number(statusMatch[1]);
+    else if (/Proxy Authentication Required/iu.test(cause.message)) tunnelStatus = 407;
+    if (!code && typeof causeCode === 'string' && PROXY_CONNECT_CODES.has(causeCode)) code = causeCode;
+    cause = cause.cause;
+  }
+  if (tunnelStatus === undefined && !code) return undefined;
+  const proxyLabel = `${proxy.url.protocol}//${proxy.url.host}`;
+  const detail = tunnelStatus !== undefined
+    ? `代理 ${proxyLabel} 未能建立到 ${url.host} 的隧道（代理返回 ${tunnelStatus}${tunnelStatus === 407 ? '：需要代理认证或代理凭据错误' : ''}）`
+    : `无法连接代理 ${proxyLabel}（${code}）`;
+  const failure = networkError('NETWORK_PROXY_FAILED', `代理连接失败：${detail}，请求尚未发送到目标服务。（代理地址已隐去凭据）`) as NetworkPolicyError
+    & NodeJS.ErrnoException & { proxyCauseCode?: string; proxyStatus?: number; requestNotSent: true };
+  failure.proxyCauseCode = code ?? (tunnelStatus !== undefined ? 'PROXY_TUNNEL_REJECTED' : undefined);
+  if (tunnelStatus !== undefined) failure.proxyStatus = tunnelStatus;
+  failure.requestNotSent = true;
+  // No `cause`: undici internals may hold proxy headers; the message above is already credential-free.
+  return failure;
 }

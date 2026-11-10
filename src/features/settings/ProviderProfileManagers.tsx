@@ -165,6 +165,7 @@ export function LlmProfileManager({
           step={10}
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, timeoutMs: value * 1000 })}
         />
+        <ConfigInput label="代理地址（选填）" value={selectedProfile.proxyUrl ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, proxyUrl: value })} />
         <Segmented
           label="供应商"
           value={selectedProvider}
@@ -458,6 +459,7 @@ export function ImageProfileManager({
             <Segmented label="分辨率" value={gptImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, resolution: value as ImageResolution } })} />
             <Segmented label="默认质量" value={gptImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, quality: value as ImageGenerationQuality } })} />
             <ConfigNumberInput label="图片请求超时（秒）" value={(gptImage.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS) / 1000} min={30} step={30} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, timeoutMs: Math.max(30, value) * 1000 } })} />
+            <ConfigInput label="代理地址（选填）" value={gptImage.proxyUrl ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, proxyUrl: value } })} />
             <SliderField label="并发" min={1} max={6} valueLabel={gptImage.concurrency} value={gptImage.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, gptImage: { ...gptImage, concurrency: data.value } })} />
           </>
         ) : null}
@@ -495,6 +497,7 @@ export function ImageProfileManager({
             <Segmented label="分辨率" value={customImage.resolution ?? '2K'} options={['1K', '2K', '4K']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, resolution: value as ImageResolution } })} />
             <Segmented label="默认质量" value={customImage.quality ?? 'medium'} options={['low', 'medium', 'high']} labels={['低成本', '标准', '高质量']} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, quality: value as ImageGenerationQuality } })} />
             <ConfigNumberInput label="图片请求超时（秒）" value={(customImage.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS) / 1000} min={30} step={30} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, timeoutMs: Math.max(30, value) * 1000 } })} />
+            <ConfigInput label="代理地址（选填）" value={customImage.proxyUrl ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, proxyUrl: value } })} />
             <SliderField label="并发" min={1} max={6} valueLabel={customImage.concurrency} value={customImage.concurrency} onChange={(_, data) => updateSelectedProfile({ ...selectedProfile, customImage: { ...customImage, concurrency: data.value } })} />
           </>
         ) : null}

@@ -147,6 +147,12 @@ export function classifyProviderFailure(input: ProviderFailureInput): ProviderFa
   const code = chain.map(item => typeof item.code === 'string' ? item.code : undefined).find(Boolean)
     ?? text.match(/\b(UND_ERR_[A-Z_]+|E[A-Z]{4,}|NETWORK_TIMEOUT)\b/u)?.[1];
   if (code) {
+    // G-5: the proxy refused/was unreachable or the CONNECT tunnel was rejected; the target never saw the request.
+    if (code === 'NETWORK_PROXY_FAILED') {
+      const proxyAuth = chain.some(item => (item as { proxyStatus?: unknown }).proxyStatus === 407);
+      return withMeta(make('connect', 'not-sent', proxyAuth ? 'never' : 'always', proxyAuth ? '代理认证失败（407），请求未发出' : '代理连接失败，请求未发出', { code }));
+    }
+    if (code === 'NETWORK_PROXY_INVALID' || code === 'NETWORK_PROXY_UNSUPPORTED') return withMeta(make('local', 'not-sent', 'never', '代理地址配置无效，请求未发出', { code }));
     if (NOT_SENT_CODES.has(code)) return withMeta(make('connect', 'not-sent', 'always', `连接失败（${code}），请求未发出`, { code }));
     if (TLS_CERT_CODES.test(code)) return withMeta(make('connect', 'not-sent', 'never', `证书校验失败（${code}），请求未发出`, { code }));
     if (TLS_HANDSHAKE_CODES.test(code)) return withMeta(make('connect', 'not-sent', 'always', `TLS 握手失败（${code}），请求未发出`, { code }));

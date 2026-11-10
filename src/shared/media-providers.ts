@@ -66,6 +66,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
         timeoutMs: config.customImage.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS,
         asyncMode: config.customImage.asyncMode,
         pollIntervalMs: config.customImage.pollIntervalMs ?? 2000,
+        proxyUrl: config.customImage.proxyUrl,
         signal,
         recoveryOnly: options.recoveryOnly,
       });
@@ -85,6 +86,7 @@ export function createConfiguredImageGenerator(config: AppConfig, workDir: strin
       timeoutMs: config.gptImage.timeoutMs ?? config.image.timeoutMs ?? DEFAULT_IMAGE_REQUEST_TIMEOUT_MS,
       asyncMode: false,
       pollIntervalMs: 2000,
+      proxyUrl: config.gptImage.proxyUrl || config.image.proxyUrl,
       signal,
       recoveryOnly: options.recoveryOnly,
     });
@@ -344,6 +346,7 @@ async function generateOpenAiCompatibleImages(input: {
   pollIntervalMs: number;
   signal?: AbortSignal;
   recoveryOnly?: boolean;
+  proxyUrl?: string;
 }): Promise<SceneAsset[]> {
   if (!input.apiKey) {
     throw new Error('Image provider API key is missing; cannot generate real image assets.');
@@ -388,7 +391,7 @@ async function generateOpenAiCompatibleImages(input: {
     // Persist only the usable result, never provider metadata or authorization headers.
     // A later recovery downloads this result or polls the saved task; it cannot POST.
     await saveReceipt({ image: { ...(image.b64_json ? { b64_json: image.b64_json } : {}), ...(image.url ? { url: image.url } : {}) } });
-    const bytes = await extractImageBytes(body, input.signal);
+    const bytes = await extractImageBytes(body, input.signal, input.proxyUrl);
     const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
     await writeFile(path, bytes);
     assets.push({ sceneId: scene.id, path });
@@ -414,6 +417,7 @@ async function generateOpenAiCompatibleImageSync(input: {
   ratioMappingJson?: string;
   timeoutMs: number;
   signal?: AbortSignal;
+  proxyUrl?: string;
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const response = await fetchWithTimeout(`${input.baseUrl}/images/generations`, {
     generation: true,
@@ -422,6 +426,7 @@ async function generateOpenAiCompatibleImageSync(input: {
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider request',
     signal: input.signal,
+    proxyUrl: input.proxyUrl,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${input.apiKey}`,
@@ -457,6 +462,7 @@ async function generateOpenAiCompatibleImageEdit(input: {
   referenceImagePaths: string[];
   timeoutMs: number;
   signal?: AbortSignal;
+  proxyUrl?: string;
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const form = await buildOpenAiImageEditFormData({
     model: input.model,
@@ -473,6 +479,7 @@ async function generateOpenAiCompatibleImageEdit(input: {
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider edit request',
     signal: input.signal,
+    proxyUrl: input.proxyUrl,
     headers: {
       Authorization: `Bearer ${input.apiKey}`,
     },
@@ -501,6 +508,7 @@ async function generateOpenAiCompatibleImageAsync(input: {
   timeoutMs: number;
   pollIntervalMs: number;
   signal?: AbortSignal;
+  proxyUrl?: string;
   onSubmitted?(taskId: string): Promise<void>;
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const response = await fetchWithTimeout(`${input.baseUrl}/images/generations?async=true`, {
@@ -510,6 +518,7 @@ async function generateOpenAiCompatibleImageAsync(input: {
     timeoutMs: input.timeoutMs,
     timeoutLabel: 'Image provider async submit',
     signal: input.signal,
+    proxyUrl: input.proxyUrl,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${input.apiKey}`,
@@ -564,6 +573,7 @@ async function pollOpenAiCompatibleImageTask(input: {
   timeoutMs: number;
   pollIntervalMs: number;
   signal?: AbortSignal;
+  proxyUrl?: string;
 }): Promise<{ data?: Array<{ b64_json?: string; url?: string }> }> {
   const startedAt = Date.now();
   while (Date.now() - startedAt <= input.timeoutMs) {
@@ -572,6 +582,7 @@ async function pollOpenAiCompatibleImageTask(input: {
       timeoutMs: input.timeoutMs,
       timeoutLabel: 'Image provider async poll',
       signal: input.signal,
+      proxyUrl: input.proxyUrl,
       headers: {
         Authorization: `Bearer ${input.apiKey}`,
       },
@@ -914,7 +925,7 @@ function sceneAssetForTurn(sceneId: number, path: string, turn: TtsTurn): SceneA
   };
 }
 
-async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }, signal?: AbortSignal): Promise<Buffer> {
+async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }, signal?: AbortSignal, proxyUrl?: string): Promise<Buffer> {
   const image = body.data?.[0];
   if (image?.b64_json) return Buffer.from(image.b64_json, 'base64');
   if (image?.url) {
@@ -924,6 +935,7 @@ async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?:
       timeoutLabel: 'Generated image download',
       maxBytes: PROVIDER_RESPONSE_MAX_BYTES,
       signal,
+      proxyUrl,
     });
     if (!response.ok) throw new Error(`Failed to download generated image (${response.status}).`);
     return Buffer.from(await response.arrayBuffer());

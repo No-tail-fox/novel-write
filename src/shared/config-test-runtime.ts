@@ -23,6 +23,7 @@ export async function testConfigTarget(target: ConfigTestTarget, input: AppConfi
     resolution: image.resolution,
     quality: image.quality,
     fetchImpl: options.fetchImpl,
+    proxyUrl: image.proxyUrl,
   });
 
   return {

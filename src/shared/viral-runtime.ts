@@ -621,6 +621,7 @@ async function fetchVisionWithRetries(endpoint: string, init: RequestInit, confi
         timeoutMs: config.timeoutMs ?? 120_000,
         timeoutLabel: `Viral frame analysis attempt ${attempt}/${maxAttempts}`,
         maxBytes: VISION_RESPONSE_MAX_BYTES,
+        proxyUrl: config.proxyUrl,
         signal,
       });
     } catch (error) {

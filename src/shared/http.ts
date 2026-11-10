@@ -17,6 +17,8 @@ export interface FetchWithTimeoutOptions extends RequestInit {
   fetchImpl?: NetworkFetch;
   retryConnectTimeout?: boolean;
   onResponseChunk?: (chunk: Uint8Array, response: Response) => void;
+  /** G-5: config `proxyUrl`; forwarded unchanged to the network policy (empty = direct). */
+  proxyUrl?: string;
 }
 
 export async function fetchWithTimeout(url: string | URL, options: FetchWithTimeoutOptions = {}): Promise<Response> {

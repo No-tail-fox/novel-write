@@ -472,7 +472,7 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
       generation: true,
       method: 'POST',
       timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
-      timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      timeoutLabel: `LLM step ${request.step} ${request.name}`, proxyUrl: config.proxyUrl,
       maxBytes: LLM_RESPONSE_MAX_BYTES,
       signal: request.signal,
       headers: {
@@ -496,7 +496,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
       generation: true,
       method: 'POST',
       timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
-      timeoutLabel: `LLM step ${request.step} ${request.name}`,
+      timeoutLabel: `LLM step ${request.step} ${request.name}`, proxyUrl: config.proxyUrl,
       maxBytes: LLM_RESPONSE_MAX_BYTES,
       signal: request.signal,
       headers: {
@@ -524,7 +524,7 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
         generation: true,
         method: 'POST',
         timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
-        timeoutLabel: `LLM step ${request.step} ${request.name}`,
+        timeoutLabel: `LLM step ${request.step} ${request.name}`, proxyUrl: config.proxyUrl,
         maxBytes: LLM_RESPONSE_MAX_BYTES,
         onResponseChunk,
         signal: request.signal,
@@ -562,7 +562,7 @@ async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig
         generation: true,
         method: 'POST',
         timeoutMs: request.timeoutMs ?? config.timeoutMs ?? 120_000,
-        timeoutLabel: `LLM step ${request.step} ${request.name}`,
+        timeoutLabel: `LLM step ${request.step} ${request.name}`, proxyUrl: config.proxyUrl,
         maxBytes: LLM_RESPONSE_MAX_BYTES,
         onResponseChunk,
         signal: request.signal,
@@ -867,6 +867,7 @@ async function testOpenAiProtocolLlm(config: LlmConfig, protocol: 'openai' | 're
         body: JSON.stringify(buildModelTestBody(config, protocol)),
       },
       Math.min(config.timeoutMs ?? MODEL_TEST_TIMEOUT_MS, MODEL_TEST_TIMEOUT_MS),
+      config.proxyUrl,
     );
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
@@ -947,6 +948,7 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
         body: JSON.stringify(buildModelTestBody(config, 'anthropic')),
       },
       Math.min(config.timeoutMs ?? MODEL_TEST_TIMEOUT_MS, MODEL_TEST_TIMEOUT_MS),
+      config.proxyUrl,
     );
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
@@ -1395,7 +1397,7 @@ function formatRawPreview(raw: string): string {
   return preview ? ` Response preview: ${preview}` : '';
 }
 
-async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number, proxyUrl?: string): Promise<Response> {
   return fetchWithTimeout(url, {
     ...init,
     generation: init.method === 'POST',
@@ -1403,5 +1405,6 @@ async function fetchWithInjectedTimeout(fetchImpl: typeof fetch, url: string, in
     timeoutLabel: 'Request',
     maxBytes: LLM_RESPONSE_MAX_BYTES,
     fetchImpl: fetchImpl as NetworkFetch,
+    proxyUrl,
   });
 }

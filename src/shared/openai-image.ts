@@ -37,6 +37,8 @@ export interface OpenAiImageProbeInput {
   quality?: OpenAiImageQuality;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** G-5: image config `proxyUrl`; empty = direct. */
+  proxyUrl?: string;
 }
 
 const IMAGE_PROBE_PROMPT = 'Configuration smoke test: a simple geometric icon on a plain background, no text.';
@@ -97,6 +99,7 @@ export async function testOpenAiCompatibleImageModel(input: OpenAiImageProbeInpu
       timeoutLabel: 'Image model test',
       maxBytes: IMAGE_PROBE_RESPONSE_MAX_BYTES,
       fetchImpl: input.fetchImpl as NetworkFetch | undefined,
+      proxyUrl: input.proxyUrl,
     });
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, IMAGE_PROBE_RESPONSE_MAX_BYTES);

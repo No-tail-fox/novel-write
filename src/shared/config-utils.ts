@@ -1020,6 +1020,7 @@ export function activeOpenAiImageConfig(config: AppConfig): {
   ratio: string;
   resolution: '1K' | '2K' | '4K';
   quality: NonNullable<AppConfig['gptImage']['quality']>;
+  proxyUrl: string;
 } {
   if (config.imageProvider === 'custom') {
     return {
@@ -1029,6 +1030,7 @@ export function activeOpenAiImageConfig(config: AppConfig): {
       ratio: config.customImage.ratio,
       resolution: config.customImage.resolution ?? '2K',
       quality: normalizeImageGenerationQuality(config.customImage.quality),
+      proxyUrl: config.customImage.proxyUrl ?? '',
     };
   }
 
@@ -1039,5 +1041,6 @@ export function activeOpenAiImageConfig(config: AppConfig): {
     ratio: config.gptImage.ratio || config.image.ratio,
     resolution: config.gptImage.resolution ?? config.image.resolution ?? '2K',
     quality: normalizeImageGenerationQuality(config.gptImage.quality ?? config.image.quality),
+    proxyUrl: config.gptImage.proxyUrl || config.image.proxyUrl || '',
   };
 }
