@@ -246,9 +246,41 @@ function parseFallbackGovernance(value: unknown): FallbackGovernanceState {
   return { revision, tombstones };
 }
 
+// The browser preview must not crash where Web Storage is missing or blocked (Node/vitest, sandboxed
+// iframes, privacy modes that throw SecurityError on access). Resolve `localStorage` lazily on every
+// call so late stubs (vi.stubGlobal) are honoured, and fall back to a tab-lifetime in-memory store.
+const memoryFallbackStore = new Map<string, string>();
+const memoryFallbackStorage: Storage = {
+  get length() { return memoryFallbackStore.size; },
+  clear: () => memoryFallbackStore.clear(),
+  getItem: (key) => memoryFallbackStore.get(String(key)) ?? null,
+  key: (index) => Array.from(memoryFallbackStore.keys())[index] ?? null,
+  removeItem: (key) => { memoryFallbackStore.delete(String(key)); },
+  setItem: (key, value) => { memoryFallbackStore.set(String(key), String(value)); },
+};
+
+function resolveFallbackStorage(): Storage {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage) return localStorage;
+  } catch {
+    // Accessing localStorage can throw (e.g. SecurityError); use the in-memory store instead.
+  }
+  return memoryFallbackStorage;
+}
+
+/** Storage facade that re-resolves the backing store on each operation and never throws on access. */
+const fallbackStorage: Storage = {
+  get length() { return resolveFallbackStorage().length; },
+  clear: () => resolveFallbackStorage().clear(),
+  getItem: (key) => resolveFallbackStorage().getItem(key),
+  key: (index) => resolveFallbackStorage().key(index),
+  removeItem: (key) => resolveFallbackStorage().removeItem(key),
+  setItem: (key, value) => resolveFallbackStorage().setItem(key, value),
+};
+
 function readFallbackEnvelope(): FallbackStorageEnvelope {
   let stored: Partial<FallbackStorageEnvelope> | null = null;
-  const rawEnvelope = localStorage.getItem(fallbackGovernanceStorageKey);
+  const rawEnvelope = fallbackStorage.getItem(fallbackGovernanceStorageKey);
   if (rawEnvelope) {
     try {
       stored = JSON.parse(rawEnvelope) as Partial<FallbackStorageEnvelope>;
@@ -261,7 +293,7 @@ function readFallbackEnvelope(): FallbackStorageEnvelope {
   if (stored?.version === fallbackEnvelopeVersion && stored.state && typeof stored.state === 'object') {
     sourceState = hydrateState(stored.state as AppState);
   } else {
-    const rawState = localStorage.getItem('storydream-state') ?? localStorage.getItem('storybound-state');
+    const rawState = fallbackStorage.getItem('storydream-state') ?? fallbackStorage.getItem('storybound-state');
     sourceState = rawState ? hydrateState(JSON.parse(rawState) as AppState) : cloneState(initialState);
   }
   const filtered = filterFallbackTombstones(sourceState, governance);
@@ -274,7 +306,7 @@ function readFallbackEnvelope(): FallbackStorageEnvelope {
 
 function commitFallbackEnvelope(envelope: FallbackStorageEnvelope): void {
   // One synchronous tab-local write; localStorage provides neither cross-tab CAS nor crash transactions.
-  localStorage.setItem(fallbackGovernanceStorageKey, JSON.stringify(envelope));
+  fallbackStorage.setItem(fallbackGovernanceStorageKey, JSON.stringify(envelope));
 }
 
 function filterFallbackTombstones(state: AppState, governance: FallbackGovernanceState): AppState {
@@ -321,7 +353,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     return commitState(next, { revision: envelope.revision, tombstones: envelope.tombstones });
   };
   const readBookSelections = () => {
-    const raw = localStorage.getItem('storybound-book-selections');
+    const raw = fallbackStorage.getItem('storybound-book-selections');
     if (!raw) return [] as BookSelectionRecord[];
     try {
       return JSON.parse(raw) as BookSelectionRecord[];
@@ -330,29 +362,29 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     }
   };
   const writeBookSelections = (records: BookSelectionRecord[]) => {
-    localStorage.setItem('storybound-book-selections', JSON.stringify(records));
+    fallbackStorage.setItem('storybound-book-selections', JSON.stringify(records));
     return records;
   };
   const readBenchmarkGroups = (): BenchmarkGroup[] => {
     try {
-      return JSON.parse(localStorage.getItem('storydream-benchmark-groups') || '[]') as BenchmarkGroup[];
+      return JSON.parse(fallbackStorage.getItem('storydream-benchmark-groups') || '[]') as BenchmarkGroup[];
     } catch {
       return [];
     }
   };
   const writeBenchmarkGroups = (records: BenchmarkGroup[]): BenchmarkGroup[] => {
-    localStorage.setItem('storydream-benchmark-groups', JSON.stringify(records));
+    fallbackStorage.setItem('storydream-benchmark-groups', JSON.stringify(records));
     return records;
   };
   const readBenchmarkPosts = (): BenchmarkPost[] => {
     try {
-      return JSON.parse(localStorage.getItem('storydream-benchmark-posts') || '[]') as BenchmarkPost[];
+      return JSON.parse(fallbackStorage.getItem('storydream-benchmark-posts') || '[]') as BenchmarkPost[];
     } catch {
       return [];
     }
   };
   const writeBenchmarkPosts = (records: BenchmarkPost[]): BenchmarkPost[] => {
-    localStorage.setItem('storydream-benchmark-posts', JSON.stringify(records));
+    fallbackStorage.setItem('storydream-benchmark-posts', JSON.stringify(records));
     return records;
   };
   const changed = (left: unknown, right: unknown) => JSON.stringify(left) !== JSON.stringify(right);
@@ -557,9 +589,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     return !normalized || values.some((value) => String(value ?? '').toLocaleLowerCase().includes(normalized));
   };
   const readDirectorBatches = (): DirectorBatchRecord[] => {
-    try { return JSON.parse(localStorage.getItem('storydream-director-batches') || '[]') as DirectorBatchRecord[]; } catch { return []; }
+    try { return JSON.parse(fallbackStorage.getItem('storydream-director-batches') || '[]') as DirectorBatchRecord[]; } catch { return []; }
   };
-  const writeDirectorBatches = (records: DirectorBatchRecord[]) => localStorage.setItem('storydream-director-batches', JSON.stringify(records));
+  const writeDirectorBatches = (records: DirectorBatchRecord[]) => fallbackStorage.setItem('storydream-director-batches', JSON.stringify(records));
 
   return {
     async getState() {
@@ -1181,7 +1213,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async openBenchmarkLogin() {
       throw new Error('BENCHMARK_LOGIN_REQUIRES_ELECTRON: 浏览器预览不能保存平台登录会话。');
     },
-    ...browserAssetLibrary(localStorage),
+    ...browserAssetLibrary(fallbackStorage),
     async listPersonAssets() {
       return [];
     },

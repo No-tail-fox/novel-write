@@ -84,7 +84,10 @@ describe('image lab generation', () => {
       expect(requests[0].body).toMatchObject({
         model: 'gpt-image-2',
         prompt: expect.stringContaining('Tang palace portrait'),
-        size: '1024x1024',
+        // Deliberate since 48a9a42: the gpt-image-2 family accepts explicit dimensions, so a 2K 1:1
+        // request is sent as 2048x2048 (see resolveOpenAiImageSize). Legacy/custom models keep the
+        // fixed 1024/1536 contract, which tests/openai-image-size.test.ts pins.
+        size: '2048x2048',
         quality: 'high',
       });
     } finally {
@@ -243,7 +246,10 @@ describe('image lab generation', () => {
       const form = requests[0].body as FormData;
       expect(form.get('model')).toBe('gpt-image-2');
       expect(form.get('prompt')).toContain('Keep the host identity');
-      expect(form.get('size')).toBe('1536x1024');
+      // No explicit resolution: falls back to the configured gptImage resolution (2K by default), and
+      // gpt-image-2 maps 2K 16:9 to explicit 2048x1152 (deliberate since 48a9a42; same value pinned in
+      // tests/media-providers.test.ts). Older models would still receive 1536x1024.
+      expect(form.get('size')).toBe('2048x1152');
       expect(form.get('quality')).toBe('low');
       expect(form.getAll('image')).toHaveLength(2);
     } finally {

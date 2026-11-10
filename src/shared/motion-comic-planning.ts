@@ -572,9 +572,49 @@ function resolveExplicitBeatSpeaker(beat: Record<string, unknown>, characters: u
   return keys.size === 1 && typeof resolved[0][0].key === 'string' ? resolved[0][0].key : undefined;
 }
 
+/**
+ * Scripts captured before the splitter stopped emitting orphan closing quotes (e.g. "”" as its own
+ * unit) reference the older, finer ids. Map each legacy id to the current unit(s) covering the same
+ * characters so saved scripts and recorded samples stay valid without re-planning.
+ */
+export function legacyMotionComicSourceUnitMap(sourceUnits: readonly MotionComicSourceUnit[]): Map<string, string[]> | undefined {
+  const legacy = sourceUnits.map((unit) => unit.text).join('\n').split(/\r?\n+|(?<=[。！？!?；;])\s*/u).map((value) => value.trim()).filter(Boolean);
+  if (legacy.length === sourceUnits.length) return undefined;
+  const strip = (value: string) => value.replace(/\s/gu, '');
+  const spans: Array<{ id: string; start: number; end: number }> = [];
+  let offset = 0;
+  for (const unit of sourceUnits) { const length = strip(unit.text).length; spans.push({ id: unit.id, start: offset, end: offset + length }); offset += length; }
+  const map = new Map<string, string[]>();
+  offset = 0;
+  legacy.forEach((value, index) => {
+    const start = offset; const end = offset + strip(value).length; offset = end;
+    map.set(`S${index + 1}`, spans.filter((span) => span.start < end && span.end > start).map((span) => span.id));
+  });
+  return offset === spans.at(-1)?.end ? map : undefined;
+}
+
+/** Remap only when the script cites ids unknown to the current split but all known to the legacy split. */
+function legacyMotionComicScriptIds(data: Record<string, unknown>, sourceUnits: readonly MotionComicSourceUnit[]): Map<string, string[]> | undefined {
+  if (!sourceUnits.length || !Array.isArray(data.scenes)) return undefined;
+  const cited = new Set<string>();
+  for (const scene of data.scenes) {
+    const beats = scene && typeof scene === 'object' ? (scene as { beats?: unknown }).beats : undefined;
+    if (!Array.isArray(beats)) continue;
+    for (const beat of beats) {
+      const ids = beat && typeof beat === 'object' ? (beat as { sourceUnitIds?: unknown }).sourceUnitIds : undefined;
+      if (Array.isArray(ids)) ids.forEach((id) => { if (typeof id === 'string') cited.add(id); });
+    }
+  }
+  const current = new Set(sourceUnits.map((unit) => unit.id));
+  if (![...cited].some((id) => !current.has(id))) return undefined;
+  const map = legacyMotionComicSourceUnitMap(sourceUnits);
+  return map && [...cited].every((id) => map.has(id)) ? map : undefined;
+}
+
 export function normalizeMotionComicScriptRaw(raw: unknown, sourceUnits: readonly MotionComicSourceUnit[] = []): unknown {
   if (!raw || typeof raw !== "object") return raw;
   const data = { ...(raw as Record<string, unknown>) };
+  const legacyIds = legacyMotionComicScriptIds(data, sourceUnits);
 
   if (typeof data.title !== "string" || !data.title.trim()) {
     data.title = "未命名漫剧";
@@ -762,6 +802,7 @@ export function normalizeMotionComicScriptRaw(raw: unknown, sourceUnits: readonl
         let sourceUnitIds = Array.isArray(b.sourceUnitIds) && b.sourceUnitIds.length > 0
           ? b.sourceUnitIds.filter((u): u is string => typeof u === "string")
           : [];
+        if (legacyIds) sourceUnitIds = [...new Set(sourceUnitIds.flatMap((id) => legacyIds.get(id) ?? [id]))];
         // Only restore evidence from a unique textual match. Invented IDs or
         // ordinal assignments can conceal missing source content.
         if (sourceUnitIds.length === 0) {

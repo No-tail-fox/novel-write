@@ -1953,6 +1953,10 @@ async function loadShutdownApplication(
     'activeMusicSubmissions',
     'musicBgmImportQueue',
     'agentSearchService',
+    'licenseService',
+    'updateTimer',
+    'motionComicScriptService',
+    'voxProductionService',
     `${compiledSource}\nreturn shutdownApplication;`,
   );
   return factory(
@@ -1969,6 +1973,10 @@ async function loadShutdownApplication(
     new Set(),
     Promise.resolve(),
     { close: async () => undefined },
+    undefined,
+    undefined,
+    null,
+    null,
   ) as () => Promise<void>;
 }
 
@@ -2080,6 +2088,10 @@ async function loadLabGenerateHandler(
     spec.workDirName,
     'publishStatePatch',
     spec.summaryName,
+    'reserveProjectModelGeneration',
+    'getProjectRuntimeConfig',
+    'selectImageLabProfileConfig',
+    'sha256File',
     `${compiledSource}\nreturn labGenerateHandler;`,
   );
   const compiled = factory(
@@ -2091,6 +2103,10 @@ async function loadLabGenerateHandler(
     () => 'work/managed-key',
     async () => null,
     (record: Record<string, unknown>) => record,
+    () => () => undefined,
+    async () => ({}),
+    (config: Record<string, unknown>) => ({ ...config, imageProvider: 'custom', customImage: { model: 'mock-image' }, activeImageProfileId: 'profile' }),
+    async () => 'sha256',
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);
 }
@@ -2153,6 +2169,9 @@ async function loadCreatedRunHandler(
     'readFile',
     'readViralAnalysisResult',
     'createViralProductionTaskInput',
+    'resolveShortVideoMaterials',
+    'preflightPixelleTask',
+    'pixelleHostOptions',
     `${compiledSource}\nreturn createdRunHandler;`,
   );
   const database = {
@@ -2195,6 +2214,9 @@ async function loadCreatedRunHandler(
     async () => '{}',
     async () => ({ recreation: { taskDefaults: {} } }),
     () => ({ inputText: 'production task' }),
+    () => undefined,
+    async () => undefined,
+    () => ({}),
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);
 }
