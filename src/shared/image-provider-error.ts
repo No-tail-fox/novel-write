@@ -9,6 +9,16 @@ function isUnavailableImageRoute(message: string): boolean {
 }
 
 /** Submission rejections are distinct from a lost response or a failed poll of an accepted task. */
+/** G-8: gateway idle cut-offs (Cloudflare 524, 504) leave the upstream generation outcome unknown. */
+export const IMAGE_RESULT_UNKNOWN_PREFIX = 'IMAGE_RESULT_UNKNOWN:';
+export function isImageGatewayIdleTimeout(status: number): boolean {
+  return status === 524 || status === 504;
+}
+
+export function isImageResultUnknown(message: string): boolean {
+  return message.includes(IMAGE_RESULT_UNKNOWN_PREFIX) || /^Image provider (?:request|edit request|async submit) timed out after \d+ms/iu.test(message);
+}
+
 export function isDefinitiveImageProviderFailure(message: string): boolean {
   const status = message.match(/^Image provider (?:API error|edit API error|async submit error) \((\d{3})\):/iu)?.[1];
   // A relay that has no compatible account or model route rejects before starting generation. Generic
@@ -45,6 +55,9 @@ export function formatOpenAiImageProviderError(input: {
   }
   if (input.status === 503 && isUnavailableImageRoute(detail)) {
     return `${prefix} (${input.status}): 图片服务当前没有可用于模型 "${input.model}" 的上游账号或通道。API Key 和模型清单可能仍然正常；请稍后仅重试生图步骤，或切换其他图片服务/模型。上游信息: ${detail}`;
+  }
+  if (isImageGatewayIdleTimeout(input.status)) {
+    return `${prefix} (${input.status}): ${IMAGE_RESULT_UNKNOWN_PREFIX} 网关在等待图片服务时超时断开（常见于中转站约 100 秒空闲上限），图片可能仍在服务商侧生成并已计费。本应用不会自动重发；请先到服务商后台核对。若经常发生，可在设置中为该图片服务开启异步模式，或降低分辨率/质量以缩短生成时间。上游信息: ${detail}`;
   }
   if (input.status === 503) {
     return `${prefix} (${input.status}): 图片服务暂时不可用，请稍后仅重试生图步骤，或切换其他图片服务。上游信息: ${detail}`;

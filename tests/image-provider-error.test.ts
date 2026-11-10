@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { summarizeErrorMessage } from '../src/components/ErrorDetails';
 import { formatOpenAiImageProviderError } from '@shared/openai-image';
-import { isDefinitiveImageProviderFailure } from '@shared/image-provider-error';
+import { isDefinitiveImageProviderFailure, isImageResultUnknown } from '@shared/image-provider-error';
 
 describe('image provider error presentation', () => {
   it.each([
@@ -94,5 +94,21 @@ describe('image provider error presentation', () => {
     ['network closed after submit', false],
   ])('classifies submission failure without treating polling or lost responses as rejection: %s', (message, expected) => {
     expect(isDefinitiveImageProviderFailure(message)).toBe(expected);
+  });
+});
+
+describe('gateway idle cut-off on image generation (G-8)', () => {
+  it.each([524, 504])('reports %i as an unknown, possibly billed result that is never auto-resent', (status) => {
+    const message = formatOpenAiImageProviderError({ status, bodyText: 'error code: ' + status, model: 'gpt-image-2', operation: 'generation' });
+    expect(message).toContain('IMAGE_RESULT_UNKNOWN:');
+    expect(message).toContain('不会自动重发');
+    expect(isDefinitiveImageProviderFailure(message)).toBe(false);
+    expect(isImageResultUnknown(message)).toBe(true);
+    expect(summarizeErrorMessage(message)).toBe('生图网关超时断开，图片可能已生成并计费，未自动重发');
+  });
+
+  it('keeps definitive rejections and our own submission timeouts distinct', () => {
+    expect(isImageResultUnknown(formatOpenAiImageProviderError({ status: 401, bodyText: 'bad key', model: 'm', operation: 'generation' }))).toBe(false);
+    expect(isImageResultUnknown('Image provider request timed out after 180000ms.')).toBe(true);
   });
 });

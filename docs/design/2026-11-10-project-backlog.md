@@ -67,7 +67,7 @@
 | G-5 | **✅ 已实现（代理项除外）**：`src/shared/tts-segment-synthesis.ts` 给 MiniMax/火山 legacy/火山 V3 加了分段并发上限（默认 2，可设 1–6，结果保序，首个失败中止同批）和逐段重试（按 G-2 分类器，最多 3 次，指数退避+抖动，遵守 Retry-After；鉴权/欠费/请求错误/审核/取消不重试；V3 每次新 request id，legacy 重试 reqid 加后缀；`TTS_RESPONSE_INCOMPLETE` 仍不重发）。测试 `tests/tts-segment-synthesis.test.ts`。**代理/直连未做**：全仓 `proxyUrl` 只存在于配置和界面，没有任何请求真正使用它（network-policy 不读代理），需要单独设计网络代理通道【未核实火山并发额度是否容许 2 路】。原条目：**TTS 链路加固**：单段并发上限、断线自动重试、代理/直连可配置 | 路线图 P0-5（`:139`）；实跑出现 ECONNRESET（`route-split…md:101,119`）。代理配置项是否已有【未核实】 | P0 | M | G-2 |
 | G-6 | **默认模型决策**：`claude-sonnet-5-5` 在 moeapi 当前 key 分组下返回 404，要么换分组，要么默认改成 `gemini-3.1-pro-preview` | `route-split…md:100`；`technical-roadmap.md:207-209`。代码里没有写死这个模型，问题在用户配置 | P0 | S | 需要用户决策 |
 | G-7 | **unknown 节点自动策略 + 统一重试预算**（VOX DAG 和 HTML runner 两套） | `technical-roadmap.md:100,120`；P2-2 | P1 | M | G-3 |
-| G-8 | **vllmproxy 524 的空闲超时兜底**（生图），结果未知时不自动重发 | `route-split…md:102,120`；基础设计 S1（`code-video-foundation.md:431`） | P1 | S | G-2、G-3 |
+| G-8 | **✅ 已实现**：生图 524/504（中转站约 100 s 空闲断开）统一成 `IMAGE_RESULT_UNKNOWN:` 报错——说明图片可能已生成并计费、不会自动重发、建议核对后台或改用异步模式/降低分辨率；`isDefinitiveImageProviderFailure` 对它恒为 false（VOX/Lemo 节点保持 unknown），HTML 路线错误码为 `IMAGE_PROVIDER_RESULT_UNKNOWN`，界面摘要“生图网关超时断开，图片可能已生成并计费，未自动重发”。测试在 `tests/image-provider-error.test.ts`。原条目：**vllmproxy 524 的空闲超时兜底**（生图），结果未知时不自动重发 | `route-split…md:102,120`；基础设计 S1（`code-video-foundation.md:431`） | P1 | S | G-2、G-3 |
 | G-9 | 中转站能力探测：是否支持 `stream_options.include_usage`、reasoning/thinking、提示缓存，以及约 100 s 断流 | `code-video-foundation.md:482`（§13.4）；Lemo 成本取决于缓存（`lemo-faithful-mode.md:196`） | P3 | S | G-1 |
 
 ### 2.2 三条制作路线及其他产品线

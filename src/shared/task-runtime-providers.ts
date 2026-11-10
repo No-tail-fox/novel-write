@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import type { AppConfig, BackgroundRemovalMetadata, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createFileLlmReceiptJournal, withLlmReceiptJournal } from './llm-receipt-ledger';
+import { IMAGE_RESULT_UNKNOWN_PREFIX } from './image-provider-error';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
 
 type ImageGenerator = NonNullable<RunTaskOptions['generateImages']>;
@@ -674,8 +675,10 @@ function asHtmlVideoImageProviderError(error: unknown): AppError {
     .trim()
     .slice(0, 600);
   const timedOut = /^Image provider (?:request|edit request|async submit|async poll) timed out after \d+ms\.?$/iu.test(detail);
+  // G-8: a gateway idle cut-off is not a timeout of ours; the image may exist and be billed.
+  const unknown = detail.includes(IMAGE_RESULT_UNKNOWN_PREFIX);
   return new AppError(
-    timedOut ? 'IMAGE_PROVIDER_TIMEOUT' : 'IMAGE_PROVIDER_FAILED',
+    unknown ? 'IMAGE_PROVIDER_RESULT_UNKNOWN' : timedOut ? 'IMAGE_PROVIDER_TIMEOUT' : 'IMAGE_PROVIDER_FAILED',
     detail || '图片服务没有返回可用素材。',
     timedOut || !/\b40[123]\b|余额不足|套餐额度/iu.test(detail),
   );
