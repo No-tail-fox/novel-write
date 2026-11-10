@@ -63,7 +63,7 @@ VideoSpec = {
 |---|---|---|
 | 时间单位 | **整数帧是唯一事实源**，毫秒由 `msAt()` 推导，48 kHz 采样由 `sampleAt()` 推导 | 底座 I1：消除 round / ceil / floor 混用。24 / 30 fps 下每帧恰好 2000 / 1600 个采样，帧 ↔ 采样没有小数 |
 | ms → 帧 | `frameAt(ms) = floor((ms·fps + 500) / 1000)`（0.5 进位） | 与现有 `allocateHtmlVideoSceneFrameCounts` 的 `floor(x + 0.5)` 一致；整数毫秒走纯整数运算 |
-| 场景分帧 | `allocateFrameCounts`：边界 = frameAt(累计毫秒)，每段至少 1 帧 | 和 HTML 路线现有分帧函数算法相同（测试对拍）。O-3 接入时应让旧函数委托到这里，保持“全工程只有一个分帧函数” |
+| 场景分帧 | `allocateFrameCounts`：边界 = frameAt(累计毫秒)，每段至少 1 帧 | 和 HTML 路线现有分帧函数算法相同，但**不逐值相同**（O-3 对拍结论，`tests/frame-allocation-equivalence.test.ts`）：30 fps 下累计时长恰好落在半帧时（如 2050 ms = 61.5 帧）旧函数的秒浮点累加向下取整、这里 0.5 进位；旧函数还接受 25 fps 等任意 fps。24 fps 整数毫秒输入逐值相同（24·ms mod 1000 永远 ≠ 500）。因此旧函数**不委托**、保持原样（ADR-03 旧项目逐字节不变）；新项目的统一执行器（`src/shared/video-spec-executor.ts`）只用本函数 |
 | cue 的时间基准 | **相对所属场景**的帧号 | 场景整体平移或重排时 cue 不用改；“cue 在场景内”可以直接校验。转换时先换成全局帧再减场景开始帧，保证和场景边界同一个时钟（每个场景最后一条字幕恰好结束在场景最后一帧） |
 | 音频片段的时间基准 | 时间线上的**绝对帧号**；`sourceStartMs` 是源文件自己的毫秒时钟 | 混音按整条时间线一次渲染（E-3）；源文件不受项目 fps 约束 |
 | 视频素材 | `muted: true` 是字面量 | 声音只来自 AudioTimeline，避免素材原声悄悄混进成片 |

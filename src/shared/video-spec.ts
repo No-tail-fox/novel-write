@@ -79,8 +79,10 @@ function assertFrame(frame: number, label: string) {
 
 /**
  * 按累计时钟分配整数帧（音频优先：边界 = frameAt(累计毫秒)，每段至少 1 帧）。
- * 与 `src/shared/html-video.ts` 的 `allocateHtmlVideoSceneFrameCounts` 算法相同（测试里有对拍），
- * 区别是输入为毫秒且使用整数运算。O-3 接入时应让旧函数委托到这里，保持“全工程只有一个分帧函数”。
+ * 这是规范实现（O-3 统一执行器只用它）。与 `src/shared/html-video.ts` 的 `allocateHtmlVideoSceneFrameCounts` 算法相同，
+ * 但**不逐值相同**（tests/frame-allocation-equivalence.test.ts）：30 fps 下累计时长恰好落在半帧时（如 2050 ms = 61.5 帧），
+ * 旧函数的秒浮点累加会向下取整、这里按整数运算 0.5 进位；旧函数还接受 25 fps 等任意 fps、抛普通 Error。
+ * 因此旧函数保持原样、不委托到这里（ADR-03：旧项目输出逐字节不变）。
  */
 export function allocateFrameCounts(durationsMs: readonly number[], fps: VideoSpecFps, startOffsetMs = 0): number[] {
   assertFps(fps);
