@@ -11,6 +11,7 @@ import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/tas
 import type { SecretChanges, SecretId } from "../../shared/config-secrets";
 import { changeRuntimeTheme, type RuntimeThemeStateSynchronizer } from "./theme-controller";
 import { configTargetStatus } from "../../shared/config-utils";
+import { formatRelayProbeResult } from '../../shared/relay-capability-probe';
 import { activeImageProfileId, activeLlmProfileId, activeMusicProfileId, activeTtsProfileId, activeVideoProfileId, buildConfigForSelectedProfileTest, enableImageProfile, enableLlmProfile, enableMusicProfile, enableTtsProfile, enableVideoProfile, getMusicProfile, getVideoProfile, normalizeEditableConfigProviders, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { activeSpeechToTextProfileId, activeVisionProfileId, enableSpeechToTextProfile, enableVisionProfile, getSpeechToTextProfile, getVisionProfile } from '../../shared/provider-profile-utils';
 import { useAsyncAction } from "../../ui/async-action";
@@ -248,6 +249,18 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
       try {
         const result = await api.testLlmConfig(selectedLlmTestConfig.llm);
         setConfigTestResult(`[${result.status}] ${result.detail}`);
+      } finally {
+        setTestingConfig(false);
+      }
+    }, { onError: (error) => setConfigTestResult(`[fail] ${error.message}`) });
+  }
+  async function probeSelectedLlmRelay() {
+    if (selectedLlmTestBlocked) return;
+    await settingsAction.run(async () => {
+      setTestingConfig(true);
+      setConfigTestResult('正在探测中转站能力（2 个极小请求）...');
+      try {
+        setConfigTestResult(formatRelayProbeResult(await api.probeLlmCapabilities(selectedLlmTestConfig.llm)));
       } finally {
         setTestingConfig(false);
       }
@@ -505,6 +518,11 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
             {section === 'llm' ? (
               <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <FlaskConical size={15} />} title={selectedLlmTestBlocked ? '请先保存当前 LLM 配置档案或密钥变更' : '仅测试当前 LLM'} disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked} onClick={testSelectedLlmConfig}>
                 仅测试当前 LLM
+              </Button>
+            ) : null}
+            {section === 'llm' ? (
+              <Button icon={<Search size={15} />} title={selectedLlmTestBlocked ? '请先保存当前 LLM 配置档案或密钥变更' : '发 2 个极小请求，探测流式用量、推理参数、提示缓存和 Cloudflare 断流'} disabled={testingConfig || savingConfig || settingsAction.busy || selectedLlmTestBlocked} onClick={probeSelectedLlmRelay}>
+                探测中转站能力
               </Button>
             ) : null}
             <Button icon={testingConfig ? <Loader2 className="spin" size={15} /> : <Sparkles size={15} />} disabled={testingConfig || savingConfig} onClick={testCurrentConfig}>

@@ -115,6 +115,7 @@ import type { MusicHistorySyncResult, MusicOperationInput, MusicUploadSourceInpu
 import type { MusicVoiceRequest, MusicVoiceState } from './music-voice';
 import type { MusicEnhancedRequest, MusicEnhancedJob } from './music-enhanced';
 import type { LicenseStatus, UpdateStatus } from './licensing';
+import type { RelayProbeResult } from './relay-capability-probe';
 import type { LibraryAsset, LibraryPage, LibraryListInput, LibrarySaveInput, LibraryUpdateInput } from './asset-library';
 
 export interface LocalSubtitleTimestampFile {
@@ -193,6 +194,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'config:test',
   'ima:fetch-knowledge',
   'llm:test-config',
+  'llm:probe-capabilities',
   'models:list',
   'volcengine:speakers:list',
   'research:web-search',
@@ -445,6 +447,7 @@ export type StoryDreamApi = {
   testAppConfig: (target: ConfigTestTarget, config: AppConfig, secretChanges?: SecretChanges) => Promise<ConfigTestResult>;
   fetchImaKnowledge: (input: ImaKnowledgeRequest) => Promise<ImaKnowledgeResult>;
   testLlmConfig: (config: LlmConfig) => Promise<LlmModelTestResult>;
+  probeLlmCapabilities: (config: LlmConfig) => Promise<RelayProbeResult>;
   listProviderModels: (request: ProviderModelListRequest) => Promise<ProviderModelListResult>;
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest) => Promise<VolcengineSpeakerListResult>;
   searchWebSources: (input: string | WebSearchRequest) => Promise<AiSourceContext>;

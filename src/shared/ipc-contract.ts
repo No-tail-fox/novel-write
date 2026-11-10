@@ -914,6 +914,7 @@ export const ipcInputSchemas = {
   'config:test': z.object({ target: configTestTargetSchema, config: appConfigSchema, secretChanges: secretChangesSchema }).strict(),
   'ima:fetch-knowledge': z.object({ query: nonEmptyText(1024) }).strict(),
   'llm:test-config': llmConfigSchema,
+  'llm:probe-capabilities': llmConfigSchema,
   'models:list': providerModelListSchema,
   'volcengine:speakers:list': volcengineSpeakerListSchema,
   'research:web-search': z.union([nonEmptyText(MAX_IPC_TEXT), webSearchRequestSchema]),

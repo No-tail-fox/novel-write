@@ -1203,6 +1203,7 @@ export const rendererCommandInventory = {
   testAppConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testCurrentConfig', 'onClick={testCurrentConfig}', '保存并测试', productShellTest)),
   testLlmConfig: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'testSelectedLlmConfig', 'onClick={testSelectedLlmConfig}', '仅测试当前 LLM', productShellTest)),
   updateHtmlVideoConfig: command(
+  probeLlmCapabilities: command(owner('settings', 'src/features/settings/SettingsPage.tsx', 'probeSelectedLlmRelay', 'onClick={probeSelectedLlmRelay}', '探测中转站能力', 'tests/relay-capability-probe.test.ts')),
     owner('html-video', 'src/features/html-video/HtmlVideoPage.tsx', 'saveConfig', 'saveConfig', '保存参数', productShellTest),
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'saveCaptionConfig', 'onClick={saveCaptionConfig}', '保存字幕', productShellTest),
     owner('html-video', 'src/features/html-video/HtmlVideoTabPanel.tsx', 'saveCoverConfig', 'onClick={saveCoverConfig}', '保存封面', productShellTest),

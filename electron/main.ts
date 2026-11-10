@@ -59,6 +59,7 @@ import type { LicenseStatus } from '../src/shared/licensing';
 import { setGenerationAuthorization } from '../src/shared/generation-authorization';
 import { cachedLemoPlanResponse } from './lemo-plan-receipt';
 import { fromLlmModelTestResult } from '../src/shared/config-utils';
+import { probeRelayCapabilities } from '../src/shared/relay-capability-probe';
 import { testConfigTarget } from '../src/shared/config-test-runtime';
 import { generateImageLabRecord, selectImageLabProfileConfig } from '../src/shared/image-lab';
 import { generateCustomStylePreviewDraft } from './custom-style-preview';
@@ -2639,6 +2640,14 @@ trustedHandle('llm:test-config', async (_event, config: LlmConfig) => {
     throw new Error('LLM_TEST_PROFILE_NOT_PERSISTED: Save the selected LLM profile before testing it.');
   }
   return testConfiguredLlm({ ...config, apiKey: stored.apiKey });
+});
+
+trustedHandle('llm:probe-capabilities', async (_event, config: LlmConfig) => {
+  if (config.apiKey) return probeRelayCapabilities(config);
+  const runtime = await (await getConfigService()).getRuntimeConfig();
+  const stored = runtime.llmProfiles.find((profile) => profile.id === config.id) ?? (runtime.llm.id === config.id ? runtime.llm : null);
+  if (!stored) throw new Error('LLM_TEST_PROFILE_NOT_PERSISTED: Save the selected LLM profile before probing it.');
+  return probeRelayCapabilities({ ...config, apiKey: stored.apiKey });
 });
 
 trustedHandle('models:list', async (_event, request: ProviderModelListRequest) => {

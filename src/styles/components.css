@@ -4,6 +4,31 @@
   box-shadow: 0 0 0 1px var(--shell-focus-contrast);
 }
 
+/* U-7: Windows "high contrast" keeps a visible focus ring even where box-shadow is dropped. */
+@media (forced-colors: active) {
+  :where(button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid CanvasText;
+  }
+}
+
+/* U-7: global reduced-motion fallback. Decorative motion stops; loading spinners keep turning slowly
+   so busy state stays perceivable. Scene previews/renders are unaffected (they run in their own pages). */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.spin):not(.director-spin):not([class*='__spin']),
+  *:not(.spin):not(.director-spin):not([class*='__spin'])::before,
+  *:not(.spin):not(.director-spin):not([class*='__spin'])::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .spin,
+  .director-spin,
+  [class*='__spin'] {
+    animation-duration: 2.4s !important;
+  }
+}
+
 button:disabled,
 input:disabled,
 select:disabled,

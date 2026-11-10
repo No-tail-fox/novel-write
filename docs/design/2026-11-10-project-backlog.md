@@ -68,7 +68,7 @@
 | G-6 | **部分实现（决策待用户，ADR-11）**：不改用户默认模型；新增 `recommendFallbackModels`，从该端点拉到的模型清单里推荐同族、同档或更强的聊天模型，设置页在没有备选时提供“填入推荐备选”一键填入，配合 G-1 自动降级。默认模型换不换由用户决定。原条目：**默认模型决策**：`claude-sonnet-5-5` 在 moeapi 当前 key 分组下返回 404，要么换分组，要么默认改成 `gemini-3.1-pro-preview` | `route-split…md:100`；`technical-roadmap.md:207-209`。代码里没有写死这个模型，问题在用户配置 | P0 | S | 需要用户决策 |
 | G-7 | **unknown 节点自动策略 + 统一重试预算**（VOX DAG 和 HTML runner 两套） | `technical-roadmap.md:100,120`；P2-2 | P1 | M | G-3 |
 | G-8 | **✅ 已实现**：生图 524/504（中转站约 100 s 空闲断开）统一成 `IMAGE_RESULT_UNKNOWN:` 报错——说明图片可能已生成并计费、不会自动重发、建议核对后台或改用异步模式/降低分辨率；`isDefinitiveImageProviderFailure` 对它恒为 false（VOX/Lemo 节点保持 unknown），HTML 路线错误码为 `IMAGE_PROVIDER_RESULT_UNKNOWN`，界面摘要“生图网关超时断开，图片可能已生成并计费，未自动重发”。测试在 `tests/image-provider-error.test.ts`。原条目：**vllmproxy 524 的空闲超时兜底**（生图），结果未知时不自动重发 | `route-split…md:102,120`；基础设计 S1（`code-video-foundation.md:431`） | P1 | S | G-2、G-3 |
-| G-9 | 中转站能力探测：是否支持 `stream_options.include_usage`、reasoning/thinking、提示缓存，以及约 100 s 断流 | `code-video-foundation.md:482`（§13.4）；Lemo 成本取决于缓存（`lemo-faithful-mode.md:196`） | P3 | S | G-1 |
+| G-9 | **✅ 已实现（手动触发）**：`src/shared/relay-capability-probe.ts` + 设置页 LLM 区“探测中转站能力”按钮（IPC `llm:probe-capabilities`）。OpenAI 兼容发 2 个极小请求（stream_options.include_usage、reasoning_effort），Anthropic 发 2 个（cache_control 流式、thinking 1024）；从用量字段判断提示缓存，从 `cf-ray`/`server: cloudflare` 判断约 100 秒断流风险（断流时长本身不实测，避免慢速付费请求）。从不重试。测试 `tests/relay-capability-probe.test.ts` 走 Q-4 本地中转站。真实中转站表现【未核实】。原条目：中转站能力探测：是否支持 `stream_options.include_usage`、reasoning/thinking、提示缓存，以及约 100 s 断流 | `code-video-foundation.md:482`（§13.4）；Lemo 成本取决于缓存（`lemo-faithful-mode.md:196`） | P3 | S | G-1 |
 
 ### 2.2 三条制作路线及其他产品线
 
@@ -149,7 +149,7 @@
 | U-4 | **✅ 已实现**：模板路线把每次换模型写成任务事件 `model_fallback`（任务历史可见）；HTML 路线的换模型记录在回执日志 `fallbackModel` 字段；`PROVIDER_RESULT_UNKNOWN` 有专门中文摘要“上次请求结果未知，请核对服务商记录后再重试”；设置页 LLM 档案显示能力档案与降级说明。原条目：模型降级记录、unknown 处理策略对用户可见 | P0-1/P0-3 验收 | P1 | S | G-1、G-3 |
 | U-5 | 成本面板：按项目统计 LLM/生图/TTS 次数和估算费用 | `technical-roadmap.md:188` | P3 | M | G-3 |
 | U-6 | 根据模型能力自动推荐路线（T1/T2/T3）或降级 | `technical-roadmap.md:186` | P3 | M | G-1 |
-| U-7 | 无障碍专项：键盘顺序、读屏、系统缩放 | `design-qa.md:78` | P3 | M | — |
+| U-7 | **✅ 部分实现（静态底线）**：`tests/renderer-a11y-contract.test.ts`（img 必有 alt、无正 tabIndex、非交互元素的点击必须是冒泡拦截或有键盘路径、图标按钮必须走带 label 的 IconButton、焦点环、lang）；`src/styles/components.css` 新增 forced-colors 焦点环和全局 reduced-motion 兜底（加载转圈保留慢速）。真实读屏朗读顺序和 Windows 系统缩放仍需人工走查【未核实】。原条目：无障碍专项：键盘顺序、读屏、系统缩放 | `design-qa.md:78` | P3 | M | — |
 
 ### 2.6 测试与 CI
 

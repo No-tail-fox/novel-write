@@ -909,6 +909,16 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       }
       return persist({ ...read(), config: input.config });
     },
+    async probeLlmCapabilities(config) {
+      return {
+        endpoint: llmEndpoint(config),
+        model: config.model,
+        protocol: config.provider === 'anthropic' || config.protocol === 'anthropic' ? 'anthropic' : 'openai',
+        requests: 0,
+        checks: [],
+        summary: '浏览器预览无法探测中转站，请在 Electron 桌面端使用。',
+      };
+    },
     async testLlmConfig(config) {
       const endpoint = llmEndpoint(config);
       return {

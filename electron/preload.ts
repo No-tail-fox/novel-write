@@ -255,6 +255,7 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('config:test', { target, config, secretChanges }),
   fetchImaKnowledge: (input: ImaKnowledgeRequest): Promise<ImaKnowledgeResult> => invokeTrusted('ima:fetch-knowledge', input),
   testLlmConfig: (config: LlmConfig) => invokeTrusted('llm:test-config', config),
+  probeLlmCapabilities: (config: LlmConfig) => invokeTrusted('llm:probe-capabilities', config),
   listProviderModels: (request: ProviderModelListRequest): Promise<ProviderModelListResult> => invokeTrusted('models:list', request),
   listVolcengineSpeakers: (request: VolcengineSpeakerListRequest): Promise<VolcengineSpeakerListResult> => invokeTrusted('volcengine:speakers:list', request),
   searchWebSources: (input: string | WebSearchRequest): Promise<AiSourceContext> => invokeTrusted('research:web-search', input),
