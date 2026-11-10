@@ -1,0 +1,18 @@
+/* E-5 advisory final-film gate panel (src/features/final-film-gate/FinalFilmGatePanel.tsx). */
+.final-film-gate { display: grid; gap: 6px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: var(--sd-text-caption, 12px); }
+.final-film-gate__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.final-film-gate__head strong { font-size: 13px; }
+.final-film-gate__badge, .final-film-gate__row-status { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; font-size: 11px; white-space: nowrap; }
+.final-film-gate__badge.is-passed, .final-film-gate__row-status.is-pass { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.final-film-gate__badge.is-warning, .final-film-gate__row-status.is-warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.final-film-gate__badge.is-failed, .final-film-gate__row-status.is-fail { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.final-film-gate__badge.is-error { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.final-film-gate__row-status.is-skip { color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.final-film-gate__advisory { margin-left: auto; color: var(--muted); }
+.final-film-gate__note { margin: 0; color: var(--muted); line-height: 1.6; }
+.final-film-gate__note.is-stale { color: var(--warn); }
+.final-film-gate__details > summary { cursor: pointer; color: var(--muted); }
+.final-film-gate__rows { display: grid; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+.final-film-gate__row { display: grid; grid-template-columns: auto minmax(56px, auto) minmax(0, 1fr); align-items: baseline; gap: 6px; line-height: 1.5; }
+.final-film-gate__detail { min-width: 0; overflow-wrap: anywhere; }
+.final-film-gate--review { padding: 6px 8px; }

@@ -16,6 +16,7 @@ const queryOnlyMethods = new Set([
   'getMusicLabServiceStatus', 'getMusicLabBalance', 'listMusicLabRecords',
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
   'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getPersonAssetUsage', 'restorePersonAsset', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
+  'getFinalFilmGate', // E-5: read-only quality-gate.json view, loaded with the final film; never re-runs the gate.
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'listLibraryAssets', 'getLibraryAsset',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',

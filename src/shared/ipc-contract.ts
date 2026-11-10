@@ -1,5 +1,5 @@
 import { shortVideoMaterialsSchema } from './short-video-materials';
-import { stockMediaDownloadRequestSchema, stockMediaSearchRequestSchema } from './stock-media';
+import { stockMediaCancelRequestSchema, stockMediaDownloadRequestSchema, stockMediaSearchRequestSchema } from './stock-media';
 import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
 import { z } from 'zod';
 import { projectModelsSchema } from './project-models';
@@ -1212,6 +1212,7 @@ export const ipcInputSchemas = {
   'task:rerun-step': z.object({ id: idSchema, step: nonNegativeInteger.max(6), mode: taskStepRerunModeSchema }).strict(),
   'task:get-artifacts': idOnlySchema,
   'task:media-url': z.object({ id: idSchema, path: pathSchema }).strict(),
+  'task:final-film-gate': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
   'asset:read-data-url': pathSchema,
   'local-image:select': z.literal('video-reference').optional(),
   'pixelle:catalog': z.void(),
@@ -1219,6 +1220,7 @@ export const ipcInputSchemas = {
   'short-video-materials:select': z.void(),
   'stock-media:search': stockMediaSearchRequestSchema,
   'stock-media:download': stockMediaDownloadRequestSchema,
+  'stock-media:cancel': stockMediaCancelRequestSchema,
   'motion-comic-source:select': z.void(),
   'local-audio:select': z.enum(['managed-bgm', 'video-reference']).optional(),
   'local-subtitle-timestamps:select': z.void(),

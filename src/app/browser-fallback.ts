@@ -1928,6 +1928,10 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async getTaskMediaUrl() {
       throw new Error('浏览器预览不能读取本地视频，请在 Electron 应用中查看。');
     },
+    async getFinalFilmGate() {
+      // Browser preview has no local films, so there is no quality-gate.json to show.
+      return null;
+    },
     async selectLocalImage(_purpose?: 'video-reference') {
       return null;
     },
@@ -1943,6 +1947,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async downloadStockMedia() {
       throw new Error('STOCK_MEDIA_KEY_MISSING: 浏览器预览不能下载素材，请在桌面应用中使用。');
+    },
+    async cancelStockMedia() {
+      return { cancelledCount: 0 };
     },
     async selectMotionComicSourceFile() {
       return null;

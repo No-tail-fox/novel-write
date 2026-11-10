@@ -16,6 +16,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { readTaskArtifactSnapshot } from '../src/shared/artifact-preview';
+import { readTaskFinalFilmGate } from './final-film-gate-reader';
 import { classifyBenchmarkUrl, normalizeBenchmarkSourceUrl } from '../src/shared/benchmark-monitoring';
 import { discoverBooks } from '../src/shared/book-discovery';
 import { parseEditorialCollagePipelineData, rebuildEditorialTimeline, type EditorialCollageCreateInput, type EditorialCollagePipelineData, type EditorialCollageSaveInput } from '../src/shared/editorial-collage';
@@ -5024,6 +5025,15 @@ trustedHandle('task:media-url', async (_event, input: { id: string; path: string
   return createHtmlVideoMediaUrl(task.id, taskDirectory, input.path);
 });
 
+// E-5: read-only, owner-checked: the film path comes from the task record and must stay inside its managed work dir.
+trustedHandle('task:final-film-gate', async (_event, input: { id: string; episodeId?: string }) => {
+  const task = await (await getDb()).getTaskDetail(input.id);
+  if (!task) throw new Error(`Task not found: ${input.id}`);
+  let workDir: string;
+  try { workDir = taskWorkDir(task); } catch { return null; }
+  return readTaskFinalFilmGate({ task, workDir, ...(input.episodeId ? { episodeId: input.episodeId } : {}) });
+});
+
 trustedHandle('asset:read-data-url', async (_event, path: string) => readLocalImageDataUrl(path));
 
 trustedHandle('local-image:select', async (_event, purpose?: 'video-reference') => {
@@ -5064,6 +5074,7 @@ const stockMediaService = createStockMediaService({
 });
 trustedHandle('stock-media:search', (_event, input) => stockMediaService.search(input));
 trustedHandle('stock-media:download', (_event, input) => stockMediaService.download(input));
+trustedHandle('stock-media:cancel', (_event, input) => stockMediaService.cancel(input));
 
 trustedHandle('motion-comic-source:select', selectMotionComicSourceFile);
 

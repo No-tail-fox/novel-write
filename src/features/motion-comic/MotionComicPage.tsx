@@ -40,6 +40,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { Button, Pane, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
+import { useFinalFilmGate } from '../final-film-gate/FinalFilmGatePanel';
 import type { DirectorPreviewAudioClip } from '../director-desk/DirectorAudioPreview';
 import { productionAudioClipsForShot } from '../../shared/production-audio';
 import { latestProductionProviderJob } from '../../shared/production-workflow';
@@ -308,6 +309,8 @@ export function MotionComicPage({
   const renderOutputs = useMemo(() => document ? directorRenderOutputs(document, activeEpisode?.id) : { history: [], current: undefined }, [activeEpisode?.id, document]);
   const qualityReview = useMemo(() => document ? directorQualityReview(document, activeEpisode?.id) : undefined, [activeEpisode?.id, document]);
   const outputAsset = renderOutputs.current;
+  // E-5: advisory final-film gate (quality-gate.json) next to this episode's current film; read-only.
+  const finalFilmGate = useFinalFilmGate(api, activeProjectId, { ...(activeEpisode?.id ? { episodeId: activeEpisode.id } : {}), refreshKey: `${outputAsset?.id ?? ''}:${outputAsset?.localPath ?? ''}`, enabled: Boolean(outputAsset?.localPath) });
   const projectOptions = useMemo(() => projects.map((task) => ({ id: task.id, title: task.title || '未命名 AI 漫剧', meta: `创建于 ${new Date(task.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` })), [projects]);
   const episodeOptions = useMemo(() => (document?.episodes ?? []).map((episode) => ({ id: episode.id, number: episode.number, title: episode.title, meta: `${episode.scenes.length} 场 · ${episode.scenes.flatMap((scene) => scene.shots).length} 镜头` })), [document?.episodes]);
   const consistencySummary = useMemo(() => document ? motionComicConsistencySummary(document) : null, [document]);
@@ -1967,6 +1970,7 @@ export function MotionComicPage({
         outputUrl={outputAsset?.localPath ? toLocalAssetUrl(outputAsset.localPath) : undefined}
         outputHistory={renderOutputs.history.map((asset) => ({ id: asset.id, url: asset.localPath ? toLocalAssetUrl(asset.localPath) : undefined, createdAt: asset.createdAt, current: asset.id === outputAsset?.id }))}
         qualityReview={qualityReview}
+        finalFilmGate={finalFilmGate}
         onReviewQualityArtifact={reviewQualityArtifact}
       onRecheckSubtitles={recheckSubtitles}
       onRecheckMedia={recheckMedia}

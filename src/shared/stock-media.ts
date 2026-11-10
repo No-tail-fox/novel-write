@@ -111,9 +111,39 @@ export interface StockMediaDownloadResult {
   /** `provider-id`: already downloaded; `content`: same bytes already managed under another id. */
   reused: 'provider-id' | 'content' | null;
   manifest: StockMediaSourceManifest;
+  /** Photos only: copy placed in a local image library (`<artifactDataDir>/person-assets/<name>/`). */
+  library?: { name: string; path: string; reused: boolean };
 }
 
+/**
+ * Returned (not thrown) when the user cancelled via `stock-media:cancel` or a newer search superseded this one,
+ * so the renderer can reset its state without an error toast. Temporary files are already removed.
+ */
+export interface StockMediaCancelledResult {
+  cancelled: true;
+  operation: 'search' | 'download';
+  requestId: string;
+  message: string;
+}
+
+export interface StockMediaCancelSummary {
+  /** Number of in-flight operations that were aborted (0 when nothing matched; a not-yet-started requestId is remembered). */
+  cancelledCount: number;
+}
+
+export function isStockMediaCancelled(value: unknown): value is StockMediaCancelledResult {
+  return Boolean(value && typeof value === 'object' && (value as { cancelled?: unknown }).cancelled === true);
+}
+
+/** Renderer-generated correlation id so a later `stock-media:cancel` can target exactly this request. */
+export const stockMediaRequestIdSchema = z.string().regex(/^[0-9A-Za-z_-]{8,64}$/u);
+/** Local image library (person-assets folder) name; no path separators, no hidden/dot names. */
+export const stockMediaImageLibrarySchema = z.string().trim().min(1).max(128)
+  .refine(value => !/[\\/<>:"|?*\u0000-\u001f]/u.test(value) && !value.startsWith('.'), { message: '图片素材库名称无效' });
+export const STOCK_MEDIA_DEFAULT_IMAGE_LIBRARY = '素材站图片';
+
 export const stockMediaSearchRequestSchema = z.object({
+  requestId: stockMediaRequestIdSchema.optional(),
   provider: z.enum(STOCK_MEDIA_PROVIDERS).optional(),
   query: z.string().trim().min(1).max(100),
   orientation: z.enum(STOCK_MEDIA_ORIENTATIONS),
@@ -129,13 +159,25 @@ export const stockMediaSearchRequestSchema = z.object({
 export type StockMediaSearchRequest = z.input<typeof stockMediaSearchRequestSchema>;
 export type ParsedStockMediaSearchRequest = z.output<typeof stockMediaSearchRequestSchema>;
 
+const stockMediaItemIdSchema = z.string().regex(/^[0-9A-Za-z_-]{1,64}$/u);
+
 export const stockMediaDownloadRequestSchema = z.object({
+  requestId: stockMediaRequestIdSchema.optional(),
   provider: z.enum(STOCK_MEDIA_PROVIDERS),
   kind: z.enum(STOCK_MEDIA_KINDS),
-  id: z.string().regex(/^[0-9A-Za-z_-]{1,64}$/u),
+  id: stockMediaItemIdSchema,
   ratio: z.string().regex(/^\d{1,2}:\d{1,2}$/u).optional(),
-}).strict();
-export type StockMediaDownloadRequest = z.infer<typeof stockMediaDownloadRequestSchema>;
+  /** Photos only: also place the validated image into this local image library. */
+  imageLibrary: stockMediaImageLibrarySchema.optional(),
+}).strict().refine(value => value.imageLibrary === undefined || value.kind === 'photo', { message: '只有图片素材可以加入本地图片库' });
+export type StockMediaDownloadRequest = z.input<typeof stockMediaDownloadRequestSchema>;
+
+/** Cancel by the renderer-issued requestId (search or download) or by the downloading item's provider+kind+id. */
+export const stockMediaCancelRequestSchema = z.union([
+  z.object({ requestId: stockMediaRequestIdSchema }).strict(),
+  z.object({ provider: z.enum(STOCK_MEDIA_PROVIDERS), kind: z.enum(STOCK_MEDIA_KINDS), id: stockMediaItemIdSchema }).strict(),
+]);
+export type StockMediaCancelRequest = z.infer<typeof stockMediaCancelRequestSchema>;
 
 export type StockMediaErrorCode =
   | 'STOCK_MEDIA_KEY_MISSING'

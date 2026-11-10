@@ -1,7 +1,7 @@
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
 import { ShortVideoMaterialFields } from './ShortVideoMaterialFields';
 import { StockMediaSearchPanel } from './StockMediaSearchPanel';
-import { configuredStockMediaProviders } from '../../shared/stock-media';
+import { STOCK_MEDIA_DEFAULT_IMAGE_LIBRARY, configuredStockMediaProviders } from '../../shared/stock-media';
 import { appendShortVideoMaterialFiles, shortVideoMaterialsSchema, type ShortVideoMaterials } from '../../shared/short-video-materials';
 import { PixelleTemplateFields } from './PixelleTemplateFields';
 import type { PixelleCatalog, PixelleTaskOptions, PixelleVisualTemplateRef } from '../../shared/pixelle';
@@ -739,6 +739,14 @@ export function NewTaskPage({
     }
   }, [materialSource, materialPerson, personAssets]);
 
+  /** S-1: a stock image was copied into a 本地人物素材 library; refresh counts and select it for local-material tasks. */
+  function refreshPersonAssetsAfterStockImage(library: string) {
+    void api.listPersonAssets().then((assets) => {
+      setPersonAssets(assets);
+      if (materialSource === 'local' && assets.some((asset) => asset.name === library)) setMaterialPerson(library);
+    }).catch(taskAction.reportError);
+  }
+
   useEffect(() => {
     setBgmId((current) => (current && bgmOptions.some((bgm) => bgm.id === current) ? current : resolveDefaultBgmId(state.config)));
   }, [state.config.jianying.bgmLibrary, state.config.jianying.defaultBgmId]);
@@ -1253,7 +1261,7 @@ export function NewTaskPage({
               <div className="new-task-material-options">
                 <Segmented label="素材来源" value={materialSource} options={['ai', 'local', 'video']} labels={['AI 生图', '本地人物素材', '素材混剪']} onChange={(value) => setMaterialSource(value as 'ai' | 'local' | 'video')} />
                 {materialSource === 'video' ? <ShortVideoMaterialFields templateControlsFit={Boolean(visualTemplateRef)} value={shortVideoMaterials} onChange={setShortVideoMaterials} onAdd={addShortVideoMaterials} /> : null}
-                {materialSource === 'video' ? <StockMediaSearchPanel api={api} ratio={ratio} configuredProviders={configuredStockMediaProviders(state.secretStatus)} value={shortVideoMaterials} onChange={setShortVideoMaterials} /> : null}
+                {materialSource === 'video' || (materialSource === 'local' && !pixelleSkipsImages) ? <StockMediaSearchPanel key={materialSource} api={api} ratio={ratio} configuredProviders={configuredStockMediaProviders(state.secretStatus)} value={shortVideoMaterials} onChange={setShortVideoMaterials} defaultKind={materialSource === 'local' ? 'photo' : 'video'} imageLibrary={materialSource === 'local' && materialPerson ? materialPerson : STOCK_MEDIA_DEFAULT_IMAGE_LIBRARY} onImagesAdded={refreshPersonAssetsAfterStockImage} /> : null}
                 {materialSource === 'local' && !pixelleSkipsImages ? (
                   <SelectField label="本地人物素材" value={materialPerson} onChange={(event) => setMaterialPerson(event.target.value)} options={[
                     { value: '', label: '请选择人物' },

@@ -8,13 +8,19 @@
  *   `<artifactDataDir>/stock-media/`；同目录写来源清单 `<provider>-<kind>-<id>.source.json`。
  * - 去重：provider+kind+id 已有清单且文件哈希一致则直接复用（零网络）；内容 sha256 相同则复用已托管文件。
  * - 素材随后仍走 short-video-material-runtime 的导入/标准化（ffmpeg 探测尺寸时长），导出不会再次下载。
+ * - 取消：渲染端为每次检索/下载生成 requestId；`stock-media:cancel` 按 requestId（或下载中的 provider+kind+id）
+ *   中止进行中的请求，删除临时文件、不写清单，并返回 `{ cancelled: true }` 结果而不是抛错（界面不弹错误）。
+ *   新检索开始时自动中止上一条仍在进行的检索。调用方自带的 AbortSignal 仍按原语义抛出。
+ * - 图片：可选 `imageLibrary`，校验通过后把托管图片复制进 `<artifactDataDir>/person-assets/<库名>/`，
+ *   供新建任务“本地人物素材”来源直接当镜头图片使用（不调用任何生图模型）。
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, extname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import { classifyProviderFailure } from '../src/shared/provider-failure';
+import { sanitizePersonName } from '../src/shared/person-assets';
 import {
   STOCK_MEDIA_DEFAULT_BASE_URLS,
   STOCK_MEDIA_DIRECTORY_NAME,
@@ -30,12 +36,16 @@ import {
   parseStockMediaSearch,
   ratioFromOrientation,
   selectBestRendition,
+  stockMediaCancelRequestSchema,
   stockMediaDownloadRequestSchema,
   stockMediaFingerprint,
   stockMediaKeyMissingMessage,
   stockMediaSearchRequestSchema,
   isAllowedStockMediaUrl,
   type ParsedStockMediaSearchRequest,
+  type StockMediaCancelRequest,
+  type StockMediaCancelSummary,
+  type StockMediaCancelledResult,
   type StockMediaDownloadRequest,
   type StockMediaDownloadResult,
   type StockMediaItem,
@@ -47,13 +57,15 @@ import {
   type StockMediaUrlPolicy,
 } from '../src/shared/stock-media';
 
-export type StockMediaContainer = 'mp4' | 'mov' | 'webm' | 'jpg' | 'png';
+export type StockMediaContainer = 'mp4' | 'mov' | 'webm' | 'jpg' | 'png' | 'webp';
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export interface StockMediaServiceOptions {
   resolveApiKey: (provider: StockMediaProviderId) => Promise<string>;
   /** Absolute managed directory (production: `<artifactDataDir>/stock-media`). */
   managedDirectory: () => string;
+  /** Local image libraries root (production: `<artifactDataDir>/person-assets`); required for `imageLibrary`. */
+  imageLibraryRoot?: () => string;
   fetch?: FetchLike;
   baseUrls?: Partial<Record<StockMediaProviderId, string>>;
   /** Download host suffix allowlist override (tests). */
@@ -71,13 +83,27 @@ const DEFAULT_MAX_BYTES: Record<StockMediaKind, number> = { video: 500 * 1024 * 
 const GENERIC_BINARY = new Set(['application/octet-stream', 'binary/octet-stream']);
 const ALLOWED_CONTENT_TYPES: Record<StockMediaKind, Set<string>> = {
   video: new Set(['video/mp4', 'video/quicktime', 'video/webm', ...GENERIC_BINARY]),
-  photo: new Set(['image/jpeg', 'image/jpg', 'image/png', ...GENERIC_BINARY]),
+  photo: new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', ...GENERIC_BINARY]),
 };
-const CONTAINERS_BY_KIND: Record<StockMediaKind, readonly StockMediaContainer[]> = { video: ['mp4', 'mov', 'webm'], photo: ['jpg', 'png'] };
+const CONTAINERS_BY_KIND: Record<StockMediaKind, readonly StockMediaContainer[]> = { video: ['mp4', 'mov', 'webm'], photo: ['jpg', 'png', 'webp'] };
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const ITEM_CACHE_LIMIT = 1000;
 const MANIFEST_SUFFIX = '.source.json';
-const MANAGED_FILE_PATTERN = /^(?:pexels|pixabay)-(?:video|photo)-[0-9A-Za-z_-]{1,64}\.(?:mp4|mov|webm|jpg|png)$/u;
+const MANAGED_FILE_PATTERN = /^(?:pexels|pixabay)-(?:video|photo)-[0-9A-Za-z_-]{1,64}\.(?:mp4|mov|webm|jpg|png|webp)$/u;
+const EARLY_CANCEL_LIMIT = 200;
+const CANCELLED_MESSAGES = { search: '已取消检索。', download: '已取消下载，未保存任何文件。' } as const;
+
+/** Abort reason used by `cancel()`; never surfaced to the renderer (converted into a cancelled result). */
+class StockMediaCancelReason extends Error {
+  override readonly name = 'AbortError';
+  constructor() { super('stock media request cancelled'); }
+}
+
+interface InflightOperation {
+  operation: 'search' | 'download';
+  controller: AbortController;
+  fingerprint?: string;
+}
 
 const manifestSchema = z.object({
   schemaVersion: z.literal(1),
@@ -104,6 +130,7 @@ export function detectStockMediaContainer(head: Uint8Array): StockMediaContainer
   const bytes = Buffer.from(head.buffer, head.byteOffset, head.byteLength);
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg';
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (bytes.length >= 12 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP') return 'webp';
   if (bytes.length >= 4 && bytes.readUInt32BE(0) === 0x1a45dfa3) return 'webm';
   if (bytes.length >= 12) {
     const box = bytes.toString('latin1', 4, 8);
@@ -136,6 +163,9 @@ function isTimeout(error: unknown): boolean {
 export class StockMediaService {
   private readonly items = new Map<string, StockMediaItem>();
   private readonly fetchImpl: FetchLike;
+  private readonly inflight = new Map<string, InflightOperation>();
+  /** requestIds cancelled before their request reached the service (IPC ordering race). */
+  private readonly earlyCancelled = new Set<string>();
 
   constructor(private readonly options: StockMediaServiceOptions) {
     this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
@@ -149,8 +179,65 @@ export class StockMediaService {
     return configured;
   }
 
-  async search(input: StockMediaSearchRequest, signal?: AbortSignal): Promise<StockMediaSearchResult> {
+  /** Abort matching in-flight searches/downloads. Temp files are removed by the aborted call itself. */
+  cancel(input: StockMediaCancelRequest): StockMediaCancelSummary {
+    const request = stockMediaCancelRequestSchema.parse(input);
+    let cancelledCount = 0;
+    const fingerprint = 'requestId' in request ? undefined : stockMediaFingerprint(request);
+    for (const [requestId, entry] of this.inflight) {
+      const matches = 'requestId' in request ? requestId === request.requestId : entry.operation === 'download' && entry.fingerprint === fingerprint;
+      if (!matches || entry.controller.signal.aborted) continue;
+      entry.controller.abort(new StockMediaCancelReason());
+      cancelledCount += 1;
+    }
+    if (!cancelledCount && 'requestId' in request) {
+      this.earlyCancelled.add(request.requestId);
+      while (this.earlyCancelled.size > EARLY_CANCEL_LIMIT) {
+        const oldest = this.earlyCancelled.values().next().value;
+        if (oldest === undefined) break;
+        this.earlyCancelled.delete(oldest);
+      }
+    }
+    return { cancelledCount };
+  }
+
+  /** Only the latest search matters: starting one aborts any search still in flight (it resolves as cancelled). */
+  async search(input: StockMediaSearchRequest, signal?: AbortSignal): Promise<StockMediaSearchResult | StockMediaCancelledResult> {
     const request = stockMediaSearchRequestSchema.parse(input);
+    for (const entry of this.inflight.values()) {
+      if (entry.operation === 'search' && !entry.controller.signal.aborted) entry.controller.abort(new StockMediaCancelReason());
+    }
+    return this.track('search', request.requestId, undefined, signal, combined => this.runSearch(request, combined));
+  }
+
+  async download(input: StockMediaDownloadRequest, signal?: AbortSignal): Promise<StockMediaDownloadResult | StockMediaCancelledResult> {
+    const request = stockMediaDownloadRequestSchema.parse(input);
+    return this.track('download', request.requestId, stockMediaFingerprint(request), signal, combined => this.runDownload(request, combined));
+  }
+
+  /**
+   * Registers the operation for `cancel()`. A cancel() abort becomes a cancelled result; an abort of the caller's
+   * own signal keeps throwing its reason (unchanged contract for internal callers).
+   */
+  private async track<T>(operation: InflightOperation['operation'], requestedId: string | undefined, fingerprint: string | undefined, signal: AbortSignal | undefined, run: (signal: AbortSignal) => Promise<T>): Promise<T | StockMediaCancelledResult> {
+    const requestId = requestedId ?? randomUUID();
+    const cancelled = (): StockMediaCancelledResult => ({ cancelled: true, operation, requestId, message: CANCELLED_MESSAGES[operation] });
+    if (this.earlyCancelled.delete(requestId)) return cancelled();
+    if (this.inflight.has(requestId)) throw new StockMediaError('STOCK_MEDIA_REQUEST_FAILED', '重复的素材请求编号，请重试。');
+    const controller = new AbortController();
+    const entry: InflightOperation = { operation, controller, ...(fingerprint ? { fingerprint } : {}) };
+    this.inflight.set(requestId, entry);
+    try {
+      return await run(signal ? AbortSignal.any([signal, controller.signal]) : controller.signal);
+    } catch (error) {
+      if (controller.signal.aborted && !signal?.aborted) return cancelled();
+      throw error;
+    } finally {
+      if (this.inflight.get(requestId) === entry) this.inflight.delete(requestId);
+    }
+  }
+
+  private async runSearch(request: ParsedStockMediaSearchRequest, signal: AbortSignal): Promise<StockMediaSearchResult> {
     const provider = request.provider ?? (await this.configuredProviders())[0];
     if (!provider) throw new StockMediaError('STOCK_MEDIA_KEY_MISSING', stockMediaKeyMissingMessage());
     const apiKey = (await this.options.resolveApiKey(provider)).trim();
@@ -180,8 +267,40 @@ export class StockMediaService {
     return { ...parsed, items };
   }
 
-  async download(input: StockMediaDownloadRequest, signal?: AbortSignal): Promise<StockMediaDownloadResult> {
-    const request = stockMediaDownloadRequestSchema.parse(input);
+  private async runDownload(request: z.output<typeof stockMediaDownloadRequestSchema>, signal: AbortSignal): Promise<StockMediaDownloadResult> {
+    const managed = await this.downloadManaged(request, signal);
+    if (!request.imageLibrary) return managed;
+    // Last cancellation point: once the managed file is committed the library copy is quick and always completes.
+    signal.throwIfAborted();
+    return { ...managed, library: await this.placeInImageLibrary(managed, request.imageLibrary) };
+  }
+
+  /** Copies a managed photo into `<imageLibraryRoot>/<library>/` (atomic, idempotent by provider+id file name). */
+  private async placeInImageLibrary(managed: StockMediaDownloadResult, library: string): Promise<NonNullable<StockMediaDownloadResult['library']>> {
+    if (managed.manifest.kind !== 'photo') throw new StockMediaError('STOCK_MEDIA_REQUEST_FAILED', '只有图片素材可以加入本地图片库。');
+    const root = this.options.imageLibraryRoot?.();
+    if (!root) throw new StockMediaError('STOCK_MEDIA_REQUEST_FAILED', '本地图片库目录不可用。');
+    const name = sanitizePersonName(library);
+    const directory = join(resolve(root), name);
+    await mkdir(directory, { recursive: true });
+    const { provider, kind, id } = managed.manifest;
+    const target = join(directory, `${provider}-${kind}-${id}${extname(managed.path)}`);
+    const existing = await stat(target).catch(() => null);
+    if (existing?.isFile() && existing.size === managed.sizeBytes && await hashFile(target).catch(() => '') === managed.sha256) {
+      return { name, path: target, reused: true };
+    }
+    // `.partial-*` has no image extension, so listPersonImages never picks it up mid-copy.
+    const temporary = join(directory, `.partial-${randomUUID()}`);
+    try {
+      await copyFile(managed.path, temporary);
+      await rename(temporary, target);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+    return { name, path: target, reused: false };
+  }
+
+  private async downloadManaged(request: z.output<typeof stockMediaDownloadRequestSchema>, signal: AbortSignal): Promise<StockMediaDownloadResult> {
     const directory = resolve(this.options.managedDirectory());
     await mkdir(directory, { recursive: true });
     const stem = `${request.provider}-${request.kind}-${request.id}`;
@@ -196,8 +315,10 @@ export class StockMediaService {
     const temporary = join(directory, `.partial-${randomUUID()}`);
     try {
       const fetched = await this.fetchToTemporary(item, rendition.url, temporary, signal);
-      signal?.throwIfAborted();
+      signal.throwIfAborted();
       const duplicate = await this.findByContent(directory, fetched.sha256, fetched.sizeBytes);
+      // Commit point: nothing is renamed into place or recorded once a cancel arrived.
+      signal.throwIfAborted();
       let fileName = `${stem}.${fetched.container}`;
       let reused: StockMediaDownloadResult['reused'] = null;
       if (duplicate) {
@@ -364,7 +485,7 @@ export class StockMediaService {
     const verifyHead = (): StockMediaContainer => {
       const detected = detectStockMediaContainer(head);
       if (detected === 'html') throw new StockMediaError('STOCK_MEDIA_NOT_MEDIA', `${label} 返回的是网页或文本而不是${kind === 'video' ? '视频' : '图片'}，已拒绝。`);
-      if (!detected || !CONTAINERS_BY_KIND[kind].includes(detected)) throw new StockMediaError('STOCK_MEDIA_NOT_MEDIA', `${label} 下载内容不是受支持的${kind === 'video' ? ' MP4/MOV/WebM 视频' : ' JPG/PNG 图片'}，已拒绝。`);
+      if (!detected || !CONTAINERS_BY_KIND[kind].includes(detected)) throw new StockMediaError('STOCK_MEDIA_NOT_MEDIA', `${label} 下载内容不是受支持的${kind === 'video' ? ' MP4/MOV/WebM 视频' : ' JPG/PNG/WebP 图片'}，已拒绝。`);
       return detected;
     };
     try {
@@ -433,5 +554,7 @@ export function createStockMediaService(dependencies: {
   return new StockMediaService({
     resolveApiKey: provider => dependencies.resolveSecret(STOCK_MEDIA_SECRET_IDS[provider]),
     managedDirectory: () => join(dependencies.dataDirectory(), STOCK_MEDIA_DIRECTORY_NAME),
+    // Same root as main.ts personAssetsRoot(): the 本地人物素材 libraries that AI-free tasks use as scene images.
+    imageLibraryRoot: () => join(dependencies.dataDirectory(), 'person-assets'),
   });
 }

@@ -325,6 +325,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:rerun-step',
   'task:get-artifacts',
   'task:media-url',
+  'task:final-film-gate',
   'asset:read-data-url',
   'local-image:select',
   'pixelle:catalog',
@@ -332,6 +333,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'short-video-materials:select',
   'stock-media:search',
   'stock-media:download',
+  'stock-media:cancel',
   'motion-comic-source:select',
   'local-audio:select',
   'local-subtitle-timestamps:select',
@@ -565,13 +567,16 @@ export type StoryDreamApi = {
   repackTaskDraft: (id: string) => Promise<AppMutationResult | null>;
   getTaskArtifacts: (id: string) => Promise<TaskArtifactSnapshot>;
   getTaskMediaUrl: (id: string, path: string) => Promise<string>;
+  /** E-5 advisory final-film gate of the task's own final film; `null` when no report exists. Read-only. */
+  getFinalFilmGate: (input: { id: string; episodeId?: string }) => Promise<import('./final-film-gate-view').FinalFilmGateView | null>;
   readAssetDataUrl: (path: string) => Promise<string>;
   selectLocalImage: (purpose?: 'video-reference') => Promise<string | null>;
   getPixelleCatalog: () => Promise<import('./pixelle').PixelleCatalog>;
   selectLocalVideo: () => Promise<string | null>;
   selectShortVideoMaterials: () => Promise<string[]>;
-  searchStockMedia: (input: import('./stock-media').StockMediaSearchRequest) => Promise<import('./stock-media').StockMediaSearchResult>;
-  downloadStockMedia: (input: import('./stock-media').StockMediaDownloadRequest) => Promise<import('./stock-media').StockMediaDownloadResult>;
+  searchStockMedia: (input: import('./stock-media').StockMediaSearchRequest) => Promise<import('./stock-media').StockMediaSearchResult | import('./stock-media').StockMediaCancelledResult>;
+  downloadStockMedia: (input: import('./stock-media').StockMediaDownloadRequest) => Promise<import('./stock-media').StockMediaDownloadResult | import('./stock-media').StockMediaCancelledResult>;
+  cancelStockMedia: (input: import('./stock-media').StockMediaCancelRequest) => Promise<import('./stock-media').StockMediaCancelSummary>;
   selectMotionComicSourceFile: () => Promise<LocalTextFile | null>;
   importBgmAudio: () => Promise<ManagedBgmImport | null>;
   selectLocalAudio: {

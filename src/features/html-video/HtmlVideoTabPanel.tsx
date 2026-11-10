@@ -32,6 +32,7 @@ import { fitHtmlVideoOutputSize, htmlVideoUserFacingError, safeParseHtmlVideoPip
 import { draftFontOptions } from '../../shared/templates';
 import { Button, ColorField, IconButton, SelectField, SliderField, TextAreaField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
+import { TaskFinalFilmGatePanel } from '../final-film-gate/FinalFilmGatePanel';
 import {
   HtmlVideoStoryboundAssetsPanel,
   HtmlVideoStoryboundPreviewPanel,
@@ -706,6 +707,7 @@ export function HtmlVideoTabPanel({
             <small>输出路径</small>
             <code>{data.output.path}</code>
           </div>
+          <TaskFinalFilmGatePanel api={api} taskId={task.id} refreshKey={`${data.output.path}:${data.output.sizeBytes}:${data.output.durationSec ?? ''}`} enabled={!isBrowserPreview} />
         </div>
       ) : <EmptyState title="等待出片" />}
       <HtmlVideoOutputActions api={api} task={task} config={data.config} bgmOptions={bgmOptions} applyState={applyState} refreshTaskDetail={refreshTaskDetail} busy={busy} isBrowserPreview={isBrowserPreview} openOutputDirectory={openOutputDirectory} />

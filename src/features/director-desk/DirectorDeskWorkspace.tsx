@@ -89,6 +89,7 @@ import type { ProductionQualityRecheckScope } from '../../shared/production-work
 import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from '../../shared/director-render';
 import type { DirectorSubtitleRecheckRequest, DirectorMediaRecheckRequest } from '../../shared/director-render';
 import type { DirectorQualityReview } from '../../shared/director-render';
+import { FinalFilmGatePanel, type FinalFilmGateState } from '../final-film-gate/FinalFilmGatePanel';
 import { resolveProductionQualityRecheckScope } from '../../shared/production-quality-recheck';
 import { MAX_PRODUCTION_HISTORY_ITEMS, productionHistoryCapacityError, type ProductionHistoryUsage } from '../../shared/production-history';
 import { directorSceneLayoutClass, directorSceneSubtitleClass } from '../../shared/director-scene-layout';
@@ -312,6 +313,8 @@ export interface DirectorDeskWorkspaceProps {
   outputHistory?: readonly DirectorOutputHistoryItem[];
   onResolveOutputMedia?: (path: string) => Promise<string>;
   qualityReview?: DirectorQualityReview;
+  /** E-5 advisory final-film gate (quality-gate.json) of the current film; shown in 导出 and 审片. */
+  finalFilmGate?: FinalFilmGateState;
   projectId?: string;
   expectedUpdatedAt?: string;
   styleCandidates?: readonly DirectorStyleCandidate[];
@@ -488,6 +491,7 @@ export function DirectorDeskWorkspace({
   outputHistory = [],
   onResolveOutputMedia,
   qualityReview,
+  finalFilmGate,
   styleCandidates = [],
   selectedStyleId,
   ratio = '16:9',
@@ -1746,6 +1750,7 @@ export function DirectorDeskWorkspace({
               {!showingRenderedVideo ? <div className="director-preview-transport"><IconButton label={isPlaying ? '暂停' : '播放'} icon={isPlaying ? <Pause size={15} /> : <Play size={15} />} density="compact" variant="subtle" disabled={nativeAnimationPending} onClick={togglePreview} /><span className="director-timecode">{formatPlaybackTime(playbackMs)} / {formatPlaybackTime(totalDuration)}</span><SliderField fieldClassName="director-scrub-field" label="播放进度" min={0} max={Math.max(1, totalDuration)} step={100} value={Math.min(playbackMs, Math.max(1, totalDuration))} onChange={(_, data) => seekPlayback(Number(data.value))} /><IconButton label={muted ? '打开声音' : '静音'} aria-pressed={muted} icon={<Volume2 size={14} />} density="compact" variant="subtle" onClick={() => setMuted((value) => !value)} /><IconButton label={previewFullscreen ? '退出全屏' : '全屏'} icon={previewFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />} density="compact" variant="subtle" onClick={() => void togglePreviewFullscreen()} /></div> : null}
                 {showingRenderedVideo ? <div className="director-output-fullscreen">{mode === 'motion-comic' && onOpenOutput ? <Button density="compact" variant="primary" disabled={outputBusy || renderBusy} icon={outputBusy ? <RefreshCw className="director-spin" size={14} /> : <Download size={14} />} onClick={() => void openOutput()}>{outputBusy ? '正在打开…' : '打开成片目录'}</Button> : null}<Button density="compact" variant="secondary" icon={previewFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />} onClick={() => void togglePreviewFullscreen()}>{previewFullscreen ? '退出全屏' : '全屏'}</Button></div> : null}
               </div>
+              {showingRenderedVideo && finalFilmGate ? <FinalFilmGatePanel {...finalFilmGate} /> : null}
               {processOutline ? (showingRenderedVideo ? null : <section className="vox-shot-content" aria-label="当前镜头内容">
                 <div className="vox-shot-content-fields">
                   <TextAreaField label={musicVideo ? "歌词" : "旁白"} value={selectedShot.subtitleCues?.map(cue => cue.text).join('\n') ?? selectedShot.subtitle} rows={4} resize="vertical" disabled={structureBusy} hint={musicVideo ? "每行一句；分镜时长跟随主歌曲。修改歌词后需重新生成画面。" : "每行一句；修改后需重新生成配音。"} onChange={(_, data) => onUpdateShot(selectedShot.id, { subtitle: data.value })} />
@@ -1832,6 +1837,7 @@ export function DirectorDeskWorkspace({
                 <div className="director-quality-review__heading"><div><strong>审片质量门</strong><small>{latestQualityReport ? new Date(latestQualityReport.createdAt).toLocaleString('zh-CN') : '尚未生成审片报告'}</small></div><span className={`director-quality-badge is-${qualityBadgeStatus}`}>{qualityBadgeLabel}</span></div>
                 {qualityFreshness === 'stale' ? <p className="director-quality-context" role="status">当前内容已变更，以下为历史成片的审片结果。</p> : qualityFreshness === 'unverified' ? <p className="director-quality-context" role="status">该历史报告缺少可核对的生成记录或版本信息。</p> : null}
                 {qualityReview?.unassignedCount ? <p className="director-quality-context">{qualityReview.unassignedCount} 份历史报告的分集或版本归属无法核对</p> : null}
+                {finalFilmGate ? <FinalFilmGatePanel {...finalFilmGate} variant="review" /> : null}
                 {latestQualityReport ? <>
                   <div className="director-quality-summary" role="status"><span>{qualityFreshness !== 'current' ? '历史报告：' : ''}{qualityPassedCount}/{latestQualityReport.checks.length} 项自动检查通过</span><span>{[qualityFailedCount ? `${qualityFailedCount} 项阻断` : '', qualityWarningCount ? `${qualityWarningCount} 项警告` : '', qualityAttentionCount ? `${qualityAttentionCount} 项待处理` : ''].filter(Boolean).join('、') || '未发现阻断项'}</span></div>
                   <p className="director-quality-context">自动检查通过后，仍需人工复核人物与场景连续性、台词听感和口型。</p>

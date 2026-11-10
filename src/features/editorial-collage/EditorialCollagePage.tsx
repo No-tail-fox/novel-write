@@ -63,6 +63,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import { Button, CheckboxField, Dialog, PreviewSelectField, SegmentedControl, SelectField, TextAreaField, TextField } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorLayoutTemplate, type DirectorMotionPreset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
+import { useFinalFilmGate } from '../final-film-gate/FinalFilmGatePanel';
 import { resolveDirectorOutputMediaUrl } from '../director-desk/director-output-media';
 import type { DirectorPreviewAudioClip } from '../director-desk/DirectorAudioPreview';
 import { productionAudioClipsForShot } from '../../shared/production-audio';
@@ -245,6 +246,8 @@ export function EditorialCollagePage({
   const renderOutputs = useMemo(() => document ? directorRenderOutputs(document) : { history: [], current: undefined }, [document]);
   const qualityReview = useMemo(() => document ? directorQualityReview(document) : undefined, [document]);
   const outputAsset = renderOutputs.current;
+  // E-5: advisory final-film gate (quality-gate.json) next to the current film; read-only, never re-runs checks.
+  const finalFilmGate = useFinalFilmGate(api, activeProjectId, { refreshKey: `${outputAsset?.id ?? ''}:${outputAsset?.localPath ?? ''}`, enabled: Boolean(outputAsset?.localPath) });
   const [outputMediaRequest, setOutputMediaRequest] = useState<{ projectId: string; assetId: string; path: string; url?: string; status: 'loading' | 'ready' | 'unavailable'; error?: string } | null>(null);
   const outputAssetPath = outputAsset?.localPath ?? '';
   const outputMedia = outputAsset && outputMediaRequest?.projectId === activeProjectId
@@ -1331,6 +1334,7 @@ export function EditorialCollagePage({
       outputHistory={renderOutputs.history.map((asset) => ({ id: asset.id, localPath: asset.localPath, url: asset.id === outputAsset?.id ? outputMedia?.url : undefined, status: asset.id === outputAsset?.id ? outputMedia?.status : undefined, error: asset.id === outputAsset?.id ? outputMedia?.error : undefined, createdAt: asset.createdAt, current: asset.id === outputAsset?.id }))}
       onResolveOutputMedia={resolveHistoryOutputMedia}
       qualityReview={qualityReview}
+      finalFilmGate={finalFilmGate}
       onReviewQualityArtifact={reviewQualityArtifact}
       onRecheckSubtitles={recheckSubtitles}
       onRecheckMedia={recheckMedia}

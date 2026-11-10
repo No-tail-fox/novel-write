@@ -1198,10 +1198,13 @@ export const rendererCommandInventory = {
     owner('new-task', 'src/features/tasks/NewTaskPage.tsx', 'addShortVideoMaterials', 'onClick={handleAdd}', '添加混剪视频', 'tests/short-video-materials.test.ts', 'src/features/tasks/ShortVideoMaterialFields.tsx', { disabled: 'disabled={picking || value.files.length >= 100}', loading: "picking ? '正在选择素材…'", error: 'addError' }, 'src/features/tasks/ShortVideoMaterialFields.tsx', undefined, [{ source: 'src/features/tasks/NewTaskPage.tsx', evidence: 'onAdd={addShortVideoMaterials}' }]),
   ),
   searchStockMedia: command(
-    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'runSearch', 'onClick={() => void runSearch()}', '检索素材', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={searching || !query.trim()}', loading: "searching ? '正在检索…'", error: 'searchError' }),
+    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'runSearch', 'onClick={() => void runSearch()}', '检索素材', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={!query.trim() || Boolean(addingId)}', loading: 'searching ? <p role="status">正在检索…', error: 'searchError' }),
   ),
   downloadStockMedia: command(
-    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'addItem', 'onClick={() => void addItem(item)}', '添加', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={Boolean(addingId)', loading: "'正在下载…'", error: 'addError' }),
+    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'addItem', 'onClick={() => onAdd(item)}', '添加', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={Boolean(downloadingKey)', loading: "'正在下载…'", error: 'addError' }),
+  ),
+  cancelStockMedia: command(
+    owner('new-task', 'src/features/tasks/StockMediaSearchPanel.tsx', 'cancelDownload', 'onClick={() => onCancel()}', '取消', 'tests/stock-media-ui.test.ts', undefined, { disabled: 'disabled={cancelling}', loading: "'正在取消…'", error: 'addError' }),
   ),
   selectLocalVideo: command(
     owner('video-lab', 'src/features/labs/VideoLabPage.tsx', 'selectReferenceMedia', "selectReferenceMedia('video')", '添加视频', videoLabTest, undefined, { disabled: 'disabled={pickingImage || draft.referenceVideoPaths.length >= referenceLimits.videos}', loading: 'pickingImage', error: 'submitError' }),
@@ -1280,4 +1283,5 @@ export const rendererCompatibilityMethods = {
 export const rendererLifecycleCommands = [
   { method: 'compileVoxAnimation', route: 'editorial-collage', source: 'src/features/vox-animation/VoxAnimationPreview.tsx', handler: 'VoxAnimationPreview', lifecycle: 'effect', test: 'tests/vox-preview-lifecycle.test.ts' },
   { method: 'cancelVoxAnimation', route: 'editorial-collage', source: 'src/features/vox-animation/VoxAnimationEditor.tsx', handler: 'VoxAnimationEditor', lifecycle: 'cleanup', test: 'tests/vox-editor-actions.test.ts' },
+  { method: 'cancelStockMedia', route: 'new-task', source: 'src/features/tasks/StockMediaSearchPanel.tsx', handler: 'StockMediaSearchPanel', lifecycle: 'cleanup', test: 'tests/stock-media-ui.test.ts' },
 ] as const;
