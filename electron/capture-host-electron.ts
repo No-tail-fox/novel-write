@@ -91,7 +91,16 @@ export function createElectronCaptureWindowFactory(options: ElectronCaptureWindo
       onCrash: listener => { crashListeners.push(listener); },
       destroy: () => {
         if (!window.isDestroyed()) window.destroy();
+        // 内存 partition 在 Electron 里随应用一直存活（没有销毁 API），它上面挂的回调闭包会把 CaptureHost 的监听器
+        // （以及其作用域里的一切）一起留住。销毁窗口时把所有回调和监听器都摘掉，并清掉这个 partition 的缓存和存储。
+        pageErrorListeners.length = 0;
+        crashListeners.length = 0;
         partition.webRequest.onBeforeRequest(null);
+        partition.setPermissionRequestHandler(null);
+        partition.setPermissionCheckHandler(null);
+        partition.removeAllListeners('will-download');
+        void partition.clearCache().catch(() => undefined);
+        void partition.clearStorageData().catch(() => undefined);
       },
       isDestroyed: () => window.isDestroyed(),
     };

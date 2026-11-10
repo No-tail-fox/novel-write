@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
   CAPTURE_HOST_ERROR_CODES,
@@ -370,6 +372,37 @@ describe('captureVideoSpecScene', () => {
   it('re-exports the ADR-03 strategy switch', () => {
     expect(sceneCaptureStrategy({ videoSpecVersion: 1 })).toBe('capture-host');
     expect(sceneCaptureStrategy({ id: 'old-project' })).toBe('legacy');
+  });
+});
+
+describe('CaptureHost memory (E-6 regression)', () => {
+  it('does not retain captured images after each frame (no accumulating race reactions)', async () => {
+    v8.setFlagsFromString('--expose-gc');
+    const gc = vm.runInNewContext('gc') as () => void;
+    const { factory } = createFakeWindowFactory();
+    const images: Array<WeakRef<object>> = [];
+    const tracking = (request: CaptureWindowRequest): CaptureWindow => {
+      const window = factory(request);
+      const capture = window.capturePage.bind(window);
+      return Object.assign(window, {
+        capturePage: async () => {
+          const image = await capture();
+          // A large payload makes any retention obvious; the WeakRef lets us observe collection.
+          const tracked = { ...image, payload: new Uint8Array(1 << 20) };
+          images.push(new WeakRef(tracked));
+          return tracked;
+        },
+      });
+    };
+    // The window (and through its listeners the whole captureScene scope) stays reachable from `windows`
+    // after the capture, exactly like a long-lived Electron session holding its callbacks.
+    await new CaptureHost({ createWindow: tracking }).captureScene(baseRequest({ durationFrames: 30 }));
+    for (let round = 0; round < 3; round += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+      gc();
+    }
+    expect(images).toHaveLength(30);
+    expect(images.filter(ref => ref.deref() !== undefined).length).toBeLessThanOrEqual(1);
   });
 });
 

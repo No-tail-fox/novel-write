@@ -4,7 +4,7 @@
  *
  * 流程：建窗口 → loadURL → 注入 SceneRuntime 启动脚本 → `__sd.ready()`（超时）→ 读 `__sd.describe()` 并校验协议、
  * 字体 → 对每一帧 `__sd.seekFrame(n)` 并核对回传帧号 → capturePage → 校验尺寸（DPR=1，不悄悄缩放）→
- * 按选项转成原始 BGRA 或 JPEG（ADR-16 未定，两者都支持）→ 交给 sink（回调 / ffmpeg stdin，带背压）。
+ * 按选项转成原始 BGRA 或 JPEG（两者都支持；ADR-16 默认 BGRA，见 DEFAULT_CAPTURE_FORMAT）→ 交给 sink（回调 / ffmpeg stdin，带背压）。
  *
  * 每个窗口操作都有超时，并和 AbortSignal、渲染进程崩溃赛跑（Electron 在渲染进程销毁后可能让 executeJavaScript 永远挂起）。
  * 所有失败都是 `CaptureHostError`（AppError），错误码以 `CAPTURE_HOST_` 开头，并带上已收集的页面错误。
@@ -58,6 +58,13 @@ export type CaptureWindowFactory = (request: CaptureWindowRequest) => CaptureWin
 // ───────────────────────────── 帧与 sink ─────────────────────────────
 
 export type CaptureFrameFormat = 'bgra' | 'jpeg';
+
+/**
+ * 新架构（VideoSpec 项目）成片采集的默认帧格式（ADR-16，backlog E-6 基准决定）：原始 BGRA 经 ffmpeg stdin。
+ * 依据见 docs/design/2026-11-10-capture-benchmark.md —— 1080p 上 JPEG q95 端到端并不更快（中位慢约 11%），
+ * 还多一次有损编解码；BGRA 峰值内存约 1.1 GB（含 ffmpeg），在预算内。只用于新架构，现有路线不读它。
+ */
+export const DEFAULT_CAPTURE_FORMAT: CaptureFrameFormat = 'bgra';
 
 export interface CapturedFrame {
   /** 本次采集里的序号（0 起，连续）。 */
@@ -275,14 +282,16 @@ export class CaptureHost {
       new CaptureHostError(code, message, { pageErrors: [...pageErrors], ...extra });
 
     // 统一的“停止”信号：外部取消 / 渲染进程崩溃。所有窗口操作都和它赛跑。
+    // 注意：不能让每个操作都和同一个长期不结算的 Promise 做 Promise.race——每次 race 都会在它上面挂一个反应，
+    // 反应持有 race 结果（截图、位图），整个采集期间（以及监听器被长期对象引用时的之后）都无法回收，1080p 每帧约 8 MB。
+    // 所以改成每个操作登记自己的 reject，结束时注销。
     let stopError: CaptureHostError | undefined;
-    let stopReject: ((error: CaptureHostError) => void) | undefined;
-    const stopped = new Promise<never>((_resolve, reject) => { stopReject = reject; });
-    void stopped.catch(() => {});
+    const stopListeners = new Set<(error: CaptureHostError) => void>();
     const stop = (error: CaptureHostError) => {
       if (stopError) return;
       stopError = error;
-      stopReject?.(error);
+      for (const listener of [...stopListeners]) listener(error);
+      stopListeners.clear();
     };
     const onAbort = () => stop(fail('CAPTURE_HOST_ABORTED', '采集已取消。', { cause: request.signal?.reason }));
     if (request.signal?.aborted) throw fail('CAPTURE_HOST_ABORTED', '采集已取消。', { cause: request.signal.reason });
@@ -298,16 +307,20 @@ export class CaptureHost {
     ): Promise<T> => {
       if (stopError) throw stopError;
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<never>((_resolve, reject) => {
+      let onStop: ((error: CaptureHostError) => void) | undefined;
+      const interrupted = new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => reject(fail(timeoutCode, `${label}超时（${ms} ms）。`, { frame })), ms);
+        onStop = reject;
+        stopListeners.add(reject);
       });
       try {
-        return await Promise.race([Promise.resolve().then(operation), timeout, stopped]);
+        return await Promise.race([Promise.resolve().then(operation), interrupted]);
       } catch (error) {
         if (error instanceof CaptureHostError) throw error;
         throw fail(failureCode, `${label}失败：${messageOf(error)}`, { frame, cause: error });
       } finally {
         if (timer) clearTimeout(timer);
+        if (onStop) stopListeners.delete(onStop);
       }
     };
 
@@ -411,6 +424,7 @@ export class CaptureHost {
       return { framesCaptured: frames.length, durationFrames, descriptor, pageErrors: [...pageErrors], elapsedMs: this.now() - started };
     } finally {
       request.signal?.removeEventListener('abort', onAbort);
+      stopListeners.clear();
       if (window && !window.isDestroyed()) {
         try { window.destroy(); } catch { /* 窗口已经不可用；不掩盖原始错误。 */ }
       }
