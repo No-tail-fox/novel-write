@@ -1,8 +1,32 @@
 import { readFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import { createElement, type ComponentProps, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+import { DirectorDeskWorkspace } from '../src/features/director-desk/DirectorDeskWorkspace';
+
+// Server markup cannot mount a Fluent portal; render the inspector drawer inline
+// so the shot action footer is inspectable.
+vi.mock('../src/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/ui')>(),
+  Drawer: ({ children }: { children: ReactNode }) => createElement('aside', { 'data-ssr-inspector': true }, children),
+}));
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+}
+
+function directorDeskMarkup(props: Partial<ComponentProps<typeof DirectorDeskWorkspace>>): string {
+  return renderToStaticMarkup(createElement(DirectorDeskWorkspace, {
+    mode: 'motion-comic', projectTitle: '雨夜来信', projectMeta: '', episodeTitle: '第 1 集', stageLabel: '镜头生成',
+    selectedShotId: 'shot', dirty: false, providerConnected: true,
+    shots: [{ id: 'shot', index: 1, title: '镜头', scene: '', durationMs: 3000, framing: '', characterLabel: '', prompt: '', motionPrompt: '', subtitle: '' }],
+    onSelectShot: () => {}, onUpdateShot: () => {}, onSave: () => {},
+    ...props,
+  }));
+}
+
+function openOutputButtons(markup: string): string[] {
+  return markup.match(/<button[^>]*aria-label="打开导出目录"[^>]*>/g) ?? [];
 }
 
 describe('motion comic workbench', () => {
@@ -82,7 +106,19 @@ describe('motion comic workbench', () => {
     expect(workspace).toContain('generateVoice');
     expect(workspace).toContain('renderProject');
     expect(workspace).toContain('openOutput');
-    expect(workspace).toContain('disabled={!outputUrl || outputBusy}');
+    // The open-output control stays disabled until a rendered output exists
+    // (either a playable URL or a persisted output flagged by the page).
+    const onOpenOutput = async () => {};
+    const [withoutOutput] = openOutputButtons(directorDeskMarkup({ onOpenOutput }));
+    const [withOutputUrl] = openOutputButtons(directorDeskMarkup({ onOpenOutput, outputUrl: 'file:///I:/output/final.mp4' }));
+    const [withPersistedOutput] = openOutputButtons(directorDeskMarkup({ onOpenOutput, outputAvailable: true }));
+    expect(withoutOutput).toContain('disabled=""');
+    expect(withOutputUrl).toBeDefined();
+    expect(withOutputUrl).not.toContain('disabled');
+    expect(withPersistedOutput).toBeDefined();
+    expect(withPersistedOutput).not.toContain('disabled');
+    // While an open request is in flight the same control is locked (state is not reachable via SSR).
+    expect(workspace).toContain('disabled={!hasOutput || outputBusy}');
     expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) clamp(396px, calc(100vw - 1044px), 492px)');
     expect(css).toContain('.director-episode-row .sd-button__content');
     expect(css).toContain('flex: 0 0 auto');
