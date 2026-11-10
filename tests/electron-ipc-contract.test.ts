@@ -962,7 +962,11 @@ describe('electron ipc contract', () => {
   });
 
   it('exposes viral cookie file picking and a persistent login browser', async () => {
-    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const mainOnly = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    // Login windows and cookie export moved to login-windows.ts (O-5); IPC registration stays in main.ts.
+    const loginWindows = await readFile(new URL('../electron/login-windows.ts', import.meta.url), 'utf8');
+    const main = `${mainOnly}\n${loginWindows}`;
+    expect(mainOnly).toContain('createLoginWindows({');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 

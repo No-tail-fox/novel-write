@@ -93,7 +93,9 @@ describe('electron window chrome', () => {
   });
 
   it('installs deny-by-default navigation policies and explicit sandboxing on every window', async () => {
-    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    // Login windows moved to login-windows.ts (O-5); they must stay sandboxed and domain-filtered.
+    const main = (await Promise.all(['../electron/main.ts', '../electron/login-windows.ts']
+      .map(path => readFile(new URL(path, import.meta.url), 'utf8')))).join('\n');
     const renderer = await readFile(new URL('../electron/html-video-renderer.ts', import.meta.url), 'utf8');
     const security = await readFile(new URL('../electron/security.ts', import.meta.url), 'utf8').catch(() => '');
 
