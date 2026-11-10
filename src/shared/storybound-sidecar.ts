@@ -9,6 +9,7 @@ import {
 } from './process-runner';
 import { resolvePythonRuntimeInfo, type PythonRuntimeInfo } from './python-runtime';
 import type { ProductionVisualContinuityEvidence } from './production-visual-continuity';
+import { loudnormMeasureFilter, loudnormTargetFilter } from './loudness';
 
 const defaultSidecarTimeoutMs = 60 * 60 * 1_000;
 const defaultSidecarStdoutBytes = 4 * 1024 * 1024;
@@ -353,6 +354,16 @@ function safeProcessDetail(value: unknown): string {
   return redacted.length > 64 * 1024 ? redacted.slice(-(64 * 1024)) : redacted;
 }
 
+/**
+ * Colour tags of every composed / re-encoded video. They match the scene-segment encode: limited (tv) range,
+ * BT.709 matrix and primaries, and the sRGB transfer of the browser captures (iec61966-2-1, deliberately kept so
+ * Chromium does not infer another gamut — see html-video-color-range-integration.test.ts).
+ */
+export const SIDECAR_OUTPUT_COLOR_ARGS = Object.freeze(['-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'iec61966-2-1'] as const);
+/** RGB → limited-range BT.709 conversion + tags for still inputs (covers), identical to the scene-segment encode. */
+export const SIDECAR_STILL_TO_BT709_FILTER = 'scale=in_range=auto:out_range=tv:out_color_matrix=bt709:flags=accurate_rnd+full_chroma_int,format=yuv420p,setparams=range=limited:colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1';
+const pythonStringList = (values: readonly string[]) => `[${values.map(value => JSON.stringify(value)).join(', ')}]`;
+
 const pythonSidecarScript = String.raw`import errno
 import json
 import math
@@ -372,6 +383,11 @@ import wave
 
 SIDECAR_SUBPROCESS_TIMEOUT_SECONDS = 15 * 60
 SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+# Shared final-film loudness (src/shared/loudness.ts): two-pass loudnorm to the same target as the Lemo mux.
+LOUDNORM_TARGET_FILTER = "${loudnormTargetFilter()}"
+LOUDNORM_MEASURE_FILTER = "${loudnormMeasureFilter()}"
+# Colour tags written by every re-encode, identical to the scene-segment encode so later passes never drop them.
+OUTPUT_COLOR_ARGS = ${pythonStringList(SIDECAR_OUTPUT_COLOR_ARGS)}
 storybound_scratch_token = ""
 
 
@@ -1369,6 +1385,7 @@ def _compose_xfade_batch(segment_paths, output_path, transition_type, transition
         current_audio,
         "-pix_fmt",
         "yuv420p",
+        *OUTPUT_COLOR_ARGS,
         "-c:v",
         "libx264",
         "-c:a",
@@ -1482,7 +1499,7 @@ def _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_c
             duration_args = ["-t", str(sum(durations[start:start + 8]))] if float(fps) < 10 else []
             run_composition_ffmpeg([
                 *bounded_inputs, "-filter_complex", ";".join(filters),
-                "-map", "[vout]", "-an", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-r", str(fps), *duration_args, os.path.join(directory, video_name),
+                "-map", "[vout]", "-an", "-pix_fmt", "yuv420p", *OUTPUT_COLOR_ARGS, "-c:v", "libx264", "-r", str(fps), *duration_args, os.path.join(directory, video_name),
                 "-map", "[aout]", "-vn", "-c:a", "pcm_f32le", os.path.join(directory, audio_name),
             ])
             video_entries.append(f"file {video_name}")
@@ -1518,6 +1535,7 @@ def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame
         "-map", "[vout]",
         "-map", "[aout]",
         "-pix_fmt", "yuv420p",
+        *OUTPUT_COLOR_ARGS,
         "-c:v", "libx264",
         "-c:a", "aac",
         *duration_args,
@@ -1563,7 +1581,7 @@ def _compose_with_visual_transitions(segment_paths, output_path, durations, tran
             run_composition_ffmpeg([
                 "-ss", str(previous_seek), "-i", segment_paths[index - 1], "-i", segment_paths[index],
                 "-filter_complex", ";".join(filters),
-                "-map", "[out]", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-map", "[out]", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p", *OUTPUT_COLOR_ARGS,
                 "-c:a", "copy", prepared[index],
             ])
         _compose_with_hard_cuts(prepared, output_path, durations, fps, frame_counts)
@@ -1755,9 +1773,13 @@ def normalize_composed_audio(source_path, output_path, target_duration=0):
         target_duration = media_duration_s(source_path)
     if not math.isfinite(target_duration) or target_duration <= 0:
         raise ValueError("Audio normalization requires a valid composition duration")
+    # A film without an audio stream has nothing to normalise; keep it untouched instead of failing.
+    if not media_stream_info(source_path).get("has_audio"):
+        shutil.copy2(source_path, output_path)
+        return
     analysis = run_bounded_subprocess([
         ffmpeg_exe(), "-hide_banner", "-i", source_path, "-map", "0:a:0", "-vn",
-        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", os.devnull,
+        "-af", LOUDNORM_MEASURE_FILTER, "-f", "null", os.devnull,
     ], timeout_seconds=SIDECAR_SUBPROCESS_TIMEOUT_SECONDS)
     if analysis.returncode != 0:
         raise RuntimeError(analysis.stderr[-2000:] or "Audio normalization analysis failed")
@@ -1765,16 +1787,20 @@ def normalize_composed_audio(source_path, output_path, target_duration=0):
     if not blocks:
         raise ValueError("Audio normalization did not return measurements")
     measured = json.loads(blocks[-1])
-    if str(measured.get("input_i")).lower() == "-inf":
+    fields = {}
+    for key in ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"]:
+        try:
+            fields[key] = float(measured.get(key))
+        except (TypeError, ValueError):
+            fields[key] = float("nan")
+    # Silent or below-gate audio measures -inf / inf / nan: skip normalisation (same rule as the Lemo mux).
+    if not all(math.isfinite(value) for value in fields.values()):
         shutil.copy2(source_path, output_path)
         return
-    fields = {key: float(measured[key]) for key in ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"]}
-    if not all(math.isfinite(value) for value in fields.values()):
-        raise ValueError("Audio normalization measurements are invalid")
-    audio_filter = "loudnorm=I=-16:TP=-1.5:LRA=11:linear=true" + ":" + ":".join([
+    audio_filter = LOUDNORM_TARGET_FILTER + ":" + ":".join([
         "measured_I=" + str(fields["input_i"]), "measured_TP=" + str(fields["input_tp"]),
         "measured_LRA=" + str(fields["input_lra"]), "measured_thresh=" + str(fields["input_thresh"]),
-        "offset=" + str(fields["target_offset"]),
+        "offset=" + str(fields["target_offset"]), "linear=true",
     ])
     audio_filter += ",apad,atrim=duration=" + str(target_duration)
     run_ffmpeg(["-i", source_path, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
@@ -1850,9 +1876,10 @@ def generate_compose_render(payload):
             "-t",
             cover_duration,
             "-vf",
-            f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
+            f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,pad={canvas_w}:{canvas_h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,${SIDECAR_STILL_TO_BT709_FILTER}",
             "-pix_fmt",
             "yuv420p",
+            *OUTPUT_COLOR_ARGS,
             "-c:v",
             "libx264",
             "-c:a",
@@ -1887,6 +1914,7 @@ def generate_compose_render(payload):
             "-af", "apad",
             "-t", str(target_duration),
             "-pix_fmt", "yuv420p",
+            *OUTPUT_COLOR_ARGS,
             "-c:v", "libx264",
             "-threads", "2",
             "-c:a", "aac",

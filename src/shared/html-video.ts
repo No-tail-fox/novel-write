@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import type { ProductionAudioFadeEnvelope } from './production-audio';
 import type { DirectorTransition } from './director-transitions';
 import type { StoryboundComposeRenderInput } from './storybound-sidecar';
+import { resolveNormalizeAudio } from './loudness';
 import { runtimeProtocolMetadata } from '@hyperframes/core/runtime/protocol';
 import type {
   DraftTemplate,
@@ -61,6 +62,7 @@ export interface HtmlVideoScene extends HtmlVideoSceneSource {
 }
 
 export interface HtmlVideoComposition {
+  /** Two-pass loudness normalisation of the final mix (see ./loudness). Defaults to on; set `false` to keep authored gain. */
   normalizeAudio?: boolean;
   workDir: string;
   outputPath: string;
@@ -291,7 +293,8 @@ export function createHtmlVideoComposePayload(
     }),
     output_path: input.outputPath,
     total_duration_s: input.totalDurationS,
-    ...(input.normalizeAudio ? { normalize_audio: true } : {}),
+    // Final films are loudness-normalised by default (shared −14 LUFS / TP −1 target); only an explicit `false` opts out.
+    ...(resolveNormalizeAudio(input.normalizeAudio) ? { normalize_audio: true } : {}),
     ...(input.bgmPath ? { bgm_path: input.bgmPath } : {}),
     ...(typeof input.bgmTargetDb === 'number' ? { bgm_target_db: input.bgmTargetDb } : {}),
     ...(input.transition ? { transition: input.transition } : {}),

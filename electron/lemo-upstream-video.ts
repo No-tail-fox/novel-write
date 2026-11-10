@@ -14,6 +14,9 @@ import { copyFile, cp, link, mkdir, mkdtemp, readFile, readdir, realpath, rename
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readLemoUpstreamManifest } from './lemo-upstream-source';
+import { describeLoudnessTarget, loudnessOffTarget, loudnormApplyFilter, loudnormMeasureFilter, loudnormTargetFilter, parseLoudnormJson, type LoudnormMeasurement } from '../src/shared/loudness';
+
+export { parseLoudnormJson, type LoudnormMeasurement };
 
 const isWindows = process.platform === 'win32';
 const envError = (detail: string) => new Error(`LEMO_UPSTREAM_RENDER_ENV: ${detail}`);
@@ -399,30 +402,8 @@ export async function extractLemoFrames(ffmpegPath: string, videoPath: string, f
 
 // ———————————————————————————————————————— mux.sh port: pure builders ————————————————————————————————————————
 
-export const LOUDNORM_TARGET = 'loudnorm=I=-14:TP=-1.2:LRA=11';
-export interface LoudnormMeasurement { input_i: string; input_tp: string; input_lra: string; input_thresh: string; target_offset: string }
-const LOUDNORM_KEYS = ['input_i', 'input_tp', 'input_lra', 'input_thresh', 'target_offset'] as const;
-
-/**
- * Parse the first-pass loudnorm JSON from ffmpeg stderr.
- * - `null`: no loudnorm JSON at all (ffmpeg failed / no audio).
- * - `{ measurement: null }`: silent or quieter than −70 LUFS (a value is empty/inf/nan) → skip normalisation, as mux.sh does.
- */
-export function parseLoudnormJson(stderr: string): { measurement: LoudnormMeasurement | null } | null {
-  const start = stderr.lastIndexOf('\n{') >= 0 ? stderr.lastIndexOf('\n{') + 1 : stderr.startsWith('{') ? 0 : -1;
-  if (start < 0) return null;
-  const end = stderr.indexOf('}', start);
-  if (end < 0) return null;
-  const block = stderr.slice(start, end + 1);
-  const values: Partial<Record<keyof LoudnormMeasurement, string>> = {};
-  for (const key of LOUDNORM_KEYS) {
-    const m = new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(block);
-    values[key] = m ? m[1].trim() : '';
-  }
-  if (!LOUDNORM_KEYS.some(key => values[key])) return null;
-  const usable = LOUDNORM_KEYS.every(key => { const v = values[key] ?? ''; return v !== '' && !/inf|nan/i.test(v); });
-  return { measurement: usable ? values as LoudnormMeasurement : null };
-}
+/** Shared final-film target (src/shared/loudness.ts): −14 LUFS, TP −1 dB, LRA 11. */
+export const LOUDNORM_TARGET = loudnormTargetFilter();
 
 export interface MuxArgsOptions {
   videoPath: string;
@@ -451,9 +432,7 @@ export function buildMuxVideoFilter(fps: number, grain: number, color: 'default'
 }
 
 export function buildMuxAudioFilter(loudnorm: LoudnormMeasurement | null, padToSeconds: number | null) {
-  const ln = loudnorm
-    ? `${LOUDNORM_TARGET}:measured_I=${loudnorm.input_i}:measured_TP=${loudnorm.input_tp}:measured_LRA=${loudnorm.input_lra}:measured_thresh=${loudnorm.input_thresh}:offset=${loudnorm.target_offset}:linear=true`
-    : 'anull';
+  const ln = loudnorm ? loudnormApplyFilter(loudnorm) : 'anull';
   return `${ln},aresample=48000${padToSeconds && padToSeconds > 0 ? `,apad=whole_dur=${num(padToSeconds)}` : ''}`;
 }
 
@@ -491,8 +470,7 @@ export function parseEbur128(stderr: string): Ebur128Summary {
 
 /** mux.sh's final check: off target when loudness is outside −15…−13 LUFS or the true peak is above −1 dB. */
 export function ebur128OffTarget(summary: Ebur128Summary) {
-  const i = summary.integratedLufs ?? 0, p = summary.truePeak ?? 0; // awk treats a missing value as 0
-  return i < -15 || i > -13 || p > -1;
+  return loudnessOffTarget(summary);
 }
 
 // decoder/demuxer lines with error wording mean damage, except the three streamed-WAV notices.
@@ -547,7 +525,7 @@ export async function muxLemoUpstreamFilm(options: LemoMuxOptions): Promise<Lemo
     warnings.push('成片没有音轨：只做了画面处理（帧率/颗粒/编码），未做响度标准化。');
   } else {
     // first pass: measure loudness (decoded seconds come from -progress)
-    const first = await ff(['-hide_banner', '-nostats', '-progress', 'pipe:2', '-i', audioFile, '-map', '0:a:0', '-af', `${LOUDNORM_TARGET}:print_format=json`, '-f', 'null', '-']);
+    const first = await ff(['-hide_banner', '-nostats', '-progress', 'pipe:2', '-i', audioFile, '-map', '0:a:0', '-af', loudnormMeasureFilter(), '-f', 'null', '-']);
     if (first.code !== 0) throw muxError(`ffmpeg 无法读取音频 '${audioFile}'：${tail(first.stderr, 2)}`);
     const damage = decodeDamage(first.stderr);
     if (damage.bad.length) throw muxError(`音频 '${audioFile}' 已损坏，ffmpeg 解码时报告：\n${damage.bad.join('\n')}`);
@@ -596,7 +574,7 @@ export async function muxLemoUpstreamFilm(options: LemoMuxOptions): Promise<Lemo
       measured = { integratedLufs: summary.integratedLufs, truePeak: summary.truePeak, lra: summary.lra };
     }
     if (loudnorm && ebur128OffTarget(summary)) {
-      warnings.push(`成片未达到目标（-14 LUFS，真峰值 ≤ -1.2 dB）：实测 ${summary.integratedLufs} LUFS，峰值 ${summary.truePeak} dB。混音可能削波或峰值过高，请降低并压住峰值后重新合成。`);
+      warnings.push(`成片未达到目标（${describeLoudnessTarget()}）：实测 ${summary.integratedLufs} LUFS，峰值 ${summary.truePeak} dB。混音可能削波或峰值过高，请降低并压住峰值后重新合成。`);
     }
   }
   return { outputPath, measured, warnings };

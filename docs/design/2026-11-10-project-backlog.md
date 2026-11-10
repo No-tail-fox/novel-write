@@ -90,7 +90,7 @@
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
-| T-1 | **响度 −20.7 → −14 LUFS**（见 E-1） | 实测 `route-split…md:109`；`electron/director-renderer.ts:213` 只在 `authoring.owner === 'creative-production'` 时默认打开 `normalizeAudio` | P1 | M | E-1 |
+| T-1 | **✅ 已随 E-1 实现**：模板路线默认开启 −14 LUFS 标准化（不再限于 creative-production）。原条目：**响度 −20.7 → −14 LUFS**（见 E-1） | 实测 `route-split…md:109`；`electron/director-renderer.ts:213` 只在 `authoring.owner === 'creative-production'` 时默认打开 `normalizeAudio` | P1 | M | E-1 |
 | T-2 | **✅ 已修复**：`css-register-property-shim.ts` 在 VOX/Lemo 原生场景代码之前注入，重复注册同名属性变为幂等，只吞 InvalidModificationError（`tests/css-register-property-shim.test.ts`）。原条目：**老模板项目动效预览报 `InvalidModificationError`**（预览 iframe 里重复 `CSS.registerProperty`） | `route-split…md:58`；`src/features/director-desk/DirectorMotionPreview.tsx:98` 用 `srcDoc` 的 iframe；全仓 grep `registerProperty` 为 0，没有 shim。修法见 `technical-roadmap.md:147` | P1 | S | — |
 | T-3 | 生图 524、配音 unknown 只能人工 `retry-unknown` | `route-split…md:120,127` | P1 | — | G-3、G-7 |
 
@@ -99,7 +99,7 @@
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
 | H-1 | **✅ 已实现（随 G-4）**。原条目：吞错（同 G-4）；配音失败的确切请求次数被 `HTML_VIDEO_VOICE_FAILED` 掩盖 | `route-split…md:121` | P0 | S | — |
-| H-2 | 响度 −20.9 → −14 LUFS | `src/shared/html-video.ts:294`（`normalizeAudio` 需要显式打开）；实测 `route-split…md:110` | P1 | S | E-1 |
+| H-2 | **✅ 已随 E-1 实现**：`createHtmlVideoComposePayload` 默认 `normalize_audio:true`。原条目：响度 −20.9 → −14 LUFS | `src/shared/html-video.ts:294`（`normalizeAudio` 需要显式打开）；实测 `route-split…md:110` | P1 | S | E-1 |
 | H-3 | **✅ 已修复**：诊断信息改为 `readinessDiagnostics` 属性和日志，消息去掉重复 `Error:` 和本地路径，`html-video` 2 个捕获契约测试恢复通过。原条目：场景图片加载失败的错误被包了两层 `Error:`（捕获契约 2 个测试失败） | `tests/html-video.test.ts:1957`；`electron/html-video-scene-ready.ts:16` | P1 | S | — |
 | H-4 | 分辨率/fps 默认值不一致：实测成片 1280×720；`html-video-runtime.ts:35` 默认 24，而 `:1012` 的兜底是 30 | 【未核实 720p 是否只是这次的配置】 | P2 | S | E-6 |
 | H-5 | 生图次数多（一条约 11 次），成本偏高 | `technical-roadmap.md:45,47` | P3 | M | U-5 |
@@ -120,10 +120,10 @@
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 | 依赖 |
 |---|---|---|---|---|---|
-| E-1 | **共用 Encoder**：把 `finalizeLemoUpstreamFilm`（两遍 loudnorm −14/TP −1.2、AAC 256k、crf 19）下沉到模板和 HTML 成片之后 | `technical-roadmap.md:143-144`（P1-1）。loudnorm 只出现在 `electron/lemo-upstream-video.ts:402` 和 `src/shared/storybound-sidecar.ts:1760`，后者的目标是 **I=−16/TP=−1.5**，只在 `normalize_audio` 为真时执行（`storybound-sidecar.ts:1906-1913`） | P1 | M | 决策 −14（`code-video-foundation.md:444`） |
+| E-1 | **✅ 已实现（响度部分）**：新增纯模块 `src/shared/loudness.ts`（I −14 / TP −1 / LRA 11，两遍 loudnorm 构建与测量解析），Lemo、Python sidecar（原 −16/−1.5 已删除）、模板与 HTML 成片统一取自它；模板/HTML 默认开启标准化，显式 `normalizeAudio:false`（Music MV）仍保留原音量；无音轨或静音时跳过。临时真实 ffmpeg 合成实测 −14 LUFS。真实项目端到端复测【未核实】。原条目：**共用 Encoder**：把 `finalizeLemoUpstreamFilm`（两遍 loudnorm −14/TP −1.2、AAC 256k、crf 19）下沉到模板和 HTML 成片之后 | `technical-roadmap.md:143-144`（P1-1）。loudnorm 只出现在 `electron/lemo-upstream-video.ts:402` 和 `src/shared/storybound-sidecar.ts:1760`，后者的目标是 **I=−16/TP=−1.5**，只在 `normalize_audio` 为真时执行（`storybound-sidecar.ts:1906-1913`） | P1 | M | 决策 −14（`code-video-foundation.md:444`） |
 | E-2 | **SceneRuntime 协议（`window.__hf`/`__sd`）+ CaptureHost**，替换多套 seek 垫片和采集循环 | grep `SceneRuntime`/`CaptureHost`/`window.__hf` 都是 0；`capturePage(` 分散在 `electron/html-video-renderer.ts:101,226,285`、`electron/lemo-upstream-renderer.ts:204`、`electron/editorial-qa.ts:495` | P2（路线图列为 P1-2） | L | 黄金帧测试 |
 | E-3 | AudioTimeline 整条时间线一次性渲染 + 只编码一次（S4） | `code-video-foundation.md:338-349,434`。现有的 `AudioTimeline` 只是数据类型（`src/shared/production-audio.ts:135` 等），和底座设计不是一回事【未核实其语义差异】 | P2 | L | E-2 |
-| E-4 | 核实色彩标签：场景段已设 bt709/tv（`storybound-sidecar.ts:1728-1732`），Lemo 用 `LEMO_COLOR`（`lemo-upstream-video.ts:439`）；但时长补齐那次重编码只写了 `-pix_fmt yuv420p`，没带色彩参数（`storybound-sidecar.ts:1884-1893`），可能把标签丢掉 | 历史问题见 `code-video-foundation.md:467`。需要对新成片跑一次 ffprobe【未核实】 | P1 | S | — |
+| E-4 | **✅ 已修**：时长补齐、hard-cut（含分组）、xfade、溶解转场、封面重编码都补上 `tv/bt709/bt709/iec61966-2-1`（与场景段编码一致，transfer 沿用 sRGB），封面加 RGB→limited BT.709 转换；临时合成 ffprobe 确认标签保留。外部视频转码 `normalize_scene_video` 未加【未核实】。原条目：核实色彩标签：场景段已设 bt709/tv（`storybound-sidecar.ts:1728-1732`），Lemo 用 `LEMO_COLOR`（`lemo-upstream-video.ts:439`）；但时长补齐那次重编码只写了 `-pix_fmt yuv420p`，没带色彩参数（`storybound-sidecar.ts:1884-1893`），可能把标签丢掉 | 历史问题见 `code-video-foundation.md:467`。需要对新成片跑一次 ffprobe【未核实】 | P1 | S | — |
 | E-5 | 统一质量闸门：首/中/尾帧黑帧检查、缺字体、错误码前缀、续跑 | `technical-roadmap.md:192-201` | P2 | M | E-1 |
 | E-6 | fps 决策（24 还是 30）；采集帧格式（管道 BGRA 还是 JPEG q95）用基准测试决定 | `code-video-foundation.md:443,445,476` | P3 | S | — |
 | E-7 | GSAP 许可风险：现在打包的是 3.12.5（devDependencies），生成代码建议改用 WAAPI/CSS/Anime.js | `code-video-foundation.md:479`，待法务确认 | P2 | M | 法务 |

@@ -28,11 +28,25 @@ describe('Storybound-compatible media sidecar', () => {
       const original = await compose(false), normalized = await compose(true);
       expect(original.audio_lufs!).toBeLessThan(-25);
       expect(normalized.audio_quality_status).toBe('ok');
-      expect(normalized.audio_lufs!).toBeGreaterThan(-17);
-      expect(normalized.audio_lufs!).toBeLessThan(-15);
+      // Shared final-film target: −14 LUFS integrated, true peak ≤ −1 dB (src/shared/loudness.ts).
+      expect(normalized.audio_lufs!).toBeGreaterThan(-15);
+      expect(normalized.audio_lufs!).toBeLessThan(-13);
       expect(normalized.audio_true_peak_db!).toBeLessThan(-1);
       expect(normalized.duration!).toBeCloseTo(original.duration!, 1);
       expect(normalized.has_nonblack_video).toBe(true);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 60_000);
+  it('skips loudness normalization for a silent final mix instead of failing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-normalize-silent-'));
+    try {
+      const frames = join(dir, 'frames'), voice = join(dir, 'silence.wav'), output = join(dir, 'silent.mp4');
+      await mkdir(frames);
+      await writeFile(join(frames, '0001.png'), colorPng());
+      await writeFile(voice, wavTone(1000, 0));
+      await runStoryboundMediaSidecar({ mode: 'compose_render', work_dir: dir, scenes: [{ frames_dir: frames, audio_path: voice, fps: 10, duration_s: 1 }], total_duration_s: 1, output_path: output, normalize_audio: true });
+      const probe = await runStoryboundMediaSidecar({ mode: 'probe_media', work_dir: dir, media_path: output, analyze_quality: true });
+      expect(probe).toMatchObject({ success: true, has_audio: true, has_video: true, audio_is_silent: true });
+      expect(probe.duration!).toBeCloseTo(1, 1);
     } finally { await rm(dir, { recursive: true, force: true }); }
   }, 60_000);
   it('bounds decoder, filter and encoder pools even for a small composition graph and cleans its filter script', async () => {

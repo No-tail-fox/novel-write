@@ -89,6 +89,15 @@ describe('director concurrent render staging', () => {
     expect(composition.normalizeAudio).toBe(true);
     expect(composition.scenes[0].audioClips).toMatchObject([{ startMs: 100, durationMs: 800, gainDb: -2 }]);
   });
+  it('normalizes template renders by default, without needing a creative-production owner', async () => {
+    mocks.render.mockImplementation(async (input) => ({ outputPath: input.outputPath }));
+    await renderDirectorVideo({
+      workDir: 'E:/StoryDream-QA/template-project', projectTitle: 'Template', modeLabel: 'VOX', ratio: '16:9',
+      scenes: [{ id: 'shot', index: 1, title: 'Shot', caption: '', durationMs: 1000, renderStrategy: 'deterministic-layers',
+        layers: [{ id: 'image', label: 'Image', imagePath: 'E:/fixture.png', zIndex: 0, depth: 0, motion: [] }], camera: [], audioPath: 'E:/fixture.wav' }],
+    });
+    expect(mocks.render.mock.calls[0][0].normalizeAudio).toBe(true);
+  });
   it('isolates staging, capture and MP4 paths even at the same timestamp', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);
     mocks.render.mockImplementation(async (input) => ({ outputPath: input.outputPath }));

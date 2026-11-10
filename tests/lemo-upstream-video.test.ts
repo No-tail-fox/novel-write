@@ -63,7 +63,7 @@ describe('mux.sh port: pure builders', () => {
     const measurement = parseLoudnormJson(LOUDNORM)!.measurement;
     const args = buildMuxArgs({ videoPath: 'in.mp4', outputPath: 'out.mp4', fps: 30, grain: 2, loudnorm: measurement, padToSeconds: 12.5, hasAudio: true });
     expect(args).toEqual(['-y', '-loglevel', 'error', '-i', 'in.mp4',
-      '-filter_complex', '[0:v]fps=30,noise=c0s=2:allf=t,format=yuv420p[v];[0:a:0]loudnorm=I=-14:TP=-1.2:LRA=11:measured_I=-21.75:measured_TP=-18.06:measured_LRA=0.00:measured_thresh=-31.75:offset=-0.05:linear=true,aresample=48000,apad=whole_dur=12.5[a]',
+      '-filter_complex', '[0:v]fps=30,noise=c0s=2:allf=t,format=yuv420p[v];[0:a:0]loudnorm=I=-14:TP=-1:LRA=11:measured_I=-21.75:measured_TP=-18.06:measured_LRA=0.00:measured_thresh=-31.75:offset=-0.05:linear=true,aresample=48000,apad=whole_dur=12.5[a]',
       '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'slow', '-crf', '19', '-r', '30', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', '-shortest', 'out.mp4']);
   });
 

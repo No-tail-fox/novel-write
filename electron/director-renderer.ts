@@ -12,6 +12,7 @@ import {
   type DirectorSceneHtmlLayer,
 } from '../src/shared/director-render';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
+import { resolveNormalizeAudio } from '../src/shared/loudness';
 import { createElectronHtmlVideoRenderer } from './html-video-renderer';
 import { preflightVideoRenderDisk } from './video-render-preflight';
 import { measureDirectorSubtitleLayout, measureDirectorSubtitleVisibility, productionSubtitleSceneLayoutSchema, type ProductionSubtitleLayoutEvidence, type ProductionSubtitleSceneLayout } from '../src/shared/production-subtitle-layout';
@@ -33,7 +34,7 @@ export async function renderDirectorVideo(input: {
   ratio: string;
   scenes: readonly DirectorRenderScene[];
   sceneStarts?: ReadonlyMap<string, number>;
-  /** Music MVs preserve the gain authored on the original song. */
+  /** Two-pass loudness normalisation to the shared final-film target; on unless explicitly `false` (Music MVs preserve the song's authored gain). */
   normalizeAudio?: boolean;
   signal?: AbortSignal;
   /** Explicit built runtime for isolated verification or embedding. */
@@ -210,7 +211,8 @@ export async function renderDirectorVideo(input: {
     canvas_w: canvas.width,
     canvas_h: canvas.height,
     totalDurationS,
-    normalizeAudio: input.normalizeAudio ?? input.scenes.some(scene => scene.animation?.authoring?.owner === 'creative-production'),
+    // Final films are loudness-normalised (−14 LUFS / TP −1) unless a caller explicitly opts out (Music MVs keep the song's gain).
+    normalizeAudio: resolveNormalizeAudio(input.normalizeAudio),
     // Per-scene incoming dissolves are visual-only. The compositor concatenates
     // narration on the original scene clock; ordinary A/V crossfades are disabled.
     transition: { type: 'cut', duration: 0 },
