@@ -148,7 +148,7 @@
 | U-3 | **✅ 导入界面已实现**：在“自动制作设置”里导入图片/视频，填写出处、许可和画面说明，并提供“允许 AI 生成插画”开关和数量上限。剩余：纪实类风格在画面上标注来源（见 L-2b） | `CreativeProductionFields.tsx`；测试 `tests/lemo-material-ui.test.ts` | P1 | S | L-1 |
 | U-4 | **✅ 已实现**：模板路线把每次换模型写成任务事件 `model_fallback`（任务历史可见）；HTML 路线的换模型记录在回执日志 `fallbackModel` 字段；`PROVIDER_RESULT_UNKNOWN` 有专门中文摘要“上次请求结果未知，请核对服务商记录后再重试”；设置页 LLM 档案显示能力档案与降级说明。原条目：模型降级记录、unknown 处理策略对用户可见 | P0-1/P0-3 验收 | P1 | S | G-1、G-3 |
 | U-5 | 成本面板：按项目统计 LLM/生图/TTS 次数和估算费用 | `technical-roadmap.md:188` | P3 | M | G-3 |
-| U-6 | 根据模型能力自动推荐路线（T1/T2/T3）或降级 | `technical-roadmap.md:186` | P3 | M | G-1 |
+| U-6 | **✅ 已实现（提示，不自动切换）**：`recommendProductionRoute(model, chosen)`（model-capabilities.ts）按模型档案推荐路线（T1→创意动画，T2→HTML 场景代码，T3→模板动画），所选路线需要更强模型时给出降级建议；创意/模板动画和 HTML 的新建表单在“项目模型”下显示 `role=note` 提示，从不阻止创建。测试 `tests/route-recommendation.test.ts`。原条目：根据模型能力自动推荐路线（T1/T2/T3）或降级 | `technical-roadmap.md:186` | P3 | M | G-1 |
 | U-7 | **✅ 部分实现（静态底线）**：`tests/renderer-a11y-contract.test.ts`（img 必有 alt、无正 tabIndex、非交互元素的点击必须是冒泡拦截或有键盘路径、图标按钮必须走带 label 的 IconButton、焦点环、lang）；`src/styles/components.css` 新增 forced-colors 焦点环和全局 reduced-motion 兜底（加载转圈保留慢速）。真实读屏朗读顺序和 Windows 系统缩放仍需人工走查【未核实】。原条目：无障碍专项：键盘顺序、读屏、系统缩放 | `design-qa.md:78` | P3 | M | — |
 
 ### 2.6 测试与 CI

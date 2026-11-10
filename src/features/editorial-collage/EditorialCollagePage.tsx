@@ -1183,7 +1183,7 @@ export function EditorialCollagePage({
       onCreate={() => void createProject()}
     >
       {createStep === 0 ? <>
-        <ProjectModelFields config={state.config} value={createModels} onChange={setCreateModels} disabled={projectAction.busy || copyAction.busy} />
+        <ProjectModelFields config={state.config} value={createModels} onChange={setCreateModels} disabled={projectAction.busy || copyAction.busy} route={route === 'template' ? 'template' : 'lemo'} />
         <TextField label="项目标题" value={createTitle} onChange={(_, data) => { setCreateTitle(data.value); copyAction.clearFeedback(); }} placeholder="例如：拉萨旧城的回声" />
         <SelectField label="内容赛道" value={createTrack} options={COPYWRITING_TRACKS.map(track => ({ value: track.id, label: track.label }))}
           hint={copywritingTrack(createTrack).description} onChange={(_, data) => { setCreateTrack(data.value); copyAction.clearFeedback(); }} />

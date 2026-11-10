@@ -625,7 +625,7 @@ export function HtmlVideoPage({
           </header>
 
           <div className="hv-create-sheet">
-            <section className="hv-create-section"><h2>项目模型</h2><ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} /></section>
+            <section className="hv-create-section"><h2>项目模型</h2><ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} route="html" /></section>
             <section className="hv-create-section">
               <header>{copyMode === 'ai' ? <Wand2 size={17} /> : <FileText size={17} />}<div><h2>文案</h2><p>AI 创作 · 粘贴文案</p></div></header>
               <div className="hv-create-section-content hv-create-copy-content">

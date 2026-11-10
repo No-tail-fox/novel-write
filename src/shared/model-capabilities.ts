@@ -100,3 +100,36 @@ export function recommendFallbackModels(primary: string, available: readonly str
     || a.id.localeCompare(b.id));
   return candidates.slice(0, Math.max(0, Math.min(4, max))).map(({ id }) => id);
 }
+
+/** Production routes a project can take. `lemo` = 创意动画 (agent whole film), `html` = 场景代码, `template` = 模板动画. */
+export type ProductionRouteKind = 'lemo' | 'html' | 'template';
+
+/** Model tier each route needs (model tiers: T1 strongest). Templates run on any model. */
+const ROUTE_REQUIRED_TIER: Record<ProductionRouteKind, ModelTier> = { lemo: 'T1', html: 'T2', template: 'T3' };
+const ROUTE_LABEL: Record<ProductionRouteKind, string> = { lemo: '创意动画', html: 'HTML 场景代码', template: '模板动画' };
+
+export interface RouteRecommendation {
+  /** Most ambitious route the model can carry. */
+  recommended: ProductionRouteKind;
+  /** Set when the chosen route needs a stronger model; the user may still proceed. */
+  warning?: string;
+  /** Route to fall back to when the chosen route does not fit (never applied automatically). */
+  downgradeTo?: ProductionRouteKind;
+}
+
+/**
+ * U-6: recommend a route from the project LLM, and warn (never block) when the chosen route needs a
+ * stronger model. Unknown models are treated as T2, so they are warned about only for 创意动画.
+ */
+export function recommendProductionRoute(model: string, chosen?: ProductionRouteKind): RouteRecommendation {
+  const caps = inferModelCapabilities(model);
+  const recommended: ProductionRouteKind = caps.tier === 'T1' ? 'lemo' : caps.tier === 'T2' ? 'html' : 'template';
+  if (!chosen || modelMeetsTier(model, ROUTE_REQUIRED_TIER[chosen])) return { recommended };
+  const name = model.trim() || '当前模型';
+  const identity = caps.known ? `${name}（${caps.tier}）` : `${name}（未识别，按 T2 处理）`;
+  return {
+    recommended,
+    downgradeTo: recommended,
+    warning: `${ROUTE_LABEL[chosen]}需要 ${ROUTE_REQUIRED_TIER[chosen]} 级语言模型，${identity}可能写不完整或反复失败。建议换更强的模型，或改用${ROUTE_LABEL[recommended]}。`,
+  };
+}

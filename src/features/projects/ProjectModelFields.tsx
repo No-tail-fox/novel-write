@@ -4,12 +4,15 @@ import type { AppConfig, AppMutationResult, ProjectModels, Task, ProjectActivity
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import { defaultProjectModels, projectRuntimeConfig, validateProjectModels } from '../../shared/project-models';
 import { Button, Dialog, SelectField } from '../../ui';
+import { recommendProductionRoute, type ProductionRouteKind } from '../../shared/model-capabilities';
 import '../../styles/features/project-models.css';
 
 type ModelProject = Pick<Task, 'id' | 'title' | 'status' | 'archivedAt' | 'llmProfileId' | 'projectModels'> & { projectActivity?: ProjectActivity };
 
-export function ProjectModelFields({ config, value, onChange, disabled = false }: {
+export function ProjectModelFields({ config, value, onChange, disabled = false, route }: {
   config: AppConfig; value: ProjectModels; onChange: (value: ProjectModels) => void; disabled?: boolean;
+  /** U-6: when set, warn (never block) if the chosen language model is too weak for this route. */
+  route?: ProductionRouteKind;
 }) {
   const missing = (id: string, options: { value: string; label: string }[]) =>
     options.some(option => option.value === id) ? options : [{ value: id, label: '配置已删除，请重新选择' }, ...options];
@@ -23,7 +26,14 @@ export function ProjectModelFields({ config, value, onChange, disabled = false }
       <SelectField label="生图模型" value={value.imageProfileId} disabled={disabled} options={missing(value.imageProfileId, images)} onChange={(_, data) => onChange({ ...value, imageProfileId: data.value })} />
       <SelectField label="视频模型" value={value.videoProviderId ?? ''} disabled={disabled} options={[{ value: '', label: '不使用视频模型' }, ...missing(value.videoProviderId ?? '', [{ value: '', label: '' }, ...videos]).filter(option => option.value)]} onChange={(_, data) => onChange({ ...value, videoProviderId: data.value || null })} />
     </div>
+    {route ? <RouteFitHint config={config} llmProfileId={value.llmProfileId} route={route} /> : null}
   </section>;
+}
+
+function RouteFitHint({ config, llmProfileId, route }: { config: AppConfig; llmProfileId: string; route: ProductionRouteKind }) {
+  const model = config.llmProfiles.find(profile => profile.id === llmProfileId)?.model ?? '';
+  const fit = model ? recommendProductionRoute(model, route) : null;
+  return fit?.warning ? <p className="project-model-route-hint" role="note">{fit.warning}</p> : null;
 }
 
 export function ProjectModelsDialog({ task, config, api, onUpdated, onClose }: {
