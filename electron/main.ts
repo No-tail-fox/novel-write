@@ -45,7 +45,6 @@ import { LEMO_NATIVE_ENGINE, LEMO_FILE_REQUEST_DEFAULTS, lemoNativeMessages, lem
 import { reviewCreativeAnimation } from './creative-animation-preview';
 import { buildVoxProductionNodes, voxProductionEngine, voxProductionNeedsTextModel } from '../src/shared/vox-production';
 import { resolveDirectorImageProviderStatus, resolveDirectorVoiceProviderStatus } from '../src/features/director-desk/director-generation';
-import { buildMotionComicShotVideoRequest, motionComicVideoFrames, motionComicVideoInputFingerprintSource, selectMotionComicVideoRoute } from '../src/shared/motion-comic-video';
 import { buildDirectorRenderScenes, directorCanvasForRatio, directorDocumentRenderFingerprint, directorNarrationAlignment, directorQualityReview, evaluateDirectorQuality, persistDirectorRenderCompletion, type DirectorRenderDocument, type DirectorGenerateShotVideoRequest, type DirectorGenerateShotVideoResult, type DirectorRenderRequest, type DirectorSubtitleRecheckRequest, type DirectorSubtitleRecheckResult, type DirectorMediaRecheckRequest, type DirectorMediaRecheckResult } from '../src/shared/director-render';
 import { evaluateDirectorVisualContinuity, productionVisualContinuityEvidenceSchema, type ProductionVisualContinuityEvidence } from '../src/shared/production-visual-continuity';
 import { evaluateDirectorSubtitleLayout } from '../src/shared/production-subtitle-layout';
@@ -65,9 +64,8 @@ import { testConfigTarget } from '../src/shared/config-test-runtime';
 import { generateImageLabRecord, selectImageLabProfileConfig } from '../src/shared/image-lab';
 import { generateCustomStylePreviewDraft } from './custom-style-preview';
 import { AgentSearchMcpService } from './agent-search';
-import { ensureBackgroundRemovalModel } from './background-removal-model';
-import { inspectImageBackgroundRemoval, removeImageBackground } from './background-removal';
-import { BACKGROUND_REMOVAL_ERROR_CODES, backgroundRemovalFailure } from '../src/shared/background-removal';
+import { inspectImageBackgroundRemoval } from './background-removal';
+import { backgroundRemovalFailure } from '../src/shared/background-removal';
 import { createVideoLabRuntime } from '../src/shared/video-lab-runtime';
 import { createMusicProfileService } from './music-profile-service';
 import type { MusicTrackInput } from '../src/shared/music-lab';
@@ -78,36 +76,23 @@ import { findJianyingExecutable } from '../src/shared/jianying-app';
 import { loadJianyingEffectCatalog } from '../src/shared/jianying-effects';
 import { runPyJianYingDraftBridge } from '../src/shared/jianying-bridge';
 import { resolveHtmlVideoCoverForRender, runHtmlVideoPipeline, synchronizeHtmlVideoPipelineCheckpoint, synchronizeHtmlVideoEditorialArtifacts } from '../src/shared/html-video-runner';
-import { type HtmlVideoBackgroundRemovalModel } from '../src/shared/html-video-background-removal';
-import { MAX_HTML_VIDEO_COVER_BYTES, type HtmlVideoCoverImageProcessor, type HtmlVideoCoverInspection } from '../src/shared/html-video-cover';
-import {
-  MAX_ORDINARY_TASK_COVER_BYTES,
-  createOrdinaryTaskCoverAsset,
-  createOrdinaryTaskCoverSelection,
-  ordinaryTaskCoverDimensions,
-  validateOrdinaryTaskCoverInspection,
-  validateOrdinaryTaskCoverSelection,
-  type OrdinaryTaskCoverImageProcessor,
-  type OrdinaryTaskCoverInspection,
-} from '../src/shared/ordinary-task-cover';
 import { applyHtmlVideoConfigChanges, applyHtmlVideoSceneChanges, applyHtmlVideoSceneStructureChange, createHtmlVideoTaskInput, htmlVideoVisibleSteps, isHtmlVideoTask, MAX_HTML_VIDEO_ELEMENTS_PER_SCENE, parseHtmlVideoPipelineData, prepareHtmlVideoPipelineForRerender, recoverHtmlVideoPipelineDataForRetry, type HtmlVideoPipelineRetryPatch } from '../src/shared/html-video-workflow';
-import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME, MAX_HYPERFRAMES_SOURCE_BYTES } from '../src/shared/hyperframes';
+import { assertHyperframesSource, GSAP_RUNTIME_FILENAME, HYPERFRAMES_RUNTIME_FILENAME } from '../src/shared/hyperframes';
 import { generateConfiguredVoicePreview } from '../src/shared/media-providers';
 import { mergeMinimaxCloneVoice } from '../src/shared/minimax-clone-voices';
 import { assertNetworkUrl } from '../src/shared/network-policy';
 import { createPersonAsset, importPersonAssetFiles, listPersonAssets, listPersonImages, renamePersonAsset, recyclePersonAsset, restoreRecycledPersonAsset } from '../src/shared/person-assets';
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, onLlmModelFallback, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
-import { resolvePythonRuntimeInfo, setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
+import { setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { composeCopyFromSources, createAiSourceResearcher, DEFAULT_WEB_SEARCH_PROVIDERS, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
 import { createHtmlVideoRuntimeProviders, createTaskRuntimeProviders } from '../src/shared/task-runtime-providers';
 import { assertTaskLifecycleAction } from '../src/shared/task-progress';
-import { createConfiguredVideoProvider, requiredVideoCapabilities, selectVideoGenerationRoute, validateVideoGenerationRequest, type VideoGenerationRequest } from '../src/shared/video-provider';
-import { latestProductionProviderJob } from '../src/shared/production-workflow';
-import type { AccountProfile, ActivationState, AppConfig, AppDelta, BackgroundRemovalMetadata, BackgroundRemovalMethod, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAsset, HtmlVideoAssetTarget, HtmlVideoCompositionSource, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, HtmlVideoVoiceClip, ImageLabBackgroundRemovalInput, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, OrdinaryTaskCoverSelection, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
+import { createConfiguredVideoProvider, requiredVideoCapabilities, selectVideoGenerationRoute, type VideoGenerationRequest } from '../src/shared/video-provider';
+import type { AccountProfile, ActivationState, AppDelta, AppDeltaReconcileRequest, AppDeltaReconcileResult, AppStatePatch, BenchmarkGroupInput, BenchmarkGroupSyncResult, BenchmarkLoginInput, BenchmarkLoginResult, BenchmarkPlatform, BenchmarkPostInput, BookDiscoveryRequest, BookSelectionInput, ConfigTestTarget, CreateTaskInput, CreateViralAnalysisInput, CursorRequest, CustomStyle, CustomStyleGenerateInput, DraftTemplate, HistoryFamily, HistoryListRequest, HotBoardSourceContent, HtmlVideoAssetTarget, HtmlVideoCompositionSourceLintInput, HtmlVideoCompositionSourceSaveInput, HtmlVideoConfigChange, HtmlVideoPipelineDataV2, HtmlVideoSceneChange, ImageLabBackgroundRemovalInput, ImageLabGenerateInput, ImageLabRecord, ImageLabSummary, ImaKnowledgeRequest, LlmConfig, ManagedBgmImport, MinimaxCloneVoiceInput, OrdinaryTaskCoverRatio, PromptTemplate, ProviderModelListRequest, ResearchCopyComposeInput, SceneVideoLibraryItem, SequencedTaskEvent, StoryboardScene, Task, TaskArtifactVideoPreview, TaskImageReplacementSource, TaskStatus, TaskStepRerunMode, TaskSubtitleSceneLines, TaskVideoReplacementSource, UiPreferencesUpdate, ViralAnalysisRecord, ViralAnalysisResult, ViralAnalysisStatus, ViralProductionTaskOptions, VolcengineSpeakerListRequest, VoiceLabGenerateInput, VoiceLabRecord, VoiceLabSummary, WebSearchRequest } from '../src/shared/types';
 import { boundViralDiagnosticText, createViralProductionTaskInput, detectViralPlatform, runViralAnalysis, viralCheckpointResumeState, type RunViralAnalysisOptions } from '../src/shared/viral-analysis';
 import { createViralRuntimeProviders, transcribeViralAudio } from '../src/shared/viral-runtime';
 import { assertMusicMvLyricSynchronization, assertMusicMvRenderSynchronization, formatMusicMvLyricSyncFailure, matchMusicMvLyricsToTranscript } from '../src/shared/music-mv-plan';
@@ -120,7 +105,6 @@ import { referenceManifestSchema, referencePartSchema } from '../src/shared/vira
 import { exportReferenceReport, readReferenceManifest, readReferencePart, registerReferenceMedia, resolveReferenceMedia, writeReferenceJson } from '../src/shared/viral-reference-store';
 import { createViralReferenceMediaUrl, openViralReferenceMediaResponse } from './viral-reference-media-protocol';
 import { listVolcengineSpeakers } from '../src/shared/volcengine-speakers';
-import { resolveVolcengineTtsApiVersion } from '../src/shared/volcengine-tts';
 import { getRendererIndexPath } from './paths';
 import {
   createElectronHtmlVideoRuntime,
@@ -160,7 +144,6 @@ import { ArtifactStorage } from './artifact-storage';
 import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
 import { guardProcessOutput } from './process-output';
-import { downloadVerifiedVideoResult } from './resumable-transfer';
 import {
   backfillLegacyManagedHistoryStorage,
   deleteManagedHistoryWithQuarantine,
@@ -188,6 +171,10 @@ import {
 } from './security';
 import { createEditorialQaSeeds } from './editorial-qa-seed';
 import { createLoginWindows } from './login-windows';
+import { checkPyJianYingDraft, checkPython, checkStoryboundSidecarDependencies, imageConfigStatus, normalizeGeneratedCustomStyle, readLocalImageDataUrl, ttsConfigStatus } from './diagnostics';
+import { createMediaAssetProcessing } from './media-asset-processing';
+import { createMotionComicShotVideo } from './motion-comic-shot-video';
+import { createHtmlVideoEditorial } from './html-video-editorial';
 
 guardProcessOutput(process.stdout);
 guardProcessOutput(process.stderr);
@@ -1306,291 +1293,24 @@ async function probeHtmlVideoMedia(
   };
 }
 
-async function inspectHtmlVideoCoverImage(sourcePath: string): Promise<HtmlVideoCoverInspection> {
-  const value = await stat(sourcePath);
-  if (!value.isFile() || value.size <= 0 || value.size > MAX_HTML_VIDEO_COVER_BYTES) {
-    throw new Error(`HTML_VIDEO_COVER_SOURCE_INVALID: 封面图片必须是 1 到 ${MAX_HTML_VIDEO_COVER_BYTES} 字节的普通文件。`);
-  }
-  const extension = extname(sourcePath).toLowerCase();
-  const mimeType = extension === '.png'
-    ? 'image/png'
-    : extension === '.jpg' || extension === '.jpeg'
-      ? 'image/jpeg'
-      : extension === '.webp'
-        ? 'image/webp'
-        : '';
-  if (!mimeType) throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 封面图片格式不受支持。');
-  const image = nativeImage.createFromPath(sourcePath);
-  if (image.isEmpty()) throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 无法解码所选封面图片。');
-  const size = image.getSize();
-  return {
-    sourcePath,
-    exists: true,
-    isFile: true,
-    sizeBytes: value.size,
-    width: size.width,
-    height: size.height,
-    mimeType,
-  };
-}
-
-const prepareHtmlVideoCoverImage: HtmlVideoCoverImageProcessor = async (input) => {
-  input.signal?.throwIfAborted();
-  const value = await stat(input.sourcePath);
-  if (!value.isFile() || value.size <= 0 || value.size > MAX_HTML_VIDEO_COVER_BYTES) {
-    throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 封面图片文件大小无效。');
-  }
-  const source = nativeImage.createFromPath(input.sourcePath);
-  if (source.isEmpty()) throw new Error('HTML_VIDEO_COVER_SOURCE_INVALID: 无法解码封面图片。');
-  const resized = source.resize({
-    width: input.dimensions.width,
-    height: input.dimensions.height,
-    quality: 'best',
-  });
-  const size = resized.getSize();
-  if (size.width !== input.dimensions.width || size.height !== input.dimensions.height) {
-    throw new Error('HTML_VIDEO_COVER_DIMENSIONS_INVALID: 无法生成精确尺寸的封面图片。');
-  }
-  input.signal?.throwIfAborted();
-  const bytes = resized.toPNG();
-  if (bytes.length <= 0 || bytes.length > MAX_HTML_VIDEO_COVER_BYTES) {
-    throw new Error('HTML_VIDEO_COVER_OUTPUT_INVALID: 规范化后的封面图片大小无效。');
-  }
-  await writeFile(input.destinationPath, bytes, { flag: 'wx' });
-  input.signal?.throwIfAborted();
-  return {
-    sizeBytes: bytes.length,
-    width: size.width,
-    height: size.height,
-    mimeType: 'image/png',
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-  };
-};
-
-async function inspectHtmlVideoAssetTransparency(sourcePath: string): Promise<boolean> {
-  return (await inspectImageBackgroundRemoval(sourcePath)).quality === 'passed';
-}
-
-const inspectHtmlVideoAssetBackgroundRemoval = inspectImageBackgroundRemoval;
-
-// Keep local segmentation bounded even when the image provider runs in parallel.
-let htmlVideoForegroundPreparationQueue = Promise.resolve();
-function prepareHtmlVideoForegroundAsset(sourcePath: string, signal?: AbortSignal): Promise<{ src: string; backgroundRemoval: BackgroundRemovalMetadata }> {
-  const operation = htmlVideoForegroundPreparationQueue.then(async () => {
-    signal?.throwIfAborted();
-    const outputPath = imageLabCutoutPath(sourcePath);
-    try {
-      const model = await resolveHtmlVideoBackgroundRemovalModel();
-      signal?.throwIfAborted();
-      const backgroundRemoval = await removeHtmlVideoImageBackground(sourcePath, outputPath, model);
-      signal?.throwIfAborted();
-      return { src: outputPath, backgroundRemoval };
-    } catch (error) {
-      await rm(outputPath, { force: true });
-      throw error;
-    }
-  });
-  htmlVideoForegroundPreparationQueue = operation.then(() => undefined, () => undefined);
-  return operation;
-}
-
-
-async function sha256File(sourcePath: string): Promise<string> {
-  return createHash('sha256').update(await readFile(sourcePath)).digest('hex');
-}
-
-function imageLabCutoutPath(sourcePath: string): string {
-  return join(dirname(sourcePath), `${basename(sourcePath, extname(sourcePath))}.cutout-${randomUUID()}.png`);
-}
-
-function errorCodeFromBackgroundRemovalError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  const match = message.match(/\b(BACKGROUND_REMOVAL_[A-Z0-9_]+|EDITORIAL_CUTOUT_[A-Z0-9_]+|HTML_VIDEO_BACKGROUND_[A-Z0-9_]+)\b/);
-  return match?.[1] ?? BACKGROUND_REMOVAL_ERROR_CODES.workerFailed;
-}
-
-async function removeImageLabBackgroundFromSource(
-  sourcePath: string,
-  method: BackgroundRemovalMethod,
-): Promise<{ outputPath: string; metadata: BackgroundRemovalMetadata }> {
-  const sourceSha256 = await sha256File(sourcePath);
-  const outputPath = imageLabCutoutPath(sourcePath);
-  try {
-    const metadata = await removeImageBackground(sourcePath, outputPath, {
-      method, modelDirectory: join(appDataDir(), 'models'), workerPath: join(__dirname, 'remove-background-worker.py'),
-    });
-    return { outputPath, metadata };
-  } catch (error) {
-    throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
-      code: errorCodeFromBackgroundRemovalError(error), sourceSha256,
-    });
-  }
-}
-
-function imageLabCutoutFields(metadata: BackgroundRemovalMetadata, outputPath?: string): Partial<ImageLabRecord> {
-  return {
-    ...(outputPath ? { cutoutImagePath: outputPath, ...(metadata.quality === 'passed' ? { imagePath: outputPath } : {}) } : {}),
-    cutoutMethod: metadata.method,
-    cutoutModel: metadata.model ?? '',
-    cutoutModelVersion: metadata.modelVersion ?? '',
-    cutoutModelSha256: metadata.modelSha256 ?? '',
-    cutoutSourceSha256: metadata.sourceSha256 ?? '',
-    cutoutOutputSha256: metadata.outputSha256 ?? '',
-    cutoutTransparentFraction: metadata.transparentFraction,
-    cutoutForegroundFraction: metadata.foregroundFraction,
-    cutoutEdgeFraction: metadata.edgeFraction,
-    cutoutQuality: metadata.quality,
-    cutoutErrorCode: metadata.errorCode ?? '',
-    cutoutErrorMessage: metadata.errorMessage ?? '',
-  };
-}
-
-async function resolveHtmlVideoBackgroundRemovalModel(): Promise<HtmlVideoBackgroundRemovalModel> {
-  return ensureBackgroundRemovalModel(join(appDataDir(), 'models'));
-}
-
-async function removeHtmlVideoImageBackground(
-  inputPath: string,
-  outputPath: string,
-  model: Awaited<ReturnType<typeof resolveHtmlVideoBackgroundRemovalModel>>,
-): Promise<BackgroundRemovalMetadata> {
-  const metadata = await removeImageBackground(inputPath, outputPath, {
-    method: 'onnx', modelDirectory: join(appDataDir(), 'models'), workerPath: join(__dirname, 'remove-background-worker.py'), model,
-  });
-  if (metadata.quality !== 'passed') throw Object.assign(new Error(`${metadata.errorCode ?? 'BACKGROUND_REMOVAL_EDGE_REVIEW'}: 去底结果未通过 alpha 质量评估，原图已保留。`), { backgroundRemoval: metadata });
-  return metadata;
-}
-
-function ordinaryTaskCoverPendingPaths(id: string): { image: string; metadata: string } {
-  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu.test(id)) {
-    throw new Error('ORDINARY_MANUAL_COVER_ID_INVALID: 手动封面资产标识无效。');
-  }
-  const root = join(artifactDataDir(), 'pending-task-covers');
-  return { image: join(root, `${id}.png`), metadata: join(root, `${id}.json`) };
-}
-
-async function inspectOrdinaryTaskCoverImage(
-  sourcePath: string,
-  ratio: OrdinaryTaskCoverRatio,
-): Promise<OrdinaryTaskCoverInspection & { sourceBytes: Uint8Array }> {
-  const value = await stat(sourcePath);
-  if (!value.isFile()) {
-    throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 封面图片必须是普通文件。');
-  }
-  const sourceBytes = await readFile(sourcePath);
-  if (sourceBytes.length <= 0 || sourceBytes.length > MAX_ORDINARY_TASK_COVER_BYTES) {
-    throw new Error(`ORDINARY_MANUAL_COVER_SOURCE_INVALID: 封面图片必须是 1 到 ${MAX_ORDINARY_TASK_COVER_BYTES} 字节的普通文件。`);
-  }
-  const extension = extname(sourcePath).toLowerCase();
-  const mimeType = extension === '.png'
-    ? 'image/png'
-    : extension === '.jpg' || extension === '.jpeg'
-      ? 'image/jpeg'
-      : extension === '.webp'
-        ? 'image/webp'
-        : '';
-  if (!mimeType) throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 封面图片格式不受支持。');
-  const image = nativeImage.createFromBuffer(sourceBytes);
-  if (image.isEmpty()) throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 无法解码所选封面图片。');
-  const size = image.getSize();
-  const inspection = validateOrdinaryTaskCoverInspection({
-    sourcePath,
-    exists: true,
-    isFile: true,
-    sizeBytes: sourceBytes.length,
-    width: size.width,
-    height: size.height,
-    mimeType,
-    originalName: basename(sourcePath),
-  }, ratio);
-  return { ...inspection, sourceBytes };
-}
-
-const prepareOrdinaryTaskCoverImage: OrdinaryTaskCoverImageProcessor = async (input) => {
-  const source = nativeImage.createFromBuffer(Buffer.from(input.sourceBytes));
-  if (source.isEmpty()) throw new Error('ORDINARY_MANUAL_COVER_SOURCE_INVALID: 无法解码封面图片。');
-  const resized = source.resize({ width: input.dimensions.width, height: input.dimensions.height, quality: 'best' });
-  const size = resized.getSize();
-  if (size.width !== input.dimensions.width || size.height !== input.dimensions.height) {
-    throw new Error('ORDINARY_MANUAL_COVER_DIMENSIONS_INVALID: 无法生成精确尺寸的封面图片。');
-  }
-  const bytes = resized.toPNG();
-  if (bytes.length <= 0 || bytes.length > MAX_ORDINARY_TASK_COVER_BYTES) {
-    throw new Error('ORDINARY_MANUAL_COVER_OUTPUT_INVALID: 规范化后的封面图片大小无效。');
-  }
-  await writeFile(input.destinationPath, bytes, { flag: 'wx' });
-  return {
-    sizeBytes: bytes.length,
-    width: size.width,
-    height: size.height,
-    mimeType: 'image/png',
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-  };
-};
-
-async function stageOrdinaryTaskCover(
-  inspection: OrdinaryTaskCoverInspection & { sourceBytes: Uint8Array },
-  ratio: OrdinaryTaskCoverRatio,
-): Promise<OrdinaryTaskCoverSelection> {
-  validateOrdinaryTaskCoverInspection(inspection, ratio);
-  const id = randomUUID();
-  const paths = ordinaryTaskCoverPendingPaths(id);
-  const root = dirname(paths.image);
-  const tempImage = join(root, `.${id}-${randomUUID()}.tmp`);
-  await mkdir(root, { recursive: true });
-  try {
-    const prepared = await prepareOrdinaryTaskCoverImage({
-      sourcePath: inspection.sourcePath,
-      sourceBytes: inspection.sourceBytes,
-      destinationPath: tempImage,
-      dimensions: ordinaryTaskCoverDimensions(ratio),
-    });
-    const asset = createOrdinaryTaskCoverAsset({
-      path: 'covers/cover-manual.png',
-      originalName: basename(inspection.originalName || inspection.sourcePath).slice(0, 512),
-      ...prepared,
-      ratio,
-      createdAt: new Date().toISOString(),
-    });
-    const selection = createOrdinaryTaskCoverSelection(id, asset);
-    await rename(tempImage, paths.image);
-    await writeFile(paths.metadata, JSON.stringify(selection), { encoding: 'utf8', flag: 'wx' });
-    return selection;
-  } catch (error) {
-    await Promise.all([
-      rm(tempImage, { force: true }),
-      rm(paths.image, { force: true }),
-      rm(paths.metadata, { force: true }),
-    ]).catch(() => undefined);
-    throw error;
-  }
-}
-
-async function readStagedOrdinaryTaskCover(id: string): Promise<{
-  selection: OrdinaryTaskCoverSelection;
-  inspection: OrdinaryTaskCoverInspection;
-  bytes: Uint8Array;
-}> {
-  const paths = ordinaryTaskCoverPendingPaths(id);
-  const selection = validateOrdinaryTaskCoverSelection(JSON.parse(await readFile(paths.metadata, 'utf8')));
-  if (selection.id !== id) throw new Error('ORDINARY_MANUAL_COVER_ID_INVALID: 手动封面元数据不匹配。');
-  const inspected = await inspectOrdinaryTaskCoverImage(paths.image, selection.ratio);
-  const { sourceBytes: bytes, ...inspection } = inspected;
-  const sha256 = createHash('sha256').update(bytes).digest('hex');
-  if (bytes.length !== selection.sizeBytes || sha256 !== selection.sha256) {
-    throw new Error('ORDINARY_MANUAL_COVER_TAMPERED: 手动封面暂存文件已变化，请重新导入。');
-  }
-  return {
-    selection,
-    inspection: { ...inspection, originalName: selection.originalName },
-    bytes,
-  };
-}
-
-async function removeStagedOrdinaryTaskCover(id: string): Promise<void> {
-  const paths = ordinaryTaskCoverPendingPaths(id);
-  await Promise.all([rm(paths.image, { force: true }), rm(paths.metadata, { force: true })]);
-}
+const {
+  inspectHtmlVideoCoverImage,
+  prepareHtmlVideoCoverImage,
+  inspectHtmlVideoAssetTransparency,
+  inspectHtmlVideoAssetBackgroundRemoval,
+  prepareHtmlVideoForegroundAsset,
+  sha256File,
+  errorCodeFromBackgroundRemovalError,
+  removeImageLabBackgroundFromSource,
+  imageLabCutoutFields,
+  resolveHtmlVideoBackgroundRemovalModel,
+  removeHtmlVideoImageBackground,
+  inspectOrdinaryTaskCoverImage,
+  prepareOrdinaryTaskCoverImage,
+  stageOrdinaryTaskCover,
+  readStagedOrdinaryTaskCover,
+  removeStagedOrdinaryTaskCover,
+} = createMediaAssetProcessing({ appDataDir, artifactDataDir, electronDir: __dirname });
 
 async function persistHtmlVideoTaskCheckpoint(
   database: FileDatabase,
@@ -3005,361 +2725,7 @@ function withDirectorHistoryCapacity<I extends { id: string }, O>(demand: Produc
   };
 }
 
-async function generateMotionComicShotVideo(
-  database: FileDatabase,
-  task: Task,
-  input: DirectorGenerateShotVideoRequest,
-  reservation: ProductionHistoryReservation,
-) {
-  const document = parseMotionComicPipelineData(task.pipelineData);
-  if (document.updatedAt !== input.expectedUpdatedAt) {
-    throw new Error('MOTION_COMIC_STALE_WRITE: 项目已发生变化，请刷新后重新生成。');
-  }
-  const episode = document.episodes.find((candidate) => candidate.scenes.some((scene) => scene.shots.some((shot) => shot.id === input.shotId)));
-  const shot = episode?.scenes.flatMap((scene) => scene.shots).find((candidate) => candidate.id === input.shotId);
-  if (!episode || !shot) throw new Error(`DIRECTOR_VIDEO_SHOT_NOT_FOUND: ${input.shotId}`);
-  const latestJob = latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video', episode.id);
-  const resumableJob = latestJob?.status === 'running' ? latestJob : undefined;
-  if (resumableJob && !resumableJob.remoteTaskId) {
-    throw new Error('DIRECTOR_VIDEO_SUBMIT_STATE_UNKNOWN: 上次提交在返回云端任务 ID 前中断。为避免重复计费，本次不会自动重提；请先到服务商后台核对任务。');
-  }
-
-  const runtimeConfig = await getProjectRuntimeConfig(task);
-  let request: VideoGenerationRequest | undefined;
-  let provider: ReturnType<typeof createConfiguredVideoProvider>;
-  let selectedProvider: (typeof runtimeConfig.video.providers)[number];
-  let estimatedCost: number;
-  let inputHash: string;
-  if (resumableJob) {
-    const recoveryProvider = runtimeConfig.video.providers.find((candidate) => candidate.id === resumableJob.providerId && candidate.model === resumableJob.model);
-    if (!recoveryProvider) {
-      throw new Error(`DIRECTOR_VIDEO_PROVIDER_UNAVAILABLE: 原云端任务所属 Provider ${resumableJob.providerId} / ${resumableJob.model} 已不可用。AI 漫剧视频不会自动切换任务所属服务。`);
-    }
-    selectedProvider = recoveryProvider;
-    estimatedCost = resumableJob.estimatedCost;
-    inputHash = resumableJob.inputHash;
-    provider = createConfiguredVideoProvider(runtimeConfig, taskWorkDir(task), undefined, {
-      recoveryProviderId: resumableJob.providerId,
-      downloadResult: downloadVerifiedVideoResult,
-    });
-  } else {
-    const frames = motionComicVideoFrames(document, shot);
-    for (const [label, asset] of [['首帧', frames.first], ['尾帧', frames.last]] as const) {
-      if (!asset?.localPath) continue;
-      const metadata = await stat(asset.localPath).catch(() => null);
-      if (!metadata?.isFile() || metadata.size <= 0) throw new Error(`DIRECTOR_VIDEO_FRAME_MISSING: 当前镜头${label}文件不存在或为空，请重新生成图片。`);
-    }
-    const committedVideoCost = document.providerJobs
-      .filter((job) => job.capability === 'image-to-video')
-      .reduce((total, job) => job.actualCost !== undefined ? total + job.actualCost : ['failed', 'cancelled'].includes(job.status) ? total : total + job.estimatedCost, 0);
-    const remainingBudget = Math.max(0, runtimeConfig.video.automation.budgetLimit - committedVideoCost);
-    const selection = selectMotionComicVideoRoute(runtimeConfig, document, shot, remainingBudget);
-    request = selection.request;
-    const requiredCapabilities = selection.capabilities;
-    const route = selection.route;
-    for(const path of [...(request.referenceImages??[]).map(r=>r.path),...(request.referenceAudioPaths??[])]) {
-      const info=await stat(path).catch(()=>null);
-      if(!info?.isFile()||info.size<=0)throw new Error('DIRECTOR_VIDEO_REFERENCE_MISSING: 参考文件不存在或为空，请重新选择。');
-    }
-    if (route.kind !== 'provider') {
-      throw new Error(`DIRECTOR_VIDEO_PROVIDER_UNAVAILABLE: ${route.reason} AI 漫剧视频不会自动降级或切换任务所属服务。`);
-    }
-    validateVideoGenerationRequest(route.provider, request);
-    selectedProvider = route.provider;
-    estimatedCost = route.estimatedCost;
-    inputHash = createHash('sha256').update(JSON.stringify(motionComicVideoInputFingerprintSource(
-      document,
-      shot,
-      route.provider.id,
-      route.provider.model,
-    ))).digest('hex');
-    provider = createConfiguredVideoProvider({...runtimeConfig,video:{...runtimeConfig.video,providers:[route.provider]}}, taskWorkDir(task), {
-      durationSec: request.durationSec,
-      requiredCapabilities,
-      remainingBudget,
-    }, { submitRetryCount: 0, downloadResult: downloadVerifiedVideoResult });
-  }
-  // Recovery uses the submitted input, even when the current shot has since changed.
-  const submittedFingerprint = resumableJob?.videoInputSnapshot
-    ? JSON.parse(resumableJob.videoInputSnapshot) as { production?: { audioMode?: string } }
-    : undefined;
-  const submittedAudioMode = resumableJob
-    ? submittedFingerprint?.production?.audioMode ?? 'post-mix'
-    : shot.videoProduction?.audioMode ?? 'post-mix';
-  const preserveSubmittedAudio = submittedAudioMode === 'native' || submittedAudioMode === 'audio-driven';
-  let jobId = resumableJob?.id;
-  if (!resumableJob) {
-    jobId = `director-video-job-${randomUUID()}`;
-    const startedAt = new Date().toISOString();
-    const attempt = document.providerJobs.filter((job) => job.nodeId === shot.id && job.capability === 'image-to-video').length + 1;
-    const runningJob: MotionComicPipelineData['providerJobs'][number] = {
-      id: jobId,
-      workflowKind: 'motion-comic',
-      nodeId: shot.id,
-      episodeId: episode.id,
-      providerId: selectedProvider.id,
-      model: selectedProvider.model,
-      capability: 'image-to-video',
-      status: 'running',
-      inputHash,
-      videoInputSnapshot: JSON.stringify(motionComicVideoInputFingerprintSource(document, shot, selectedProvider.id, selectedProvider.model)),
-      phase: 'prepared',
-      idempotencyKey: `${document.id}:${episode.id}:${shot.id}:video:${inputHash}:${attempt}`,
-      estimatedCost,
-      attempt,
-      createdAt: startedAt,
-      updatedAt: startedAt,
-    };
-    const previousVideoIds = new Set(document.assets.filter((asset) => asset.kind === 'video' && asset.assetId === `shot-video-${shot.id}`).map((asset) => asset.id));
-    const runningDocument: MotionComicPipelineData = {
-      ...document,
-      stage: 'keyframes',
-      estimatedCost: document.estimatedCost + estimatedCost,
-      costApprovedAt: document.costApprovedAt ?? startedAt,
-      costSummary: `远程镜头视频：${selectedProvider.name} / ${selectedProvider.model}，本镜头预计 ${estimatedCost.toFixed(2)}。`,
-      assets: document.assets.map((asset) => previousVideoIds.has(asset.id) ? { ...asset, selected: false } : asset),
-      providerJobs: [...document.providerJobs, runningJob],
-      episodes: document.episodes.map((candidateEpisode) => candidateEpisode.id !== episode.id ? candidateEpisode : {
-        ...candidateEpisode,
-        scenes: candidateEpisode.scenes.map((scene) => ({
-          ...scene,
-          shots: scene.shots.map((candidate) => candidate.id === shot.id
-            ? { ...candidate, videoJobId: jobId, videoAssetVersionId: undefined }
-            : candidate),
-        })),
-        timeline: {
-          ...candidateEpisode.timeline,
-          clips: candidateEpisode.timeline.clips.map((clip) => clip.shotId === shot.id
-            ? { ...clip, assetVersionIds: clip.assetVersionIds.filter((id) => !previousVideoIds.has(id)), source: 'ai-video' as const }
-            : clip),
-        },
-      }),
-    };
-    const runningTask = await database.saveMotionComicTask({ id: document.id, expectedUpdatedAt: document.updatedAt, document: runningDocument });
-    reservation.consume({ providerJobs: 1 });
-    await publishTaskUpsert(database, runningTask.id);
-  }
-  if (!jobId) throw new Error('DIRECTOR_VIDEO_JOB_INVALID: 无法建立视频任务。');
-
-  const persistRemoteTaskId = async (remoteTaskId: string): Promise<void> => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const latestTask = await database.getTaskDetail(document.id);
-      if (!latestTask) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${document.id}`);
-      const latest = parseMotionComicPipelineData(latestTask.pipelineData);
-      const persisted = latest.providerJobs.find((candidate) => candidate.id === jobId);
-      if (!persisted) throw new Error(`DIRECTOR_VIDEO_JOB_NOT_FOUND: ${jobId}`);
-      if (persisted.remoteTaskId === remoteTaskId) return;
-      if (persisted.remoteTaskId && persisted.remoteTaskId !== remoteTaskId) throw new Error('DIRECTOR_VIDEO_REMOTE_TASK_CONFLICT: 云端任务 ID 与已保存记录不一致。');
-      const now = new Date().toISOString();
-      try {
-        const saved = await database.saveMotionComicTask({
-          id: latest.id,
-          expectedUpdatedAt: latest.updatedAt,
-          document: { ...latest, providerJobs: latest.providerJobs.map((candidate) => candidate.id === jobId ? { ...candidate, remoteTaskId, phase: 'submitted' as const, updatedAt: now } : candidate) },
-        });
-        await publishTaskUpsert(database, saved.id);
-        return;
-      } catch (error) {
-        if (!(error instanceof Error && /^MOTION_COMIC_STALE_WRITE:/u.test(error.message)) || attempt === 2) throw error;
-      }
-    }
-  };
-
-  const outputDir = join(taskWorkDir(task), 'director-videos');
-  const outputPath = join(outputDir, `${randomUUID()}.mp4`);
-  const temporaryPath = `${outputPath}.tmp.mp4`;
-  let chargedCost: number | undefined;
-  let preservedStaleResult = false;
-  try {
-    const generated = resumableJob
-      ? await provider.resume!(resumableJob.remoteTaskId!, { estimatedCost: resumableJob.estimatedCost })
-      : await provider.generate({ ...request!, onSubmitted: persistRemoteTaskId });
-    chargedCost = resumableJob?.estimatedCost ?? generated.estimatedCost;
-    await mkdir(outputDir, { recursive: true });
-    const probe = await normalizeSceneVideo(generated.path, temporaryPath, preserveSubmittedAudio);
-    if (probe.width <= 0 || probe.height <= 0) throw new Error('DIRECTOR_VIDEO_OUTPUT_INVALID: 视频尺寸不可读取。');
-
-    const latestTask = await database.getTaskDetail(document.id);
-    if (!latestTask) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${document.id}`);
-    const latest = parseMotionComicPipelineData(latestTask.pipelineData);
-    const latestEpisode = latest.episodes.find((candidate) => candidate.id === episode.id);
-    const latestShot = latestEpisode?.scenes.flatMap((scene) => scene.shots).find((candidate) => candidate.id === shot.id);
-    let currentHash = '';
-    let currentPrompt = '';
-    let currentValidation: { durationMs: number; ratio: string } | undefined;
-    try {
-      if (latestShot) {
-        const currentFingerprint = motionComicVideoInputFingerprintSource(latest, latestShot, generated.providerId, generated.model);
-        currentHash = createHash('sha256').update(JSON.stringify(currentFingerprint)).digest('hex');
-        currentPrompt = currentFingerprint.prompt;
-        currentValidation = { durationMs: latestShot.durationMs, ratio: currentFingerprint.ratio };
-      }
-    } catch {
-      currentHash = '';
-    }
-    const stale = !latestShot || latestShot.videoJobId !== jobId || latestShot.renderStrategy !== 'remote-video' || !currentValidation || currentHash !== inputHash;
-    if (!stale && currentValidation) {
-      if (probe.durationMs + 100 < currentValidation.durationMs) {
-        throw new Error(`DIRECTOR_VIDEO_OUTPUT_TOO_SHORT: 当前镜头需要 ${(currentValidation.durationMs / 1000).toFixed(1)} 秒，生成视频只有 ${(probe.durationMs / 1000).toFixed(1)} 秒。`);
-      }
-      assertMotionComicVideoOutputRatio(currentValidation.ratio, probe.width, probe.height);
-    }
-    await rename(temporaryPath, outputPath);
-
-    const finishedAt = new Date().toISOString();
-    const assetId = `director-video-asset-${randomUUID()}`;
-    const logicalAssetId = `shot-video-${shot.id}`;
-    const videoAsset: MotionComicPipelineData['assets'][number] = {
-      id: assetId,
-      assetId: logicalAssetId,
-      kind: 'video',
-      localPath: outputPath,
-      prompt: (request?.prompt ?? currentPrompt) || shot.prompt,
-      providerJobId: jobId,
-      provider: generated.providerName,
-      model: generated.model,
-      license: generated.license,
-      durationMs: probe.durationMs,
-      episodeId: episode.id,
-      createdAt: finishedAt,
-      selected: !stale,
-      pinned: false,
-    };
-    const completedCost = resumableJob?.estimatedCost ?? generated.estimatedCost;
-    const completedDocument: MotionComicPipelineData = {
-      ...latest,
-      assets: [...latest.assets.map((asset) => !stale && asset.assetId === logicalAssetId ? { ...asset, selected: false } : asset), videoAsset],
-      providerJobs: latest.providerJobs.map((candidate) => candidate.id === jobId ? {
-        ...candidate,
-        status: 'completed' as const,
-        phase: 'completed' as const,
-        remoteTaskId: generated.remoteTaskId ?? candidate.remoteTaskId,
-        updatedAt: finishedAt,
-        ...(stale ? { error: '生成完成，但镜头输入已变化；结果保留在历史版本中。' } : { error: undefined }),
-      } : candidate),
-      episodes: latest.episodes.map((candidateEpisode) => candidateEpisode.id !== episode.id ? candidateEpisode : {
-        ...candidateEpisode,
-        scenes: candidateEpisode.scenes.map((scene) => ({
-          ...scene,
-          shots: scene.shots.map((candidate) => !stale && candidate.id === shot.id
-            ? { ...candidate, videoJobId: jobId, videoAssetVersionId: assetId }
-            : candidate),
-        })),
-        timeline: {
-          ...candidateEpisode.timeline,
-          clips: candidateEpisode.timeline.clips.map((clip) => !stale && clip.shotId === shot.id
-            ? { ...clip, assetVersionIds: [...new Set([...clip.assetVersionIds.filter((id) => latest.assets.find((asset) => asset.id === id)?.kind !== 'video'), assetId])], source: 'ai-video' as const }
-            : clip),
-        },
-      }),
-    };
-    const saved = await database.saveMotionComicTask({ id: latest.id, expectedUpdatedAt: latest.updatedAt, document: completedDocument });
-    reservation.consume({ assets: 1 });
-    const mutation = await publishTaskUpsert(database, saved.id);
-    const result: DirectorGenerateShotVideoResult = {
-      videoAssetVersionId: assetId,
-      videoJobId: jobId,
-      providerId: generated.providerId,
-      providerName: generated.providerName,
-      model: generated.model,
-      estimatedCost: completedCost,
-      durationMs: probe.durationMs,
-    };
-    if (stale) {
-      preservedStaleResult = true;
-      throw new Error('DIRECTOR_VIDEO_INPUT_CHANGED: 生成期间镜头已发生变化，结果已保留为未选中的历史版本。');
-    }
-    return { result, mutation };
-  } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-    if (!preservedStaleResult) await rm(outputPath, { force: true }).catch(() => undefined);
-    const normalized = normalizeAppError(error, { code: 'DIRECTOR_VIDEO_GENERATION_FAILED', message: 'AI 漫剧远程视频生成失败。', retryable: true });
-    if (!preservedStaleResult) {
-      const failedTask = await database.getTaskDetail(document.id).catch(() => null);
-      if (failedTask?.pipelineData) {
-        const latest = parseMotionComicPipelineData(failedTask.pipelineData);
-        const existing = latest.providerJobs.find((candidate) => candidate.id === jobId);
-        if (existing) {
-          const finishedAt = new Date().toISOString();
-          const terminal = motionComicVideoFailureIsTerminal(error, normalized.code, {
-            charged: chargedCost !== undefined,
-            remoteTaskId: existing.remoteTaskId,
-          });
-          const failedDocument: MotionComicPipelineData = {
-            ...latest,
-            providerJobs: latest.providerJobs.map((candidate) => candidate.id === jobId ? {
-              ...candidate,
-              status: terminal ? 'failed' as const : 'running' as const,
-              updatedAt: finishedAt,
-              error: normalized.message.slice(0, 65_536),
-            } : candidate),
-          };
-          const saved = await database.saveMotionComicTask({ id: latest.id, expectedUpdatedAt: latest.updatedAt, document: failedDocument }).catch(() => null);
-          if (saved) await publishTaskUpsert(database, saved.id);
-        }
-      }
-    }
-    throw normalized;
-  }
-}
-
-const UNCERTAIN_VIDEO_SUBMISSION_HTTP_STATUSES = new Set([408, 425, 429]);
-
-function motionComicVideoFailureIsTerminal(
-  error: unknown,
-  normalizedCode: string,
-  state: { charged: boolean; remoteTaskId?: string },
-): boolean {
-  // Once generate returned, any subsequent failure concerns the returned media rather than an unknown POST outcome.
-  if (state.charged) return true;
-  if (/^(?:VIDEO_PROVIDER_(?:JOB_FAILED|INVALID_OUTPUT)|DIRECTOR_VIDEO_OUTPUT_(?:TOO_SHORT|INVALID|RATIO_MISMATCH))$/u.test(normalizedCode)) return true;
-  // A known remote task is always resumed by polling. Configuration, HTTP and transport errors remain recoverable.
-  if (state.remoteTaskId) return false;
-  if (/^VIDEO_PROVIDER_(?:NOT_CONFIGURED|PROMPT_REQUIRED|FIRST_FRAME_REQUIRED|DURATION_INVALID|DURATION_UNSUPPORTED|RATIO_UNSUPPORTED|RESOLUTION_UNSUPPORTED|CAPABILITY_MISSING|BUDGET_EXCEEDED|REFERENCE_(?:INVALID|LIMIT|MODE_CONFLICT)|PROMPT_TOO_LONG|ROUTE_MISMATCH|RETRY_INVALID|TASK_ID_REQUIRED)$/u.test(normalizedCode)) {
-    return true;
-  }
-
-  const status = videoProviderHttpStatus(error);
-  if (status !== undefined) {
-    return status >= 400 && status < 500 && !UNCERTAIN_VIDEO_SUBMISSION_HTTP_STATUSES.has(status);
-  }
-
-  // Some compatible APIs omit the HTTP status from an otherwise explicit rejection payload.
-  // Keep generic transport errors resumable, and only close the job for an unambiguous rejection.
-  if (normalizedCode === 'VIDEO_PROVIDER_HTTP_ERROR') {
-    return /\b(?:bad[_ -]?request|invalid[_ -]?(?:request|api[_ -]?key|token|credential|parameter|model)|incorrect[_ -]?api[_ -]?key|authentication[_ -]?(?:failed|required)|unauthorized|forbidden|access[_ -]?denied|permission[_ -]?denied|model[_ -]?not[_ -]?found|request[_ -]?rejected|unprocessable|payment[_ -]?required|insufficient[_ -]?(?:balance|quota)|content[_ -]?policy)\b|(?:请求|内容).{0,12}(?:拒绝|不允许|违规)|(?:鉴权|认证|权限|参数|模型|余额|配额).{0,12}(?:无效|失败|不足|拒绝|不存在|超限)/iu.test(videoProviderErrorText(error));
-  }
-  return false;
-}
-
-function videoProviderHttpStatus(error: unknown): number | undefined {
-  let current = error;
-  const visited = new Set<object>();
-  while (current && typeof current === 'object' && !visited.has(current)) {
-    visited.add(current);
-    const candidate = current as { status?: unknown; statusCode?: unknown; response?: { status?: unknown }; cause?: unknown };
-    for (const value of [candidate.status, candidate.statusCode, candidate.response?.status]) {
-      if (typeof value === 'number' && Number.isInteger(value) && value >= 400 && value <= 599) return value;
-    }
-    current = candidate.cause;
-  }
-  const match = videoProviderErrorText(error).match(/(?:\bHTTP(?:_ERROR)?|\bstatus)\s*[:(]?\s*([45]\d{2})\b|^\s*([45]\d{2})\b/iu);
-  return match ? Number(match[1] ?? match[2]) : undefined;
-}
-
-function videoProviderErrorText(error: unknown): string {
-  return error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-}
-
-function assertMotionComicVideoOutputRatio(ratio: string, width: number, height: number): void {
-  const expected = directorCanvasForRatio(ratio);
-  const expectedAspectRatio = expected.width / expected.height;
-  const actualAspectRatio = width / height;
-  const relativeError = Math.abs(actualAspectRatio / expectedAspectRatio - 1);
-  if (relativeError > 0.03) {
-    throw new Error(`DIRECTOR_VIDEO_OUTPUT_RATIO_MISMATCH: 当前项目画幅为 ${ratio}，生成视频尺寸 ${width}x${height} 与目标宽高比偏差 ${(relativeError * 100).toFixed(1)}%。`);
-  }
-}
+const { generateMotionComicShotVideo } = createMotionComicShotVideo({ getProjectRuntimeConfig, taskWorkDir, publishTaskUpsert, normalizeSceneVideo });
 
 trustedHandle('director:generate-shot-video', withDirectorHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, async (_event, input: DirectorGenerateShotVideoRequest, reservation) => {
   const database = await getDb();
@@ -4342,61 +3708,6 @@ trustedHandle('html-video:media-url', async (_event, input: { id: string; path: 
   return createHtmlVideoMediaUrl(task.id, taskDirectory, input.path);
 });
 
-async function loadHtmlVideoCompositionSource(
-  database: FileDatabase,
-  taskId: string,
-  sceneIndex: number,
-): Promise<HtmlVideoCompositionSource> {
-  const task = await getHtmlVideoTask(database, taskId);
-  const pipeline = parseHtmlVideoPipelineData(task.pipelineData);
-  const composition = pipeline.compositions.find((item) => item.index === sceneIndex);
-  if (!composition?.htmlPath) {
-    throw new Error(`HTML_VIDEO_COMPOSITION_NOT_FOUND: Scene ${sceneIndex} has no editable composition.`);
-  }
-  const taskDirectory = await htmlVideoTaskDirectory(taskId);
-  const mediaUrl = await createHtmlVideoMediaUrl(taskId, taskDirectory, composition.htmlPath);
-  const sourcePath = await resolveHtmlVideoMediaUrl(mediaUrl, () => taskDirectory);
-  const sourceStat = await stat(sourcePath);
-  if (!sourceStat.isFile() || sourceStat.size <= 0 || sourceStat.size > MAX_HYPERFRAMES_SOURCE_BYTES) {
-    throw new Error('HYPERFRAMES_SOURCE_INVALID: HTML 源码文件为空或超过大小限制。');
-  }
-  const source = await readFile(sourcePath, 'utf8');
-  const thumbnailUrl = composition.thumbnailPath
-    ? await createHtmlVideoMediaUrl(taskId, taskDirectory, composition.thumbnailPath)
-    : undefined;
-  return {
-    taskId,
-    sceneIndex,
-    revision: composition.rev ?? 1,
-    source,
-    mediaUrl,
-    ...(thumbnailUrl ? { thumbnailUrl } : {}),
-    durationSec: composition.durationSec,
-    canvas: composition.canvas,
-  };
-}
-
-async function getHtmlVideoTask(database: FileDatabase, id: string): Promise<Task> {
-  const task = await database.getTaskDetail(id);
-  if (!task || !isHtmlVideoTask(task)) {
-    throw new Error('HTML_VIDEO_TASK_NOT_FOUND: HTML 视频任务不存在。');
-  }
-  return task;
-}
-
-async function getEditableHtmlVideoTask(database: FileDatabase, id: string): Promise<Task> {
-  const task = await getHtmlVideoTask(database, id);
-  if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档任务只读。');
-  if (task.status === 'pending' || task.status === 'running') {
-    throw new Error(`HTML_VIDEO_EDITOR_ACTIVE: ${id} is ${task.status} and cannot be edited.`);
-  }
-  return task;
-}
-
-function htmlVideoSceneChangeAffectsPreview(field: HtmlVideoSceneChange['field']): boolean {
-  return !['narration', 'backgroundPrompt', 'addElement', 'elementPrompt'].includes(field);
-}
-
 async function createHtmlVideoEditorialRuntime(
   task: Task,
   options: { maxLongEdge?: number } = {},
@@ -4415,335 +3726,31 @@ async function createHtmlVideoEditorialRuntime(
   return { taskDirectory, runtimeConfig, runtime };
 }
 
-async function rebuildHtmlVideoEditorialPreviews(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-): Promise<HtmlVideoPipelineDataV2> {
-  const complete = pipeline.scenes.length > 0 && pipeline.scenes.every((scene) => (
-    pipeline.assets.some((asset) => asset.sceneIndex === scene.index && asset.kind === 'bg')
-    && pipeline.voices.some((voice) => voice.sceneIndex === scene.index && voice.durationSec > 0)
-  ));
-  if (!complete) return pipeline;
-  const existingCanvas = pipeline.compositions[0]?.canvas
-    ?? parseHtmlVideoPipelineData(task.pipelineData).compositions[0]?.canvas;
-  const maxLongEdge = existingCanvas
-    ? Math.max(existingCanvas.w, existingCanvas.h)
-    : undefined;
-  const { runtime } = await createHtmlVideoEditorialRuntime(task, { maxLongEdge });
-  const draftTemplate = pipeline.config.draftTemplate
-    ? await database.getDraftTemplateDetail(pipeline.config.draftTemplate)
-    : undefined;
-  const previousRevisions = new Map(pipeline.compositions.map((composition) => [composition.index, composition.rev ?? 1]));
-  const previews = await runtime.createPreviews({
-    scenes: pipeline.scenes,
-    assets: pipeline.assets,
-    voices: pipeline.voices,
-    config: pipeline.config,
-    ...(draftTemplate ? { draftTemplate } : {}),
-  });
-  pipeline.compositions = previews.compositions.map((composition) => ({
-    ...composition,
-    rev: (previousRevisions.get(composition.index) ?? 0) + 1,
-  }));
-  pipeline.steps.preview = { status: 'completed', completedAt: Date.now() };
-  pipeline.steps.render = { status: 'pending' };
-  pipeline.current = 'render';
-  delete pipeline.output;
-  delete pipeline.configSnapshotHash;
-  return pipeline;
-}
-
-interface HtmlVideoEditorialEvent {
-  type: string;
-  tool: string;
-  detail: string;
-  data: unknown;
-}
-
-async function persistHtmlVideoEditorialMutation(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-  event: HtmlVideoEditorialEvent,
-) {
-  const taskDirectory = await htmlVideoTaskDirectory(task.id);
-  const persistedPipeline = await synchronizeHtmlVideoEditorialArtifacts(
-    taskDirectory.workDir.canonicalPath, pipeline, task.inputText,
-  );
-  await synchronizeHtmlVideoPipelineCheckpoint(taskDirectory.workDir.canonicalPath, persistedPipeline);
-  const currentStep = persistedPipeline.current === 'done'
-    ? htmlVideoVisibleSteps.length
-    : Math.max(0, htmlVideoVisibleSteps.indexOf(persistedPipeline.current));
-  const needsResume = persistedPipeline.current !== 'done';
-  const now = new Date().toISOString();
-  await database.updateTask(task.id, {
-    pipelineData: JSON.stringify(persistedPipeline),
-    pipelineStep: persistedPipeline.current,
-    currentStep,
-    ...(needsResume ? { status: 'paused', completedAt: null, outputDir: '' } : {}),
-    errorMessage: '',
-    failedStep: null,
-    retryFromStep: null,
-    lastHeartbeatAt: now,
-  });
-  await database.addTaskEvent(task.id, {
-    type: event.type,
-    step: currentStep,
-    agent: 'HTML Video',
-    tool: event.tool,
-    detail: event.detail,
-    dataJson: JSON.stringify(event.data),
-    ts: Date.now(),
-  });
-  return publishTaskUpsert(database, task.id);
-}
-
-async function replaceHtmlVideoEditorialAsset(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-  target: HtmlVideoAssetTarget,
-  sourcePath: string,
-  options: { rebuildPreview?: boolean; backgroundRemoval?: BackgroundRemovalMetadata } = {},
-): Promise<HtmlVideoPipelineDataV2> {
-  const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
-  if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
-  if (target.kind === 'fg' && !scene.elements.some((element) => element.slot === target.slot)) {
-    throw new Error(`HTML_VIDEO_ELEMENT_NOT_FOUND: ${target.sceneIndex}/${target.slot}`);
-  }
-  const extension = extname(sourcePath).toLowerCase();
-  if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
-    throw new Error('HTML_VIDEO_ASSET_INVALID: 仅支持 PNG、JPG、JPEG 或 WebP 图片。');
-  }
-  const sourceStat = await stat(sourcePath);
-  if (!sourceStat.isFile() || sourceStat.size <= 0 || sourceStat.size > 512 * 1024 * 1024) {
-    throw new Error('HTML_VIDEO_ASSET_INVALID: 图片为空或超过 512 MiB。');
-  }
-  const taskDirectory = await htmlVideoTaskDirectory(task.id);
-  const directory = join(taskDirectory.workDir.canonicalPath, 'editorial-assets');
-  await mkdir(directory, { recursive: true });
-  const destination = join(
-    directory,
-    `scene-${String(target.sceneIndex).padStart(3, '0')}-${target.kind}-${target.slot}-${randomUUID()}${extension}`,
-  );
-  await copyFile(sourcePath, destination);
-  const copied = await stat(destination);
-  const existing = pipeline.assets.find((asset) => (
-    asset.sceneIndex === target.sceneIndex && asset.kind === target.kind && asset.slot === target.slot
-  ));
-  const prompt = target.kind === 'bg'
-    ? scene.background.prompt
-    : scene.elements.find((element) => element.slot === target.slot)?.prompt;
-  const replacement: HtmlVideoAsset = {
-    sceneIndex: target.sceneIndex,
-    kind: target.kind,
-    slot: target.slot,
-    src: destination,
-    ...(prompt ? { prompt } : {}),
-    ...(target.kind === 'fg'
-      ? {
-        transparency: await inspectHtmlVideoAssetTransparency(destination) ? 'transparent' as const : 'opaque' as const,
-        backgroundRemoval: options.backgroundRemoval ?? await inspectHtmlVideoAssetBackgroundRemoval(destination),
-      }
-      : {}),
-    sizeBytes: copied.size,
-  };
-  pipeline.assets = existing
-    ? pipeline.assets.map((asset) => asset === existing ? replacement : asset)
-    : [...pipeline.assets, replacement];
-  pipeline.revision += 1;
-  delete pipeline.configSnapshotHash;
-  return options.rebuildPreview === false ? pipeline : rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
-}
-
-async function removeHtmlVideoEditorialAssetBackground(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-  target: HtmlVideoAssetTarget,
-): Promise<{ pipeline: HtmlVideoPipelineDataV2; skipped: boolean; failed: boolean }> {
-  if (target.kind !== 'fg') throw new Error('HTML_VIDEO_BACKGROUND_TARGET_INVALID: 只能处理前景素材。');
-  const asset = pipeline.assets.find((candidate) => (
-    candidate.sceneIndex === target.sceneIndex && candidate.kind === 'fg' && candidate.slot === target.slot
-  ));
-  if (!asset) throw new Error(`HTML_VIDEO_ASSET_NOT_FOUND: ${target.sceneIndex}/fg/${target.slot}`);
-  const nativeMetadata = await inspectHtmlVideoAssetBackgroundRemoval(asset.src);
-  if (nativeMetadata.quality === 'passed') {
-    pipeline.assets = pipeline.assets.map((candidate) => candidate === asset
-      ? { ...candidate, transparency: 'transparent', backgroundRemoval: asset.backgroundRemoval?.quality === 'passed' ? asset.backgroundRemoval : nativeMetadata }
-      : candidate);
-    pipeline.revision += 1;
-    return { pipeline, skipped: true, failed: false };
-  }
-
-  const temporaryPath = join(dirname(asset.src), `.${randomUUID()}-remove-background.png`);
-  try {
-    const model = await resolveHtmlVideoBackgroundRemovalModel();
-    const backgroundRemoval = await removeHtmlVideoImageBackground(asset.src, temporaryPath, model);
-    const replaced = await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, temporaryPath, { backgroundRemoval });
-    return { pipeline: replaced, skipped: false, failed: false };
-  } catch (error) {
-    const metadata = backgroundRemovalFailure(
-      'onnx',
-      errorCodeFromBackgroundRemovalError(error),
-      error instanceof Error ? error.message : String(error),
-      { sourceSha256: await sha256File(asset.src) },
-    );
-    pipeline.assets = pipeline.assets.map((candidate) => candidate === asset
-      ? { ...candidate, transparency: 'opaque', backgroundRemoval: metadata }
-      : candidate);
-    pipeline.revision += 1;
-    return { pipeline, skipped: false, failed: true };
-  } finally {
-    await rm(temporaryPath, { force: true });
-  }
-}
-
-async function removeAllHtmlVideoEditorialAssetBackgrounds(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-): Promise<{ pipeline: HtmlVideoPipelineDataV2; completed: number; skipped: number; failed: number }> {
-  const targets = pipeline.assets
-    .filter((asset) => asset.kind === 'fg')
-    .map((asset) => ({ asset, target: { sceneIndex: asset.sceneIndex, kind: 'fg' as const, slot: asset.slot } }));
-  if (targets.length === 0) throw new Error('HTML_VIDEO_FOREGROUND_EMPTY: 没有前景素材可去背景。');
-
-  let completed = 0;
-  let skipped = 0;
-  let failed = 0;
-  let metadataChanged = false;
-  let model: Awaited<ReturnType<typeof resolveHtmlVideoBackgroundRemovalModel>> | null = null;
-  let lastError: unknown;
-  for (const item of targets) {
-    const currentAsset = pipeline.assets.find((candidate) => (
-      candidate.sceneIndex === item.target.sceneIndex && candidate.kind === 'fg' && candidate.slot === item.target.slot
-    ));
-    if (!currentAsset) continue;
-    const nativeMetadata = await inspectHtmlVideoAssetBackgroundRemoval(currentAsset.src);
-    if (nativeMetadata.quality === 'passed') {
-      if (currentAsset.transparency !== 'transparent' || currentAsset.backgroundRemoval?.quality !== 'passed') {
-        pipeline.assets = pipeline.assets.map((candidate) => candidate === currentAsset
-          ? { ...candidate, transparency: 'transparent', backgroundRemoval: currentAsset.backgroundRemoval?.quality === 'passed' ? currentAsset.backgroundRemoval : nativeMetadata }
-          : candidate);
-        metadataChanged = true;
-      }
-      skipped += 1;
-      continue;
-    }
-
-    const temporaryPath = join(dirname(currentAsset.src), `.${randomUUID()}-remove-background.png`);
-    try {
-      model ??= await resolveHtmlVideoBackgroundRemovalModel();
-      const backgroundRemoval = await removeHtmlVideoImageBackground(currentAsset.src, temporaryPath, model);
-      pipeline = await replaceHtmlVideoEditorialAsset(database, task, pipeline, item.target, temporaryPath, { rebuildPreview: false, backgroundRemoval });
-      completed += 1;
-    } catch (error) {
-      lastError = error;
-      failed += 1;
-      const metadata = backgroundRemovalFailure(
-        'onnx',
-        errorCodeFromBackgroundRemovalError(error),
-        error instanceof Error ? error.message : String(error),
-        { sourceSha256: await sha256File(currentAsset.src) },
-      );
-      pipeline.assets = pipeline.assets.map((candidate) => candidate === currentAsset
-        ? { ...candidate, transparency: 'opaque', backgroundRemoval: metadata }
-        : candidate);
-      metadataChanged = true;
-    } finally {
-      await rm(temporaryPath, { force: true });
-    }
-  }
-  if (metadataChanged) pipeline.revision += 1;
-  if (completed > 0) pipeline = await rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
-  return { pipeline, completed, skipped, failed };
-}
-
-async function regenerateHtmlVideoEditorialAsset(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-  target: HtmlVideoAssetTarget,
-): Promise<HtmlVideoPipelineDataV2> {
-  const scene = pipeline.scenes.find((item) => item.index === target.sceneIndex);
-  if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${target.sceneIndex}`);
-  const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
-  const stageDirectory = join(taskDirectory.workDir.canonicalPath, '.editorial-regenerate', randomUUID());
-  await mkdir(stageDirectory, { recursive: true });
-  try {
-    const providers = createHtmlVideoRuntimeProviders(runtimeConfig, stageDirectory, task, {
-      measureAudioDuration: runtime.measureAudioDuration,
-      jobConfig: pipeline.config,
-      imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
-      inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
-      inspectAssetBackgroundRemoval: inspectHtmlVideoAssetBackgroundRemoval,
-      prepareForegroundAsset: prepareHtmlVideoForegroundAsset,
-      prepareCoverImage: prepareHtmlVideoCoverImage,
-    });
-    const requestedScene = target.kind === 'bg'
-      ? { ...scene, elements: [] }
-      : { ...scene, elements: scene.elements.filter((element) => element.slot === target.slot) };
-    if (target.kind === 'fg' && requestedScene.elements.length === 0) {
-      throw new Error(`HTML_VIDEO_ELEMENT_NOT_FOUND: ${target.sceneIndex}/${target.slot}`);
-    }
-    const generated = await providers.generateAssets({
-      scenes: [requestedScene],
-      config: { ...pipeline.config, foreground: target.kind === 'fg' },
-    });
-    const selected = generated.find((asset) => asset.kind === target.kind && asset.slot === target.slot);
-    if (!selected) throw new Error('HTML_VIDEO_ASSET_GENERATION_FAILED: 图片服务没有返回目标素材。');
-    return await replaceHtmlVideoEditorialAsset(database, task, pipeline, target, selected.src, {
-      ...(selected.backgroundRemoval ? { backgroundRemoval: selected.backgroundRemoval } : {}),
-    });
-  } finally {
-    await rm(stageDirectory, { recursive: true, force: true });
-  }
-}
-
-async function regenerateHtmlVideoEditorialVoice(
-  database: FileDatabase,
-  task: Task,
-  pipeline: HtmlVideoPipelineDataV2,
-  sceneIndex: number,
-): Promise<HtmlVideoPipelineDataV2> {
-  const scene = pipeline.scenes.find((item) => item.index === sceneIndex);
-  if (!scene) throw new Error(`HTML_VIDEO_SCENE_NOT_FOUND: ${sceneIndex}`);
-  const { taskDirectory, runtimeConfig, runtime } = await createHtmlVideoEditorialRuntime(task);
-  const stageDirectory = join(taskDirectory.workDir.canonicalPath, '.editorial-regenerate', randomUUID());
-  await mkdir(stageDirectory, { recursive: true });
-  try {
-    const providers = createHtmlVideoRuntimeProviders(runtimeConfig, stageDirectory, task, {
-      measureAudioDuration: runtime.measureAudioDuration,
-      jobConfig: pipeline.config,
-      imageStyle: await database.getCustomStyleDetail(pipeline.config.style ?? ''),
-      inspectAssetTransparency: inspectHtmlVideoAssetTransparency,
-      inspectAssetBackgroundRemoval: inspectHtmlVideoAssetBackgroundRemoval,
-      prepareForegroundAsset: prepareHtmlVideoForegroundAsset,
-      prepareCoverImage: prepareHtmlVideoCoverImage,
-    });
-    const generated = await providers.synthesizeVoices({ scenes: [scene], config: pipeline.config });
-    const voice = generated[0];
-    if (!voice) throw new Error('HTML_VIDEO_VOICE_GENERATION_FAILED: 配音服务没有返回音频。');
-    const extension = extname(voice.src).toLowerCase() || '.wav';
-    const directory = join(taskDirectory.workDir.canonicalPath, 'editorial-voices');
-    await mkdir(directory, { recursive: true });
-    const destination = join(directory, `scene-${String(sceneIndex).padStart(3, '0')}-${randomUUID()}${extension}`);
-    await copyFile(voice.src, destination);
-    const copied = await stat(destination);
-    const replacement: HtmlVideoVoiceClip = { ...voice, sceneIndex, src: destination, sizeBytes: copied.size };
-    const existing = pipeline.voices.find((item) => item.sceneIndex === sceneIndex);
-    pipeline.voices = existing
-      ? pipeline.voices.map((item) => item === existing ? replacement : item)
-      : [...pipeline.voices, replacement];
-    pipeline.revision += 1;
-    delete pipeline.configSnapshotHash;
-    return await rebuildHtmlVideoEditorialPreviews(database, task, pipeline);
-  } finally {
-    await rm(stageDirectory, { recursive: true, force: true });
-  }
-}
+const {
+  loadHtmlVideoCompositionSource,
+  getHtmlVideoTask,
+  getEditableHtmlVideoTask,
+  htmlVideoSceneChangeAffectsPreview,
+  rebuildHtmlVideoEditorialPreviews,
+  persistHtmlVideoEditorialMutation,
+  replaceHtmlVideoEditorialAsset,
+  removeHtmlVideoEditorialAssetBackground,
+  removeAllHtmlVideoEditorialAssetBackgrounds,
+  regenerateHtmlVideoEditorialAsset,
+  regenerateHtmlVideoEditorialVoice,
+} = createHtmlVideoEditorial({
+  htmlVideoTaskDirectory,
+  createHtmlVideoEditorialRuntime,
+  publishTaskUpsert,
+  inspectHtmlVideoAssetTransparency,
+  inspectHtmlVideoAssetBackgroundRemoval,
+  prepareHtmlVideoForegroundAsset,
+  prepareHtmlVideoCoverImage,
+  resolveHtmlVideoBackgroundRemovalModel,
+  removeHtmlVideoImageBackground,
+  errorCodeFromBackgroundRemovalError,
+  sha256File,
+});
 
 trustedHandle('task:import-cover', async (_event, ratio: OrdinaryTaskCoverRatio) => {
   const result = await dialog.showOpenDialog({
@@ -6155,107 +5162,6 @@ trustedHandle('diagnostics:run', async () => {
     ],
   };
 });
-
-async function readLocalImageDataUrl(path: string): Promise<string> {
-  if (!path || !path.trim()) {
-    throw new Error('Preview image path is required.');
-  }
-  const mime = previewImageMimeType(path);
-  if (!mime) {
-    throw new Error(`Unsupported preview image extension: ${extname(path) || '(none)'}`);
-  }
-  const bytes = await readFile(path);
-  if (mime.startsWith('image/')) {
-    return `data:image/${mime.replace('image/', '')};base64,${bytes.toString('base64')}`;
-  }
-  return `data:${mime};base64,${bytes.toString('base64')}`;
-}
-
-function previewImageMimeType(path: string): string | null {
-  const extension = extname(path).toLowerCase();
-  if (extension === '.png') return 'image/png';
-  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
-  if (extension === '.webp') return 'image/webp';
-  if (extension === '.gif') return 'image/gif';
-  if (extension === '.mp3') return 'audio/mpeg';
-  if (extension === '.wav') return 'audio/wav';
-  if (extension === '.m4a') return 'audio/mp4';
-  if (extension === '.aac') return 'audio/aac';
-  if (extension === '.ogg') return 'audio/ogg';
-  if (extension === '.flac') return 'audio/flac';
-  return null;
-}
-
-function imageConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
-  if (config.imageProvider === 'mock') return 'fail';
-  if (config.imageProvider === 'jimeng') return config.jimeng.accessKeyId && config.jimeng.secretAccessKey && config.jimeng.reqKey ? 'pass' : 'warn';
-  if (config.imageProvider === 'custom') return config.customImage.apiKey && config.customImage.baseUrl ? 'pass' : 'warn';
-  return config.gptImage.apiKey || config.image.apiKey ? 'pass' : 'warn';
-}
-
-function ttsConfigStatus(config: AppConfig): 'pass' | 'warn' | 'fail' {
-  if (config.tts.provider === 'mock') return 'fail';
-  if (config.tts.provider === 'minimax') return config.tts.minimax.apiKey ? 'pass' : 'warn';
-  if (resolveVolcengineTtsApiVersion(config.tts.volcengine) === 'v3') {
-    return config.tts.volcengine.apiKey ? 'pass' : 'warn';
-  }
-  return (config.tts.volcengine.appId || config.tts.appId) && (config.tts.volcengine.accessKey || config.tts.accessKey) ? 'pass' : 'warn';
-}
-
-async function checkPython(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
-  const runtime = resolvePythonRuntimeInfo();
-  try {
-    const { stdout, stderr } = await execFileAsync(runtime.command, ['--version']);
-    const version = (stdout || stderr).trim() || 'python available';
-    return { status: 'pass', detail: `${runtime.source} ${version}` };
-  } catch (error) {
-    return { status: 'warn', detail: error instanceof Error ? error.message : 'python not found' };
-  }
-}
-
-function normalizeGeneratedCustomStyle(input: CustomStyleGenerateInput, generated: Partial<CustomStyle>): CustomStyle {
-  const now = new Date().toISOString();
-  const fallbackName = input.prompt.trim().slice(0, 16) || input.baseStyle.name;
-  return {
-    id: input.baseStyle.id,
-    name: String(generated.name || fallbackName),
-    tag: String(generated.tag || input.baseStyle.tag),
-    shortName: String(generated.shortName || fallbackName.slice(0, 4)),
-    prefix: String(generated.prefix || input.baseStyle.prefix),
-    suffix: String(generated.suffix || input.baseStyle.suffix),
-    negativePrompt: String(generated.negativePrompt || input.baseStyle.negativePrompt),
-    allowColor: typeof generated.allowColor === 'boolean' ? generated.allowColor : input.baseStyle.allowColor,
-    description: String(generated.description || input.baseStyle.description),
-    createdAt: input.baseStyle.createdAt || now,
-    updatedAt: now,
-  };
-}
-
-async function checkPyJianYingDraft(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
-  const runtime = resolvePythonRuntimeInfo();
-  try {
-    await execFileAsync(runtime.command, ['-c', 'import pyJianYingDraft; print("pyJianYingDraft installed")']);
-    return { status: 'pass', detail: `pyJianYingDraft installed in ${runtime.source} Python` };
-  } catch {
-    return { status: 'warn', detail: runtime.source === 'bundled' ? 'Bundled pyJianYingDraft is unavailable; rebuild the portable Python runtime.' : '未检测到 pyJianYingDraft；请运行 python -m pip install pyJianYingDraft' };
-  }
-}
-
-async function checkStoryboundSidecarDependencies(): Promise<{ status: 'pass' | 'warn'; detail: string }> {
-  const runtime = resolvePythonRuntimeInfo();
-  try {
-    await execFileAsync(runtime.command, ['-c', 'import pyJianYingDraft, imageio_ffmpeg, pydub, jieba; print("Storybound sidecar dependencies installed")']);
-    return { status: 'pass', detail: `Storybound sidecar dependencies installed in ${runtime.source} Python` };
-  } catch {
-    return {
-      status: 'warn',
-      detail:
-        runtime.source === 'bundled'
-          ? 'Bundled Storybound sidecar dependencies are unavailable; rebuild the portable Python runtime.'
-          : '未检测到 Storybound sidecar 依赖；请安装 pyJianYingDraft、imageio-ffmpeg、pydub、jieba',
-    };
-  }
-}
 
 async function shutdownApplication(): Promise<void> {
   isShuttingDown = true;

@@ -18,11 +18,14 @@ async function normalizeSceneVideoContract(): Promise<string> {
 }
 
 async function motionComicVideoGenerator(): Promise<string> {
+  // O-5: the generator moved from main.ts into electron/motion-comic-shot-video.ts (main keeps one factory line).
   const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-  const start = main.indexOf('async function generateMotionComicShotVideo');
-  const end = main.indexOf("trustedHandle('director:generate-shot-video'", start);
+  expect(main).toContain('const { generateMotionComicShotVideo } = createMotionComicShotVideo({');
+  const source = await readFile(new URL('../electron/motion-comic-shot-video.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('async function generateMotionComicShotVideo');
+  const end = source.indexOf('\n  return { generateMotionComicShotVideo };', start);
   if (start < 0 || end <= start) throw new Error('Motion-comic video generator was not found.');
-  return main.slice(start, end);
+  return source.slice(start, end);
 }
 
 describe('director video main-process lifecycle', () => {

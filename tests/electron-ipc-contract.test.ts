@@ -867,7 +867,7 @@ describe('electron ipc contract', () => {
   });
 
   it('exposes safe local image data URLs for task artifact thumbnails', async () => {
-    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const main = await readMainSources('diagnostics.ts');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
 
@@ -999,7 +999,7 @@ describe('electron ipc contract', () => {
   });
 
   it('checks Storybound-compatible sidecar dependencies in diagnostics', async () => {
-    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const main = await readMainSources('diagnostics.ts');
 
     expect(main).toContain('checkStoryboundSidecarDependencies');
     expect(main).toContain('pyJianYingDraft, imageio_ffmpeg, pydub, jieba');
@@ -1058,29 +1058,35 @@ describe('electron ipc contract', () => {
 
   it('persists HTML scene structure edits through the governed editor and invalidates completed output', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const mainSources = await readMainSources('html-video-editorial.ts');
     const fallback = await readFile(new URL('../src/app/browser-fallback.ts', import.meta.url), 'utf8');
     const handler = handlerSource(main, 'html-video:update-scene-structure');
     expect(handler).toContain("runHistoryGovernanceMutation('task', input.id");
     expect(handler).toContain('getEditableHtmlVideoTask(database, input.id)');
     expect(handler).toContain('applyHtmlVideoSceneStructureChange(');
     expect(handler).toContain('persistHtmlVideoEditorialMutation(database, task, pipeline');
-    expect(main).toContain("const needsResume = persistedPipeline.current !== 'done'");
-    expect(main).toContain("...(needsResume ? { status: 'paused', completedAt: null, outputDir: '' } : {})");
+    expect(mainSources).toContain("const needsResume = persistedPipeline.current !== 'done'");
+    expect(mainSources).toContain("...(needsResume ? { status: 'paused', completedAt: null, outputDir: '' } : {})");
     expect(fallback).toContain('async updateHtmlVideoSceneStructure(id, change)');
     expect(fallback).toContain('htmlVideoSceneStructureUpdateSchema.parse({ id, change })');
   });
 
   it('preserves the current HTML video canvas resolution when rebuilding editorial previews', async () => {
+    // O-5: the runtime factory stays in main.ts; the preview rebuild moved to electron/html-video-editorial.ts.
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const editorial = await readFile(new URL('../electron/html-video-editorial.ts', import.meta.url), 'utf8');
     const runtimeFactoryStart = main.indexOf('async function createHtmlVideoEditorialRuntime(');
-    const rebuildStart = main.indexOf('async function rebuildHtmlVideoEditorialPreviews(');
-    const rebuildEnd = main.indexOf('\ninterface HtmlVideoEditorialEvent', rebuildStart);
-    const runtimeFactory = main.slice(runtimeFactoryStart, rebuildStart);
-    const rebuild = main.slice(rebuildStart, rebuildEnd);
+    const runtimeFactoryEnd = main.indexOf('\n}', runtimeFactoryStart);
+    const rebuildStart = editorial.indexOf('async function rebuildHtmlVideoEditorialPreviews(');
+    const rebuildEnd = editorial.indexOf('\ninterface HtmlVideoEditorialEvent', rebuildStart);
+    const runtimeFactory = main.slice(runtimeFactoryStart, runtimeFactoryEnd);
+    const rebuild = editorial.slice(rebuildStart, rebuildEnd);
 
     expect(runtimeFactoryStart).toBeGreaterThan(-1);
-    expect(rebuildStart).toBeGreaterThan(runtimeFactoryStart);
+    expect(runtimeFactoryEnd).toBeGreaterThan(runtimeFactoryStart);
+    expect(rebuildStart).toBeGreaterThan(-1);
     expect(rebuildEnd).toBeGreaterThan(rebuildStart);
+    expect(main).toMatch(/createHtmlVideoEditorialRuntime,\r?\n\s+publishTaskUpsert,/u);
     expect(runtimeFactory).toContain('options: { maxLongEdge?: number } = {}');
     expect(runtimeFactory).toContain('{ maxLongEdge: options.maxLongEdge }');
     expect(rebuild).toContain('const existingCanvas = pipeline.compositions[0]?.canvas');
@@ -1240,4 +1246,10 @@ function handlerSource(source: string, channel: string): string {
   const end = source.indexOf('\ntrustedHandle(', start + 1);
   if (start < 0) throw new Error(`Missing trusted IPC handler: ${channel}`);
   return source.slice(start, end < 0 ? source.length : end);
+}
+
+// O-5: helpers split out of main.ts live in sibling electron modules; source contracts read main.ts plus those modules.
+async function readMainSources(...modules: string[]): Promise<string> {
+  const sources = await Promise.all(['main.ts', ...modules].map((name) => readFile(new URL(`../electron/${name}`, import.meta.url), 'utf8')));
+  return sources.join('\n');
 }

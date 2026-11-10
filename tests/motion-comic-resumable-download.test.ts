@@ -148,14 +148,19 @@ describe('motion-comic remote video result download wiring', () => {
   });
 
   it('main process passes the verified downloader to both motion-comic provider constructions only', async () => {
+    // O-5: the motion-comic generator moved from main.ts into electron/motion-comic-shot-video.ts.
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-    expect(main).toContain("import { downloadVerifiedVideoResult } from './resumable-transfer';");
-    const start = main.indexOf('async function generateMotionComicShotVideo');
-    const end = main.indexOf("trustedHandle('director:generate-shot-video'", start);
-    const generator = main.slice(start, end);
+    const shotVideo = await readFile(new URL('../electron/motion-comic-shot-video.ts', import.meta.url), 'utf8');
+    const mainProcess = `${main}\n${shotVideo}`;
+    expect(shotVideo).toContain("import { downloadVerifiedVideoResult } from './resumable-transfer';");
+    const start = shotVideo.indexOf('async function generateMotionComicShotVideo');
+    const end = shotVideo.indexOf('\n  return { generateMotionComicShotVideo };', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const generator = shotVideo.slice(start, end);
     expect(generator.match(/downloadResult: downloadVerifiedVideoResult/gu)).toHaveLength(2);
     expect(generator).toContain('recoveryProviderId: resumableJob.providerId,\n      downloadResult: downloadVerifiedVideoResult');
     expect(generator).toContain('{ submitRetryCount: 0, downloadResult: downloadVerifiedVideoResult }');
-    expect(main.match(/downloadVerifiedVideoResult/gu)).toHaveLength(3);
+    expect(mainProcess.match(/downloadVerifiedVideoResult/gu)).toHaveLength(3);
   });
 });
