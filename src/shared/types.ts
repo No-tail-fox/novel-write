@@ -422,6 +422,8 @@ export interface AppConfig {
   ui: {
     theme: ThemeName;
   };
+  /** U-5: user-editable unit prices for the project cost panel. Absent on older configs (= nothing priced). */
+  costPriceTable?: import('./project-cost').CostPriceTable;
 }
 
 export interface ProjectModels {

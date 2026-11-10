@@ -1,6 +1,7 @@
 import { ProjectModelsDialog } from './ProjectModelFields';
+import { ProjectCostDialog } from './ProjectCostPanel';
 import type { AppConfig } from '../../shared/types';
-import { Settings2 } from 'lucide-react';
+import { Coins, Settings2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
@@ -77,6 +78,7 @@ export function ProjectHomePage({
   const [composing, setComposing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TaskSummary | null>(null);
   const [modelsTask, setModelsTask] = useState<TaskSummary | null>(null);
+  const [costTask, setCostTask] = useState<TaskSummary | null>(null);
   const [coverTask, setCoverTask] = useState<TaskSummary | null>(null);
   const projectAction = useAsyncAction();
   useEffect(() => { session.view = view; }, [session, view]);
@@ -255,6 +257,7 @@ export function ProjectHomePage({
               onDelete={() => { projectAction.clearFeedback(); setPendingDelete(task); }}
               onCover={() => setCoverTask(task)}
               onModels={() => setModelsTask(task)}
+              onCost={() => setCostTask(task)}
             />
           ))}
         </div>
@@ -281,6 +284,7 @@ export function ProjectHomePage({
 
       <InlineActionFeedback feedback={projectAction.feedback} />
       {modelsTask ? <ProjectModelsDialog task={tasks.find(task => task.id === modelsTask.id) ?? modelsTask} config={config} api={api} onClose={() => setModelsTask(null)} onUpdated={result => { applyState(result); projectPage.reload(); }} /> : null}
+      {costTask ? <ProjectCostDialog key={costTask.id} task={costTask} api={api} onClose={() => setCostTask(null)} /> : null}
       {coverTask ? <ProjectCoverDialog task={tasks.find((task) => task.id === coverTask.id) ?? coverTask} api={api}
         onClose={() => setCoverTask(null)} onUpdated={(result) => { applyState(result); projectPage.reload(); }} /> : null}
       <ConfirmDialog
@@ -312,6 +316,7 @@ function ProjectCard({
   onDelete,
   onCover,
   onModels,
+  onCost,
 }: {
   task: TaskSummary;
   layout: ProjectLayout;
@@ -325,6 +330,7 @@ function ProjectCard({
   onDelete: () => void;
   onCover: () => void;
   onModels: () => void;
+  onCost: () => void;
 }) {
   const generatedCoverPath = task.projectCover?.path?.trim();
   const ordinaryCoverPath = task.ordinaryCoverAsset?.path?.trim();
@@ -375,6 +381,7 @@ function ProjectCard({
       </Button>
       <div className="project-card-actions">
         <Tooltip content="项目模型"><IconButton label="项目模型" variant="subtle" density="compact" icon={<Settings2 size={15} />} disabled={busy} onClick={onModels} /></Tooltip>
+        <Tooltip content="项目成本"><IconButton label="项目成本" variant="subtle" density="compact" icon={<Coins size={15} />} onClick={onCost} /></Tooltip>
         {!archived ? <Tooltip content="设置项目封面">
           <IconButton label="设置项目封面" variant="subtle" density="compact" icon={<ImagePlus size={15} />}
             disabled={busy || task.status === 'running' || task.projectActivity?.status === 'running'} onClick={onCover} />

@@ -1,5 +1,6 @@
 import { selectImageLabProfileConfig } from '../shared/image-lab-profile';
 import { defaultProjectModels, projectRuntimeConfig, validateProjectModels } from '../shared/project-models';
+import { summarizeProjectCost } from '../shared/project-cost';
 import { preparePromptTemplateSave } from '../shared/workflow-prompt-runtime';
 import { cloneState, hydrateState, initialState } from './app-state';
 import { APP_VERSION } from './app-version';
@@ -678,6 +679,11 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const validated = validateProjectModels(state.config, models);
       return commitFallbackHistoryUpsert('task', { ...state, tasks: state.tasks.map(item => item.id === id
         ? { ...item, projectModels: validated, llmProfileId: validated.llmProfileId } : item) }, id);
+    },
+    async getProjectCostSummary(id) {
+      const state = read();
+      if (!state.tasks.some(item => item.id === id)) throw new Error(`TASK_NOT_FOUND: ${id}`);
+      return { taskId: id, generatedAt: new Date().toISOString(), summary: summarizeProjectCost([], state.config.costPriceTable), notes: ['浏览器预览模式没有本地回执，无法统计成本。'] };
     },
     async setTaskFavorite(id: string, isFavorite: boolean) {
       const state = read();

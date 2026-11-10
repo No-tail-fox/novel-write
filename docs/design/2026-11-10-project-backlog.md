@@ -102,7 +102,7 @@
 | H-2 | **✅ 已随 E-1 实现**：`createHtmlVideoComposePayload` 默认 `normalize_audio:true`。原条目：响度 −20.9 → −14 LUFS | `src/shared/html-video.ts:294`（`normalizeAudio` 需要显式打开）；实测 `route-split…md:110` | P1 | S | E-1 |
 | H-3 | **✅ 已修复**：诊断信息改为 `readinessDiagnostics` 属性和日志，消息去掉重复 `Error:` 和本地路径，`html-video` 2 个捕获契约测试恢复通过。原条目：场景图片加载失败的错误被包了两层 `Error:`（捕获契约 2 个测试失败） | `tests/html-video.test.ts:1957`；`electron/html-video-scene-ready.ts:16` | P1 | S | — |
 | H-4 | **✅ 已修**：预览握手的 fps 兜底从 30 改为运行时默认 `defaultFps`（24），与成片一致；1280×720 是有意的默认长边（界面标注“默认 · 1280 px”，可选 1080/1920），不是 bug。测试 `tests/html-video-defaults.test.ts`。原条目：分辨率/fps 默认值不一致：实测成片 1280×720；`html-video-runtime.ts:35` 默认 24，而 `:1012` 的兜底是 30 | 【未核实 720p 是否只是这次的配置】 | P2 | S | E-6 |
-| H-5 | 生图次数多（一条约 11 次），成本偏高 | `technical-roadmap.md:45,47` | P3 | M | U-5 |
+| H-5 | **✅ 离线部分已实现 / 减少张数需产品决策**：① 成本面板显示“预计生图 N 张”（`expectedProjectImages`：HTML 按背景+前景槽位、封面 auto +1，并给出相同提示词去重后的张数；VOX 按 image/film-material 节点；Lemo v3 显示 Agent 插画上限；模板路线按分镜数）。② HTML 路线同一次素材生成内，类型+比例+提示词完全相同的槽位只调用一次服务商，其余槽位复制成 `<文件>.reuse-NNN.png` 私有副本（单张重生成不会互相影响；复制失败就照常生成），只对新生成的槽位生效，老项目已有素材不变。**需产品决策**：要不要减少每条的张数（如关前景、背景复用、多镜共用一张、降分辨率/档位）——这些会改变成片观感，没有替用户决定。原条目：生图次数多（一条约 11 次），成本偏高 | `technical-roadmap.md:45,47` | P3 | M | U-5 |
 | H-6 | **✅ 已决定**：用户确认 HTML 路线可以改（ADR-02）。原条目：用户需确认：P0-4 和 P1-1 都要改动 HTML 路线 | `technical-roadmap.md:212` | P0 | — | 用户决策 |
 
 **音乐 MV / AI 漫剧 / 短片（Pixelle、素材池）**
@@ -147,7 +147,7 @@
 | U-2 | **✅ 已实现**：摘要显示“与 <主机> 连接中断（ECONNRESET）”、DNS 失败主机、52x 网关错误“结果可能未知”。原条目：错误详情显示底层原因（主机、错误码），比如"与 openspeech… 连接中断（ECONNRESET）" | `technical-roadmap.md:138`；`src/components/ErrorDetails.tsx:26` | P0 | S | G-4 |
 | U-3 | **✅ 导入界面已实现**：在“自动制作设置”里导入图片/视频，填写出处、许可和画面说明，并提供“允许 AI 生成插画”开关和数量上限。剩余：纪实类风格在画面上标注来源（见 L-2b） | `CreativeProductionFields.tsx`；测试 `tests/lemo-material-ui.test.ts` | P1 | S | L-1 |
 | U-4 | **✅ 已实现**：模板路线把每次换模型写成任务事件 `model_fallback`（任务历史可见）；HTML 路线的换模型记录在回执日志 `fallbackModel` 字段；`PROVIDER_RESULT_UNKNOWN` 有专门中文摘要“上次请求结果未知，请核对服务商记录后再重试”；设置页 LLM 档案显示能力档案与降级说明。原条目：模型降级记录、unknown 处理策略对用户可见 | P0-1/P0-3 验收 | P1 | S | G-1、G-3 |
-| U-5 | 成本面板：按项目统计 LLM/生图/TTS 次数和估算费用 | `technical-roadmap.md:188` | P3 | M | G-3 |
+| U-5 | **✅ 已实现（只读统计，单价由用户填写）**：`src/shared/project-cost.ts`（台账类型、`summarizeProjectCost`：按类型/结果计数、tokens 合计、按模型单价估算；只给“已收到结果”的调用计费，结果未知的单独记“可能已计费 N 次”，没单价的显示“未定价”只计次数；缓存 tokens 可单独定价）+ `src/shared/project-cost-sources.ts`（把各路线已有记录转成台账：G-3 `llm-receipts.jsonl`、VOX `productionRun.nodes`、Lemo v3 每轮 `submitted/response/rejected/image.json`、HTML 流程素材/配音、模板路线 `provider-images`/`provider-audio` 文件、导演视频 `providerJobs`）+ `electron/project-cost-collector.ts`（只读、不发任何付费请求）+ IPC `project:cost-summary` + 项目卡片“项目成本”弹窗 + 设置“AI 创作 → 成本单价”编辑器（`AppConfig.costPriceTable` 可选，老配置不变，默认 CNY）。**局限**：重新生成会覆盖文件/节点，图片和配音次数是下限；没有保存模型名的记录按项目当前模型归类；模板路线配音字数未知；音乐/视频实验室记录不属于项目，未统计。原条目：成本面板：按项目统计 LLM/生图/TTS 次数和估算费用 | `technical-roadmap.md:188` | P3 | M | G-3 |
 | U-6 | **✅ 已实现（提示，不自动切换）**：`recommendProductionRoute(model, chosen)`（model-capabilities.ts）按模型档案推荐路线（T1→创意动画，T2→HTML 场景代码，T3→模板动画），所选路线需要更强模型时给出降级建议；创意/模板动画和 HTML 的新建表单在“项目模型”下显示 `role=note` 提示，从不阻止创建。测试 `tests/route-recommendation.test.ts`。原条目：根据模型能力自动推荐路线（T1/T2/T3）或降级 | `technical-roadmap.md:186` | P3 | M | G-1 |
 | U-7 | **✅ 部分实现（静态底线）**：`tests/renderer-a11y-contract.test.ts`（img 必有 alt、无正 tabIndex、非交互元素的点击必须是冒泡拦截或有键盘路径、图标按钮必须走带 label 的 IconButton、焦点环、lang）；`src/styles/components.css` 新增 forced-colors 焦点环和全局 reduced-motion 兜底（加载转圈保留慢速）。真实读屏朗读顺序和 Windows 系统缩放仍需人工走查【未核实】。原条目：无障碍专项：键盘顺序、读屏、系统缩放 | `design-qa.md:78` | P3 | M | — |
 

@@ -190,6 +190,7 @@ export const storyDreamApi: StoryDreamApi = {
   listTasks: async (request: HistoryListInput<'task'> = {}): Promise<HistoryPage<'task', TaskSummary>> =>
     invokeTrusted('task:list', normalizeTaskHistoryRequest(request)),
   setProjectModels: (id, models) => invokeTrusted('project:set-models', { id, models }),
+  getProjectCostSummary: (id) => invokeTrusted('project:cost-summary', id),
   setTaskFavorite: (id: string, isFavorite: boolean): Promise<AppMutationResult> => invokeTrusted('task:set-favorite', { id, isFavorite }),
   generateProjectCover: (input) => invokeTrusted('project-cover:generate', input),
   importProjectCover: (id) => invokeTrusted('project-cover:import', id),

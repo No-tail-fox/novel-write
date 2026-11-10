@@ -1140,6 +1140,7 @@ export const ipcInputSchemas = {
   'music-mv:update': musicMvTaskUpdateSchema,
   'task:list': taskHistoryListSchema,
   'project:set-models': z.object({ id: idSchema, models: projectModelsSchema }).strict(),
+  'project:cost-summary': idOnlySchema,
   'task:set-favorite': z.object({ id: idSchema, isFavorite: z.boolean() }).strict(),
   'project-cover:generate': z.object({ id: idSchema, prompt: nonEmptyText(4000) }).strict(),
   'project-cover:import': idOnlySchema,

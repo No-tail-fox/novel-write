@@ -26,8 +26,8 @@ import { createHtmlVideoJobConfig } from './html-video-config';
 import { createHtmlVideoCoverAsset, type HtmlVideoCoverImageProcessor } from './html-video-cover';
 import { resolveVolcengineTtsApiVersion } from './volcengine-tts';
 import { HTML_VIDEO_SCENE_TEMPLATES } from './html-video-scene-templates';
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import type { AppConfig, BackgroundRemovalMetadata, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
 import { createFileLlmReceiptJournal, withLlmReceiptJournal } from './llm-receipt-ledger';
@@ -62,6 +62,11 @@ interface HtmlVideoAssetGeneratorOptions {
   inspectAssetBackgroundRemoval?: (path: string) => Promise<BackgroundRemovalMetadata>;
   prepareForegroundAsset?: (path: string, signal?: AbortSignal) => Promise<{ src: string; backgroundRemoval: BackgroundRemovalMetadata }>;
   imageConcurrency?: number;
+  /**
+   * H-5: within one generateAssets call, slots with the same kind + ratio + prompt share one provider
+   * call; later slots get a private copy of the file (so a single-slot regenerate never alters both).
+   */
+  dedupeIdenticalPrompts?: boolean;
 }
 
 interface HtmlVoiceRequest {
@@ -177,6 +182,7 @@ export function createHtmlVideoRuntimeProviders(
           inspectAssetBackgroundRemoval: options.inspectAssetBackgroundRemoval,
           prepareForegroundAsset: options.prepareForegroundAsset,
           imageConcurrency: providers.imageConcurrency,
+          dedupeIdenticalPrompts: true,
         })
       : async () => {
           throw new AppError('IMAGE_PROVIDER_NOT_CONFIGURED', '请先配置图片服务。');
@@ -266,6 +272,8 @@ export function adaptHtmlVideoAssetGenerator(
     const existingBySlot = new Map(existingAssets.map(asset => [htmlVideoAssetSlotKey(asset), asset]));
     const runtimeTask = applyHtmlTaskConfig(task, input.config);
     const assets = new Array<HtmlVideoAsset>(requests.length);
+    // H-5: first generation per identical prompt (raw provider file, before foreground processing).
+    const generatedByPrompt = new Map<string, Promise<string>>();
     await runHtmlAssetRequestsWithConcurrency(requests, options.imageConcurrency ?? 1, async (request, index) => {
       const existing = existingBySlot.get(htmlVideoAssetSlotKey({ sceneIndex: request.scene.index, kind: request.kind, slot: request.slot }));
       if (existing) {
@@ -273,24 +281,39 @@ export function adaptHtmlVideoAssetGenerator(
         return;
       }
       const ratio = request.kind === 'bg' ? runtimeTask.ratio : '1:1';
-      let generated: SceneAsset[];
-      try {
-        generated = await generateHtmlAssetBatch(
-          generator,
-          [request],
-          request.kind === 'bg' ? runtimeTask : { ...runtimeTask, ratio },
-          ratio,
-          options.imageStyle,
-          input.signal,
-        );
-      } catch (error) {
-        throw asHtmlVideoImageProviderError(error);
+      const generate = async (): Promise<string> => {
+        let generated: SceneAsset[];
+        try {
+          generated = await generateHtmlAssetBatch(
+            generator,
+            [request],
+            request.kind === 'bg' ? runtimeTask : { ...runtimeTask, ratio },
+            ratio,
+            options.imageStyle,
+            input.signal,
+          );
+        } catch (error) {
+          throw asHtmlVideoImageProviderError(error);
+        }
+        return indexProviderAssets(
+          generated,
+          [request.syntheticId],
+          'IMAGE_PROVIDER_INVALID_OUTPUT',
+        ).get(request.syntheticId)!.path;
+      };
+      const promptKey = `${request.kind}\u0000${ratio}\u0000${request.prompt.trim().replace(/\s+/gu, ' ')}`;
+      const original = options.dedupeIdenticalPrompts && request.prompt.trim() ? generatedByPrompt.get(promptKey) : undefined;
+      let src: string;
+      if (original) {
+        src = await reuseHtmlAssetFile(await original, request.syntheticId) ?? await generate();
+      } else {
+        const pending = generate();
+        if (options.dedupeIdenticalPrompts && request.prompt.trim()) {
+          generatedByPrompt.set(promptKey, pending);
+          pending.catch(() => undefined);
+        }
+        src = await pending;
       }
-      let src = indexProviderAssets(
-        generated,
-        [request.syntheticId],
-        'IMAGE_PROVIDER_INVALID_OUTPUT',
-      ).get(request.syntheticId)!.path;
       let transparency: HtmlVideoAsset['transparency'];
       let backgroundRemoval: BackgroundRemovalMetadata | undefined;
       if (request.kind === 'fg') {
@@ -334,6 +357,21 @@ export function adaptHtmlVideoAssetGenerator(
 
 function htmlVideoAssetSlotKey(asset: Pick<HtmlVideoAsset, 'sceneIndex' | 'kind' | 'slot'>): string {
   return `${asset.sceneIndex}:${asset.kind}:${asset.slot}`;
+}
+
+/**
+ * H-5: private copy `<name>.reuse-<id><ext>` next to the first result (marker = HTML_REUSED_IMAGE_MARKER,
+ * so the cost panel does not count it as a paid call). Undefined when copying fails → caller generates.
+ */
+async function reuseHtmlAssetFile(source: string, syntheticId: number): Promise<string | undefined> {
+  const extension = extname(source);
+  const target = `${extension ? source.slice(0, -extension.length) : source}.reuse-${String(syntheticId).padStart(3, '0')}${extension}`;
+  try {
+    await copyFile(source, target);
+    return target;
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeBackgroundRemovalError(error: unknown): { code: string; message: string } {

@@ -135,6 +135,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'app:reconcile-deltas',
   'task:list',
   'project:set-models',
+  'project:cost-summary',
   'task:set-favorite',
   'project-cover:generate',
   'project-cover:import',
@@ -388,6 +389,7 @@ export type StoryDreamApi = {
   reconcileDeltas: (input: AppDeltaReconcileRequest) => Promise<AppDeltaReconcileResult>;
   listTasks: (request?: HistoryListInput<'task'>) => Promise<HistoryPage<'task', TaskSummary>>;
   setProjectModels: (id: string, models: import('./types').ProjectModels) => Promise<AppMutationResult>;
+  getProjectCostSummary: (id: string) => Promise<import('./project-cost').ProjectCostReport>;
   setTaskFavorite: (id: string, isFavorite: boolean) => Promise<AppMutationResult>;
   generateProjectCover: (input: { id: string; prompt: string }) => Promise<AppMutationResult>;
   importProjectCover: (id: string) => Promise<AppMutationResult>;

@@ -3,6 +3,7 @@ import { bindShortVideoMaterials, allocateShortVideoMaterials } from '../src/sha
 import { bindPixelleTaskVideo, loadPixelleCatalog, preflightPixelleTask, preparePixelleTaskOutputs } from '../src/shared/pixelle-render';
 import { prepareShortVideoOutputs, renderShortVideo } from './short-video-renderer';
 import { projectRuntimeConfig, selectedLanguageConfig } from '../src/shared/project-models';
+import { collectProjectCostReport } from './project-cost-collector';
 import { workflowPrompt } from '../src/shared/workflow-prompt-runtime';
 import { setWorkflowPromptTemplateProvider } from '../src/shared/workflow-prompt-runtime';
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, safeStorage, session, shell, type Cookie, type IpcMainInvokeEvent } from 'electron';
@@ -2350,6 +2351,12 @@ trustedHandle('project:set-models', (_event, input) =>
     await database.setProjectModels(input.id, input.models);
     return publishTaskUpsert(database, input.id);
   }));
+// U-5: read-only cost summary from the project's existing receipts; never calls a provider.
+trustedHandle('project:cost-summary', async (_event, id: string) => {
+  const task = await (await getDb()).getTaskDetail(id);
+  if (!task) throw new Error(`TASK_NOT_FOUND: ${id}`);
+  return collectProjectCostReport({ task, workDir: taskWorkDir(task), config: await (await getConfigService()).getRuntimeConfig() });
+});
 
 const projectModelGenerations = new Map<string, { count: number; release: () => void }>();
 function reserveProjectModelGeneration(id?: string | null): () => void {

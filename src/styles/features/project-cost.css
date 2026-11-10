@@ -1,0 +1,14 @@
+.project-cost-panel { display: grid; gap: 10px; min-width: 0; }
+.project-cost-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.project-cost-headline strong { font-size: 20px; }
+.project-cost-headline span, .project-cost-headline small, .project-cost-muted, .project-cost-notes { color: var(--muted); font-size: var(--sd-text-caption); }
+.project-cost-warning { margin: 0; color: var(--warn); font-size: var(--sd-text-caption); line-height: 1.6; }
+.project-cost-estimate { margin: 0; font-size: var(--sd-text-caption); }
+.project-cost-table { width: 100%; border-collapse: collapse; font-size: var(--sd-text-caption); }
+.project-cost-table th, .project-cost-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.project-cost-table th:first-child, .project-cost-table td:nth-child(6) { text-align: left; }
+.project-cost-notes { margin: 0; padding-left: 18px; line-height: 1.6; }
+.project-cost-error { color: var(--danger); }
+.cost-price-table { display: grid; gap: 8px; min-width: 0; }
+.cost-price-row { display: grid; grid-template-columns: minmax(140px, 2fr) minmax(90px, 1fr) repeat(5, minmax(72px, 1fr)) auto; gap: 6px; align-items: end; }
+.cost-price-help { margin: 0; color: var(--muted); font-size: var(--sd-text-caption); line-height: 1.6; }
