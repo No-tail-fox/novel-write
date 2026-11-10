@@ -5,7 +5,7 @@ import { upgradeHtmlSceneComposition } from './html-video-composition';
 import { HYPERFRAMES_AUTHORING_RULES, selectHtmlSemanticTemplate } from './html-video-authoring';
 import type { RunTaskOptions } from './runner';
 import type { SceneAsset } from './draft';
-import { AppError, redactErrorText } from './app-error';
+import { AppError, describeErrorCause, redactErrorText } from './app-error';
 import type {
   HtmlVideoAssetInput,
   HtmlVideoPlanningInput,
@@ -217,12 +217,23 @@ export function adaptHtmlVideoCoverGenerator(
       // `.reuse-` in the name keeps the cost panel from counting it as a paid image.
       const relativePath = `covers/cover-auto-r${input.revision}${HTML_REUSED_IMAGE_MARKER}scene.png`;
       await mkdir(join(workDir, 'covers'), { recursive: true });
-      const prepared = await prepareCoverImage({
-        sourcePath: isAbsolute(input.reuseSourcePath) ? input.reuseSourcePath : join(workDir, input.reuseSourcePath),
-        destinationPath: join(workDir, relativePath),
-        dimensions: input.dimensions,
-        signal: input.signal,
-      });
+      let prepared: Awaited<ReturnType<HtmlVideoCoverImageProcessor>>;
+      try {
+        prepared = await prepareCoverImage({
+          sourcePath: isAbsolute(input.reuseSourcePath) ? input.reuseSourcePath : join(workDir, input.reuseSourcePath),
+          destinationPath: join(workDir, relativePath),
+          dimensions: input.dimensions,
+          signal: input.signal,
+        });
+      } catch (error) {
+        // No paid fallback: the budget plan has no cover slot (maxImages).
+        input.signal?.throwIfAborted();
+        throw new AppError(
+          'IMAGE_BUDGET_REUSE_FAILED',
+          `生图张数复用失败：封面无法用分镜图片生成（${describeErrorCause(error) ?? '本地处理失败'}）。为了不超出生图张数上限，没有改为重新生图。可以重试，或手动“重新生成封面”。`,
+          true,
+        );
+      }
       return createHtmlVideoCoverAsset({
         revision: input.revision,
         mode: 'auto',
@@ -344,9 +355,14 @@ export function adaptHtmlVideoAssetGenerator(
       const budgetSourceKey = reuseFromSlot.get(slotKey);
       const budgetSource = budgetSourceKey ? sourceBySlot.get(budgetSourceKey) : undefined;
       let src: string;
-      if (budgetSource) {
-        // Reused slot: private copy of the planned source image, no provider call.
-        src = await reuseHtmlAssetFile(budgetSource, request.syntheticId) ?? await generate();
+      if (budgetSourceKey) {
+        // Reused slot of an explicit budget plan: private copy of the planned source image. It never
+        // falls back to a paid provider call (that could exceed maxImages); a missing source or a
+        // failed copy is a recoverable local error instead.
+        if (!budgetSource) throw imageBudgetReuseError('IMAGE_BUDGET_REUSE_SOURCE_MISSING', slotKey, budgetSourceKey);
+        const copied = await reuseHtmlAssetFile(budgetSource, request.syntheticId);
+        if (!copied) throw imageBudgetReuseError('IMAGE_BUDGET_REUSE_FAILED', slotKey, budgetSourceKey);
+        src = copied;
       } else if (original) {
         src = await reuseHtmlAssetFile(await original, request.syntheticId) ?? await generate();
       } else {
@@ -410,13 +426,27 @@ export function adaptHtmlVideoAssetGenerator(
   };
 }
 
+/**
+ * H-5 follow-up: a reused slot of an explicit image budget could not be filled locally. Retryable (the
+ * already generated images are kept); the user can also regenerate that slot alone or switch to 标准.
+ */
+function imageBudgetReuseError(code: 'IMAGE_BUDGET_REUSE_FAILED' | 'IMAGE_BUDGET_REUSE_SOURCE_MISSING', slotKey: string, sourceKey: string): AppError {
+  const reason = code === 'IMAGE_BUDGET_REUSE_SOURCE_MISSING' ? '找不到要复用的源图片' : '复制源图片失败';
+  return new AppError(
+    code,
+    `生图张数复用失败：素材 ${slotKey} ${reason}（源 ${sourceKey}）。为了不超出生图张数上限，没有改为重新生图。可以重试，或单独重新生成该素材，或把生图张数改回“标准”。`,
+    true,
+  );
+}
+
 function htmlVideoAssetSlotKey(asset: Pick<HtmlVideoAsset, 'sceneIndex' | 'kind' | 'slot'>): string {
   return `${asset.sceneIndex}:${asset.kind}:${asset.slot}`;
 }
 
 /**
  * H-5: private copy `<name>.reuse-<id><ext>` next to the first result (marker = HTML_REUSED_IMAGE_MARKER,
- * so the cost panel does not count it as a paid call). Undefined when copying fails → caller generates.
+ * so the cost panel does not count it as a paid call). Undefined when copying fails → the identical-prompt
+ * dedupe generates instead; an explicit budget reuse reports IMAGE_BUDGET_REUSE_FAILED.
  */
 async function reuseHtmlAssetFile(source: string, syntheticId: number): Promise<string | undefined> {
   const extension = extname(source);

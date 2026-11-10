@@ -285,11 +285,16 @@ export async function resolveHtmlVideoCoverForRender(
   const summary = input.state.scenes[0]?.narration ?? input.taskTitle;
   // H-5 follow-up: under 省图 / 极省 (or a reached cap) the cover reuses the first scene image.
   // An explicit "重新生成封面" (force) always calls the provider.
-  const reuseSource = !input.force && htmlVideoCoverReusesScene(input.state.scenes, input.state.config)
+  const reuseRequired = !input.force && htmlVideoCoverReusesScene(input.state.scenes, input.state.config);
+  const reuseSource = reuseRequired
     ? [...input.state.assets]
         .filter((asset) => asset.kind === 'bg')
         .sort((left, right) => left.sceneIndex - right.sceneIndex)[0]
     : undefined;
+  if (reuseRequired && !reuseSource) {
+    // Never fall back to a paid cover call: the budget plan has no slot for it (maxImages).
+    throw new AppError('IMAGE_BUDGET_REUSE_SOURCE_MISSING', '生图张数复用失败：封面要复用分镜图片，但没有可用的背景图。为了不超出生图张数上限，没有改为重新生图。请先补齐素材后重试，或手动“重新生成封面”。', true);
+  }
   const generated = validateHtmlVideoCoverAsset(await input.generateCover({
     taskTitle: input.taskTitle,
     summary,

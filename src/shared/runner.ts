@@ -2210,7 +2210,9 @@ async function ensureImages(input: {
   // H-5 follow-up: the reuse plan is fixed when the image step starts with no scene images. It is
   // persisted, so a resumed run copies instead of calling the provider. Single-scene regeneration
   // drops the scene from the stored plan (pipeline-cache), so that scene calls the provider again.
-  if (budgetPlan && pipeline.assets.images.length === 0) {
+  // A budgeted run without a stored plan (e.g. images recovered from an older state file) also gets one,
+  // so a resumed run can never generate more than the plan allows.
+  if (budgetPlan && (pipeline.assets.images.length === 0 || pipeline.imageBudgetReuse === undefined)) {
     pipeline.imageBudgetReuse = budgetPlan.reuse
       .filter((entry) => entry.slot.kind === 'scene')
       .map((entry) => ({ sceneId: entry.slot.sceneId, from: entry.from.sceneId }));
@@ -2224,9 +2226,14 @@ async function ensureImages(input: {
   const finalizeBudgetCover = async () => {
     if (!coverReuse || !shouldGenerateCoverImage(task) || pipeline.assets.cover.length > 0) return;
     const source = pipeline.assets.images.find((asset) => asset.sceneId === coverReuse.from.sceneId) ?? pipeline.assets.images[0];
-    if (!source) return;
+    // Never a paid fallback: the budget plan has no cover slot (maxImages).
+    if (!source) throw imageBudgetReuseError('IMAGE_BUDGET_REUSE_SOURCE_MISSING', '封面', coverReuse.from.sceneId);
     const coverPath = join(input.workDir, 'cover-image.png');
-    await copyFile(source.path, coverPath);
+    try {
+      await copyFile(source.path, coverPath);
+    } catch (error) {
+      throw imageBudgetReuseError('IMAGE_BUDGET_REUSE_FAILED', '封面', source.sceneId, error);
+    }
     pipeline.assets.cover = [{ sceneId: 0, path: coverPath }];
     await emit('cover_ready', 4, 'Producer', `封面复用第 ${source.sceneId} 个分镜的图片（生图张数：${describeImageBudget(imageBudget)}，未调用生图模型）`, { path: coverPath, reusedFrom: source.sceneId });
   };
@@ -2280,8 +2287,18 @@ async function ensureImages(input: {
     for (const scene of toReuse) {
       throwIfAborted(options.signal);
       const source = pipeline.assets.images.find((asset) => asset.sceneId === plannedReuse.get(scene.id));
-      if (!source) continue; // source failed: auto-borrow (if enabled) or the unresolved check handles it
-      const reused = await materializeBudgetReuseImage(input.workDir, scene.id, source);
+      if (!source) {
+        // Source failed: auto-borrow (copy, no provider call) fills it when enabled; otherwise stop with a
+        // recoverable local error. A reused scene never falls back to a paid call (maxImages).
+        if (task.autoBorrowImage) continue;
+        throw imageBudgetReuseError('IMAGE_BUDGET_REUSE_SOURCE_MISSING', `第 ${scene.id} 个分镜`, plannedReuse.get(scene.id)!);
+      }
+      let reused: SceneAsset;
+      try {
+        reused = await materializeBudgetReuseImage(input.workDir, scene.id, source);
+      } catch (error) {
+        throw imageBudgetReuseError('IMAGE_BUDGET_REUSE_FAILED', `第 ${scene.id} 个分镜`, source.sceneId, error);
+      }
       pipeline.assets.images = mergeAssets(pipeline.assets.images, [reused]);
       pipeline.assets.imageErrors = removeImageErrors(pipeline.assets.imageErrors, [scene.id]);
       reusedIds.push(scene.id);
@@ -2688,6 +2705,15 @@ async function materializeBudgetReuseImage(workDir: string, sceneId: number, sou
   await mkdir(outputDir, { recursive: true });
   await copyFile(source.path, path);
   return { sceneId, path, borrowedFrom: from };
+}
+
+/**
+ * H-5 follow-up: a reused scene / cover of an explicit image budget could not be filled locally. The coded
+ * message keeps it a recoverable step failure (generated images stay); it never turns into a provider call.
+ */
+function imageBudgetReuseError(code: 'IMAGE_BUDGET_REUSE_FAILED' | 'IMAGE_BUDGET_REUSE_SOURCE_MISSING', target: string, sourceSceneId: number, cause?: unknown): Error {
+  const reason = code === 'IMAGE_BUDGET_REUSE_SOURCE_MISSING' ? `找不到要复用的第 ${sourceSceneId} 个分镜图片` : `复制第 ${sourceSceneId} 个分镜图片失败`;
+  return new Error(`${code}: 生图张数复用失败：${target}${reason}。为了不超出生图张数上限，没有改为重新生图。可以重试，或单独重新生成该分镜。`, cause === undefined ? undefined : { cause });
 }
 
 /** H-5 follow-up: the template-route image budget, only where scene images come from the AI provider. */

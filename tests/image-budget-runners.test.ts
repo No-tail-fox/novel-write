@@ -327,3 +327,225 @@ describe('H-5 image budget — template route', () => {
     expect(run.images.find((image) => image.sceneId === 3)).toMatchObject({ borrowedFrom: 1 });
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Failure injection: an explicit budget must never fall back to extra paid calls
+// ---------------------------------------------------------------------------------------------
+
+describe('H-5 image budget — reuse failures never exceed the cap (HTML)', () => {
+  const task = { id: 'html-budget-fail', title: 'HTML budget', style: 'modern-film', ratio: '9:16', speaker: 'voice' } as Task;
+
+  it('a failed reuse copy is a recoverable local error, not an extra provider call', async () => {
+    await withDir('budget-html-copyfail-', async (dir) => {
+      let calls = 0;
+      // The provider "returns" a file that is gone by the time the reused slots copy it.
+      const generate = adaptHtmlVideoAssetGenerator(async (scenes) => {
+        calls += 1;
+        return scenes.map((scene) => ({ sceneId: scene.id, path: join(dir, `vanished-${calls}.png`) }));
+      }, task, { dedupeIdenticalPrompts: true, workDir: dir });
+      const config = { foreground: true, imageBudget: { mode: 'minimal' as const, maxImages: 2 } };
+      await expect(generate({ scenes: htmlScenes(6), config })).rejects.toMatchObject({ code: 'IMAGE_BUDGET_REUSE_FAILED', retryable: true });
+      expect(calls).toBe(2);
+    });
+  });
+
+  it('a missing recovered source is a recoverable local error, not an extra provider call', async () => {
+    await withDir('budget-html-missing-source-', async (dir) => {
+      let calls = 0;
+      const generate = adaptHtmlVideoAssetGenerator(async (scenes) => {
+        calls += 1;
+        const path = join(dir, `provider-${calls}.png`);
+        await writeFile(path, 'image');
+        return scenes.map((scene) => ({ sceneId: scene.id, path }));
+      }, task, { dedupeIdenticalPrompts: true, workDir: dir });
+      const existingAssets: HtmlVideoAsset[] = [{ sceneIndex: 1, kind: 'bg', slot: 0, src: 'deleted-by-user.png', prompt: '背景 1' }];
+      await expect(generate({ scenes: htmlScenes(6), config: { foreground: true, imageBudget: { mode: 'minimal' } }, existingAssets }))
+        .rejects.toMatchObject({ code: 'IMAGE_BUDGET_REUSE_FAILED' });
+      expect(calls).toBe(1); // only the planned source of group 4–6
+    });
+  });
+
+  it('a provider failure followed by a resumed run keeps the total within maxImages', async () => {
+    await withDir('budget-html-resume-', async (dir) => {
+      const successful: string[] = [];
+      let failNext = 2;
+      let attempts = 0;
+      const generate = adaptHtmlVideoAssetGenerator(async (scenes, prompts) => {
+        attempts += 1;
+        if (attempts === failNext) throw new Error('provider down');
+        const path = join(dir, `provider-${attempts}.png`);
+        await writeFile(path, 'image');
+        successful.push(prompts[0].prompt);
+        return scenes.map((scene) => ({ sceneId: scene.id, path }));
+      }, task, { dedupeIdenticalPrompts: true, workDir: dir });
+      const scenes = htmlScenes(9);
+      const config = { foreground: true, imageBudget: { mode: 'economy' as const, maxImages: 3 } };
+      const recovered: HtmlVideoAsset[] = [];
+      await expect(generate({ scenes, config, onAssetGenerated: async (asset) => { recovered.push(asset); } })).rejects.toThrow();
+      expect(recovered.every((asset) => !asset.src.includes('.reuse-'))).toBe(true);
+      failNext = 0;
+      const assets = await generate({ scenes, config, existingAssets: recovered.map((asset) => ({ ...asset, src: relative(dir, asset.src) })) });
+      validateHtmlVideoAssets(assets, scenes, config, 'assets');
+      expect(successful).toHaveLength(3); // never more than the cap of new images
+      expect(attempts).toBe(4); // 3 planned slots + the one failed attempt, no reuse fallback
+      expect(assets.filter((asset) => asset.src.includes('.reuse-'))).toHaveLength(6);
+    });
+  });
+
+  it('the default path keeps the identical-prompt dedupe fallback (copy failure → generate)', async () => {
+    await withDir('budget-html-dedupe-', async (dir) => {
+      let calls = 0;
+      const generate = adaptHtmlVideoAssetGenerator(async (scenes) => {
+        calls += 1;
+        return scenes.map((scene) => ({ sceneId: scene.id, path: join(dir, `vanished-${calls}.png`) }));
+      }, task, { dedupeIdenticalPrompts: true, workDir: dir });
+      const scenes = htmlScenes(2).map((scene) => ({ ...scene, background: { prompt: '同一个背景' }, elements: [] }));
+      const assets = await generate({ scenes, config: { foreground: false } });
+      expect(calls).toBe(2);
+      expect(assets).toHaveLength(2);
+    });
+  });
+
+  it('cover reuse without a scene image or with a failed local crop never calls the provider', async () => {
+    const template: CustomCoverTemplate = { ...defaultCustomCoverTemplates[0] };
+    const state = createHtmlVideoPipelineData('第一幕。第二幕。', { coverImageMode: 'auto', coverTemplate: template.id, imageBudget: { mode: 'economy' } });
+    state.assets = [];
+    let coverCalls = 0;
+    await expect(resolveHtmlVideoCoverForRender({
+      state, taskTitle: 'Budget cover', resolveTemplate: async () => structuredClone(template),
+      generateCover: async () => { coverCalls += 1; throw new Error('must not be called'); },
+    })).rejects.toMatchObject({ code: 'IMAGE_BUDGET_REUSE_SOURCE_MISSING', retryable: true });
+    expect(coverCalls).toBe(0);
+
+    await withDir('budget-html-cover-fail-', async (dir) => {
+      let providerCalls = 0;
+      const generate = adaptHtmlVideoCoverGenerator(
+        async () => { providerCalls += 1; return []; },
+        { id: 'cover-budget', title: 'Cover', style: 'modern-film', ratio: '9:16' } as Task,
+        dir,
+        async () => { throw new Error('decode failed'); },
+      );
+      await expect(generate({
+        taskTitle: 'Cover', summary: 'summary', ratio: '3:4', revision: 2, dimensions: { width: 768, height: 1024 },
+        template, prompt: 'unused', config: state.config, reuseSourcePath: 'provider-images/001.png',
+      })).rejects.toMatchObject({ code: 'IMAGE_BUDGET_REUSE_FAILED', retryable: true });
+      expect(providerCalls).toBe(0);
+    });
+  });
+});
+
+describe('H-5 image budget — reuse failures never exceed the cap (template)', () => {
+  async function openBudgetTask(dir: string, imageBudget: ImageBudgetPolicy, extra: { cover?: boolean; autoBorrowImage?: boolean } = {}) {
+    const db = await FileDatabase.open(join(dir, 'app.db'));
+    const state = await db.getState();
+    await db.upsertConfig({ ...state.config, jianying: { ...state.config.jianying, draftPath: join(dir, 'drafts') } });
+    const task = await db.createTask({
+      title: 'Budget failure', inputText: 'Story.', pipelineData: createOrdinaryTaskPipelineData({ imageBudget }),
+      ...(extra.cover ? { coverImageMode: 'auto' as const, coverTemplateId: 'cinematic-poster' } : {}),
+      ...(extra.autoBorrowImage ? { autoBorrowImage: true } : {}),
+    });
+    const workDir = join(dir, 'tasks', task.managedStorageKey!);
+    const run = (current: Task, generateImages: (scenes: StoryboardScene[]) => Promise<Array<{ sceneId: number; path: string }>>) => runTask(db, current, {
+      appDataDir: dir, workDir, imageConcurrency: 1, customCoverTemplates: defaultCustomCoverTemplates,
+      generatePipelineArtifact: async () => makeArtifact(7),
+      generateImages,
+      synthesizeNarration: async (scenes) => writeSceneAssets(join(dir, 'media'), scenes, 'wav', wavTone(1200)),
+      draftWriterOptions: { runBridge: fakeBridge },
+    });
+    const current = async () => (await db.getState()).tasks.find((item) => item.id === task.id)!;
+    return { db, task, run, current };
+  }
+
+  it('a failed reuse copy pauses with a local error; the retry copies without new calls', async () => {
+    await withDir('budget-tpl-copyfail-', async (dir) => {
+      const { db, task, run, current } = await openBudgetTask(dir, { mode: 'minimal' });
+      try {
+        const calls: number[][] = [];
+        const files = new Map<number, string>();
+        const provider = async (scenes: StoryboardScene[]) => {
+          calls.push(scenes.map((scene) => scene.id));
+          const assets = await writeSceneAssets(join(dir, 'media'), scenes, 'png', tinyPng);
+          for (const asset of assets) files.set(asset.sceneId, asset.path);
+          // Inject: the scene 1 source disappears before the reuse copies run.
+          if (scenes[0].id === 7) await rm(files.get(1)!, { force: true });
+          return assets;
+        };
+        await expect(run(task, provider)).rejects.toThrow(/IMAGE_BUDGET_REUSE_FAILED|生图张数复用失败/u);
+        expect(calls).toEqual([[1], [4], [7]]);
+        expect(await current()).toMatchObject({ status: 'paused', failedStep: 4 });
+
+        await writeFile(files.get(1)!, tinyPng); // the user restores the file (or regenerates scene 1)
+        await run(await current(), provider);
+        expect(calls).toEqual([[1], [4], [7]]);
+        expect((await current()).status).toBe('completed');
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  it('a provider failure followed by resume keeps the successful calls within maxImages', async () => {
+    await withDir('budget-tpl-resume-', async (dir) => {
+      const { db, task, run, current } = await openBudgetTask(dir, { mode: 'economy', maxImages: 3 }, { cover: true });
+      try {
+        const calls: number[][] = [];
+        let fail = true;
+        const provider = async (scenes: StoryboardScene[]) => {
+          calls.push(scenes.map((scene) => scene.id));
+          if (fail && scenes[0].id === 4) throw new Error('provider down');
+          return writeSceneAssets(join(dir, 'media'), scenes, 'png', tinyPng);
+        };
+        await expect(run(task, provider)).rejects.toThrow(/provider down/u);
+        const pipeline = JSON.parse(await readFile((await current()).artifactStatePath, 'utf8')) as { imageBudgetReuse?: unknown[] };
+        expect(pipeline.imageBudgetReuse).toHaveLength(4);
+        fail = false;
+        await run(await current(), provider);
+        const successful = calls.filter((ids, index) => !(ids[0] === 4 && calls.findIndex((other) => other[0] === 4) === index));
+        expect(successful).toEqual([[1], [4], [7]]);
+        expect(calls.some((ids) => ids[0] === 0)).toBe(false); // the cover reused scene 1
+        expect((await current()).status).toBe('completed');
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  it('with auto-borrow, a failed source is filled by copies, never by extra calls', async () => {
+    await withDir('budget-tpl-borrow-', async (dir) => {
+      const { db, task, run, current } = await openBudgetTask(dir, { mode: 'minimal' }, { autoBorrowImage: true });
+      try {
+        const calls: number[][] = [];
+        await run(task, async (scenes) => {
+          calls.push(scenes.map((scene) => scene.id));
+          if (scenes[0].id === 4) throw new Error('scene 4 failed');
+          return writeSceneAssets(join(dir, 'media'), scenes, 'png', tinyPng);
+        });
+        expect(calls).toEqual([[1], [4], [7]]);
+        expect((await current()).status).toBe('completed');
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  it('a failed cover copy pauses with a local error instead of a paid cover call', async () => {
+    await withDir('budget-tpl-cover-fail-', async (dir) => {
+      const { db, task, run, current } = await openBudgetTask(dir, { mode: 'economy' }, { cover: true });
+      try {
+        const calls: number[][] = [];
+        const files = new Map<number, string>();
+        await expect(run(task, async (scenes) => {
+          calls.push(scenes.map((scene) => scene.id));
+          const assets = await writeSceneAssets(join(dir, 'media'), scenes, 'png', tinyPng);
+          for (const asset of assets) files.set(asset.sceneId, asset.path);
+          if (scenes[0].id === 7) await rm(files.get(1)!, { force: true });
+          return assets;
+        })).rejects.toThrow(/IMAGE_BUDGET_REUSE_FAILED|生图张数复用失败/u);
+        expect(calls).toEqual([[1], [2], [3], [4], [5], [6], [7]]);
+        expect((await current()).status).toBe('paused');
+      } finally {
+        await db.close();
+      }
+    });
+  });
+});
