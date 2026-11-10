@@ -12,6 +12,8 @@ import {
 } from '../src/shared/html-video-config';
 import { resolveManagedHistoryWorkDir } from './managed-history-paths';
 import { preflightVideoRenderDisk } from './video-render-preflight';
+import { runFinalFilmGateSafely, type FinalFilmGateRunOptions } from './final-film-gate-runner';
+import { resolveNormalizeAudio } from '../src/shared/loudness';
 import {
   buildHtmlVideoExportInput,
   type HtmlVideoExportInput,
@@ -89,6 +91,8 @@ export interface ElectronHtmlVideoRuntimeOptions {
   stagingFileOperations?: Partial<HtmlVideoStagingFileOperations>;
   gsapRuntimePath?: string;
   hyperframesRuntimePath?: string;
+  /** Advisory final-film gate after render (quality-gate.json). `false` disables; default runFinalFilmGateSafely. */
+  finalFilmGate?: false | ((options: FinalFilmGateRunOptions) => Promise<unknown>);
 }
 
 export interface HtmlVideoPublicationFileOperations {
@@ -2366,6 +2370,14 @@ export function createElectronHtmlVideoRuntime(options: ElectronHtmlVideoRuntime
           sha256: digest,
           identity: publishedIdentity,
         });
+        // E-5 advisory final-film gate: quality-gate.json next to final.mp4; never blocks delivery (errors → status 'error').
+        if (options.finalFilmGate !== false) {
+          try {
+            await (options.finalFilmGate ?? runFinalFilmGateSafely)({ route: 'html', filmPath: publishedPath, signal,
+              expected: { durationMs: Math.round(composition.totalDurationS * 1000), fps: composition.fps, width: composition.canvas_w, height: composition.canvas_h,
+                audioExpected: true, loudnessTarget: resolveNormalizeAudio(composition.normalizeAudio) } });
+          } catch { /* advisory only */ }
+        }
         return output;
       }, options.stagingFileOperations);
     },

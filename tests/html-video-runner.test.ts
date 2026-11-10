@@ -1853,3 +1853,80 @@ async function withTempRunner(run: (workDir: string) => Promise<void>): Promise<
     await rm(workDir, { recursive: true, force: true });
   }
 }
+
+describe('HTML video runner G-7 automatic retry budget', () => {
+  const refused = () => Object.assign(new Error('connect ECONNREFUSED 203.0.113.9:443'), { code: 'ECONNREFUSED' });
+
+  it('retries not-sent rewrite and planning failures within the shared budget', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.retryDelayMs = () => 0;
+      const rewrite = runtime.options.rewrite!, plan = runtime.options.plan!;
+      let rewriteFailures = 1, planFailures = 1;
+      runtime.options.rewrite = async (input) => { if (rewriteFailures-- > 0) { runtime.calls.push('rewrite'); throw refused(); } return rewrite(input); };
+      runtime.options.plan = async (input) => { if (planFailures-- > 0) { runtime.calls.push('planning'); throw refused(); } return plan(input); };
+      const result = await runHtmlVideoPipeline(createRunnerInput('retry-not-sent'), runtime.options);
+      expect(result.current).toBe('done');
+      expect(runtime.calls.filter((call) => call === 'rewrite')).toHaveLength(2);
+      expect(runtime.calls.filter((call) => call === 'planning')).toHaveLength(2);
+      expect(result.retryBudget).toMatchObject({ used: 2, nodes: { rewrite: 1, planning: 1 } });
+      expect(result.warnings.join('\n')).toContain('「文案改写」');
+      expect((await readCheckpoint(workDir)).retryBudget).toMatchObject({ used: 2 });
+    });
+  });
+
+  it('stops automatic retries when the per-step or per-run budget is exhausted', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.retryDelayMs = () => 0;
+      runtime.options.rewrite = async () => { runtime.calls.push('rewrite'); throw new Error('LLM API error (522) at step 0 html-video-rewrite'); };
+      await expect(runHtmlVideoPipeline(createRunnerInput('retry-exhausted'), runtime.options)).rejects.toThrow(/522/);
+      expect(runtime.calls).toEqual(['rewrite', 'rewrite', 'rewrite']);
+      const checkpoint = await readCheckpoint(workDir);
+      expect(checkpoint.steps.rewrite).toMatchObject({ status: 'failed' });
+      expect(checkpoint.retryBudget).toMatchObject({ used: 2, nodes: { rewrite: 2 } });
+    });
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.retryDelayMs = () => 0;
+      runtime.options.retryLimits = { runLimit: 1 };
+      runtime.options.rewrite = async () => { runtime.calls.push('rewrite'); throw refused(); };
+      await expect(runHtmlVideoPipeline(createRunnerInput('retry-run-cap'), runtime.options)).rejects.toThrow();
+      expect(runtime.calls).toEqual(['rewrite', 'rewrite']);
+    });
+  });
+
+  it('never automatically resends unknown outcomes or multi-request paid steps', async () => {
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.retryDelayMs = () => 0;
+      runtime.options.rewrite = async () => { runtime.calls.push('rewrite'); throw new Error('LLM API error (524) at step 0: gateway timeout'); };
+      await expect(runHtmlVideoPipeline(createRunnerInput('unknown-524'), runtime.options)).rejects.toThrow(/524/);
+      expect(runtime.calls).toEqual(['rewrite']);
+      expect((await readCheckpoint(workDir)).retryBudget).toBeUndefined();
+    });
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.retryDelayMs = () => 0;
+      runtime.options.rewrite = async () => { runtime.calls.push('rewrite'); throw Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }); };
+      await expect(runHtmlVideoPipeline(createRunnerInput('unknown-reset'), runtime.options)).rejects.toThrow();
+      expect(runtime.calls).toEqual(['rewrite']);
+    });
+    await withTempRunner(async (workDir) => {
+      const runtime = createFakeRuntime(workDir);
+      runtime.options.retryDelayMs = () => 0;
+      runtime.options.generateAssets = async () => { runtime.calls.push('assets'); throw refused(); };
+      await expect(runHtmlVideoPipeline(createRunnerInput('assets-not-sent'), runtime.options)).rejects.toThrow();
+      expect(runtime.calls.filter((call) => call === 'assets')).toHaveLength(1);
+    });
+  });
+
+  it('loads saved states without a budget, keeps valid budgets and drops malformed ones', () => {
+    const state = createRunnerInput('legacy-budget').state;
+    const { retryBudget: _ignored, ...legacy } = state;
+    expect(parseHtmlVideoPipelineData(JSON.stringify(legacy)).retryBudget).toBeUndefined();
+    const budget = { version: 1, runLimit: 6, nodeLimit: 2, used: 1, nodes: { rewrite: 1 } };
+    expect(parseHtmlVideoPipelineData(JSON.stringify({ ...legacy, retryBudget: budget })).retryBudget).toEqual(budget);
+    expect(parseHtmlVideoPipelineData(JSON.stringify({ ...legacy, retryBudget: { version: 2, used: -1 } })).retryBudget).toBeUndefined();
+  });
+});

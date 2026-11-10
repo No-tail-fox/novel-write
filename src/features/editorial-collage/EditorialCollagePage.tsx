@@ -1262,7 +1262,7 @@ export function EditorialCollagePage({
       <Button disabled={projectAction.busy} onClick={() => setMusicOpen(false)}>取消</Button>
       <Button variant="primary" disabled={projectAction.busy || productionRunning} onClick={() => void saveProductionSettings(musicSettings)}>保存音乐</Button>
     </>}><ProjectMusicFields value={musicSettings.music} library={state.config.jianying.bgmLibrary} api={api} busy={projectAction.busy || productionRunning} onChange={music => setMusicSettings({ ...musicSettings, music })} /></Dialog> : null}
-    {productionDetailsOpen && productionRun ? <VoxProductionProgress key={productionRun.id} run={productionRun} shots={document.beats.flatMap(beat => beat.shots)} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} /> : null}
+    {productionDetailsOpen && productionRun ? <VoxProductionProgress key={productionRun.id} run={productionRun} shots={document.beats.flatMap(beat => beat.shots)} upstreamFilm={document.upstreamFilm} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} /> : null}
     <DirectorDeskWorkspace
       mode="vox"
       musicVideo={isMusicVideo}

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, parseEditorialCollagePipelineData, type EditorialCollagePipelineData } from '../src/shared/editorial-collage';
 import { buildVoxProductionNodes, recoverVoxProductionRun, voxProductionControlSchema, voxProductionInputErrors, voxProductionNeedsTextModel, voxProductionNodeStatus, voxProductionSettings, voxProductionSettingsSchema, type VoxProductionSettings } from '../src/shared/vox-production';
-import { VoxProductionService, voxInputHash, type VoxProductionRuntime } from '../electron/vox-production-service';
+import { VoxProductionService, voxInputHash, type VoxProductionRuntime, type VoxProductionServiceOptions } from '../electron/vox-production-service';
 import { createVoxProductionRuntime, type VoxProductionOperations } from '../electron/vox-production-runtime';
 import { FileDatabase } from '../src/shared/storage';
 import { nativeHtml } from './lemo-native.fixture';
@@ -15,7 +15,7 @@ import { directorDocumentRenderFingerprint } from '../src/shared/director-render
 
 const document = () => createEditorialCollageStarterPlan(createEditorialCollageDraft({ id: 'vox', title: '城市热岛', ratio: '16:9' }), '道路与建筑吸收阳光。树荫可以降低地表温度。', '2026-10-23T00:00:00.000Z', 15000);
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(r => { resolve = r; }); return { promise, resolve }; }
-function harness(execute?: VoxProductionRuntime['execute']) {
+function harness(execute?: VoxProductionRuntime['execute'], serviceOptions?: VoxProductionServiceOptions) {
   let doc = document(); let revision = Date.parse(doc.updatedAt); const receipts = new Map<string, EditorialCollagePipelineData>();
   const calls: string[] = [], errors: unknown[] = []; const release = vi.fn(); const acquire = vi.fn(() => release);
   const preflight = vi.fn();
@@ -24,7 +24,7 @@ function harness(execute?: VoxProductionRuntime['execute']) {
     checkpoint: async (_id: string, n: { requestId?: string }, d: EditorialCollagePipelineData) => { receipts.set(n.requestId!, structuredClone(d)); },
     recover: async (_id: string, n: { requestId?: string }) => receipts.get(n.requestId!),
   };
-  const service = new VoxProductionService(store, async () => runtime, e => errors.push(e));
+  const service = new VoxProductionService(store, async () => runtime, e => errors.push(e), serviceOptions);
   return { service, store, runtime, calls, preflight, acquire, release, errors, get: () => structuredClone(doc), set: (d: EditorialCollagePipelineData) => { doc = d; }, start: (settings: VoxProductionSettings = voxProductionSettings()) => service.start({ id: doc.id, expectedUpdatedAt: doc.updatedAt, settings }) };
 }
 function operations(overrides: Partial<VoxProductionOperations> = {}): VoxProductionOperations {
@@ -289,7 +289,9 @@ describe('main-owned Vox production', () => {
     expect(h.calls).toEqual(calls);
   });
   it('never treats a post-result storage error as a rejected plan', async () => {
-    const h = harness(), save = h.store.save; let fail = true;
+    const h = harness(), save = h.store.save, recover = h.store.recover; let fail = true;
+    // Receipt journal unreadable during the run: the node must stay unknown (no automatic resend).
+    (h.store as { recover?: typeof recover }).recover = undefined;
     h.store.save = async d => {
       if (fail && d.productionRun?.nodes.some(n => n.kind === 'plan' && n.status === 'completed')) {
         fail = false; throw new Error('LLM API error (400) at step 1 plan via https://provider.example/v1/messages: storage failure with copied diagnostic');
@@ -300,6 +302,7 @@ describe('main-owned Vox production', () => {
     const node = h.get().productionRun!.nodes.find(n => n.kind === 'plan')!;
     expect(node.resultReceived).toBe(true); expect(voxProductionNodeStatus(node)).toBe('unknown');
     await expect(h.service.control({ id: 'vox', runId: run.id, action: 'resume' })).rejects.toThrow('UNKNOWN');
+    h.store.recover = recover;
     await h.service.control({ id: 'vox', runId: run.id, action: 'reconcile' });
     await h.service.control({ id: 'vox', runId: run.id, action: 'resume' }); await h.service.idle('vox');
     expect(h.calls.filter(id => id === 'plan')).toHaveLength(1);
@@ -311,21 +314,18 @@ describe('main-owned Vox production', () => {
       if (fail && d.productionRun?.nodes.some(n => n.kind === 'image' && n.status === 'completed')) { fail = false; throw new Error('disk fault'); }
       return save(d);
     };
-    const run = await h.start(); await h.service.idle('vox');
-    const node = h.get().productionRun!.nodes.find(n => n.status === 'unknown')!;
-    expect(node.kind).toBe('image');
-    await expect(h.service.control({ id: 'vox', runId: run.id, action: 'resume' })).rejects.toThrow('UNKNOWN');
-    await h.service.control({ id: 'vox', runId: run.id, action: 'reconcile' });
-    await h.service.control({ id: 'vox', runId: run.id, action: 'resume' }); await h.service.idle('vox');
+    await h.start(); await h.service.idle('vox');
+    // G-7: the durable receipt is read automatically before the run would block on the unknown node.
+    const node = h.get().productionRun!.nodes.find(n => n.kind === 'image')!;
     expect(h.get().productionRun!.status).toBe('completed');
     expect(h.calls.filter(id => id === node.id)).toHaveLength(1);
   });
   it('restores a durable receipt after a result-save crash without a second remote call', async () => {
     const h = harness(); const save = h.store.save; let fail = true;
     h.store.save = async d => { if (fail && d.productionRun?.nodes[0].status === 'completed') { fail = false; throw new Error('disk fault'); } return save(d); };
-    const run = await h.start(); await h.service.idle('vox'); expect(h.get().productionRun!.nodes[0].status).toBe('unknown');
-    await h.service.control({ id: 'vox', runId: run.id, action: 'reconcile' }); expect(h.get().productionRun!.nodes[0].status).toBe('completed');
-    await h.service.control({ id: 'vox', runId: run.id, action: 'resume' }); await h.service.idle('vox'); expect(h.calls.filter(id => id === 'plan')).toHaveLength(1);
+    await h.start(); await h.service.idle('vox');
+    expect(h.get().productionRun!.nodes[0].status).toBe('completed'); expect(h.get().productionRun!.status).toBe('completed');
+    expect(h.calls.filter(id => id === 'plan')).toHaveLength(1);
   });
   it('invalidates only changed nodes and descendants while retaining other successful paid assets', async () => {
     const h = harness(); h.runtime.input = (d, n) => n.kind === 'image' ? { prompt: d.beats.flatMap(b => b.shots).find(s => s.id === n.shotId)!.layers.find(l => l.id === n.layerId)!.prompt } : n.kind;
@@ -595,4 +595,82 @@ it('reports disk-full worker interruption truthfully without calling it an appli
   expect(h.calls).toHaveLength(0);
   await h.service.control({ id: 'vox', runId: run.id, action: 'resume' }); await h.service.idle('vox');
   expect(h.get().productionRun!.status).toBe('completed');
+});
+
+describe('G-7 unknown-node policy and shared retry budget', () => {
+  const noDelay = { retryDelayMs: () => 0 };
+  const reset = () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+  const refused = () => Object.assign(new Error('connect ECONNREFUSED 203.0.113.9:443'), { code: 'ECONNREFUSED' });
+  it('recovers an unknown image from a free provider receipt before blocking, without resubmitting', async () => {
+    let target: string | undefined;
+    const h = harness(async (d, n) => { if (n.kind === 'image' && (target ??= n.id) === n.id && h.calls.filter(id => id === n.id).length === 1) throw new Error('IMAGE_RESULT_UNKNOWN: 生图网关超时断开（524），图片可能已生成并计费。'); return d; }, noDelay);
+    const recover = vi.fn(async (d: EditorialCollagePipelineData) => d); h.runtime.recover = recover;
+    await h.start(); await h.service.idle('vox');
+    expect(recover).toHaveBeenCalledOnce();
+    expect(h.calls.filter(id => id === target)).toHaveLength(1);
+    expect(h.get().productionRun).toMatchObject({ status: 'completed' });
+    expect(h.get().productionRun!.nodes.find(n => n.id === target)).toMatchObject({ status: 'completed' });
+  });
+  it('never auto-resends a paid unknown node when no receipt can be recovered', async () => {
+    const h = harness(async (d, n) => { if (n.kind === 'image') throw new Error('Image provider API error (524): gateway timeout'); return d; }, noDelay);
+    await h.start(); await h.service.idle('vox');
+    const node = h.get().productionRun!.nodes.find(n => n.kind === 'image')!;
+    expect(node.status).toBe('unknown'); expect(h.calls.filter(id => id === node.id)).toHaveLength(1);
+    expect(h.get().productionRun!.status).toBe('failed'); expect(h.get().productionRun!.message).toContain('不会自动重发');
+    expect(h.get().productionRun!.retryBudget).toBeUndefined();
+  });
+  it('does not auto-resend a paid multi-request node even when the last request was not sent', async () => {
+    const h = harness(async (d, n) => { if (n.kind === 'voice') throw refused(); return d; }, noDelay);
+    await h.start(); await h.service.idle('vox');
+    const node = h.get().productionRun!.nodes.find(n => n.kind === 'voice')!;
+    expect(node.status).toBe('unknown'); expect(h.calls.filter(id => id === node.id)).toHaveLength(1);
+  });
+  it('automatically retries a paid single-request node whose request never left this machine', async () => {
+    let failures = 1;
+    const h = harness(async (d, n) => { if (n.kind === 'plan' && failures-- > 0) throw refused(); return d; }, noDelay);
+    await h.start(); await h.service.idle('vox');
+    expect(h.calls.filter(id => id === 'plan')).toHaveLength(2);
+    expect(h.get().productionRun).toMatchObject({ status: 'completed', retryBudget: { used: 1, nodes: { plan: 1 } } });
+  });
+  it('retries a free node after transient failures and stops when the per-node budget is spent', async () => {
+    let failures = 2;
+    const ok = harness(async (d, n) => { if (n.kind === 'render' && failures-- > 0) throw reset(); return d; }, noDelay);
+    await ok.start(); await ok.service.idle('vox');
+    expect(ok.calls.filter(id => id === 'render')).toHaveLength(3);
+    expect(ok.get().productionRun).toMatchObject({ status: 'completed', retryBudget: { used: 2, nodes: { render: 2 } } });
+
+    const spent = harness(async (d, n) => { if (n.kind === 'render') throw reset(); return d; }, noDelay);
+    await spent.start(); await spent.service.idle('vox');
+    expect(spent.calls.filter(id => id === 'render')).toHaveLength(3);
+    expect(spent.get().productionRun!.status).toBe('failed');
+    expect(spent.get().productionRun!.nodes.find(n => n.kind === 'render')!.status).toBe('failed');
+    expect(spent.get().productionRun!.message).toContain('自动重试已达上限');
+  });
+  it('enforces the per-run cap across nodes and never retries definitive local failures', async () => {
+    const capped = harness(async (d, n) => { if (n.kind === 'render') throw reset(); return d; }, { ...noDelay, retryLimits: { runLimit: 1, nodeLimit: 2 } });
+    await capped.start(); await capped.service.idle('vox');
+    expect(capped.calls.filter(id => id === 'render')).toHaveLength(2);
+    expect(capped.get().productionRun!.message).toContain('本次运行自动重试已达上限');
+
+    const local = harness(async (d, n) => { if (n.kind === 'render') throw new Error('VOX_RENDER_FAILED: ffmpeg exited 1'); return d; }, noDelay);
+    await local.start(); await local.service.idle('vox');
+    expect(local.calls.filter(id => id === 'render')).toHaveLength(1);
+    expect(local.get().productionRun!.message).not.toContain('自动重试');
+  });
+  it('loads old run states without a budget, drops malformed budgets, and resets the budget on explicit resume', async () => {
+    const h = harness(undefined, noDelay); await h.start(); await h.service.idle('vox');
+    const legacy = h.get(); delete legacy.productionRun!.retryBudget;
+    expect(parseEditorialCollagePipelineData(legacy).productionRun!.retryBudget).toBeUndefined();
+    const malformed = structuredClone(legacy) as unknown as { productionRun: Record<string, unknown> };
+    malformed.productionRun.retryBudget = { version: 9, used: 'x' };
+    expect(parseEditorialCollagePipelineData(malformed as unknown as EditorialCollagePipelineData).productionRun!.retryBudget).toBeUndefined();
+    const spent = { version: 1 as const, runLimit: 6, nodeLimit: 2, used: 6, nodes: { render: 2 } };
+    expect(parseEditorialCollagePipelineData({ ...legacy, productionRun: { ...legacy.productionRun!, retryBudget: spent } }).productionRun!.retryBudget).toEqual(spent);
+    // An old paused journal (no budget field) resumes and gets a fresh budget for automatic retries.
+    let failures = 1; h.runtime.execute = async (d, n) => { h.calls.push(n.id); if (n.kind === 'render' && failures-- > 0) throw reset(); return d; };
+    const paused = h.get(); paused.productionRun = { ...paused.productionRun!, status: 'paused', retryBudget: spent, nodes: paused.productionRun!.nodes.map(n => n.kind === 'render' || n.kind === 'verify' ? { ...n, status: 'pending' as const } : n) };
+    h.set(paused);
+    await h.service.control({ id: 'vox', runId: paused.productionRun.id, action: 'resume' }); await h.service.idle('vox');
+    expect(h.get().productionRun).toMatchObject({ status: 'completed', retryBudget: { used: 1, nodes: { render: 1 } } });
+  });
 });

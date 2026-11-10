@@ -6,6 +6,8 @@ vi.mock('../electron/html-video-renderer', () => ({ createElectronHtmlVideoRende
 vi.mock('../src/shared/storybound-sidecar', () => ({ runStoryboundMediaSidecar: vi.fn(async () => ({ success: true, duration: 1, width: 1920, height: 1080, has_audio: true, has_video: true, has_nonblack_video: true })) }));
 vi.mock('../electron/vox-animation-runtime', () => ({ prepareVoxHtml: vi.fn(async () => '<html/>'), readVoxAsset: vi.fn(async () => 'data:image/png;base64,eA==') }));
 vi.mock('../electron/vox-render-assets', () => ({ stageVoxRenderAssets: vi.fn(async () => []), additionalVoxRenderAssetBytes: vi.fn(async () => 1024) }));
+const gate = vi.hoisted(() => ({ run: vi.fn(async () => ({ status: 'passed' })) }));
+vi.mock('../electron/final-film-gate-runner', () => ({ runFinalFilmGateSafely: gate.run }));
 import { runStoryboundMediaSidecar as mockProbe } from '../src/shared/storybound-sidecar';
 import * as preflight from '../electron/video-render-preflight';
 import { renderDirectorVideo } from '../electron/director-renderer';
@@ -97,6 +99,23 @@ describe('director concurrent render staging', () => {
         layers: [{ id: 'image', label: 'Image', imagePath: 'E:/fixture.png', zIndex: 0, depth: 0, motion: [] }], camera: [], audioPath: 'E:/fixture.wav' }],
     });
     expect(mocks.render.mock.calls[0][0].normalizeAudio).toBe(true);
+  });
+  it('runs the advisory final-film gate on the delivered artifact with the canvas, fps and loudness intent', async () => {
+    mocks.render.mockImplementation(async (input) => ({ outputPath: input.outputPath }));
+    const scene = { id: 'shot', index: 1, title: 'Shot', caption: '', durationMs: 1000, renderStrategy: 'deterministic-layers' as const,
+      layers: [{ id: 'image', label: 'Image', imagePath: 'E:/fixture.png', zIndex: 0, depth: 0, motion: [] }], camera: [], audioPath: 'E:/fixture.wav' };
+    const result = await renderDirectorVideo({ workDir: 'E:/StoryDream-QA/gate-project', projectTitle: 'Gate', modeLabel: 'VOX', ratio: '16:9', scenes: [scene] });
+    expect(gate.run).toHaveBeenCalledTimes(1);
+    expect(gate.run).toHaveBeenCalledWith(expect.objectContaining({
+      route: 'template', filmPath: result.outputPath,
+      expected: { durationMs: 1000, fps: 24, width: result.width, height: result.height, audioExpected: true, loudnessTarget: true },
+    }));
+    gate.run.mockClear();
+    await renderDirectorVideo({ workDir: 'E:/StoryDream-QA/gate-mv', projectTitle: 'MV', modeLabel: 'Music MV', ratio: '16:9', normalizeAudio: false, scenes: [scene] });
+    expect(gate.run.mock.calls[0]).toMatchObject([{ expected: { loudnessTarget: false } }]);
+    gate.run.mockClear();
+    await renderDirectorVideo({ workDir: 'E:/StoryDream-QA/gate-off', projectTitle: 'Off', modeLabel: 'VOX', ratio: '16:9', finalFilmGate: false, scenes: [scene] });
+    expect(gate.run).not.toHaveBeenCalled();
   });
   it('isolates staging, capture and MP4 paths even at the same timestamp', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(42);

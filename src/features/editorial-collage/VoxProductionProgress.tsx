@@ -3,13 +3,16 @@ import { creativeStyleStatus } from '../../shared/creative-animation/status';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button, CheckboxField, Dialog, TextAreaField } from '../../ui';
-import { voxProductionNodeStatus, type VoxProductionControl, type VoxProductionNode, type VoxProductionRun } from '../../shared/vox-production';
+import { isLemoImageUnknownNode, voxProductionNodeStatus, type VoxProductionControl, type VoxProductionNode, type VoxProductionRun } from '../../shared/vox-production';
+import { lemoAgentProgressText, type LemoUpstreamFilm } from '../../shared/creative-animation/upstream-agent';
 import { summarizeErrorMessage } from '../../components/ErrorDetails';
 
 export const voxProductionNodeLabels: Record<VoxProductionNode['kind'], string> = { 'film-plan-materials': '规划影片素材清单', 'film-plan-scene': '分段导演规划', 'film-plan-finalize': '校验并汇总导演方案', 'film-edit': '分批创作影片画面', 'film-materials': '检查素材与出处', 'film-material': '准备影片素材', 'film-scene': '创作连续场景', 'film-director': '编排整片调度', 'film-sample': '样片浏览器检查', 'film-sample-repair': '按文件修复样片', 'film-sample-finalize': '复查样片', 'film-code': '创作原生全片代码', 'film-review': '原生全片抽帧检查', 'film-repair': '按需修复影片代码', 'film-finalize': '原生复查，失败则停止', plan: '完整导演与画面规划', image: '素材生成或导入', cutout: '主体去底', voice: '生成配音', timing: '旁白校准与自动拆镜', animation: '装配动画', code: '按风格创作代码', 'code-review': '编译与抽帧检查', 'code-repair': '按需修复一次', 'code-finalize': '复查或回退模板', compile: '编译检查', render: '渲染成片', verify: '媒体检查' };
 const statuses = { pending: '等待', running: '执行中', completed: '已完成', failed: '失败', unknown: '云端结果待核对' };
-export function VoxProductionProgress({ run, shots = [], busy, onClose, onControl }: {
+export function VoxProductionProgress({ run, shots = [], upstreamFilm, busy, onClose, onControl }: {
   shots?: readonly EditorialCollageShot[];
+  /** Lemo v3 film state (turn and provider-reported usage) for the "第 N / M 轮" budget line. */
+  upstreamFilm?: Pick<LemoUpstreamFilm, 'runId' | 'turn' | 'status' | 'usage'>;
   run: VoxProductionRun; busy: boolean; onClose(): void;
   onControl(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence'>): Promise<void>;
 }) {
@@ -18,6 +21,8 @@ export function VoxProductionProgress({ run, shots = [], busy, onClose, onContro
   const [selected, setSelected] = useState('');
   const unknown = run.nodes.filter(n => voxProductionNodeStatus(n) === 'unknown');
   const target = unknown.find(n => n.id === selected) ?? unknown[0];
+  const imageUnknown = !!target && isLemoImageUnknownNode(run, target);
+  const agentBudget = run.authoringVersion === 3 ? lemoAgentProgressText(upstreamFilm?.runId === run.id ? upstreamFilm : undefined, run.settings) : '';
   const nodeList = useRef<HTMLOListElement>(null);
   const focusNode = run.nodes.find(n => n.status === 'running') ?? unknown[0] ?? run.nodes.find(n => n.status === 'failed');
   useEffect(() => {
@@ -30,12 +35,14 @@ export function VoxProductionProgress({ run, shots = [], busy, onClose, onContro
   return <Dialog open title="自动制作进度" onOpenChange={open => { if (!open) onClose(); }} actions={<>
     <Button onClick={onClose}>关闭</Button>
     {target && ['failed', 'paused'].includes(run.status) ? <Button variant="primary" icon={<RefreshCw size={15} />} disabled={busy} onClick={() => void onControl('retry-unknown', { nodeId: target.id })}>直接重试此步骤</Button> : null}
+    {target && imageUnknown && ['failed', 'paused'].includes(run.status) ? <Button disabled={busy} onClick={() => void onControl('skip-unknown-image', { nodeId: target.id })}>跳过这张插画</Button> : null}
     {recheckable ? <Button disabled={busy} onClick={() => void onControl('recheck-code')}>重新检查现有代码</Button> : null}
     {resumable ? <Button variant="primary" icon={<RefreshCw size={15} />} disabled={busy} onClick={() => void onControl('resume')}>{run.status === 'failed' ? '重试失败步骤' : '继续自动制作'}</Button> : null}
   </>}>
     <div className="vox-production-progress">
       <p role="status">{run.nodes.filter(n => n.status === 'completed').length}/{run.nodes.length} 步完成 · {run.message ? run.status === 'failed' ? summarizeErrorMessage(run.message) : run.message : run.status === 'running' ? '可离开页面，应用保持打开时会继续执行。' : '运行记录和已完成素材已保存。'}</p>
       {run.authoringVersion === 3 ? <p>原生多文件 Agent：逐轮读库、编写工程、实帧检查；字幕和配音由本机合成。技术检查通过不等于审美验收。</p> : null}
+      {agentBudget ? <p role="status" data-agent-budget>{agentBudget}</p> : null}
       {run.authoringVersion !== 3 && shots.length ? <details className="vox-settings-disclosure" open><summary>镜头采用的风格</summary><ol>{shots.map(shot => <li key={shot.id}>{creativeStyleStatus(shot.animation, run.settings)}{shot.animation?.authoring?.status === 'fallback' && shot.animation.creativeStyle?.source !== 'local' ? <span role="status"> · AI 检查未通过，已采用所选风格的本地保底。<details><summary>检查原因</summary>{summarizeErrorMessage(shot.animation.authoring.error ?? '检查未通过')}</details></span> : null}</li>)}</ol></details> : null}
       <ol ref={nodeList} className="vox-production-node-list">{run.nodes.map(n => <li key={n.id} data-node-id={n.id} data-status={voxProductionNodeStatus(n)}>
         <strong>{run.authoringVersion === 3 && n.kind === 'film-edit' ? '原生 Agent · 第 ' + n.fileId + ' 轮' : n.kind === 'plan' && run.planningVersion === 1 ? '全局创意大纲' : n.kind === 'film-code' && run.authoringVersion === 2 ? '创作公共绘图代码' : voxProductionNodeLabels[n.kind]}{n.editRound ? ' · 第 ' + n.editRound + ' 批' : ''}{!(run.authoringVersion === 3 && n.kind === 'film-edit') && (n.fileId || n.materialId || n.shotId) ? ` · ${n.fileId || n.materialId || n.shotId}` : ''}</strong><span>{statuses[voxProductionNodeStatus(n)]}</span>
@@ -46,7 +53,10 @@ export function VoxProductionProgress({ run, shots = [], busy, onClose, onContro
       </li>)}</ol>
       {target ? <section className="vox-production-recovery">
         <h3>请求结果不确定：{target.kind === 'plan' && run.planningVersion === 1 ? '全局创意大纲' : voxProductionNodeLabels[target.kind]}</h3>
-        <p role="alert">直接重试会重新提交此步骤。如果原请求仍在服务商处理中，可能重复计费。</p>
+        {imageUnknown ? <>
+          <p role="alert">Agent 申请的插画已经发给生图服务商，但没有收到结果：这张图可能已经生成并计费。系统不会自动重新提交。</p>
+          <p>请先到生图服务商后台核对这次请求。查到图片时，可在“其他恢复选项”中恢复已保存结果；确认没有结果后，可选择“直接重试此步骤”（会重新生成，可能再次计费），或“跳过这张插画”（不再提交，Agent 改用代码绘制或现有素材继续）。</p>
+        </> : <p role="alert">直接重试会重新提交此步骤。如果原请求仍在服务商处理中，可能重复计费。</p>}
         <details>
           <summary>其他恢复选项</summary>
           <p>尝试恢复本机已保存的回执，不会重新提交生成。找不到回执不代表服务商没有结果；也可以核对服务商记录后解锁此步骤。</p>

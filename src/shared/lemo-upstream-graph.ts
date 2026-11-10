@@ -1,6 +1,6 @@
 import type { EditorialCollagePipelineData } from './editorial-collage';
 import type { VoxProductionNode, VoxProductionSettings } from './vox-production';
-import { LEMO_AGENT_MAX_TURNS } from './creative-animation/upstream-agent';
+import { lemoAgentBudgetExhausted } from './creative-animation/upstream-agent';
 
 /** New runs only. Old version-1/2 projects retain their existing graphs. */
 export function buildLemoUpstreamNodes(document: EditorialCollagePipelineData, settings: VoxProductionSettings): VoxProductionNode[] {
@@ -16,7 +16,10 @@ export function buildLemoUpstreamNodes(document: EditorialCollagePipelineData, s
     timings.push(add('timing', `timing:${shot.id}`, voice ? [voice] : continuation ? [`timing:${shot.narrationSplit!.sourceShotId}`] : [], false, shot.id));
   }
   const film = document.upstreamFilm?.runId === document.productionRun?.id ? document.upstreamFilm : undefined;
-  const count = Math.min(LEMO_AGENT_MAX_TURNS, (film?.turn ?? 0) + (film?.status === 'ready' ? 0 : 1));
+  // One more paid turn while authoring and within the per-run budget (default 64 turns = historical behaviour).
+  // Completed turns are never dropped when a user lowers the limit; finalize then reports the resumable limit error.
+  const turn = film?.turn ?? 0;
+  const count = film?.status === 'ready' || lemoAgentBudgetExhausted(film, settings) ? turn : turn + 1;
   let dependencies = timings;
   for (let turn = 1; turn <= Math.max(1, count); turn++) dependencies = [add('film-edit', `upstream-turn:${turn}`, dependencies, true, undefined, String(turn))];
   // This explicit gate also prevents a budget-exhausted authoring run being marked complete.

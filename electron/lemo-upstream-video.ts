@@ -15,6 +15,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { readLemoUpstreamManifest } from './lemo-upstream-source';
 import { describeLoudnessTarget, loudnessOffTarget, loudnormApplyFilter, loudnormMeasureFilter, loudnormTargetFilter, parseLoudnormJson, type LoudnormMeasurement } from '../src/shared/loudness';
+import type { FinalFilmGateExpectation, FinalFilmGateReport } from '../src/shared/final-film-gate';
+import { runFinalFilmGateSafely } from './final-film-gate-runner';
 
 export { parseLoudnormJson, type LoudnormMeasurement };
 
@@ -580,15 +582,22 @@ export async function muxLemoUpstreamFilm(options: LemoMuxOptions): Promise<Lemo
   return { outputPath, measured, warnings };
 }
 
-/** Run the mux.sh port on a finished host film in place: mux to a sibling temp file, then atomically replace `path`. */
-export async function finalizeLemoUpstreamFilm(path: string, options: { ffmpegPath: string; fps?: number; grain?: number; color?: 'default' | 'bt709'; signal?: AbortSignal }): Promise<LemoMuxResult> {
+/** Run the mux.sh port on a finished host film in place: mux to a sibling temp file, then atomically replace `path`.
+ * With `qualityGate`, the advisory final-film gate (E-5/L-5: ffprobe-style recheck + §11 sign-off/CREDITS) runs on the
+ * muxed film and writes quality-gate.json next to it; gate problems never fail the export. */
+export async function finalizeLemoUpstreamFilm(path: string, options: { ffmpegPath: string; fps?: number; grain?: number; color?: 'default' | 'bt709'; signal?: AbortSignal;
+  qualityGate?: { expected: Omit<FinalFilmGateExpectation, 'fps'> & { fps?: number }; lemoProjectDir?: string } }): Promise<LemoMuxResult & { qualityGate?: FinalFilmGateReport }> {
+  const { qualityGate, ...muxOptions } = options;
   const target = resolve(path);
   const sibling = join(dirname(target), `.${basename(target, extname(target))}.final-${randomUUID()}${extname(target) || '.mp4'}`);
   try {
-    const result = await muxLemoUpstreamFilm({ ...options, videoPath: target, outputPath: sibling });
+    const result = await muxLemoUpstreamFilm({ ...muxOptions, videoPath: target, outputPath: sibling });
     options.signal?.throwIfAborted();
     await rename(sibling, target);
-    return { ...result, outputPath: target };
+    if (!qualityGate) return { ...result, outputPath: target };
+    const report = await runFinalFilmGateSafely({ route: 'lemo', filmPath: target, ffmpegPath: options.ffmpegPath, signal: options.signal,
+      lemoProjectDir: qualityGate.lemoProjectDir, expected: { ...qualityGate.expected, fps: qualityGate.expected.fps ?? options.fps ?? 24 } });
+    return { ...result, outputPath: target, qualityGate: report };
   } finally {
     await rm(sibling, { force: true }).catch(() => {});
   }

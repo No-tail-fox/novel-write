@@ -130,3 +130,45 @@ describe('Music MV lyric synchronization', () => {
     expect(planMusicMvLyrics('第一句\n第二句', music, 10_000).timingSource).toBe('estimated');
   });
 });
+
+describe('Music MV word-level (enhanced / A2) LRC', () => {
+  it('parses enhanced LRC into unchanged line timing plus per-word timing', () => {
+    const lrc = '[ti:逐字]\n[00:01.00]<00:01.00>雨<00:01.50>落<00:02.00>下<00:02.80>\n[00:04.00]<00:04.00>霓<00:04.40>虹<00:05.00>亮起';
+    const plan = planMusicMvLyrics(lrc, music, 10_000);
+    expect(plan.timingSource).toBe('manual');
+    expect(plan.segments.map(line => [line.lyric, line.startMs, line.durationMs])).toEqual([['雨落下', 1000, 3000], ['霓虹亮起', 4000, 6000]]);
+    expect(plan.segments[0].words).toEqual([
+      { text: '雨', startMs: 1000, durationMs: 500 }, { text: '落', startMs: 1500, durationMs: 500 }, { text: '下', startMs: 2000, durationMs: 800 },
+    ]);
+    // Last word without an end tag runs to the caption end (song end here).
+    expect(plan.segments[1].words?.at(-1)).toEqual({ text: '亮起', startMs: 5000, durationMs: 5000 });
+  });
+
+  it('accepts A2-style spaced words, untagged leading text and gap tags', () => {
+    const plan = planMusicMvLyrics('[00:10.00] Hello <00:10.50> rainy <00:11.20> night <00:12.00>\n[00:13.00]<00:13.00>la <00:13.40> <00:14.00>la', music, 20_000);
+    expect(plan.segments[0].lyric).toBe('Hello rainy night');
+    expect(plan.segments[0].words?.map(w => [w.text, w.startMs, w.durationMs])).toEqual([['Hello', 10_000, 500], ['rainy', 10_500, 700], ['night', 11_200, 800]]);
+    expect(plan.segments[1].words?.map(w => [w.text, w.startMs, w.durationMs])).toEqual([['la', 13_000, 400], ['la', 14_000, 6_000]]);
+    // Word tags never change the caption clock or the document cues.
+    const input: CreateTaskInput = { title: '逐字', inputText: '[00:01.00]<00:01.00>第一<00:01.60>句\n[00:05.00]<00:05.00>第二句', taskKind: 'music-mv', track: 'music-mv', storyboardSceneCount: 2, musicMv: music };
+    const cues = createMusicMvDocument('mv-word-test', input, 10_000, '2026-10-29T00:00:00.000Z').beats.flatMap(beat => beat.subtitleCues);
+    expect(cues.map(cue => [cue.text, cue.startMs, cue.endMs])).toEqual([['第一句', 1000, 5000], ['第二句', 5000, 10_000]]);
+  });
+
+  it('keeps plain LRC output byte-identical (no words field)', () => {
+    const plan = planMusicMvLyrics('[00:02.00]第一句\n[00:05.00]第二句', music, 10_000);
+    expect(plan.segments.every(line => !('words' in line))).toBe(true);
+  });
+
+  it('rejects malformed word-level LRC with Chinese errors', () => {
+    const plan = (text: string) => () => planMusicMvLyrics(text, music, 10_000);
+    expect(plan('[00:01.00]<00:1.0>雨<00:01.50>落')).toThrow(/MUSIC_MV_LRC_WORD_FORMAT: 逐字时间标签格式无效/);
+    expect(plan('[00:01.00]<00:01.00 雨')).toThrow('MUSIC_MV_LRC_WORD_FORMAT');
+    expect(plan('<00:01.00>雨<00:01.50>落')).toThrow(/必须跟在行时间戳/);
+    expect(plan('[00:01.00][00:05.00]<00:01.00>雨')).toThrow(/只能有一个行时间戳/);
+    expect(plan('[00:02.00]<00:01.00>雨')).toThrow(/MUSIC_MV_LRC_WORD_TIMING: 逐字时间无效（逐字时间早于行时间戳）/);
+    expect(plan('[00:01.00]<00:01.50>雨<00:01.20>落')).toThrow(/逐个递增/);
+    expect(plan('[00:01.00]<00:01.00>雨<00:01.00>')).toThrow(/行尾时间必须晚于最后一个字/);
+    expect(plan('[00:01.00]<00:01.00>雨<00:06.00>落\n[00:05.00]下一句')).toThrow(/晚于下一句开始/);
+  });
+});

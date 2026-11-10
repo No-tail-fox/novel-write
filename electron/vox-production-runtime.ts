@@ -1,4 +1,5 @@
 import { buildLemoUpstreamNodes } from '../src/shared/lemo-upstream-graph';
+import { lemoAgentBudgetError, lemoAgentBudgetExhausted } from '../src/shared/creative-animation/upstream-agent';
 import { assertLemoUpstreamFilmCurrent } from './lemo-upstream-agent';
 import { reconcileLemoEditSessions } from './lemo-incremental-resume';
 import { workflowPrompt } from '../src/shared/workflow-prompt-runtime';
@@ -112,7 +113,8 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       if (native !== undefined) return native;
       const settings = settingsFor(d);
       // Default-on settings keep the hashes of journals saved before this option existed.
-      const { music: _music, ...visualSettings } = settings;
+      // Lemo Agent budgets are spending limits, never part of a paid step's inputs.
+      const { music: _music, agentMaxTurns: _turns, agentMaxTokens: _tokens, ...visualSettings } = settings;
       const { generateImages, ...legacySettings } = visualSettings;
       const inputSettings = generateImages ? legacySettings : visualSettings;
       // Authoring changes how an approved visual brief is animated, not its paid planning inputs.
@@ -149,6 +151,9 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       }
       if (d.productionRun?.authoringVersion === 3 && node.kind === 'film-finalize') {
         if (!d.upstreamFilm || d.upstreamFilm.runId !== d.productionRun.id) throw new Error('LEMO_AGENT_NOT_READY');
+        // L-4: a budget-exhausted authoring run stops with a resumable limit error, not a generic not-ready failure.
+        const exhausted = lemoAgentBudgetExhausted(d.upstreamFilm, d.productionRun.settings);
+        if (exhausted) throw lemoAgentBudgetError(d.upstreamFilm, d.productionRun.settings, exhausted);
         await assertLemoUpstreamFilmCurrent(d.upstreamFilm, (d.timeline?.durationMs ?? 0) / 1000);
         return d;
       }

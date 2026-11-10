@@ -254,10 +254,9 @@ describe('native durable production', () => {
   it('restores a checkpoint containing the film id after the result save was lost', async () => {
     const h=nativeHarness(); const original=h.store.save;let lost=false;
     h.store.save=async d=>{if(!lost&&d.creativeFilms?.length&&d.productionRun?.nodes.find(n=>n.kind==='plan')?.status==='completed'){lost=true;throw new Error('simulated lost save');}return original(d);};
-    await h.start();await h.idle();expect(nodeByKind(h,'plan').status).toBe('unknown');
-    await h.service.control({id:h.get().id,runId:h.get().productionRun!.id,action:'reconcile'});
+    await h.start();await h.idle();
+    // G-7: the checkpoint is restored automatically (free receipt) and the run continues without a second plan call.
     expect(h.get().productionRun?.filmId).toBe(h.get().creativeFilms?.[0].id);
-    await h.service.control({id:h.get().id,runId:h.get().productionRun!.id,action:'resume'});await h.idle();
     expect(h.get().productionRun?.status,h.get().productionRun?.message).toBe('completed');expect(h.calls.filter(c=>c==='plan')).toHaveLength(1);
   });
   it('invalidates the native treatment and code when the style changes', async () => {

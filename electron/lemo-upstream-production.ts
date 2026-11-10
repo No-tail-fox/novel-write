@@ -8,6 +8,7 @@ import { readLemoUpstreamManifest, type LemoSourceOptions } from './lemo-upstrea
 import { stepLemoUpstreamAgent, recoverLemoUpstreamAgentTurn, LemoAgentImageUnknownError, type LemoAgentImages, type LemoAgentOptions } from './lemo-upstream-agent';
 import { sha256File, type LemoAssetInput, type LemoAssetMedia } from './lemo-upstream-assets';
 import { lemoAgentArchiveAssets, lemoAgentImagePolicy } from '../src/shared/creative-animation/agent-assets';
+import { lemoAgentMaxTurns } from '../src/shared/creative-animation/upstream-agent';
 import { reviewLemoUpstreamProject } from './lemo-upstream-renderer';
 import { loadOpuscar98StyleReference, opuscar98Number, OPUSCAR98_SOURCE } from './lemo-opuscar98';
 
@@ -46,6 +47,7 @@ export function createLemoUpstreamOperations(library: LemoProductionLibrary, wor
     const context = { ...base, ...material?.context };
     return { root: lemoAgentRoot(work, context.runId), upstreamRoot: library.upstreamRoot, context,
       turn: Number(node.fileId), requestId: node.requestId, retryOfRequestId: node.retryOfRequestId, model,
+      maxTurns: lemoAgentMaxTurns(d.productionRun!.settings.agentMaxTurns), ...(node.skipImage && node.retryOfRequestId ? { skipUnknownImage: true } : {}),
       ...(material?.assetHost ? { assetHost: material.assetHost } : {}), ...(material?.images ? { images: material.images } : {}),
       review: (filmDir, outputDir, times) => reviewLemoUpstreamProject({ ...library, filmDir, outputDir, times, width: context.width, height: context.height }) };
   };

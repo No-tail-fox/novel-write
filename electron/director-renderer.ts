@@ -24,6 +24,7 @@ import { dirname } from 'node:path';
 import { coalesceDirectorNativeScenes } from '../src/shared/creative-animation/native-render';
 import { measureLemoSubtitleLayout } from '../src/shared/creative-animation/native-subtitles';
 import { measureNativeGlyphCoverage } from './native-font-coverage';
+import { runFinalFilmGateSafely } from './final-film-gate-runner';
 
 export async function renderDirectorVideo(input: {
   workDir: string;
@@ -39,6 +40,8 @@ export async function renderDirectorVideo(input: {
   signal?: AbortSignal;
   /** Explicit built runtime for isolated verification or embedding. */
   animationRuntimePath?: string;
+  /** `false` skips the advisory final-film gate (quality-gate.json). Default: run it. */
+  finalFilmGate?: false;
 }): Promise<DirectorRenderResult> {
   input.signal?.throwIfAborted();
   if (input.scenes.length === 0) throw new Error('DIRECTOR_RENDER_EMPTY: 当前项目没有可渲染的镜头。');
@@ -239,6 +242,12 @@ export async function renderDirectorVideo(input: {
     await copyFile(result.outputPath, artifactOutputPath);
   }
   const artifactOutput = resolve(result.outputPath) === resolve(artifactOutputPath) ? output : await stat(artifactOutputPath);
+  // E-5 advisory final-film gate: writes quality-gate.json next to the film; never throws (errors → status 'error').
+  // Lemo v3 films are re-muxed by the caller and re-checked there (finalizeLemoUpstreamFilm qualityGate).
+  if (input.finalFilmGate !== false) {
+    await runFinalFilmGateSafely({ route: 'template', filmPath: artifactOutputPath, signal: input.signal,
+      expected: { durationMs: Math.round(totalDurationS * 1000), fps, width: canvas.width, height: canvas.height, audioExpected: true, loudnessTarget: resolveNormalizeAudio(input.normalizeAudio) } });
+  }
   return {
     outputPath: artifactOutputPath,
     durationMs,

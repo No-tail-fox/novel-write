@@ -5,7 +5,9 @@ import { LlmTextInterruptedError } from '../src/shared/llm-text-stream';
 import { LEMO_NATIVE_ENGINE } from '../src/shared/creative-animation/native-film';
 import { createHash, randomUUID } from 'node:crypto';
 import { rebuildEditorialTimeline, type EditorialCollagePipelineData } from '../src/shared/editorial-collage';
-import { buildVoxProductionNodes, isVoxProductionSubmissionRejection, voxProductionEngine, recoverVoxProductionRun, voxProductionInputErrors, voxProductionNodeStatus, type VoxProductionControl, type VoxProductionNode, type VoxProductionSettings, type VoxProductionStart } from '../src/shared/vox-production';
+import { buildVoxProductionNodes, isLemoImageUnknownNode, isVoxProductionSubmissionRejection, lemoAgentBudgetResume, voxProductionEngine, recoverVoxProductionRun, voxProductionInputErrors, voxProductionNodeStatus, voxProductionSingleRequestNode, type VoxProductionControl, type VoxProductionNode, type VoxProductionRun, type VoxProductionSettings, type VoxProductionStart } from '../src/shared/vox-production';
+import { classifyProviderFailure, providerBackoffMs, type ProviderFailure } from '../src/shared/provider-failure';
+import { autoRetryNotice, consumeRetryBudget, decideUnknownNodeAction, isAutoRetryEligible, normalizeRetryBudget, provenFailureOutcome, receiptRecoveredText, retryBudgetExhaustedText, retryBudgetNodeUsed, UNKNOWN_NODE_ACTION_TEXT, type RetryBudgetLimits, type UnknownNodeInfo } from '../src/shared/retry-budget';
 
 export const voxInputHash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export interface VoxProductionStore {
@@ -30,6 +32,15 @@ export interface VoxProductionRuntime {
   /** Read existing provider receipts only; this method must never dispatch generation. */
   recover?(document: EditorialCollagePipelineData, node: VoxProductionNode): Promise<EditorialCollagePipelineData | undefined>;
 }
+export interface VoxProductionServiceOptions {
+  /** G-7 automatic retry caps (defaults: 6 per run, 2 per node). */
+  retryLimits?: Partial<RetryBudgetLimits>;
+  /** Delay before automatic retry number `retry` (1-based, per node). Defaults to exponential backoff honouring Retry-After. */
+  retryDelayMs?: (retry: number, failure: ProviderFailure) => number;
+}
+/** Nodes whose provider receipt can be read without dispatching generation. */
+const voxReceiptRecoverableKind = (run: Pick<VoxProductionRun, 'authoringVersion'>, node: Pick<VoxProductionNode, 'kind'>) =>
+  ['image', 'film-material'].includes(node.kind) || run.authoringVersion === 3 && node.kind === 'film-edit';
 
 /** One serial writer per project. A route unmount has no execution ownership. */
 export class VoxProductionService {
@@ -38,7 +49,7 @@ export class VoxProductionService {
   private intents = new Map<string, 'pause' | 'cancel'>();
   private starts = new Set<string>();
   private stopping = false;
-  constructor(private store: VoxProductionStore, private runtime: (id: string) => Promise<VoxProductionRuntime>, private onError: (error: unknown) => void = console.error) {}
+  constructor(private store: VoxProductionStore, private runtime: (id: string) => Promise<VoxProductionRuntime>, private onError: (error: unknown) => void = console.error, private options: VoxProductionServiceOptions = {}) {}
 
   private reusable(document: EditorialCollagePipelineData, nodes: VoxProductionNode[], runtime: VoxProductionRuntime) {
     const invalid = new Set<string>();
@@ -160,22 +171,23 @@ export class VoxProductionService {
         throw error;
       }
     }
-    if (input.action === 'retry-unknown') {
+    if (input.action === 'retry-unknown' || input.action === 'skip-unknown-image') {
       if (this.stopping || this.workers.has(input.id)) throw new Error('VOX_PRODUCTION_BUSY: 当前步骤仍在执行。');
       if (!['failed', 'paused'].includes(run.status)) throw new Error('VOX_PRODUCTION_TERMINAL: 当前任务状态不能重试。');
-      const target = run.nodes.find(node => node.id === input.nodeId && voxProductionNodeStatus(node) === 'unknown');
+      const skip = input.action === 'skip-unknown-image';
+      const target = run.nodes.find(node => node.id === input.nodeId && voxProductionNodeStatus(node) === 'unknown' && (!skip || isLemoImageUnknownNode(run, node)));
       if (!target) throw new Error('VOX_PRODUCTION_STALE: 待重试步骤已变化，请刷新进度。');
       if (run.sourceHash !== voxInputHash(document.sourceText)) throw new Error('VOX_PRODUCTION_STALE: 原稿已修改，请创建新的制作计划。');
       const runtime = await this.runtime(input.id);
       release = this.store.acquire?.(input.id);
       const protectedUnknown = new Set(run.nodes.filter(node => node.id !== target.id && voxProductionNodeStatus(node) === 'unknown').map(node => node.id));
-      const nodes = this.reusable(document, run.nodes.map(node => node.id === target.id ? { ...node, status: 'pending' as const, retryOfRequestId: node.requestId, error: undefined } : node), runtime)
+      const nodes = this.reusable(document, run.nodes.map(node => node.id === target.id ? { ...node, status: 'pending' as const, retryOfRequestId: node.requestId, error: undefined, skipImage: skip ? true as const : undefined } : node), runtime)
         .map(node => protectedUnknown.has(node.id) ? { ...node, status: 'unknown' as const } : node);
       if (nodes.find(node => node.id === target.id)!.dependencies.some(dependency => !nodes.some(node => node.id === dependency && node.status === 'completed'))) {
         throw new Error('VOX_PRODUCTION_DEPENDENCY: 前置步骤尚未完成，请先恢复前置步骤。');
       }
       releaseCapacity = await runtime.preflight(document, run.settings, nodes.filter(node => node.status === 'pending')) || undefined;
-      const next = await this.store.save({ ...document, productionRun: { ...run, status: 'running', runtimeIdentity: runtime.identity, nodes, message: '正在直接重试所选步骤；其他待核对请求不会自动重发。' } }, run.id);
+      const next = await this.store.save({ ...document, productionRun: { ...run, status: 'running', runtimeIdentity: runtime.identity, nodes, retryBudget: undefined, message: skip ? '已跳过结果未知的插画：不会重新提交，Agent 将改用代码或现有素材继续。' : '正在直接重试所选步骤；其他待核对请求不会自动重发。' } }, run.id);
       this.launch(input.id, runtime, release, releaseCapacity); release = undefined; releaseCapacity = undefined;
       return next.productionRun!;
     }
@@ -183,29 +195,13 @@ export class VoxProductionService {
       if (this.workers.has(input.id)) throw new Error('VOX_PRODUCTION_BUSY: 请等待当前步骤保存。');
       if (input.action === 'confirm-no-result') {
         if (!input.evidence || input.evidence.trim().length < 8 || !run.nodes.some(n => n.id === input.nodeId && n.status === 'unknown')) throw new Error('请填写服务商确认无结果的核对依据。');
-        return (await this.store.save({ ...document, productionRun: { ...run, status: 'paused', message: '已记录人工核对；点击继续后才会再次提交并可能计费。', nodes: run.nodes.map(n => n.id === input.nodeId ? { ...n, status: 'pending', retryOfRequestId: n.requestId, error: undefined, recoveryNote: input.evidence } : n) } }, run.id)).productionRun!;
+        return (await this.store.save({ ...document, productionRun: { ...run, status: 'paused', message: '已记录人工核对；点击继续后才会再次提交并可能计费。', nodes: run.nodes.map(n => n.id === input.nodeId ? { ...n, status: 'pending', retryOfRequestId: n.requestId, error: undefined, recoveryNote: input.evidence, skipImage: undefined } : n) } }, run.id)).productionRun!;
       }
       release = this.store.acquire?.(input.id);
       let recovered = document;
       let runtime: VoxProductionRuntime | undefined;
       for (const node of run.nodes.filter(n => n.status === 'unknown')) {
-        let receipt = await this.store.recover?.(input.id, node);
-        if (!receipt && (['image', 'film-material'].includes(node.kind) || run.authoringVersion === 3 && node.kind === 'film-edit')) {
-          runtime ??= await this.runtime(input.id);
-          if (runtime.identity === run.runtimeIdentity && node.inputHash === voxInputHash(runtime.input(recovered, node))) {
-            receipt = await runtime.recover?.(recovered, node);
-            if (receipt) {
-              receipt = { ...receipt, productionRun: { ...recovered.productionRun!, nodes: recovered.productionRun!.nodes.map(n => n.id === node.id ? { ...n, status: 'completed', inputHash: voxInputHash(runtime!.input(receipt!, node)) } : n) } };
-              await this.store.checkpoint?.(input.id, node, receipt);
-            }
-          }
-        }
-        if (!receipt || receipt.productionRun?.id !== run.id || receipt.productionRun.runtimeIdentity !== run.runtimeIdentity || receipt.productionRun.nodes.find(n => n.id === node.id)?.requestId !== node.requestId) continue;
-        recovered = { ...receipt, updatedAt: recovered.updatedAt, productionRun: { ...recovered.productionRun!, ...(receipt.productionRun.filmId ? { filmId: receipt.productionRun.filmId } : {}), nodes: recovered.productionRun!.nodes.map(n => {
-          const saved = receipt.productionRun!.nodes.find(r => r.id === n.id && r.requestId === n.requestId);
-          // Failed final checks also reopen targeted repair nodes. Restore those with the source receipt.
-          return saved && (n.id === node.id || receipt.productionRun!.nodes.find(r => r.id === node.id)?.status === 'failed') ? { ...n, ...saved } : n;
-        }) } };
+        recovered = await this.recoverReceipt(input.id, run, recovered, node, async () => runtime ??= await this.runtime(input.id)) ?? recovered;
       }
       return (await this.store.save({ ...recovered, productionRun: { ...recovered.productionRun!, status: 'paused', message: recovered === document ? '本地没有已保存的请求结果。请核对服务商记录。' : recovered.productionRun!.nodes.some(n => n.status === 'unknown') ? '已恢复本地收到的内容；仍有云端最终结果待核对，不能自动重新提交。' : '已恢复本地结果；点击继续将复用成功步骤。' } }, run.id)).productionRun!;
     }
@@ -223,18 +219,92 @@ export class VoxProductionService {
       release = this.store.acquire?.(input.id);
       // Continue unfinished work with the current providers, retaining matching completed inputs.
       const upgrade = run.authoringVersion === 2 && !run.planningVersion && runtime.nativePlanningVersion === 1 && !run.nodes.some(n => n.id === 'plan' && n.status === 'completed');
-      const resumedRun = upgrade ? { ...run, planningVersion: 1 as const, filmId: undefined } : run;
+      // L-4: the Lemo v3 turn/token budget is a spending limit, not an input. A resume adopts the latest saved
+      // budget so a run stopped by LEMO_AGENT_TURN_LIMIT / LEMO_AGENT_TOKEN_LIMIT continues from its next turn.
+      const budgeted = run.authoringVersion === 3 ? lemoAgentBudgetResume(run, document.productionSettings) : run;
+      const resumedRun = upgrade ? { ...budgeted, planningVersion: 1 as const, filmId: undefined } : budgeted;
       const resumed = { ...document, productionRun: resumedRun };
       const candidates = upgrade ? buildVoxProductionNodes({ ...resumed, productionRun: undefined }, run.settings, run.engine ?? 'legacy', run.authoringVersion, 1).map(n => n.id === 'plan' ? { ...n, attempt: run.nodes.find(old => old.id === 'plan')?.attempt ?? 0, recoveryNote: '旧版未完成规划已切换为分阶段规划；原稿、风格和模型不变。' } : n) : run.nodes;
       const nodes = this.reusable(resumed, candidates, runtime);
       releaseCapacity = await runtime.preflight(resumed, run.settings, nodes.filter(n => n.status === 'pending')) || undefined;
-      const next = await this.store.save({ ...resumed, productionRun: { ...resumedRun, status: 'running', runtimeIdentity: runtime.identity, nodes, message: undefined } }, run.id);
+      // An explicit resume starts a fresh automatic-retry budget (G-7); the user has decided to continue.
+      const next = await this.store.save({ ...resumed, productionRun: { ...resumedRun, status: 'running', runtimeIdentity: runtime.identity, nodes, retryBudget: undefined, message: undefined } }, run.id);
       this.launch(input.id, runtime, release, releaseCapacity); release = undefined; releaseCapacity = undefined;
       return next.productionRun!;
     }
     const next = await this.store.save({ ...document, productionRun: { ...run, status: input.action === 'pause' ? 'paused' : 'cancelled' } }, run.id);
     return next.productionRun!;
     } finally { release?.(); releaseCapacity?.(); this.starts.delete(input.id); }
+  }
+  /** Free receipt lookup for one unknown node: journal checkpoint first, then a provider receipt. Never dispatches generation. */
+  private async recoverReceipt(id: string, run: VoxProductionRun, current: EditorialCollagePipelineData, node: VoxProductionNode, runtimeFor: () => Promise<VoxProductionRuntime>): Promise<EditorialCollagePipelineData | undefined> {
+    let receipt = await this.store.recover?.(id, node);
+    if (!receipt && voxReceiptRecoverableKind(run, node)) {
+      const runtime = await runtimeFor();
+      if (runtime.identity === run.runtimeIdentity && node.inputHash === voxInputHash(runtime.input(current, node))) {
+        receipt = await runtime.recover?.(current, node);
+        if (receipt) {
+          receipt = { ...receipt, productionRun: { ...current.productionRun!, nodes: current.productionRun!.nodes.map(n => n.id === node.id ? { ...n, status: 'completed', inputHash: voxInputHash(runtime.input(receipt!, node)) } : n) } };
+          await this.store.checkpoint?.(id, node, receipt);
+        }
+      }
+    }
+    if (!receipt || receipt.productionRun?.id !== run.id || receipt.productionRun.runtimeIdentity !== run.runtimeIdentity || receipt.productionRun.nodes.find(n => n.id === node.id)?.requestId !== node.requestId) return undefined;
+    const saved = receipt.productionRun;
+    return { ...receipt, updatedAt: current.updatedAt, productionRun: { ...current.productionRun!, ...(saved.filmId ? { filmId: saved.filmId } : {}), nodes: current.productionRun!.nodes.map(n => {
+      const item = saved.nodes.find(r => r.id === n.id && r.requestId === n.requestId);
+      // Failed final checks also reopen targeted repair nodes. Restore those with the source receipt.
+      return item && (n.id === node.id || saved.nodes.find(r => r.id === node.id)?.status === 'failed') ? { ...n, ...item } : n;
+    }) } };
+  }
+  /**
+   * G-7: after a node fails, try a free receipt recovery for unknown outcomes, then a budgeted automatic
+   * retry when resending cannot double-bill. Paid unknown nodes stay blocked for the user. Returns true
+   * when the run should keep going.
+   */
+  private async autoResolveFailure(id: string, runtime: VoxProductionRuntime, persisted: EditorialCollagePipelineData, nodeId: string, error: unknown, resultReceived: boolean): Promise<boolean> {
+    const run = persisted.productionRun, node = run?.nodes.find(n => n.id === nodeId);
+    if (!run || !node || run.status !== 'failed' || this.stopping || this.intents.has(id)) return false;
+    const status = voxProductionNodeStatus(node);
+    if (status !== 'unknown' && status !== 'failed') return false;
+    const failure = classifyProviderFailure({ error });
+    if (failure.kind === 'aborted') return false;
+    const proven = provenFailureOutcome(failure, resultReceived);
+    const budget = normalizeRetryBudget(run.retryBudget, this.options.retryLimits);
+    const info: UnknownNodeInfo = {
+      paid: node.paid, kind: node.kind, hasReceipt: !!node.requestId,
+      recoverable: status === 'unknown' && (!!this.store.recover || !!runtime.recover && voxReceiptRecoverableKind(run, node)),
+      // A refusal on a node still marked unknown cannot vouch for earlier requests of the same node.
+      outcome: status === 'unknown' && proven === 'rejected' ? 'unknown' : proven,
+      retry: failure.retry, singleRequest: voxProductionSingleRequestNode(node), budget, nodeId: node.id,
+    };
+    let action = decideUnknownNodeAction(info);
+    if (action === 'recover-from-receipt') {
+      let recovered: EditorialCollagePipelineData | undefined;
+      try { recovered = await this.recoverReceipt(id, run, persisted, node, async () => runtime); } catch (recoveryError) { this.onError(recoveryError); }
+      if (recovered?.productionRun?.nodes.find(n => n.id === node.id)?.status === 'completed') {
+        await this.store.save({ ...recovered, productionRun: { ...recovered.productionRun, status: 'running', message: receiptRecoveredText(node.id),
+          nodes: recovered.productionRun.nodes.map(n => n.id === node.id ? { ...n, error: undefined } : n) } }, run.id);
+        return true;
+      }
+      action = decideUnknownNodeAction({ ...info, recoveryAttempted: true });
+      if (action === 'await-user') {
+        await this.store.save({ ...persisted, productionRun: { ...run, message: `${run.message ?? ''}\n${UNKNOWN_NODE_ACTION_TEXT['await-user']}`.trim().slice(0, 65536) } }, run.id);
+        return false;
+      }
+    }
+    if (action === 'auto-retry') {
+      const next = consumeRetryBudget(budget, node.id), retry = retryBudgetNodeUsed(next, node.id);
+      const note = autoRetryNotice(node.id, next, node.id, failure.label).slice(0, 2000);
+      await this.store.save({ ...persisted, productionRun: { ...run, status: 'running', message: note, retryBudget: next,
+        nodes: run.nodes.map(n => n.id === node.id ? { ...n, status: 'pending' as const, retryOfRequestId: n.requestId, recoveryNote: note } : n) } }, run.id);
+      const delay = this.options.retryDelayMs?.(retry, failure) ?? providerBackoffMs(retry, { baseMs: 1000, maxMs: 15_000, retryAfterMs: failure.retryAfterMs });
+      if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+      return true;
+    }
+    // Resending would have been safe, but the shared budget is spent: say why it stopped.
+    if (isAutoRetryEligible(info)) await this.store.save({ ...persisted, productionRun: { ...run, message: `${run.message ?? ''}\n${retryBudgetExhaustedText(budget, node.id)}`.trim().slice(0, 65536) } }, run.id);
+    return false;
   }
   private launch(id: string, runtime: VoxProductionRuntime, release?: () => void, releaseCapacity?: () => void) {
     this.intents.delete(id);
@@ -352,6 +422,7 @@ export class VoxProductionService {
           } }, run.id);
           continue;
         }
+        if (await this.autoResolveFailure(id, runtime, persisted, node.id, error, executed || responseComplete || noAction)) continue;
         return;
       }
     } } finally { for (const release of expansionReleases.reverse()) release(); }

@@ -26,6 +26,7 @@ import {
   type HtmlVideoTaskDirectoryIdentity,
   type HtmlVideoMediaProbeResult,
 } from '../electron/html-video-runtime';
+import type { FinalFilmGateRunOptions } from '../electron/final-film-gate-runner';
 import { createHtmlVideoComposePayload, type HtmlVideoExportInput } from '@shared/html-video';
 import type { BgmItem, HtmlVideoCompositionSnapshot, HtmlVideoOutput, HtmlVideoScenePlan } from '@shared/types';
 
@@ -4328,6 +4329,26 @@ describe('Electron HTML video runtime contract', () => {
       });
 
       expect(output).not.toHaveProperty('draft');
+    });
+  });
+
+  it('runs the advisory final-film gate on the published MP4 and never fails delivery on gate errors', async () => {
+    await withRuntimeDir(async (workDir) => {
+      let composition: HtmlVideoExportInput | undefined;
+      const gateCalls: FinalFilmGateRunOptions[] = [];
+      const output = await renderWithMediaProbe(workDir, async () => validFinalMediaProbe(1.25), undefined, undefined,
+        (input) => { composition = input; }, undefined,
+        (options) => { options.finalFilmGate = async (gate) => { gateCalls.push(gate); throw new Error('gate exploded'); }; });
+      expect(output.path).toBe(join(workDir, 'final.mp4'));
+      expect(gateCalls).toHaveLength(1);
+      expect(gateCalls[0]).toMatchObject({
+        route: 'html',
+        filmPath: output.path,
+        expected: {
+          durationMs: Math.round(composition!.totalDurationS * 1000), fps: composition!.fps,
+          width: composition!.canvas_w, height: composition!.canvas_h, audioExpected: true, loudnessTarget: true,
+        },
+      });
     });
   });
 

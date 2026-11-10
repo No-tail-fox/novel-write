@@ -4,6 +4,7 @@ import { CREATIVE_STYLES, LEMO_LIBRARY_STYLES, OPUSCAR98_STYLES, creativeStyleSu
 import { VOX_PRODUCTION_PRESETS, type VoxProductionSettings } from '../../shared/vox-production';
 import { LEMO_AGENT_ASSET_LIMIT, LEMO_AGENT_IMAGE_DEFAULT, LEMO_AGENT_IMAGE_MAX, LEMO_ASSET_VIDEO_MAX_SECONDS, lemoStyleRequiresRealMaterial } from '../../shared/creative-animation/agent-assets';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
+import { LEMO_AGENT_MAX_TURNS, LEMO_AGENT_TURNS_LIMIT, lemoAgentMaxTurns } from '../../shared/creative-animation/upstream-agent';
 import { CreativeStyleCover, CreativeStyleFilm } from './CreativeStylePreview';
 
 /** Creation and project settings deliberately edit the same persisted inputs. */
@@ -27,6 +28,7 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   const images = document?.assets.filter(asset => (asset.kind === 'image' || lemo && asset.kind === 'video') && asset.localPath) ?? [];
   const evidenceStyle = lemo && lemoStyleRequiresRealMaterial(authoring.styleId, settings.presetId);
   const agentImages = settings.agentImages ?? { enabled: false, maxImages: LEMO_AGENT_IMAGE_DEFAULT };
+  const maxTurns = lemoAgentMaxTurns(settings.agentMaxTurns);
   const [importing, setImporting] = useState<'image' | 'video' | null>(null);
   const [importError, setImportError] = useState('');
   const importAsset = async (kind: 'image' | 'video') => {
@@ -48,7 +50,15 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
       <CheckboxField label="允许 AI 生成插画" checked={agentImages.enabled && !evidenceStyle} disabled={busy || evidenceStyle} onChange={(_, event) => onChange({ ...settings, agentImages: { ...agentImages, enabled: event.checked === true } })} />
       {agentImages.enabled && !evidenceStyle ? <TextField label="插画数量上限" type="number" value={String(agentImages.maxImages)} disabled={busy} hint={`整片最多 ${LEMO_AGENT_IMAGE_MAX} 张；每张按生图服务商计费，恢复和续跑不会重复收费。`}
         onChange={(_, event) => onChange({ ...settings, agentImages: { ...agentImages, maxImages: Math.min(LEMO_AGENT_IMAGE_MAX, Math.max(1, Math.round(Number(event.value) || 1))) } })} /> : null}
-      <p className="vox-hint">{evidenceStyle ? '纪实/证据类风格只使用导入的真实素材，不生成插画。' : agentImages.enabled ? 'Agent 只在代码画不好的地方（复杂人物、手绘质感等）申请插画；文字、数据和图章仍用代码绘制。生成插画不会被当作真实资料。' : '默认全部用代码绘制，不调用生图。可以导入真实图片或视频作为素材。'}</p>
+      <p className="vox-hint">{evidenceStyle ? '纪实/证据类风格只使用导入的真实素材，不生成插画；成片会在素材出现时标注来源，并在片尾列出每份素材的出处与许可（未署名时 Agent 不能交片）。' : agentImages.enabled ? 'Agent 只在代码画不好的地方（复杂人物、手绘质感等）申请插画；文字、数据和图章仍用代码绘制。生成插画不会被当作真实资料。' : '默认全部用代码绘制，不调用生图。可以导入真实图片或视频作为素材。'}</p>
+      <SelectField label="Agent 轮数上限" value={String(maxTurns)} disabled={busy}
+        options={[...new Set([16, 32, 48, LEMO_AGENT_MAX_TURNS, 96, 128, LEMO_AGENT_TURNS_LIMIT, maxTurns])].sort((a, b) => a - b).map(value => ({ value: String(value), label: value === LEMO_AGENT_MAX_TURNS ? `${value} 轮（默认）` : `${value} 轮` }))}
+        hint="每轮是一次付费模型调用。达到上限仍未完成时会停止并保留工程；调高后保存设置，再点“重试失败步骤”即可从下一轮继续。"
+        onChange={(_, event) => { const value = Number(event.value); const { agentMaxTurns: _turns, ...rest } = settings; onChange(value === LEMO_AGENT_MAX_TURNS ? rest : { ...rest, agentMaxTurns: value }); }} />
+      <SelectField label="Token 预算" value={String(settings.agentMaxTokens ?? '')} disabled={busy}
+        options={[{ value: '', label: '不限（仅受轮数上限约束）' }, ...[...new Set([500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000, 20_000_000, ...(settings.agentMaxTokens ? [settings.agentMaxTokens] : [])])].sort((a, b) => a - b).map(value => ({ value: String(value), label: `${(value / 1_000_000).toLocaleString('zh-CN')}M tokens` }))]}
+        hint="按服务商返回的输入+输出 token 累计；服务商不返回用量时无法计入。达到预算会停止并可续跑，不估算费用。"
+        onChange={(_, event) => { const { agentMaxTokens: _tokens, ...rest } = settings; onChange(event.value ? { ...rest, agentMaxTokens: Number(event.value) } : rest); }} />
     </> : <CheckboxField label="自动生成图片" checked={settings.generateImages} disabled={busy} onChange={(_, event) => onChange({ ...settings, generateImages: event.checked === true })} />}
     <PreviewSelectField label="视觉风格" value={authoring.styleId} disabled={busy} detailLabel="播放样片" showSelectedPreview selectedPreviewHint="LemoLab 官方封面 · 点击播放样片"
       options={[

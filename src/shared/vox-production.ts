@@ -7,6 +7,7 @@ import { creativeStyleSupportsMode, resolveCreativeStyle } from './creative-anim
 import { isDefinitiveImageProviderFailure } from './image-provider-error';
 import { isDefinitiveLlmProviderRejection } from './llm-provider-error';
 import { LEMO_AGENT_IMAGE_DEFAULT, LEMO_AGENT_IMAGE_MAX, lemoAgentAssetErrors } from './creative-animation/agent-assets';
+import { LEMO_AGENT_TOKENS_LIMIT, LEMO_AGENT_TOKENS_MIN, LEMO_AGENT_TURNS_LIMIT, LEMO_AGENT_TURNS_MIN } from './creative-animation/upstream-agent';
 
 const id = z.string().min(1).max(256);
 export const VOX_PRODUCTION_PRESETS = [
@@ -28,6 +29,10 @@ export const voxProductionSettingsSchema = z.object({
   generateImages: z.boolean().optional(),
   /** Lemo v3 only: let the agent request illustrations (off by default; never for evidence styles). */
   agentImages: z.object({ enabled: z.boolean(), maxImages: z.number().int().min(1).max(LEMO_AGENT_IMAGE_MAX).default(LEMO_AGENT_IMAGE_DEFAULT) }).strict().optional(),
+  /** Lemo v3 only: per-run Agent turn limit (absent = LEMO_AGENT_MAX_TURNS, the historical 64). A budget, not an input. */
+  agentMaxTurns: z.number().int().min(LEMO_AGENT_TURNS_MIN).max(LEMO_AGENT_TURNS_LIMIT).optional(),
+  /** Lemo v3 only: optional cumulative provider-reported token budget (input + output). */
+  agentMaxTokens: z.number().int().min(LEMO_AGENT_TOKENS_MIN).max(LEMO_AGENT_TOKENS_LIMIT).optional(),
   music: voxProjectMusicSchema.optional(),
   lockedShotIds: z.array(id).max(500).default([]),
   authoring: z.object({ mode: z.enum(['template', 'ai-code', 'existing-assets']), styleId: z.string().min(1).max(120), brief: z.string().max(2000).optional() }).strict().optional(),
@@ -62,15 +67,28 @@ export const voxProductionNodeSchema = z.object({
     finishReason: z.string().max(128).nullable().optional(), usage: z.record(z.string(), z.unknown()).optional(),
   }).strict().optional(),
   requestId: id.optional(), retryOfRequestId: id.optional(), error: z.string().max(65536).optional(), recoveryNote: z.string().max(2000).optional(),
+  /** Lemo v3: with retryOfRequestId, skip (never resend) that attempt's unknown illustration request. */
+  skipImage: z.literal(true).optional(),
 }).strict();
 export type VoxProductionNode = z.infer<typeof voxProductionNodeSchema>;
+
+/** Nodes whose paid work is exactly one provider request, so a `not-sent` failure means nothing was billed. */
+export function voxProductionSingleRequestNode(node: Pick<VoxProductionNode, 'kind' | 'id'>): boolean {
+  return ['image', 'film-material', 'plan', 'film-plan-materials', 'film-plan-scene'].includes(node.kind) || node.kind === 'film-edit' && node.id.startsWith('upstream-turn:');
+}
 
 export function isVoxProductionSubmissionRejection(node: VoxProductionNode, message: string): boolean {
   if (node.resultReceived) return false; // A local persistence failure cannot undo a paid result.
   if (['image', 'film-material'].includes(node.kind)) return isDefinitiveImageProviderFailure(message);
   // Planning is one synchronous request. Do not infer outcomes for multi-request code/edit nodes.
-  return (['plan', 'film-plan-materials', 'film-plan-scene'].includes(node.kind) || node.kind === 'film-edit' && node.id.startsWith('upstream-turn:')) && isDefinitiveLlmProviderRejection(message);
+  return voxProductionSingleRequestNode(node) && isDefinitiveLlmProviderRejection(message);
 }
+
+/** G-7: persisted automatic-retry budget. Missing (older journals) means a fresh default budget; malformed is dropped. */
+export const voxProductionRetryBudgetSchema = z.object({
+  version: z.literal(1), runLimit: z.number().int().min(0).max(50), nodeLimit: z.number().int().min(0).max(50),
+  used: z.number().int().min(0).max(50), nodes: z.record(z.string().min(1).max(256), z.number().int().min(0).max(50)),
+}).strict();
 
 // Older journals marked every paid error as unknown, including explicit HTTP rejections.
 export function voxProductionNodeStatus(node: VoxProductionNode): VoxProductionNode['status'] {
@@ -88,17 +106,27 @@ export const voxProductionRunSchema = z.object({
   nodes: z.array(voxProductionNodeSchema).max(8003),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
   message: z.string().max(65536).optional(),
+  retryBudget: voxProductionRetryBudgetSchema.optional().catch(undefined),
 }).strict();
 export type VoxProductionRun = z.infer<typeof voxProductionRunSchema>;
 export const voxProductionStartSchema = z.object({ id, expectedUpdatedAt: z.string().datetime(), settings: voxProductionSettingsSchema }).strict();
 export type VoxProductionStart = z.infer<typeof voxProductionStartSchema>;
-export const voxProductionControlSchema = z.object({ id, runId: id, action: z.enum(['pause', 'resume', 'cancel', 'recheck-code', 'reconcile', 'confirm-no-result', 'retry-unknown']),
+export const voxProductionControlSchema = z.object({ id, runId: id, action: z.enum(['pause', 'resume', 'cancel', 'recheck-code', 'reconcile', 'confirm-no-result', 'retry-unknown', 'skip-unknown-image']),
   nodeId: id.optional(), evidence: z.string().trim().min(8).max(2000).optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.action === 'confirm-no-result' && (!value.nodeId || !value.evidence)) ctx.addIssue({ code: 'custom', message: '请填写待核对步骤与服务商核对依据。' });
-  if (value.action === 'retry-unknown' && !value.nodeId) ctx.addIssue({ code: 'custom', message: '请选择要重试的步骤。' });
+  if ((value.action === 'retry-unknown' || value.action === 'skip-unknown-image') && !value.nodeId) ctx.addIssue({ code: 'custom', message: '请选择要重试的步骤。' });
 });
+/** An unknown Lemo v3 Agent turn whose only open question is one submitted illustration (L-2b). */
+export const isLemoImageUnknownNode = (run: Pick<VoxProductionRun, 'authoringVersion'>, node: VoxProductionNode) =>
+  run.authoringVersion === 3 && node.kind === 'film-edit' && voxProductionNodeStatus(node) === 'unknown' && /LEMO_IMAGE_REQUEST_UNKNOWN/u.test(node.error ?? '');
 export type VoxProductionControl = z.infer<typeof voxProductionControlSchema>;
+/** L-4: adopt the latest saved Lemo Agent budget (turns / tokens) on resume; nothing else in the run changes. */
+export function lemoAgentBudgetResume(run: VoxProductionRun, saved: Pick<VoxProductionSettings, 'agentMaxTurns' | 'agentMaxTokens'> | undefined): VoxProductionRun {
+  if (!saved || (saved.agentMaxTurns === run.settings.agentMaxTurns && saved.agentMaxTokens === run.settings.agentMaxTokens)) return run;
+  const { agentMaxTurns: _turns, agentMaxTokens: _tokens, ...settings } = run.settings;
+  return { ...run, settings: { ...settings, ...(saved.agentMaxTurns !== undefined ? { agentMaxTurns: saved.agentMaxTurns } : {}), ...(saved.agentMaxTokens !== undefined ? { agentMaxTokens: saved.agentMaxTokens } : {}) } };
+}
 
 export function voxProductionSettings(presetId: VoxProductionSettings['presetId'] = 'paper-explainer'): VoxProductionSettings {
   return voxProductionSettingsSchema.parse({ version: 1, presetId, presetVersion: 1 });

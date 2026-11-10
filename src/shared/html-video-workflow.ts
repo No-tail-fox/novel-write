@@ -43,6 +43,7 @@ import {
 import { htmlVideoCaptionColorsEqual, htmlVideoCaptionLayoutEqual } from './html-video-captions';
 import { normalizeHtmlVideoCoverMode, validateHtmlVideoCoverAsset } from './html-video-cover';
 import { upgradeHtmlSceneComposition } from './html-video-composition';
+import { parseRetryBudget } from './retry-budget';
 
 export const MAX_HTML_VIDEO_PIPELINE_JSON_CHARS = 1_000_000;
 export const MAX_HTML_VIDEO_PIPELINE_FILE_BYTES = MAX_HTML_VIDEO_PIPELINE_JSON_CHARS * 4;
@@ -750,6 +751,8 @@ function parsePipelineV2(value: UnknownRecord): HtmlVideoPipelineDataV2 {
     ...(value.coverAsset === undefined ? {} : { coverAsset: validateHtmlVideoCoverAsset(value.coverAsset) }),
     ...(value.output === undefined ? {} : { output: parseOutput(value.output) }),
     config,
+    // G-7: optional and tolerant — older states have none; a malformed budget is dropped, not fatal.
+    ...(parseRetryBudget(value.retryBudget) ? { retryBudget: parseRetryBudget(value.retryBudget) } : {}),
   };
 }
 

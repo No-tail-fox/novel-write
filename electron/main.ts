@@ -4091,7 +4091,8 @@ async function renderDirectorProject(input: DirectorRenderRequest, productionOwn
       const library = lemoProductionLibrary();
       const runtime = await resolveLemoUpstreamRenderRuntime({ pythonRoot: library.pythonRoot, cacheDir: library.cacheDir });
       const mux = await finalizeLemoUpstreamFilm(result.outputPath, { ffmpegPath: runtime.ffmpegPath, fps: LEMO_PICTURE_FPS,
-        grain: await lemoFilmGrain(document.upstreamFilm.directory), signal: renderController.signal });
+        grain: await lemoFilmGrain(document.upstreamFilm.directory), signal: renderController.signal,
+        qualityGate: { expected: { durationMs: result.durationMs, width: result.width, height: result.height, audioExpected: true }, lemoProjectDir: document.upstreamFilm.directory } });
       for (const warning of mux.warnings) console.warn('[lemo-mux]', warning);
       result.sizeBytes = (await stat(result.outputPath)).size;
     }

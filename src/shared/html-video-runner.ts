@@ -33,6 +33,17 @@ import {
   validateHtmlVideoVoices,
 } from './html-video-workflow';
 import { resolveHtmlVideoDraftForRender } from './html-video-draft';
+import { classifyProviderFailure, providerBackoffMs } from './provider-failure';
+import {
+  autoRetryNotice,
+  consumeRetryBudget,
+  createRetryBudget,
+  decideUnknownNodeAction,
+  provenFailureOutcome,
+  retryBudgetNodeUsed,
+  type RetryBudget,
+  type RetryBudgetLimits,
+} from './retry-budget';
 export { invalidateHtmlVideoPipeline } from './html-video-workflow';
 import type {
   CustomCoverTemplate,
@@ -142,6 +153,10 @@ export interface HtmlVideoRunnerOptions {
     signal?: AbortSignal,
   ) => Promise<HtmlVideoRenderArtifactDigest>;
   onCheckpoint: (state: HtmlVideoPipelineDataV2) => Promise<void>;
+  /** G-7 automatic step-retry caps for one run (defaults: 6 per run, 2 per step). */
+  retryLimits?: Partial<RetryBudgetLimits>;
+  /** Delay before automatic retry number `retry` (1-based, per step). Defaults to exponential backoff. */
+  retryDelayMs?: (retry: number) => number;
 }
 
 export interface HtmlVideoRenderArtifactDigest {
@@ -203,6 +218,17 @@ export const MAX_HTML_VIDEO_MEDIA_FILE_BYTES = 1024 * 1024 * 1024;
 const maxAtomicReplaceAttempts = 8;
 const boundedReadChunkBytes = 64 * 1024;
 const activeHtmlVideoTasks = new Set<string>();
+/**
+ * G-7: steps that send at most one paid provider request (rewrite/planning: one LLM call; preview: none;
+ * render: at most one cover image, reused once generated). Assets and voice dispatch several paid
+ * requests concurrently, so one `not-sent` failure cannot vouch for the others; they never auto-retry.
+ */
+const htmlVideoSingleRequestSteps: ReadonlySet<HtmlVideoVisibleStep> = new Set<HtmlVideoVisibleStep>(['rewrite', 'planning', 'preview', 'render']);
+const htmlVideoStepLabels: Record<HtmlVideoVisibleStep, string> = {
+  rewrite: '文案改写', planning: '场景规划', assets: '素材生成', voice: '配音', preview: '预览', render: '渲染',
+};
+/** Original provider error behind a normalized step error, kept only for retry classification. */
+const rawStepErrors = new WeakMap<object, unknown>();
 
 class InvalidPipelineFileError extends Error {}
 
@@ -384,6 +410,9 @@ async function runOwnedPipeline(
     : await loadCheckpoint(options.workDir, input.state);
   state.configSnapshotHash = hashConfigSnapshot(state.config);
   const context: RunnerContext = {};
+  // Each invocation is one run with a fresh automatic-retry budget; the field is persisted for visibility.
+  const retry = { budget: createRetryBudget(options.retryLimits) };
+  if (state.retryBudget) delete state.retryBudget;
 
   if (input.rerunFrom) {
     state = invalidateHtmlVideoPipeline(state, input.rerunFrom);
@@ -430,7 +459,7 @@ async function runOwnedPipeline(
 
     let payload: unknown;
     try {
-      payload = await executeStep(step, input.sourceText, state, context, options);
+      payload = await executeStepWithRetryBudget(step, input.sourceText, state, context, options, retry);
       throwIfAborted(options.signal);
       const artifact = await writeStepArtifact(options.workDir, step, payload, state, context, options.signal);
       state.steps[step] = {
@@ -478,6 +507,52 @@ async function runOwnedPipeline(
   return cloneValidatedState(state);
 }
 
+/**
+ * G-7: budgeted automatic retry. Every HTML step is treated as paid, so only failures that provably never
+ * reached a provider (`not-sent`: connect refused/timeout before send, 521–523) of single-request steps
+ * are resent; unknown outcomes and definitive refusals take the normal failure path.
+ */
+async function executeStepWithRetryBudget(
+  step: HtmlVideoVisibleStep,
+  sourceText: string,
+  state: HtmlVideoPipelineDataV2,
+  context: RunnerContext,
+  options: HtmlVideoRunnerOptions,
+  retry: { budget: RetryBudget },
+): Promise<unknown> {
+  for (;;) {
+    try {
+      return await executeStep(step, sourceText, state, context, options);
+    } catch (error) {
+      if (options.signal?.aborted || isCancellation(error)) throw error;
+      const raw = typeof error === 'object' && error !== null ? rawStepErrors.get(error) ?? error : error;
+      const failure = classifyProviderFailure({ error: raw });
+      const action = decideUnknownNodeAction({
+        paid: true,
+        kind: step,
+        hasReceipt: false,
+        recoverable: false,
+        outcome: provenFailureOutcome(failure),
+        retry: failure.retry,
+        singleRequest: htmlVideoSingleRequestSteps.has(step),
+        budget: retry.budget,
+        nodeId: step,
+      });
+      if (action !== 'auto-retry') throw error;
+      retry.budget = consumeRetryBudget(retry.budget, step);
+      state.retryBudget = retry.budget;
+      addWarning(state, autoRetryNotice(htmlVideoStepLabels[step], retry.budget, step, failure.label));
+      state.steps[step] = { ...state.steps[step], status: 'running', startedAt: Date.now() };
+      await persistCheckpoint(state, options);
+      const attempt = retryBudgetNodeUsed(retry.budget, step);
+      await abortableDelay(
+        options.retryDelayMs?.(attempt) ?? providerBackoffMs(attempt, { baseMs: 1000, maxMs: 15_000, retryAfterMs: failure.retryAfterMs }),
+        options.signal,
+      );
+    }
+  }
+}
+
 async function executeStep(
   step: HtmlVideoVisibleStep,
   sourceText: string,
@@ -514,7 +589,10 @@ async function executeStep(
         })).scenes;
       } catch (error) {
         const normalized = normalizeAppError(error);
-        if (!isRecoverableHtmlVideoPlanningFormatError(normalized)) throw normalized;
+        if (!isRecoverableHtmlVideoPlanningFormatError(normalized)) {
+          if (typeof error === 'object' && error !== null && error !== normalized) rawStepErrors.set(normalized, error);
+          throw normalized;
+        }
         rawScenes = planHtmlVideoScenes(
           context.rewrite.segments.join('\n\n'),
           state.config.maxScenes ?? HTML_VIDEO_JOB_DEFAULTS.maxScenes,
@@ -1510,4 +1588,20 @@ function isNodeError(error: unknown, code: string): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+async function abortableDelay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  throwIfAborted(signal);
+  if (!(ms > 0)) return;
+  await new Promise<void>((resolveDelay, rejectDelay) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      rejectDelay(cancellationReason(signal?.reason, signal));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolveDelay();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }

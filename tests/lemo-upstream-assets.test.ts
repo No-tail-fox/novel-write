@@ -8,7 +8,7 @@ import { stepLemoUpstreamAgent, lemoAgentImagePrompt, type LemoAgentImages, type
 import { createFfmpegLemoAssetMedia, readLemoAssetManifest, stageLemoAssets, verifyLemoAssets, type LemoAssetMedia } from '../electron/lemo-upstream-assets';
 import { lemoUpstreamVideoInternals } from '../electron/lemo-upstream-video';
 import { LEMO_UPSTREAM_REVISION } from '../electron/lemo-upstream-source';
-import { lemoAgentAssetErrors, lemoAgentImagePolicy, lemoStyleRequiresRealMaterial } from '../src/shared/creative-animation/agent-assets';
+import { lemoAgentAssetErrors, lemoAgentImagePolicy, lemoAttributionRequired, lemoMissingAttributions, lemoStyleRequiresRealMaterial } from '../src/shared/creative-animation/agent-assets';
 import { voxProductionSettingsSchema } from '../src/shared/vox-production';
 
 const roots: string[] = [];
@@ -27,7 +27,7 @@ const media = (): LemoAssetMedia & { calls: string[] } => {
   };
 };
 
-async function fixture(replies: string[], extra: { assets?: boolean; images?: Partial<LemoAgentImages> & { maxImages?: number } } = {}) {
+async function fixture(replies: string[], extra: { assets?: boolean; styleId?: string; images?: Partial<LemoAgentImages> & { maxImages?: number } } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'lemo-assets-')); roots.push(root);
   const sources = join(root, 'sources'); await mkdir(sources);
   const photo = join(sources, 'harbor.jpg'), clip = join(sources, 'street.mp4');
@@ -41,7 +41,7 @@ async function fixture(replies: string[], extra: { assets?: boolean; images?: Pa
   const tools = media();
   const options: LemoAgentOptions = {
     root: join(root, 'run'), upstreamRoot: resolve('vendor/lemo-upstream'), model,
-    context: { runId: 'asset-run', styleId: 'brick-toy', brief: '用导入的港口照片和街景视频制作影片。', durationSeconds: 3, width: 1920, height: 1080,
+    context: { runId: 'asset-run', styleId: extra.styleId ?? 'brick-toy', brief: '用导入的港口照片和街景视频制作影片。', durationSeconds: 3, width: 1920, height: 1080,
       ...(extra.assets ? { assets: [
         { id: 'a01', kind: 'image' as const, sha256: sha('real-photo-bytes'), description: '港口老照片', source: '市档案馆', license: 'CC0' },
         { id: 'a02', kind: 'video' as const, sha256: sha('real-video-bytes'), description: '街景', source: '自摄', license: '自有版权' },
@@ -158,6 +158,21 @@ describe('Lemo v3 optional illustration channel (P2-4)', () => {
     expect((await readdir(turnDir)).some(name => name.startsWith('image-abandoned-'))).toBe(true);
   });
 
+  it('skips an unknown illustration on request: never resent, durable, reported to the agent (L-2b)', async () => {
+    const { options, images, project, model } = await fixture([request('g1')], { images: {} });
+    vi.mocked(images!.generate).mockRejectedValueOnce(new Error('socket hang up'));
+    await expect(stepLemoUpstreamAgent({ ...options, requestId: 'node-1' })).rejects.toThrow('LEMO_IMAGE_REQUEST_UNKNOWN');
+    // Without the original attempt as authority, skip does nothing special: still unknown, still not resent.
+    await expect(stepLemoUpstreamAgent({ ...options, requestId: 'node-2', skipUnknownImage: true })).rejects.toThrow('LEMO_IMAGE_REQUEST_UNKNOWN');
+    const film = await stepLemoUpstreamAgent({ ...options, requestId: 'node-3', retryOfRequestId: 'node-1', skipUnknownImage: true });
+    expect(film.turn).toBe(1);
+    expect(film.message).toContain('LEMO_IMAGE_SKIPPED');
+    expect(images!.generate).toHaveBeenCalledTimes(1);
+    expect(model).toHaveBeenCalledTimes(1);
+    expect((await readLemoAssetManifest(project))!.assets.some(entry => entry.id === 'g1')).toBe(false);
+    expect(JSON.parse(await readFile(join(options.root, 'turn-0001', 'image.json'), 'utf8')).status).toBe('skipped');
+  });
+
   it('adopts a recovered provider result without charging again', async () => {
     const { options, images } = await fixture([request('g1')], { images: {} });
     vi.mocked(images!.generate).mockRejectedValueOnce(new Error('timeout'));
@@ -210,6 +225,30 @@ describe.skipIf(!existsSync(bundledFfmpeg))('bundled ffmpeg media adapter', () =
 });
 
 describe('material policy', () => {
+  it('documentary styles must credit every manifest source in the film before finishing (L-2b)', async () => {
+    const finish = json({ tool: 'finish', notes: '三帧检查：素材标注和片尾字幕都在画面内，构图与文字没有裁切。' });
+    const { options, model } = await fixture([
+      write('index.html', '<canvas></canvas>'), json({ tool: 'review_frames' }), finish,
+      write('index.html', '<canvas></canvas><footer>资料来源：市档案馆 &middot; CC0</footer><script>const c = "\\u81ea\\u6444 · 自有版权";</script>'), json({ tool: 'review_frames' }), finish,
+    ], { assets: true, styleId: 'kino-montage' });
+    let film = await stepLemoUpstreamAgent(options);
+    expect(model.mock.calls[0][0].messages[0].content).toContain('Attribution (host-enforced');
+    film = await stepLemoUpstreamAgent(options); film = await stepLemoUpstreamAgent(options);
+    expect(film.status).toBe('authoring');
+    expect(film.message).toContain('LEMO_AGENT_CREDITS_MISSING');
+    expect(film.message).toContain('["市档案馆","自摄"]');
+    for (let i = 0; i < 3; i++) film = await stepLemoUpstreamAgent(options);
+    expect(film.status, film.message).toBe('ready');
+  });
+  it('does not require credits for non-documentary styles or runs without material', async () => {
+    const { options, model } = await fixture([write('index.html', 'x')], { assets: true });
+    await stepLemoUpstreamAgent(options);
+    expect(model.mock.calls[0][0].messages[0].content).not.toContain('Attribution (host-enforced');
+    expect(lemoAttributionRequired('newsreel')).toBe(true); expect(lemoAttributionRequired('brick-toy')).toBe(false);
+    expect(lemoMissingAttributions([{ source: '市档案馆' }, { source: 'AI generated · mock' }, { source: '市档案馆' }], ['<p>市档案馆</p>', "t('AI generated &middot; mock')"])).toEqual([]);
+    expect(lemoMissingAttributions([{ source: 'Library of  Congress' }], ['library of congress'])).toEqual([]);
+    expect(lemoMissingAttributions([{ source: '市档案馆' }, { source: '自摄' }], ['市档案'])).toEqual(['市档案馆', '自摄']);
+  });
   const base = voxProductionSettingsSchema.parse({ version: 1, presetId: 'paper-explainer', presetVersion: 1, authoring: { mode: 'ai-code', styleId: 'kino-montage' } });
   it('is off by default and forbidden for documentary / evidence styles', () => {
     expect(lemoAgentImagePolicy(base).enabled).toBe(false);

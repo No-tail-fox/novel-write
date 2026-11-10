@@ -1,4 +1,4 @@
-import type { MusicMvSettings, MusicPlan, ViralTranscriptSegment } from './types';
+import type { MusicLyricWord, MusicMvSettings, MusicPlan, ViralTranscriptSegment } from './types';
 import { redactErrorText } from './app-error';
 import type { ProductionSubtitleCue } from './production-workflow';
 
@@ -104,6 +104,56 @@ export function matchMusicMvLyricsToTranscript(
   return { lrcText: lrcLines.join('\n'), matched: lines.length, total: lines.length };
 }
 
+/** Parsed LRC line; `words` only for enhanced (word-level) lines. */
+interface ParsedLyricWord { text: string; startMs: number; endMs?: number }
+interface ParsedLyricLine { lyric: string; startMs: number | null; words?: ParsedLyricWord[]; endTagMs?: number }
+const WORD_TAG_HINT = /<\d{1,3}:\d/u;
+const WORD_TAG = /<(\d{1,3}):([0-5]\d(?:\.\d{1,3})?)>/gu;
+const lrcMs = (minutes: string, seconds: string) => Math.round((Number(minutes) * 60 + Number(seconds)) * 1000);
+
+/**
+ * One enhanced-LRC line body (after its `[mm:ss.xx]` stamp). Text before the first word tag starts at
+ * the line stamp; a trailing tag with no text marks the end of the last word (A2 style). Spaces between
+ * words are kept in the line lyric so plain captions read exactly as before.
+ */
+export function parseLrcWordLine(body: string, lineStartMs: number): ParsedLyricLine {
+  if (WORD_TAG_HINT.test(body.replace(WORD_TAG, ''))) throw new Error('MUSIC_MV_LRC_WORD_FORMAT: 逐字时间标签格式无效，请使用 <分:秒.毫秒>，例如 <00:12.34>。');
+  const tags = [...body.matchAll(WORD_TAG)];
+  const words: ParsedLyricWord[] = [];
+  let lyric = '', endTagMs: number | undefined;
+  const lead = body.slice(0, tags[0].index);
+  if (lead.trim()) words.push({ text: lead.trim(), startMs: lineStartMs });
+  lyric += lead;
+  tags.forEach((tag, index) => {
+    const time = lrcMs(tag[1], tag[2]);
+    const text = body.slice(tag.index! + tag[0].length, tags[index + 1]?.index ?? body.length);
+    lyric += text;
+    if (text.trim()) { words.push({ text: text.trim(), startMs: time }); return; }
+    // An empty tag closes the previous word: the end of the line, or a gap inside it.
+    if (index === tags.length - 1) endTagMs = time;
+    else if (words.length && words.at(-1)!.endMs === undefined) words.at(-1)!.endMs = time;
+  });
+  const fail = (detail: string) => new Error(`MUSIC_MV_LRC_WORD_TIMING: 逐字时间无效（${detail}），请检查该行：${body.trim().slice(0, 80)}`);
+  let previousStart = lineStartMs - 1, previousEnd = lineStartMs;
+  for (const word of words) {
+    if (word.startMs < lineStartMs) throw fail('逐字时间早于行时间戳');
+    if (word.startMs <= previousStart || word.startMs < previousEnd) throw fail('逐字时间必须逐个递增');
+    if (word.endMs !== undefined && word.endMs <= word.startMs) throw fail('结束时间必须晚于开始时间');
+    previousStart = word.startMs; previousEnd = word.endMs ?? word.startMs;
+  }
+  if (endTagMs !== undefined && words.length && endTagMs <= words.at(-1)!.startMs) throw fail('行尾时间必须晚于最后一个字');
+  return { lyric: lyric.replace(/\s+/gu, ' ').trim(), startMs: lineStartMs, ...(words.length ? { words } : {}), ...(endTagMs !== undefined ? { endTagMs } : {}) };
+}
+
+/** Each word ends at its explicit end, the next word, the trailing tag or the caption end (whichever applies first). */
+function lrcWordTimings(words: readonly ParsedLyricWord[], endTagMs: number | undefined, lineEndMs: number): MusicLyricWord[] {
+  return words.map((word, index) => {
+    if (word.startMs >= lineEndMs) throw new Error(`MUSIC_MV_LRC_WORD_TIMING: 逐字时间无效（“${word.text}”晚于下一句开始或歌曲结束），请检查 LRC。`);
+    const endMs = Math.min(lineEndMs, word.endMs ?? words[index + 1]?.startMs ?? endTagMs ?? lineEndMs);
+    return { text: word.text, startMs: word.startMs, durationMs: endMs - word.startMs };
+  });
+}
+
 /** Lyrics own their timing independently of the number of visual shots. */
 export function planMusicMvLyrics(
   inputText: string,
@@ -111,7 +161,7 @@ export function planMusicMvLyrics(
   audioDurationMs = 0,
   timingSource: 'manual' | 'provider' = 'manual',
 ): MusicPlan {
-  const parsed = inputText.replace(/\r/g, '').split(/\n/u).flatMap<{ lyric: string; startMs: number | null }>(line => {
+  const parsed = inputText.replace(/\r/g, '').split(/\n/u).flatMap<ParsedLyricLine>(line => {
     const text = line.trim();
     if (/^\[offset:/iu.test(text)) {
       // LRC players differ in offset direction; require an explicit clock instead of silently desynchronizing a song.
@@ -119,12 +169,18 @@ export function planMusicMvLyrics(
       return [];
     }
     if (!text || /^\[(?:ar|ti|al|by|length|re|ve):/iu.test(text) || /^\[(?:verse|chorus|bridge|intro|outro|instrumental|pre-chorus)(?:\s+\d+)?\]$/iu.test(text)) return [];
-    if (/<\d{1,3}:\d{2}/u.test(text)) throw new Error('MUSIC_MV_LRC_FORMAT: 暂不支持逐字 LRC 标签，请转换为每句一个时间戳的 LRC。');
     const stamps = [...text.matchAll(/\[(\d{1,3}):([0-5]\d(?:\.\d{1,3})?)\]/gu)];
     if (/\[\d+:/u.test(text.replace(/\[\d{1,3}:[0-5]\d(?:\.\d{1,3})?\]/gu, ''))) throw new Error('MUSIC_MV_LRC_FORMAT: LRC 时间戳格式无效，请使用 [分:秒.毫秒]。');
-    const lyric = stamps.length ? text.slice(stamps.at(-1)!.index! + stamps.at(-1)![0].length).trim() : text;
+    const body = stamps.length ? text.slice(stamps.at(-1)!.index! + stamps.at(-1)![0].length) : text;
+    // Enhanced / A2 LRC: `[mm:ss.xx]<mm:ss.xx>word<mm:ss.xx>word<mm:ss.xx>` (optional trailing end tag).
+    if (WORD_TAG_HINT.test(body)) {
+      if (stamps.length !== 1) throw new Error(stamps.length ? 'MUSIC_MV_LRC_WORD_FORMAT: 逐字 LRC 的每行只能有一个行时间戳，请把重复歌词展开成多行。' : 'MUSIC_MV_LRC_WORD_FORMAT: 逐字时间标签 <分:秒.毫秒> 必须跟在行时间戳 [分:秒.毫秒] 之后。');
+      const startMs = lrcMs(stamps[0][1], stamps[0][2]);
+      return [parseLrcWordLine(body, startMs)];
+    }
+    const lyric = body.trim();
     // An empty timed line ends the previous caption and leaves an instrumental gap.
-    return stamps.length ? stamps.map(stamp => ({ lyric, startMs: Math.round((Number(stamp[1]) * 60 + Number(stamp[2])) * 1000) })) : [{ lyric, startMs: null }];
+    return stamps.length ? stamps.map(stamp => ({ lyric, startMs: lrcMs(stamp[1], stamp[2]) })) : [{ lyric, startMs: null }];
   });
   const lyricCount = parsed.filter(line => line.lyric).length;
   if (!lyricCount) throw new Error('MUSIC_MV_LYRICS_EMPTY: 请填写有效歌词。');
@@ -142,7 +198,8 @@ export function planMusicMvLyrics(
     if (!line.lyric) return [];
     const startMs = timed ? line.startMs! : Math.round(durationMs * index / lyricCount);
     const endMs = timed ? parsed[index + 1]?.startMs ?? durationMs : Math.round(durationMs * (index + 1) / lyricCount);
-    return [{ lyric: line.lyric, startMs, durationMs: endMs - startMs }];
+    const words = line.words ? lrcWordTimings(line.words, line.endTagMs, endMs) : undefined;
+    return [{ lyric: line.lyric, startMs, durationMs: endMs - startMs, ...(words ? { words } : {}) }];
   });
   return {
     ...music, audioDurationMs: durationMs,

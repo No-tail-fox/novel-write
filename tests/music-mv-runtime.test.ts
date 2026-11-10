@@ -42,7 +42,9 @@ describe('Music MV runtime contract', () => {
   it('reports unsupported offsets and malformed timing instead of rendering or ignoring them', () => {
     expect(() => plan('[offset:500]\n[00:01.00]One', 5000)).toThrow('LRC_OFFSET');
     expect(() => plan('[00:61.00]One', 5000)).toThrow('LRC_FORMAT');
-    expect(() => plan('[00:01.00]<00:01.00>One', 5000)).toThrow('LRC_FORMAT');
+    // M-2: enhanced (word-level) LRC is supported; malformed word tags are still rejected.
+    expect(plan('[00:01.00]<00:01.00>One', 5000).segments[0]).toMatchObject({ lyric: 'One', startMs: 1000, words: [{ text: 'One', startMs: 1000, durationMs: 4000 }] });
+    expect(() => plan('[00:01.00]<00:1.0>One', 5000)).toThrow('LRC_WORD_FORMAT');
     expect(plan('[offset:0]\n[00:01.00]One', 5000).segments[0].startMs).toBe(1000);
   });
   it('creates a validated Lemo timeline with continuous original music and no narration', () => {

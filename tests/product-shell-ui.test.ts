@@ -1272,7 +1272,7 @@ describe('product shell ui', () => {
       "processingMode === 'manual'",
       "!musicMvAudioPath.trim()",
       '未检测到 LRC 时间戳',
-      '逐字高亮暂不支持精准对齐',
+      '当前成片暂不做逐字高亮',
     ]) {
       expect(musicPage).toContain(symbol);
     }

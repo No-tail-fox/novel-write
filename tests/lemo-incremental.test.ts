@@ -209,11 +209,9 @@ describe('durable incremental Lemo authoring', () => {
       return save(d);
     };
     await h.start(); await h.idle();
-    expect(h.get().productionRun!.nodes.find(n=>n.id==='film-code:shared:edit:1')!.status).toBe('unknown');
-    expect(film(h).project!.files[0].source).toBe('');
-    await h.service.control({ id:h.get().id, runId:h.get().productionRun!.id, action:'reconcile' });
-    expect(film(h).project!.files[0].source).toBe(sourceFor('shared'));
-    await resume(h); finished(h); expect(editFilmFile).toHaveBeenCalledTimes(4);
+    // G-7: the receipt is recovered automatically (free) instead of blocking for a manual reconcile.
+    finished(h); expect(editFilmFile).toHaveBeenCalledTimes(4);
+    expect(h.get().productionRun!.nodes.find(n=>n.id==='film-code:shared:edit:1')!.status).toBe('completed');
   });
   it('keeps the sample gate ahead of later scene requests and supplies only owned cue windows', async () => {
     const initial = nativeHarness().get(), shot = initial.beats[0].shots[0];

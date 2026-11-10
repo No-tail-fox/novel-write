@@ -913,6 +913,8 @@ export interface HtmlVideoPipelineDataV2 {
   coverAsset?: HtmlVideoCoverAsset;
   output?: HtmlVideoOutput;
   config: HtmlVideoJobConfig;
+  /** G-7: automatic step retries of the latest run (absent in older states). */
+  retryBudget?: import('./retry-budget').RetryBudget;
 }
 
 // Temporary read-only projection for the existing HTML video page. These
@@ -1664,8 +1666,16 @@ export interface MusicPlan {
     startMs: number;
     durationMs: number;
     visualHint: string;
+    /**
+     * Word-level (enhanced / A2 LRC) timing, absolute song milliseconds. Present only when the
+     * input carried `<mm:ss.xx>` word tags. Line timing above stays authoritative for captions;
+     * the current renderers show lines only and do not yet highlight individual words.
+     */
+    words?: MusicLyricWord[];
   }>;
 }
+
+export interface MusicLyricWord { text: string; startMs: number; durationMs: number }
 
 export interface CharacterCard {
   summary: string;

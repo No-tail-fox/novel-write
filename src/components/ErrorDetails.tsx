@@ -20,6 +20,9 @@ export function summarizeErrorMessage(message: string): string {
   if (/LLM_STREAM_INTERRUPTED/iu.test(normalized)) return '文本接收中断，云端结果待核对';
   if (/LEMO_EDIT_TRUNCATED/iu.test(normalized)) return '本批输出预算耗尽，上一批源码已保存';
   if (/LEMO_EDIT_LIMIT/iu.test(normalized)) return '已达单文件创作批次上限，工程已保存';
+  if (/LEMO_IMAGE_REQUEST_UNKNOWN/u.test(normalized)) return 'Agent 插画请求已发出但结果未知，可能已计费，不会自动重发';
+  if (/LEMO_AGENT_TURN_LIMIT/u.test(normalized)) return 'Lemo Agent 已用完轮数上限，工程已保存；调高上限后可继续';
+  if (/LEMO_AGENT_TOKEN_LIMIT/u.test(normalized)) return 'Lemo Agent 已达 Token 预算，工程已保存；调高预算后可继续';
   if (/LEMO_EDIT_(?:INVALID|STALE|SIZE|EMPTY|NOOP|AMBIGUOUS)/iu.test(normalized)) return '本批修改未通过检查，上一批源码已保留';
   if (/LEMO_FILE_TRUNCATED/iu.test(normalized)) return '代码输出预算耗尽，已保留不完整源码';
   if (/PROVIDER_RESULT_UNKNOWN/u.test(normalized)) return '上次请求结果未知，请核对服务商记录后再重试';

@@ -113,8 +113,10 @@ export function MusicMvPage({ api, state, applyState, openTaskDetail, isBrowserP
         ) : null}
         <TextField label="标题" value={title} onChange={event => setTitle(event.target.value)} disabled={running} />
         <TextAreaField label="歌词 / LRC" className="source-textarea" value={lyrics} onChange={event => setLyrics(event.target.value)} disabled={running}
-          hint={hasLrcTimestamps
-            ? '检测到 LRC：字幕按句时间显示，镜头切点优先贴近歌词起点；逐字高亮暂不支持精准对齐。请确认时间戳已按实际演唱校准。'
+          hint={hasLrcTimestamps && /<\d{1,3}:\d{2}/u.test(lyrics)
+            ? '检测到逐字 LRC：字幕仍按句时间显示，镜头切点优先贴近歌词起点；每个字的时间会校验并保存在歌词计划中，当前成片暂不做逐字高亮。格式错误时创建会停止并提示具体行。'
+            : hasLrcTimestamps
+            ? '检测到 LRC：字幕按句时间显示，镜头切点优先贴近歌词起点；也支持逐字 LRC（[分:秒.毫秒]<分:秒.毫秒>字…）。请确认时间戳已按实际演唱校准。'
             : '未检测到 LRC 时间戳：创建时会尝试用已配置的语音转写逐句对齐；转写不可用或无法匹配时会退回时长均分估算，并在任务事件中说明，不代表实际演唱同步。卡拉 OK 不会伪造逐字高亮。也可直接提供校准后的逐句 LRC。'} />
         <ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} />
         <div className="advanced-grid">

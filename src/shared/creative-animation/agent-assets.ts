@@ -24,6 +24,24 @@ export function lemoStyleRequiresRealMaterial(styleSlug: string | undefined, pre
   return !!style && LEMO_EVIDENCE_STYLE_CATEGORIES.includes(style.category_en);
 }
 
+/**
+ * L-2b: documentary/evidence styles credit their material in the film itself, not only in MANIFEST.json.
+ * The Lemo agent is told to add source tags + an end credits card; the host rejects `finish` until every
+ * manifest `source` string appears literally in the rendered film sources.
+ */
+export const lemoAttributionRequired = (styleSlug: string | undefined) => lemoStyleRequiresRealMaterial(styleSlug);
+const decodeSourceText = (value: string) => value
+  .replace(/\\u\{([0-9a-f]{1,6})\}|\\u([0-9a-f]{4})|\\x([0-9a-f]{2})/giu, (_m, braced: string | undefined, u4: string | undefined, x2: string | undefined) => String.fromCodePoint(parseInt(braced ?? u4 ?? x2 ?? '0', 16)))
+  .replace(/\\(['"`\\/])/gu, '$1')
+  .replace(/&#x([0-9a-f]+);|&#(\d+);/giu, (_m, hex: string | undefined, dec: string | undefined) => String.fromCodePoint(hex ? parseInt(hex, 16) : Number(dec)))
+  .replace(/&(amp|lt|gt|quot|apos|nbsp|middot);/gu, (_m, name: string) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', middot: '·' } as Record<string, string>)[name]);
+const normalizeCredit = (value: string) => decodeSourceText(value).replace(/\s+/gu, ' ').trim().toLocaleLowerCase();
+/** Distinct manifest sources that do not occur in any film source text (HTML/JS escapes and whitespace tolerated). */
+export function lemoMissingAttributions(entries: readonly { source: string }[], sources: readonly string[]): string[] {
+  const haystack = normalizeCredit(sources.join('\n'));
+  return [...new Set(entries.map(entry => entry.source.trim()).filter(Boolean))].filter(source => !haystack.includes(normalizeCredit(source)));
+}
+
 export interface LemoAgentImagePolicy { enabled: boolean; maxImages: number; denied?: string }
 export function lemoAgentImagePolicy(settings: Settings): LemoAgentImagePolicy {
   const maxImages = Math.min(LEMO_AGENT_IMAGE_MAX, Math.max(1, settings.agentImages?.maxImages ?? LEMO_AGENT_IMAGE_DEFAULT));
