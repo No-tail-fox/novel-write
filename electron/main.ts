@@ -160,6 +160,7 @@ import { CredentialVault } from './credential-vault';
 import { HistoryActivityRegistry, type HistoryActivityReservation } from './history-activity-registry';
 import { guardProcessOutput } from './process-output';
 import {
+import { downloadVerifiedVideoResult } from './resumable-transfer';
   backfillLegacyManagedHistoryStorage,
   deleteManagedHistoryWithQuarantine,
   reapHistoryQuarantines,
@@ -3463,6 +3464,7 @@ async function generateMotionComicShotVideo(
     provider = createConfiguredVideoProvider(runtimeConfig, taskWorkDir(task), undefined, {
       recoveryProviderId: resumableJob.providerId,
     });
+      downloadResult: downloadVerifiedVideoResult,
   } else {
     const frames = motionComicVideoFrames(document, shot);
     for (const [label, asset] of [['首帧', frames.first], ['尾帧', frames.last]] as const) {
@@ -3498,7 +3500,7 @@ async function generateMotionComicShotVideo(
       durationSec: request.durationSec,
       requiredCapabilities,
       remainingBudget,
-    }, { submitRetryCount: 0 });
+    }, { submitRetryCount: 0, downloadResult: downloadVerifiedVideoResult });
   }
   // Recovery uses the submitted input, even when the current shot has since changed.
   const submittedFingerprint = resumableJob?.videoInputSnapshot

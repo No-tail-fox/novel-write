@@ -143,6 +143,7 @@ const policyProfiles: Record<NetworkPurpose, NetworkPolicy> = {
       'x-api-resource-id',
       'x-client-source',
       'x-app-id',
+      'if-range',
       'x-content-sha256',
       'x-date',
       'x-resource-id',

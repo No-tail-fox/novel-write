@@ -112,7 +112,7 @@
 | M-1 | **⛔ 外部阻塞**：转写服务 HTTP 402 余额不足，需要充值或换服务后人工验收（付费）。原条目：用原曲 + 默认模型完整生成一遍做验收：真实转写返回 HTTP 402（余额不足） | `task_plan_music_mv_sync.md:17`；`task_plan.md:41` | P2 | S | 充值/换服务 |
 | M-2 | **✅ 已实现（数据层）**：支持增强 LRC `[mm:ss.xx]<mm:ss.xx>字` 和 A2 逐词格式，逐字时间存入 `MusicPlan.segments[].words`，格式错误给中文报错（`MUSIC_MV_LRC_WORD_FORMAT`/`_TIMING`）；普通 LRC 输出不变。成片暂不做逐字高亮（页面已注明）。原条目：不支持逐字 LRC | `src/shared/music-mv-plan.ts:122`；`src/features/music-mv/MusicMvPage.tsx:117` | P3 | M | — |
 | C-1 | **✅ 已随 Q-1 解决**：`tests/motion-comic-live-sample.test.ts` 现 4/4 通过。原条目：**漫剧真实样本回放失败**（S13–S16 句段不存在） | `tests/motion-comic-live-sample.test.ts`（3 个失败） | P1 | S–M | — |
-| C-2 | 远程连续性、口型、完整上传下载恢复都没验收 | `design-qa.md:132,147` | P3 | L | — |
+| C-2 | **✅ 离线部分已实现 / ⛔ 真实验收需付费远程视频 + 人工审片**：`electron/resumable-transfer.ts` 让漫剧远程视频结果断点续传（`.part` + 不含签名的旁路记录，Range + If-Range，只接受校验一致的 206，长度/魔数/可选 sha256 校验后原子改名，最终文件名不变；只重试连接/中途断开/截断，从不重新 POST）；HTML 冒充 mp4 报 `VIDEO_PROVIDER_DOWNLOAD_INVALID`，下次只轮询恢复不重复付费。参考素材内嵌在生成请求里、没有单独上传步骤，故无上传续传。`src/shared/motion-comic-continuity.ts` 提供仅供参考的连续性评分（感知哈希），尚未写入镜头数据。真实 CDN 的 Range/ETag 支持、遗留 `.resume-*.part` 清理【未核实/未做】。原条目：远程连续性、口型、完整上传下载恢复都没验收 | `design-qa.md:132,147` | P3 | L | — |
 | S-1 | MoneyPrinter 网络素材检索没接入（代码里没有 pexels/pixabay），专用素材服务的密钥也缺 | `task_plan.md:11,108,132`；`docs/plans/2026-10-24-creative-animation/remaining-work-implementation-plan-2026-10-31.md` §3 | P2 | L | 素材服务密钥 |
 | S-2 | **⛔ 阻塞（需人工 + 真实环境）**：需要在装有剪映的机器上人工打开草稿，并由人做 AI 美术/听审；无法离线完成。草稿结构已有自动测试覆盖【未核实其与当前剪映版本兼容】。原条目：剪映应用实际打开草稿，以及真实 AI 美术/听审验收 | `task_plan.md:12,110,180` | P2 | M | — |
 

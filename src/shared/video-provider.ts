@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { fetchWithTimeout } from './http';
@@ -66,6 +66,22 @@ export interface VideoProviderRuntimeOptions {
   providerId?: string;
   /** Recovery bypasses new-request routing and validation for an already submitted task. */
   recoveryProviderId?: string;
+  /**
+   * Optional verified/resumable downloader for URL results (injected by the main process, see
+   * electron/resumable-transfer.ts). It must leave the complete file at `targetPath`. The target is
+   * stable per remote task so an interrupted download can resume on the next recovery attempt.
+   */
+  downloadResult?: (input: VideoResultDownloadInput) => Promise<void>;
+}
+
+export interface VideoResultDownloadInput {
+  url: string;
+  targetPath: string;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+  timeoutMs: number;
+  maxBytes: number;
+  timeoutLabel: string;
 }
 
 export function createConfiguredVideoProvider(
@@ -107,10 +123,10 @@ export function createConfiguredVideoProvider(
         throw new Error('VIDEO_PROVIDER_RECOVERY_ONLY: 已提交任务的恢复实例不能发起新的视频生成请求。');
       }
       assertVideoRequestMatchesRoute(routeRequest, request);
-      return await generateVideo(provider, config, workDir, request, runtimeOptions.submitRetryCount);
+      return await generateVideo(provider, config, workDir, request, runtimeOptions.submitRetryCount, runtimeOptions.downloadResult);
     },
     resume: async (remoteTaskId, recovery) => {
-      return await resumeVideo(provider, workDir, remoteTaskId, recovery);
+      return await resumeVideo(provider, workDir, remoteTaskId, recovery, runtimeOptions.downloadResult);
     },
   };
 }
@@ -162,6 +178,7 @@ async function generateVideo(
   workDir: string,
   request: VideoGenerationRequest,
   submitRetryCount?: number,
+  downloadResult?: VideoProviderRuntimeOptions['downloadResult'],
 ): Promise<VideoGenerationResult> {
   const prepared = prepareVideoGeneration(provider, config, request);
   const { prompt, durationSec, estimatedCost } = prepared;
@@ -199,7 +216,7 @@ async function generateVideo(
   if (!responseVideoPayload(finalResponse) && remoteTaskId) {
     finalResponse = await pollVideoJob(provider, remoteTaskId, request.signal);
   }
-  return await persistVideoResult(provider, workDir, finalResponse, estimatedCost, remoteTaskId, request.signal);
+  return await persistVideoResult(provider, workDir, finalResponse, estimatedCost, remoteTaskId, request.signal, downloadResult);
 }
 
 async function resumeVideo(
@@ -207,12 +224,13 @@ async function resumeVideo(
   workDir: string,
   rawRemoteTaskId: string,
   recovery: VideoRecoveryRequest,
+  downloadResult?: VideoProviderRuntimeOptions['downloadResult'],
 ): Promise<VideoGenerationResult> {
   const remoteTaskId = rawRemoteTaskId.trim();
   if (!remoteTaskId) throw new Error('VIDEO_PROVIDER_TASK_ID_REQUIRED: 恢复云端视频任务需要有效的任务 ID。');
   const estimatedCost = normalizedRecoveryEstimatedCost(recovery.estimatedCost);
   const finalResponse = await pollVideoJob(provider, remoteTaskId, recovery.signal);
-  return await persistVideoResult(provider, workDir, finalResponse, estimatedCost, remoteTaskId, recovery.signal);
+  return await persistVideoResult(provider, workDir, finalResponse, estimatedCost, remoteTaskId, recovery.signal, downloadResult);
 }
 
 function prepareVideoGeneration(
@@ -246,6 +264,7 @@ async function persistVideoResult(
   estimatedCost: number,
   remoteTaskId: string | undefined,
   signal?: AbortSignal,
+  downloadResult?: VideoProviderRuntimeOptions['downloadResult'],
 ): Promise<VideoGenerationResult> {
   const payload = responseVideoPayload(finalResponse) ?? (isGetezoRelayVideoApi(provider) && remoteTaskId
     ? { url: providerUrl(provider, `${provider.statusPathTemplate.replaceAll('{id}', encodeURIComponent(remoteTaskId))}/content`) }
@@ -256,18 +275,37 @@ async function persistVideoResult(
   await mkdir(outputDir, { recursive: true });
   const outputPath = join(outputDir, `${Date.now()}-${randomUUID()}.mp4`);
   const temporaryPath = `${outputPath}.tmp`;
-  try {
-    const bytes = payload.base64
-      ? decodeVideoBase64(payload.base64)
-      : await downloadVideo(payload.url!, provider, signal);
-    if (!bytes.length || bytes.length > MAX_VIDEO_BYTES) {
-      throw new Error('VIDEO_PROVIDER_INVALID_OUTPUT: 返回的视频为空或超过 512 MB。');
+  if (!payload.base64 && downloadResult) {
+    // Stable per remote task (or URL origin+path) so `<staging>.part` survives a failed attempt and resumes.
+    const stagingKey = createHash('sha256')
+      .update(remoteTaskId ? `${provider.id}\n${remoteTaskId}` : `${provider.id}\n${urlWithoutQuery(payload.url!)}`)
+      .digest('hex')
+      .slice(0, 32);
+    const stagingPath = join(outputDir, `.resume-${stagingKey}.mp4`);
+    await downloadResult({
+      url: payload.url!,
+      targetPath: stagingPath,
+      ...(isProxyVideoDownload(payload.url!, provider) ? { headers: providerHeaders(provider) } : {}),
+      signal,
+      timeoutMs: provider.timeoutMs,
+      maxBytes: MAX_VIDEO_BYTES,
+      timeoutLabel: '云端视频下载',
+    });
+    await rename(stagingPath, outputPath);
+  } else {
+    try {
+      const bytes = payload.base64
+        ? decodeVideoBase64(payload.base64)
+        : await downloadVideo(payload.url!, provider, signal);
+      if (!bytes.length || bytes.length > MAX_VIDEO_BYTES) {
+        throw new Error('VIDEO_PROVIDER_INVALID_OUTPUT: 返回的视频为空或超过 512 MB。');
+      }
+      await writeFile(temporaryPath, bytes, { flag: 'wx' });
+      await rename(temporaryPath, outputPath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
     }
-    await writeFile(temporaryPath, bytes, { flag: 'wx' });
-    await rename(temporaryPath, outputPath);
-  } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
-    throw error;
   }
 
   return {
@@ -421,8 +459,7 @@ async function requestJsonWithRetries(
 }
 
 async function downloadVideo(url: string, provider: VideoProviderConfig, signal?: AbortSignal): Promise<Buffer> {
-  const proxyDownload = isGetezoRelayVideoApi(provider)
-    && url === providerUrl(provider, `${provider.statusPathTemplate.replaceAll('{id}', encodeURIComponent(responseTaskIdFromContentUrl(url)))}/content`);
+  const proxyDownload = isProxyVideoDownload(url, provider);
   const response = await fetchWithTimeout(url, {
     method: 'GET',
     ...(proxyDownload ? { headers: providerHeaders(provider) } : {}),
@@ -434,6 +471,16 @@ async function downloadVideo(url: string, provider: VideoProviderConfig, signal?
   });
   if (!response.ok) throw new Error(`VIDEO_PROVIDER_DOWNLOAD_FAILED: ${response.status} ${response.statusText}`);
   return Buffer.from(await response.arrayBuffer());
+}
+
+function isProxyVideoDownload(url: string, provider: VideoProviderConfig): boolean {
+  return isGetezoRelayVideoApi(provider)
+    && url === providerUrl(provider, `${provider.statusPathTemplate.replaceAll('{id}', encodeURIComponent(responseTaskIdFromContentUrl(url)))}/content`);
+}
+
+function urlWithoutQuery(url: string): string {
+  const parsed = new URL(url);
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
 }
 
 function providerHeaders(provider: VideoProviderConfig): Record<string, string> {
