@@ -3,7 +3,7 @@ import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/prom
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fetchWithTimeout } from '../src/shared/http';
 import { musicEnhancedRequestSchema, type MusicEnhancedJob, type MusicEnhancedRequest } from '../src/shared/music-enhanced';
-import { normalizeMusicApiBaseUrl } from '../src/shared/music-provider';
+import { isMusicRequestNotSent, normalizeMusicApiBaseUrl, wrapMusicNetworkError } from '../src/shared/music-provider';
 const object = (value:unknown):Record<string,unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value:unknown) => typeof value === 'string' ? value : '';
 export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirectory?:string;baseUrl?:string;resolveApiKey:()=>Promise<string>;resolveProxyUrl?:()=>string|undefined|Promise<string|undefined>;onSongsReady:(ids:string[])=>Promise<unknown>;fetchImpl?:typeof fetch}) {
@@ -22,7 +22,7 @@ export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirect
     async function request(path:string,body?:BodyInit,post=false) {
       try { const response=await fetchWithTimeout(`${baseUrl}${path}`,{generation:post,method:post?'POST':'GET',headers:{Authorization:`Bearer ${key}`},body,timeoutMs:180000,maxBytes:4*1024*1024,maxRedirects:0,fetchImpl:options.fetchImpl,proxyUrl});
         const value=object(await response.json());if(!response.ok||value.success===false||value.error||(value.code!==undefined&&![0,200,'0','200','success'].includes(value.code as number|string)))throw new Error(text(value.message??value.error)||`服务请求失败（${response.status}）`); return object(value.data??value);
-      }catch(error){throw new Error(redact(error instanceof Error?error.message:String(error)));}
+      }catch(error){throw wrapMusicNetworkError(error,redact(error instanceof Error?error.message:String(error)));}
     }
     let job:MusicEnhancedJob;
     if(input.action==='submit'){
@@ -36,7 +36,7 @@ export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirect
       const form=new FormData();form.append('file',new Blob([new Uint8Array(bytes)]),basename(path));form.append('title',input.title||basename(path));
       job={id:randomUUID(),taskId:0,title:input.title||basename(path),status:'submitting',progress:0,stage:'正在提交',songId:'',error:'',createdAt:new Date().toISOString()}; jobs.unshift(job);await save(jobs);
       try {const result=await request('/api/music/enhanced-upload',form,true);const task=object(result.task??result);const taskId=Number(task.task_id??task.id);job.taskId=Number.isSafeInteger(taskId)&&taskId>0?taskId:0;job.status=job.taskId?text(task.status)||'queued':'needs-recovery';job.stage=job.taskId?'等待处理':'提交结果待核对';if(!job.taskId)job.error='未取得任务编号，请在网站核对，勿重复提交。';}
-      catch(error){job.status='needs-recovery';job.error=error instanceof Error?error.message:String(error);}
+      catch(error){job.status=isMusicRequestNotSent(error)?'failed':'needs-recovery';job.error=error instanceof Error?error.message:String(error);}
     } else {
       const found=jobs.find((item)=>item.id===input.id);if(!found||!found.taskId)throw new Error('无法查询此任务，请先核对网站记录。');job=found;
       if(input.action==='cancel'&&job.status!=='queued')throw new Error('只有仍在排队的任务可以申请取消。');

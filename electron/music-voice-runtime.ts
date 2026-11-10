@@ -4,7 +4,7 @@ import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fetchWithTimeout } from '../src/shared/http';
 import { musicVoiceRequestSchema, type MusicVoiceRequest, type MusicVoiceState, type MusicVoiceTask } from '../src/shared/music-voice';
 import { MUSIC_MODELS, type MusicModel } from '../src/shared/music-lab';
-import { normalizeMusicApiBaseUrl } from '../src/shared/music-provider';
+import { isMusicRequestNotSent, normalizeMusicApiBaseUrl, wrapMusicNetworkError } from '../src/shared/music-provider';
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown) => typeof value === 'string' ? value : '';
@@ -63,7 +63,7 @@ export function createMusicVoiceRuntime(options: { dataDir: string; storageDirec
         const value: unknown = await response.json(); const result = object(value);
         if (!response.ok || result.success === false || result.error || (result.code !== undefined && ![0,200,'0','200'].includes(result.code as number | string))) throw new Error(text(result.message ?? result.error) || `服务请求失败（${response.status}）`);
         return value;
-      } catch (error) { throw new Error(redact(error instanceof Error ? error.message : String(error))); }
+      } catch (error) { throw wrapMusicNetworkError(error, redact(error instanceof Error ? error.message : String(error))); }
     }
     const merge = (voice: MusicVoiceTask) => { const previous = state.voices.find((item) => item.id === voice.id); state.voices = [{ ...previous, ...voice, error: redact(voice.error), name: voice.name || previous?.name || `人声 ${voice.id}` }, ...state.voices.filter((item) => item.id !== voice.id)]; };
     if (input.action === 'validate') {
@@ -89,7 +89,10 @@ export function createMusicVoiceRuntime(options: { dataDir: string; storageDirec
         job.requestId = text(data.client_request_id ?? envelope.client_request_id);
         job.status = job.requestId ? 'processing' : 'needs-recovery';
         if (!job.requestId) job.error = '未返回查询编号，请在网站核对本次提交。';
-      } catch (error) { job.status = 'needs-recovery'; job.error = error instanceof Error ? error.message : String(error); }
+      } catch (error) {
+        // G-5: a proxy failure before sending means nothing was submitted; only unknown outcomes need recovery.
+        job.status = isMusicRequestNotSent(error) ? 'failed' : 'needs-recovery'; job.error = error instanceof Error ? error.message : String(error);
+      }
     } else {
       const voice = state.voices.find((item) => item.id === input.taskId); if (!voice) throw new Error('找不到本地人声任务。');
       if (input.action === 'delete') { await request(`/api/voice/clone/voices/${input.taskId}`, 'DELETE'); state.voices = state.voices.filter((item) => item.id !== input.taskId); }

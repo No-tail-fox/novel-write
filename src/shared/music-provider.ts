@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from './http';
+import { NetworkPolicyError } from './network-policy';
 import type { MusicMediaFormat } from './music-lab';
 import { musicOperationInputSchema, type MusicOperationInput, type MusicOperationSource, type MusicRemoteHistoryPage } from './music-operations';
 import {
@@ -34,9 +35,33 @@ export interface MusicProvider {
   download(songId: string, format: MusicMediaFormat, model: MusicModel): Promise<Uint8Array>;
 }
 export class MusicProviderError extends Error {
-  constructor(message: string, public readonly definitive = false, public readonly retryAfterMs?: number) {
-    super(message); this.name = 'MusicProviderError';
+  /** Network-layer code kept through the wrapper (e.g. `NETWORK_PROXY_FAILED`) so failure classification stays exact. */
+  public readonly code?: string;
+  constructor(message: string, public readonly definitive = false, public readonly retryAfterMs?: number, details: { code?: string; cause?: unknown } = {}) {
+    super(message, details.cause === undefined ? undefined : { cause: details.cause }); this.name = 'MusicProviderError';
+    if (details.code) this.code = details.code;
   }
+}
+
+/**
+ * G-5: wrap a transport failure without losing what the classifier needs. Only network-policy errors
+ * (already credential-free) are kept as `cause`; other errors contribute just their string `code`.
+ * A proxy that was unreachable, refused the CONNECT or is misconfigured means the request never left
+ * this machine, so the failure is definitive (no cloud job exists, safe to resubmit) — unlike a drop
+ * after sending, which stays non-definitive ("needs recovery, do not resubmit").
+ */
+export function wrapMusicNetworkError(error: unknown, message: string): MusicProviderError {
+  const raw = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  const code = typeof raw === 'string' ? raw : undefined;
+  return new MusicProviderError(message, isMusicRequestNotSent(error), undefined, {
+    code, cause: error instanceof NetworkPolicyError ? error : undefined,
+  });
+}
+
+/** True only when the music request provably never reached the service (proxy-side failure before sending). */
+export function isMusicRequestNotSent(error: unknown): boolean {
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && /^NETWORK_PROXY_(?:FAILED|INVALID|UNSUPPORTED)$/u.test(code);
 }
 
 /** Reject error documents and mislabeled media before creating a reusable local asset. */
@@ -155,7 +180,7 @@ export function createMusicProvider(options: { apiKey: string; baseUrl?: string;
       return response;
     } catch (error) {
       if (error instanceof MusicProviderError) throw error;
-      throw new MusicProviderError(redact(`MUSIC_NETWORK_ERROR: ${error instanceof Error ? error.message : '音乐服务连接失败。'}`));
+      throw wrapMusicNetworkError(error, redact(`MUSIC_NETWORK_ERROR: ${error instanceof Error ? error.message : '音乐服务连接失败。'}`));
     }
   }
   async function json(path: string, body?: unknown): Promise<{ value: unknown; response: Response }> {
