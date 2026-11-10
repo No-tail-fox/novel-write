@@ -28,6 +28,7 @@ import { applyMotionComicPlan as applyGeneratedMotionComicPlan, isUntouchedMotio
 import { MotionComicPlanningService } from './motion-comic-planning-service';
 import { MotionComicScriptBatchService } from './motion-comic-script-batch-service';
 import { VoxProductionService, voxInputHash } from './vox-production-service';
+import { createVoxProductionReceipt, voxReceiptBeforeHash, voxReceiptContentHash } from './vox-production-receipt';
 import { createVoxProductionRuntime } from './vox-production-runtime';
 import { createLemoUpstreamOperations, preflightLemoUpstream } from './lemo-upstream-production';
 import { createFfmpegLemoAssetMedia } from './lemo-upstream-assets';
@@ -3223,7 +3224,7 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
       await mkdir(directory, { recursive: true });
       const current = await load(id);
       const temp = join(directory, `result-${randomUUID()}.tmp`);
-      await writeFile(temp, JSON.stringify({ before: current, result }), 'utf8');
+      await writeFile(temp, JSON.stringify(createVoxProductionReceipt(current, result)), 'utf8');
       await rename(temp, join(directory, 'result.json'));
     },
     recover: async (id, node) => {
@@ -3231,8 +3232,8 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
       const file = join(taskWorkDir(task), 'vox-production', node.requestId!, 'result.json');
       try {
         const receipt = JSON.parse(await readFile(file, 'utf8'));
-        const stripJournal = (d: EditorialCollagePipelineData) => { const { productionRun: _run, updatedAt: _revision, ...content } = d; return content; };
-        if (voxInputHash(stripJournal(receipt.before)) !== voxInputHash(stripJournal(await load(id)))) return undefined;
+        // v2 receipts carry only beforeHash; legacy receipts with a full `before` document still resume.
+        if (voxReceiptBeforeHash(receipt) !== voxReceiptContentHash(await load(id))) return undefined;
         return parseEditorialCollagePipelineData(receipt.result);
       } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
     },
@@ -6865,9 +6866,9 @@ async function shutdownApplication(): Promise<void> {
 }
 
 if (isPrimaryInstance) {
-  // G-1: a model switch is never silent; results also carry modelUsed/modelFallbacks.
-  onLlmModelFallback((event) => console.warn('[llm-fallback]', `${event.name}: ${event.from} → ${event.to} (${event.label})`));
   app.whenReady().then(async () => {
+    // G-1: a model switch is never silent; results also carry modelUsed/modelFallbacks.
+    onLlmModelFallback((event) => console.warn('[llm-fallback]', `${event.name}: ${event.from} → ${event.to} (${event.label})`));
     setDefaultPythonRuntimeAppRoot(app.getAppPath());
     registerHtmlVideoMediaProtocol();
     artifactStorage = new ArtifactStorage(app.getPath('userData'), appDataDir());

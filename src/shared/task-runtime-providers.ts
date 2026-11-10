@@ -30,6 +30,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AppConfig, BackgroundRemovalMetadata, CustomStyle, HtmlVideoAsset, HtmlVideoJobConfig, HtmlVideoScenePlan, HtmlVideoVoiceClip, ImagePrompt, StoryboardScene, Task } from './types';
 import { createConfiguredJsonLlm, type ConfiguredJsonLlm, type LlmMessage } from './llm-provider';
+import { createFileLlmReceiptJournal, withLlmReceiptJournal } from './llm-receipt-ledger';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, getConfiguredImageConcurrency } from './media-providers';
 
 type ImageGenerator = NonNullable<RunTaskOptions['generateImages']>;
@@ -146,7 +147,8 @@ export function createTaskRuntimeProviders(
   if (task?.projectModels) config = projectRuntimeConfig(config, task.projectModels);
   const llm = task?.llmProfileId ? config.llmProfiles.find((profile) => profile.id === task.llmProfileId) ?? config.llm : config.llm;
   return {
-    llm: hasUsableLlm(llm) ? createConfiguredJsonLlm(llm) : undefined,
+    // G-3: template and HTML routes journal every paid LLM call in the task work dir.
+    llm: hasUsableLlm(llm) ? withLlmReceiptJournal(createConfiguredJsonLlm(llm), llm, createFileLlmReceiptJournal(join(workDir, 'llm-receipts.jsonl'))) : undefined,
     generateImages: hasUsableImageProvider(config) ? createConfiguredImageGenerator(config, workDir) : undefined,
     imageConcurrency: getConfiguredImageConcurrency(config),
     synthesizeNarration: hasUsableTtsProvider(config, task?.ttsProvider) ? createConfiguredNarrationSynthesizer(config, workDir) : undefined,

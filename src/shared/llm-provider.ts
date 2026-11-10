@@ -196,6 +196,18 @@ function withModelFallback<F>(config: LlmConfig, build: (config: LlmConfig) => F
   return run as unknown as F;
 }
 
+/** Report every fallback that produced a result of `llm` to a task-scoped observer (U-4). */
+export function observeLlmFallbacks(llm: ConfiguredJsonLlm, observer: (event: LlmModelFallbackEvent) => void): ConfiguredJsonLlm {
+  const run = async (request: unknown) => {
+    const result = await (llm.run as unknown as (input: unknown) => Promise<LlmJsonResult>)(request);
+    for (const event of result.modelFallbacks ?? []) {
+      try { observer(event); } catch { /* observers must not break generation */ }
+    }
+    return result;
+  };
+  return { protocol: llm.protocol, run } as unknown as ConfiguredJsonLlm;
+}
+
 export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
   if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: withModelFallback(config, createResponsesJsonLlm) };
   return isAnthropicLlmConfig(config)

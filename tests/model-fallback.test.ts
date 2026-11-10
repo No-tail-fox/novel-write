@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { describeModelCapabilities, inferModelCapabilities, modelMeetsTier, normalizeFallbackModels } from '../src/shared/model-capabilities';
-import { createConfiguredJsonLlm, createConfiguredTextLlm, onLlmModelFallback, type LlmModelFallbackEvent } from '../src/shared/llm-provider';
+import { createConfiguredJsonLlm, createConfiguredTextLlm, observeLlmFallbacks, onLlmModelFallback, type ConfiguredJsonLlm, type LlmModelFallbackEvent } from '../src/shared/llm-provider';
+import { summarizeErrorMessage } from '../src/components/ErrorDetails';
+import { readFileSync } from 'node:fs';
 import { normalizeAppConfig } from '../src/shared/config-utils';
 import { defaultConfig } from '@shared/config';
 
@@ -69,5 +71,26 @@ describe('LLM model fallback chain (G-1)', () => {
     const result = await createConfiguredTextLlm(config).run({ step: 1, name: 't', messages: [{ role: 'user', content: 'x' }] });
     expect(result.text).toBe('hello');
     expect(result).not.toHaveProperty('modelUsed');
+  });
+});
+
+describe('model fallback visibility (U-4)', () => {
+  it('reports fallbacks to a task-scoped observer and leaves the result intact', async () => {
+    const event: LlmModelFallbackEvent = { step: 3, name: 'storyboard', from: 'a', to: 'b', reason: 'model-not-found', label: 'x', at: 'now' };
+    const inner = { protocol: 'openai', run: async () => ({ json: { ok: 1 }, raw: '', requestId: null, modelUsed: 'b', modelFallbacks: [event] }) } as unknown as ConfiguredJsonLlm;
+    const seen: LlmModelFallbackEvent[] = [];
+    const result = await observeLlmFallbacks(inner, (item) => seen.push(item)).run({ step: 3, name: 'storyboard', messages: [] });
+    expect(result).toMatchObject({ json: { ok: 1 }, modelUsed: 'b' });
+    expect(seen).toEqual([event]);
+  });
+
+  it('records model_fallback task events in the template runner', () => {
+    const source = readFileSync('src/shared/runner.ts', 'utf8');
+    expect(source).toContain('observeLlmFallbacks(options.llm');
+    expect(source).toContain("emit('model_fallback'");
+  });
+
+  it('summarises an orphaned paid request for the user', () => {
+    expect(summarizeErrorMessage('PROVIDER_RESULT_UNKNOWN: 「改写」上次已发出请求')).toBe('上次请求结果未知，请核对服务商记录后再重试');
   });
 });

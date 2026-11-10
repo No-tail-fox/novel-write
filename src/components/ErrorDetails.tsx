@@ -22,6 +22,7 @@ export function summarizeErrorMessage(message: string): string {
   if (/LEMO_EDIT_LIMIT/iu.test(normalized)) return '已达单文件创作批次上限，工程已保存';
   if (/LEMO_EDIT_(?:INVALID|STALE|SIZE|EMPTY|NOOP|AMBIGUOUS)/iu.test(normalized)) return '本批修改未通过检查，上一批源码已保留';
   if (/LEMO_FILE_TRUNCATED/iu.test(normalized)) return '代码输出预算耗尽，已保留不完整源码';
+  if (/PROVIDER_RESULT_UNKNOWN/u.test(normalized)) return '上次请求结果未知，请核对服务商记录后再重试';
   // Network failures name the host and the system code, so the user knows which service dropped.
   const host = [...normalized.matchAll(/\b((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?\b/giu)].map(m => m[1])
     .find(name => !/\.(?:html?|m?js|cjs|json|png|jpe?g|webp|gif|mp[34]|wav|ts|tsx|md|txt|css|py|exe|dll|log)$/iu.test(name));

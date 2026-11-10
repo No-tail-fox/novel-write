@@ -12,7 +12,7 @@ import { characterCoverDisplayRules, isCharacterStoryTrack, resolveCoverDisplayM
 import { writeJianyingDraft, type SceneAsset, type WriteJianyingDraftOptions, type WriteJianyingDraftInput } from './draft';
 import { runStoryboundMediaSidecar, type StoryboundSidecarInput, type StoryboundSidecarResult } from './storybound-sidecar';
 import type { FileDatabase } from './storage';
-import type { AnthropicMessagesJsonRequest, ConfiguredJsonLlm, LlmJsonResult, LlmMessage, OpenAiCompatibleJsonRequest } from './llm-provider';
+import { observeLlmFallbacks, type AnthropicMessagesJsonRequest, type ConfiguredJsonLlm, type LlmJsonResult, type LlmMessage, type OpenAiCompatibleJsonRequest } from './llm-provider';
 import { buildStoryboundReviewSystemPrompt, formatAiSourceContext } from './research';
 import { countVisibleCharacters, normalizeStoryboardSceneCount, normalizeTargetLength, storyboardSceneCountRange, targetWordCountRange, type TargetWordCountRange } from './content-metrics';
 import { appendDraftImageCompositionGuidance, draftImageCompositionGuidance, normalizeDraftTemplate } from './templates';
@@ -369,6 +369,12 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     });
     options.onEvent?.(event);
   };
+  if (options.llm) {
+    // U-4: a model switch is recorded in the task history, not only in the console.
+    options = { ...options, llm: observeLlmFallbacks(options.llm, (fallback) => {
+      void emit('model_fallback', fallback.step, 'LLM', `「${fallback.name}」${fallback.label}，已改用备选模型 ${fallback.to}（原模型 ${fallback.from}）`, fallback).catch(() => undefined);
+    }) };
+  }
 
   const save = async () => {
     pipeline.version = 2;
