@@ -2496,7 +2496,9 @@ describe('product shell ui', () => {
 
   it('keeps prompt editing to a single content entry while preserving image seed pools', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
-    const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
+    // Row mappers live in storage-rows.ts since the O-5 split.
+    const storage = (await Promise.all(['../src/shared/storage.ts', '../src/shared/storage-rows.ts']
+      .map(path => readFile(new URL(path, import.meta.url), 'utf8')))).join('\n');
 
     for (const symbol of [
       'imageSeedPoolsJson',
