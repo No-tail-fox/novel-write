@@ -13,6 +13,7 @@ import {
   normalizeDraftTemplate,
 } from '@shared/templates';
 import { resolveOrdinaryTaskCoverTitle } from '@shared/ordinary-task-cover';
+import { DraftFontFamilyField } from '../src/features/templates/DraftTemplatesPage';
 
 describe('draft font selection', () => {
   it('offers grouped common Chinese font choices with a backward-compatible system default', () => {
@@ -109,17 +110,35 @@ describe('draft font selection', () => {
   });
 
   it('renders one accessible font selector for every draft text layer', async () => {
+    // The template editor (only mounted after a client-side "edit" click) places one field per text layer.
     const source = await readFile(new URL('../src/features/templates/DraftTemplatesPage.tsx', import.meta.url), 'utf8');
     expect(source.match(/<DraftFontFamilyField\b/gu)).toHaveLength(4);
-    for (const label of ['主标题字体', '副标题字体', '字幕字体', '免责声明字体']) {
-      expect(source).toContain(`aria-label={\`${'${layerLabel}'}字体\`}`);
-      expect(source).toContain(`layerLabel="${label.replace('字体', '')}"`);
+    for (const layer of ['主标题', '副标题', '字幕', '免责声明']) expect(source).toContain(`layerLabel="${layer}"`);
+
+    // Render the page's real font field for every layer: per-layer accessible name, the selected font previewed
+    // on the control, and every font option grouped and previewed in its own family.
+    const fieldMarkup = (layerLabel: string, value: (typeof draftFontFamilies)[number]) => renderToStaticMarkup(createElement(StoryDreamProvider, {
+      theme: 'light',
+      children: createElement(DraftFontFamilyField, { layerLabel, value, onChange: () => undefined }),
+    }));
+    const cssAttr = (family: string) => family.replace(/&/gu, '&amp;').replace(/"/gu, '&quot;');
+    for (const [layer, value] of [['主标题', '得意黑'], ['副标题', 'LXGWWenKai_Regular'], ['字幕', '宋体'], ['免责声明', 'system']] as const) {
+      const field = fieldMarkup(layer, value);
+      const select = field.match(/<select\b[^>]*>/u)?.[0] ?? '';
+      expect(select).toContain(`aria-label="${layer}字体"`);
+      // Fluent applies the field's style to the Select root that wraps the native control.
+      const selectRoot = field.match(/<span\b[^>]*class="fui-Select\b[^"]*"[^>]*>/u)?.[0] ?? '';
+      expect(selectRoot).toContain(`font-family:${cssAttr(draftFontCssFamily(value))}`);
+      expect(field).toMatch(/<label[^>]*>字体<\/label>/u);
+      const groups = [...field.matchAll(/<optgroup label="([^"]+)">([\s\S]*?)<\/optgroup>/gu)];
+      expect(groups.map((match) => match[1])).toEqual([...draftFontGroups]);
+      const renderedOptions = groups.flatMap(([, , body]) => [...body.matchAll(/<option ([^>]*)>([^<]*)<\/option>/gu)]);
+      expect(renderedOptions.map((match) => match[2])).toEqual(draftFontOptions.map((option) => option.label));
+      for (const [index, match] of renderedOptions.entries()) {
+        expect(match[1]).toContain(`value="${draftFontOptions[index].value}"`);
+        expect(match[1]).toContain(`font-family:${cssAttr(draftFontOptions[index].cssFamily)}`);
+      }
     }
-    // The font selector now delegates grouping to the shared SelectField; verify the page wires every
-    // font option with its group and preview family, then render that exact option list to prove grouping.
-    const pageOptionsMapping = 'options={draftFontOptions.map((option) => ({ value: option.value, label: option.label, group: option.group, style: { fontFamily: option.cssFamily } }))}';
-    expect(source).toContain(pageOptionsMapping);
-    expect(source).toContain('style={{ fontFamily: draftFontCssFamily(value) }}');
 
     const options = draftFontOptions.map((option) => ({ value: option.value, label: option.label, group: option.group, style: { fontFamily: option.cssFamily } }));
     const html = renderToStaticMarkup(createElement(StoryDreamProvider, {

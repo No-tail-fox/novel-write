@@ -3,9 +3,14 @@ import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { productionNavItems, taskWorkspaceView } from '../src/app/navigation';
+import { routeLoaders } from '../src/app/route-registry';
 import { DirectorDeskWorkspace } from '../src/features/director-desk/DirectorDeskWorkspace';
+import { DirectorCopyAssist } from '../src/features/director-desk/DirectorProjectStart';
+import { EditorialCollagePage } from '../src/features/editorial-collage/EditorialCollagePage';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, EDITORIAL_STARTER_DURATIONS_MS } from '../src/shared/editorial-collage';
 import { planEditorialScript } from '../src/shared/editorial-script';
+import { SHELL_VIEWS } from '../src/shared/types';
+import { elementWithClass, fieldControl, markupButtons, markupText, openingTag } from './helpers/ssr-markup';
 
 // Server markup cannot mount a Fluent portal; render the inspector drawer inline
 // so the shot action footer is inspectable.
@@ -35,30 +40,30 @@ function enabledOpenOutputButtons(markup: string): string[] {
 
 describe('editorial collage workbench', () => {
   it('owns a dedicated route and routes task history back into the VOX workspace', async () => {
-    const [types, registry, routes, navigation, app] = await Promise.all([
-      source('src/shared/types.ts'),
-      source('src/app/route-registry.ts'),
+    const [routes, app] = await Promise.all([
       source('src/app/AppRoutes.tsx'),
-      source('src/app/navigation.ts'),
       source('src/app/App.tsx'),
     ]);
-    expect(types).toContain("'editorial-collage'");
-    expect(registry).toContain("'editorial-collage': loadEditorialCollagePage");
+    expect(SHELL_VIEWS).toContain('editorial-collage');
+    // The route lazily loads the VOX page itself (shared with 模板动画).
+    expect((await routeLoaders['editorial-collage']()).default).toBe(EditorialCollagePage);
+    expect((await routeLoaders['template-animation']()).default).toBe(EditorialCollagePage);
     expect(routes).toContain("activeView === 'editorial-collage'");
     // The VOX workspace is exposed in the production navigation as 创意动画 (renamed from “VOX 视频”).
     expect(productionNavItems.find((item) => item.view === 'editorial-collage')?.label).toBe('创意动画');
+    // History rows of editorial-collage tasks open the VOX workspace (or 模板动画 for template-routed projects).
     expect(taskWorkspaceView('editorial-collage')).toBe('editorial-collage');
-    expect(navigation).toContain("taskType === 'editorial-collage'");
+    expect(taskWorkspaceView('editorial-collage', 'lemo')).toBe('editorial-collage');
     expect(taskWorkspaceView('editorial-collage', 'template')).toBe('template-animation');
+    expect(taskWorkspaceView('story')).toBe('task-detail');
     // History hand-off opens the requested project in the VOX page for both production routes.
     expect(app).toContain("setRequestedEditorialCollageTaskId(targetView === 'editorial-collage' || targetView === 'template-animation' ? taskId : '')");
   });
 
   it('uses the shared Director Desk with real media, shot controls, generation queue, and persisted VOX edits', async () => {
-    const [page, workspace, start, css, shellCss] = await Promise.all([
+    const [page, workspace, css, shellCss] = await Promise.all([
       source('src/features/editorial-collage/EditorialCollagePage.tsx'),
       source('src/features/director-desk/DirectorDeskWorkspace.tsx'),
-      source('src/features/director-desk/DirectorProjectStart.tsx'),
       source('src/styles/features/director-desk.css'),
       source('src/styles/shell.css'),
     ]);
@@ -108,8 +113,15 @@ describe('editorial collage workbench', () => {
     expect(page).toContain('api.composeResearchCopy');
     expect(page).toContain('buildDirectorCopyAssistRequest');
     expect(page).toContain('<DirectorCopyAssist');
-    expect(start).toContain('AI 创作');
-    expect(start).toContain('AI 修改');
+    // The copy-assist toolbar offers both AI actions, disabled while a request runs or nothing can be acted on.
+    const assistButtons = (props: Partial<ComponentProps<typeof DirectorCopyAssist>>) => markupButtons(renderToStaticMarkup(createElement(DirectorCopyAssist, {
+      activeIntent: null, canCreate: true, canRevise: true, onCreate: () => {}, onRevise: () => {}, ...props,
+    })));
+    expect(assistButtons({}).map(markupText)).toEqual(['AI 创作', 'AI 修改']);
+    expect(assistButtons({}).every((button) => !/\sdisabled=""/u.test(openingTag(button)))).toBe(true);
+    expect(assistButtons({ activeIntent: 'create' }).map(markupText)).toEqual(['创作中', 'AI 修改']);
+    expect(assistButtons({ activeIntent: 'create' }).every((button) => /\sdisabled=""/u.test(openingTag(button)))).toBe(true);
+    expect(assistButtons({ canRevise: false }).map((button) => /\sdisabled=""/u.test(openingTag(button)))).toEqual([false, true]);
     expect(page).toContain('api.openTaskOutputDirectory');
     // Shot generation is still gated on history capacity, now sized by the shot's real image count.
     expect(page).toContain('const count = shot ? editorialImageGenerationCount(shot, documentRef.current ?? undefined) : 1;');
@@ -134,32 +146,48 @@ describe('editorial collage workbench', () => {
     expect(page).toContain('onRestoreVersion={restoreVersion}');
     expect(page).not.toContain('onGenerateShot={() => undefined}');
     expect(page).toContain('onSave={() => void saveProject()}');
-    expect(workspace).toContain('label="保存版本"');
-    expect(workspace).toContain('生成当前镜头');
-    expect(workspace).toContain('retryGeneration');
+    // Save is a labelled header action that is only enabled while there are unsaved edits.
+    const saveButton = (markup: string) => markupButtons(markup).find((button) => openingTag(button).includes('aria-label="保存版本"')) ?? '';
+    expect(/\sdisabled=""/u.test(openingTag(saveButton(directorDeskMarkup({}))))).toBe(true);
+    expect(/\sdisabled=""/u.test(openingTag(saveButton(directorDeskMarkup({ dirty: true }))))).toBe(false);
+    const comic = directorDeskMarkup({ mode: 'motion-comic', projects: [{ id: 'p1', title: '拉萨旧城的回声', meta: '3 镜头' }], onSelectProject: () => {} });
+    expect(markupButtons(comic).some((button) => markupText(button) === '生成当前镜头')).toBe(true);
+    // A failed provider job surfaces its error with a retry action; the render action is reachable when wired.
+    const failedJob = directorDeskMarkup({ mode: 'motion-comic', jobs: [{ id: 'job-1', shotId: 'shot', kind: 'shot-image', title: '镜头 1', status: 'failed', progress: 0, cost: 0, provider: 'GPT Image', error: '接口超时' }] });
+    const failedItem = elementWithClass(failedJob, 'director-queue-item', 'div') ?? '';
+    expect(failedItem).toContain('is-failed');
+    expect(markupText(failedJob)).toContain('接口超时');
+    expect(markupButtons(failedJob).some((button) => markupText(button) === '重试')).toBe(true);
+    expect(markupButtons(directorDeskMarkup({ mode: 'motion-comic' })).some((button) => markupText(button) === '重试')).toBe(false);
+    // The voice generator itself lives in the 声音与字幕 inspector tab, which needs a client-side tab switch.
     expect(workspace).toContain('generateVoice');
-    expect(workspace).toContain('renderProject');
-    expect(workspace).toContain('openOutput');
+    const renderAction = (markup: string) => markupButtons(markup).find((button) => markupText(button) === '生成成片') ?? '';
+    expect(/\sdisabled=""/u.test(openingTag(renderAction(directorDeskMarkup({ mode: 'motion-comic', onRender: async () => {} }))))).toBe(false);
+    expect(/\sdisabled=""/u.test(openingTag(renderAction(directorDeskMarkup({ mode: 'motion-comic', onRender: async () => {}, rendering: true }))))).toBe(true);
     // Without a rendered output the shared desk offers no enabled “打开导出目录” action;
     // once the page reports an output, it becomes reachable.
     const onOpenOutput = async () => {};
     expect(enabledOpenOutputButtons(directorDeskMarkup({ onOpenOutput }))).toHaveLength(0);
     expect(enabledOpenOutputButtons(directorDeskMarkup({ mode: 'motion-comic', onOpenOutput }))).toHaveLength(0);
     expect(enabledOpenOutputButtons(directorDeskMarkup({ mode: 'motion-comic', onOpenOutput, outputUrl: 'file:///I:/output/final.mp4' }))).toHaveLength(1);
-    expect(workspace).toContain('disabled={!hasOutput || outputBusy}');
-    expect(workspace).toContain('director-media-preview');
-    expect(workspace).toContain('director-preview-title');
-    expect(workspace).toContain('data-preview-ratio={ratio}');
-    expect(workspace).toContain('selectedShot.title');
-    expect(workspace).toContain('director-preview-copy');
-    expect(workspace).toContain('label="播放进度"');
-    expect(workspace).toContain('onProviderProfileChange');
-    expect(workspace).toContain('director-filmstrip');
-    expect(workspace).toContain('director-asset-grid');
-    expect(workspace).toContain('director-queue-panel');
-    expect(workspace).toContain('director-project-menu');
-    expect(workspace).toContain('director-shot-search');
-    expect(workspace).toContain('director-asset-search');
+    // The VOX preview shows the selected shot's title over a ratio-aware frame with copy and a scrubber.
+    const voxPreview = directorDeskMarkup({ ratio: '9:16', shots: [{ id: 'shot', index: 1, title: '布达拉宫的清晨', scene: '', durationMs: 3000, framing: '', characterLabel: '', prompt: '', motionPrompt: '', subtitle: '' }] });
+    expect(voxPreview).toMatch(/class="director-media-preview[^"]*"[^>]*data-preview-ratio="9:16"|data-preview-ratio="9:16"[^>]*class="director-media-preview/u);
+    expect(voxPreview).toContain('<div class="director-preview-title">布达拉宫的清晨</div>');
+    expect(voxPreview).toContain('class="director-preview-copy');
+    expect(fieldControl(voxPreview, '播放进度')).toBeDefined();
+    // Image provider switching is offered only when the page wires a handler.
+    expect(fieldControl(directorDeskMarkup({ mode: 'motion-comic', onProviderProfileChange: () => {} }), '图片生成服务')).toBeDefined();
+    expect(fieldControl(directorDeskMarkup({ mode: 'motion-comic' }), '图片生成服务')).toBeUndefined();
+    // Core desk surfaces: filmstrip, asset grid, generation queue, project switcher and both searches.
+    expect(comic).toContain('class="director-filmstrip"');
+    expect(comic).toContain('class="director-asset-grid');
+    expect(comic).toMatch(/<section class="director-queue-panel" aria-label="生成队列">/u);
+    expect(markupButtons(comic).some((button) => openingTag(button).includes('director-project-menu') && button.includes('拉萨旧城的回声'))).toBe(true);
+    expect(fieldControl(comic, '搜索镜头')).toBeDefined();
+    expect(fieldControl(comic, '搜索素材')).toBeDefined();
+    expect(fieldControl(voxPreview, '搜索素材')).toBeDefined();
+    // The version list is part of the 版本 inspector tab (client-side tab switch).
     expect(workspace).toContain('director-version-list');
     // Structure controls render as labelled shot/beat toolbars when the page supplies handlers,
     // and disappear when it does not (music-video projects).
@@ -186,7 +214,7 @@ describe('editorial collage workbench', () => {
     expect(workspace).not.toContain('onChange={() => undefined}');
     expect(workspace).not.toContain('item.progress + 9');
     expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) clamp(396px, calc(100vw - 1044px), 492px)');
-    expect(workspace).toContain('director-status-footer');
+    expect(elementWithClass(withoutStructureHandlers, 'director-status-footer', 'footer')).toBeDefined();
     expect(css).toContain('grid-template-rows: 56px minmax(0, 1fr) 38px');
     expect(css).not.toContain('min-width: 1000px');
     expect(css).toContain('.director-media-preview');

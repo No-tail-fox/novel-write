@@ -706,18 +706,35 @@ describe('managed history paths', () => {
     expect((await reopened.getImageLabRecordDetail(linkedImage.id))?.managedStorageKey).toBeNull();
     await reopened.close();
 
+    // Interrupted-task recovery is owned by the database itself: reopening pauses every active running task
+    // and records the interrupted step for retry, leaving explicit retry steps and non-running tasks alone.
+    const recoveryFile = join(appDataDir, 'recovery.db');
+    const before = await FileDatabase.open(recoveryFile);
+    const interrupted = await before.createTask({ title: 'Interrupted', inputText: 'interrupted' });
+    await before.updateTask(interrupted.id, { status: 'running', currentStep: 3 });
+    const explicitStep = await before.createTask({ title: 'Explicit retry step', inputText: 'explicit' });
+    await before.updateTask(explicitStep.id, { status: 'running', currentStep: 4, failedStep: 2, retryFromStep: 2, errorMessage: '旧错误' });
+    const failed = await before.createTask({ title: 'Failed', inputText: 'failed' });
+    await before.updateTask(failed.id, { status: 'failed', currentStep: 2, errorMessage: '生成失败' });
+    const completed = await before.createTask({ title: 'Completed', inputText: 'completed' });
+    await before.updateTask(completed.id, { status: 'completed', currentStep: 5 });
+    await before.close();
+    const after = await FileDatabase.open(recoveryFile);
+    expect(await after.getTaskDetail(interrupted.id)).toMatchObject({
+      status: 'paused', currentStep: 3, failedStep: 3, retryFromStep: 3, errorMessage: '任务在上次运行时中断，请重试。',
+    });
+    expect(await after.getTaskDetail(explicitStep.id)).toMatchObject({ status: 'paused', failedStep: 2, retryFromStep: 2, errorMessage: '旧错误' });
+    expect(await after.getTaskDetail(failed.id)).toMatchObject({ status: 'failed', failedStep: null, retryFromStep: null, errorMessage: '生成失败' });
+    expect((await after.getTaskDetail(completed.id))?.status).toBe('completed');
+    await after.close();
+
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-    const storage = await readFile(new URL('../src/shared/storage.ts', import.meta.url), 'utf8');
     const getDatabase = main.slice(main.indexOf('async function getDb'), main.indexOf('async function getConfigService'));
     const ensureDraftPath = main.slice(
       main.indexOf('async function ensureRuntimeJianyingDraftPath'),
       main.indexOf('async function createWindow'),
     );
     const createWindow = main.slice(main.indexOf('async function createWindow'), main.indexOf('async function runSmokeHandshake'));
-    const storageRecovery = storage.slice(
-      storage.indexOf('private recoverInterruptedTasks()'),
-      storage.indexOf('private seedShellDefaults()'),
-    );
     expect(getDatabase.indexOf('backfillLegacyManagedHistoryStorage')).toBeGreaterThan(getDatabase.indexOf('FileDatabase.open'));
     expect(getDatabase).toContain('database.listMissingManagedStorageKeys()');
     expect(getDatabase).not.toContain('database.getState()');
@@ -726,11 +743,6 @@ describe('managed history paths', () => {
     expect(ensureDraftPath).toContain('metadata.config.jianying.draftPath');
     expect(createWindow).not.toContain('pauseStaleRunningTasks');
     expect(main).not.toContain('async function pauseStaleRunningTasks');
-    expect(storage).toContain('this.recoverInterruptedTasks();');
-    expect(storageRecovery).toContain("status = 'paused'");
-    expect(storageRecovery).toContain('failed_step = COALESCE(failed_step, current_step)');
-    expect(storageRecovery).toContain('retry_from_step = COALESCE(retry_from_step, current_step)');
-    expect(storageRecovery).toContain("WHERE status = 'running'");
   });
 
   it('reaps pending managed quarantines before publishing the startup database instance', async () => {

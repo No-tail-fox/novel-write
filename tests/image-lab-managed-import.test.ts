@@ -2,13 +2,16 @@ import { access, mkdir, readFile, readdir, rename, stat, truncate, writeFile } f
 import { createTestTempDirectory as mkdtemp, createTestDirectoryLink as symlink, removeTestTempDirectories } from './helpers/test-temp-directories';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   MAX_IMAGE_LAB_IMPORT_BYTES,
   importManagedImageLabRecord,
 } from '../electron/image-lab-import';
 import { FileDatabase } from '../src/shared/storage';
+import { makeFallbackApi } from '../src/app/browser-fallback';
 import { ipcInputSchemas } from '../src/shared/ipc-contract';
+import type { StoryDreamApi } from '../src/shared/storydream-api';
+import type { ImageLabImportInput } from '../src/shared/types';
 
 const cleanupRoots: string[] = [];
 const validPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlNsAAAAASUVORK5CYII=', 'base64');
@@ -105,12 +108,7 @@ describe('managed image lab import', () => {
       expect(ipcInputSchemas['image-lab:add-record'].safeParse({ ...valid, ...field }).success).toBe(false);
     }
 
-    const [main, apiContract, preload, inspection] = await Promise.all([
-      readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
-      readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
-      readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8'),
-      readFile(new URL('../electron/imported-image-inspection.ts', import.meta.url), 'utf8'),
-    ]);
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const handler = main.slice(
       main.indexOf("trustedHandle('image-lab:add-record'"),
       main.indexOf("trustedHandle('voice-lab:generate'"),
@@ -123,11 +121,35 @@ describe('managed image lab import', () => {
     // Decoding moved to a shared inspector that still validates via nativeImage before the copy is accepted.
     expect(main).toContain("import { inspectImportedImage } from './imported-image-inspection';");
     expect(handler).toContain('inspectImage: inspectImportedImage');
-    expect(inspection).toContain('nativeImage.createFromBuffer');
     expect(handler).toContain('writeDestination: writeWindowsManagedFile');
     expect(handler).not.toContain('database.addImageLabRecord(input)');
-    expect(apiContract).toContain('addImageLabRecord: (input: ImageLabImportInput)');
-    expect(preload).toContain('addImageLabRecord: (input: ImageLabImportInput)');
+
+    // Drive the inspector and the preload bridge with a fake Electron runtime.
+    const createFromBuffer = vi.fn((_bytes: Buffer) => ({ isEmpty: () => false, getSize: () => ({ width: 640, height: 360 }) }));
+    const invoke = vi.fn(async (_channel: string, _input?: unknown) => ({ ok: true, value: null }));
+    vi.resetModules();
+    vi.doMock('electron', () => ({
+      nativeImage: { createFromBuffer },
+      contextBridge: { exposeInMainWorld: vi.fn() },
+      ipcRenderer: { invoke, on: vi.fn(), off: vi.fn() },
+    }));
+    try {
+      const { inspectImportedImage } = await import('../electron/imported-image-inspection');
+      // The inspector decodes the exact imported bytes with nativeImage and reports its dimensions.
+      await expect(inspectImportedImage(validPng)).resolves.toEqual({ width: 640, height: 360 });
+      expect(createFromBuffer).toHaveBeenCalledTimes(1);
+      expect(createFromBuffer.mock.calls[0][0]).toBe(validPng);
+      // The renderer bridge forwards the import input unchanged to the trusted add-record channel.
+      const { storyDreamApi } = await import('../electron/preload');
+      expectTypeOf<Parameters<StoryDreamApi['addImageLabRecord']>[0]>().toEqualTypeOf<ImageLabImportInput>();
+      expectTypeOf<Parameters<typeof storyDreamApi.addImageLabRecord>[0]>().toEqualTypeOf<ImageLabImportInput>();
+      const imported = importInput('D:/selected/source.png');
+      await expect(storyDreamApi.addImageLabRecord(imported)).resolves.toBeNull();
+      expect(invoke).toHaveBeenCalledWith('image-lab:add-record', imported);
+    } finally {
+      vi.doUnmock('electron');
+      vi.resetModules();
+    }
   });
 
   it('copies from the validated open file when the selected path is replaced before copying', async () => {
@@ -233,10 +255,16 @@ describe('managed image lab import', () => {
   });
 
   it('makes browser preview reject managed imports instead of retaining an external path', async () => {
-    const fallback = await readFile(new URL('../src/app/browser-fallback.ts', import.meta.url), 'utf8');
-    const handler = fallback.slice(fallback.indexOf('async addImageLabRecord'), fallback.indexOf('async saveAccount'));
-    expect(handler).toContain("throw new Error('IMAGE_LAB_IMPORT_REQUIRES_ELECTRON");
-    expect(handler).not.toContain('imagePath: input.imagePath');
+    const setState = vi.fn();
+    const api = makeFallbackApi(setState);
+    const before = await api.getState();
+    setState.mockClear();
+    await expect(api.addImageLabRecord(importInput('D:/selected/source.png'))).rejects.toThrow(/^IMAGE_LAB_IMPORT_REQUIRES_ELECTRON/u);
+    // Nothing is persisted: the external path never becomes an image-lab record.
+    expect(setState).not.toHaveBeenCalled();
+    const after = await api.getState();
+    expect(after.imageLabRecords).toEqual(before.imageLabRecords);
+    expect(JSON.stringify(after)).not.toContain('D:/selected/source.png');
   });
 
   it('blocks permanent deletion while a managed image is referenced by a motion comic project', async () => {

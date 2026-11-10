@@ -205,11 +205,14 @@ describe('editorial task operations surfaces', () => {
   });
 
   it('adds deterministic real Electron task-operation scenarios', async () => {
-    const [qa, main, css] = await Promise.all([
+    const [qa, mainOnly, seed, css] = await Promise.all([
       source('../electron/editorial-qa.ts'),
       source('../electron/main.ts'),
+      // QA fixture seeding moved out of main.ts (O-5).
+      source('../electron/editorial-qa-seed.ts'),
       source('../src/styles.css'),
     ]);
+    const main = `${mainOnly}\n${seed}`;
     expect(qa).toContain("'task-operations'");
     expect(qa).toContain("{ id: 'queue-operations-desktop'");
     expect(qa).toContain("{ id: 'history-operations-desktop'");

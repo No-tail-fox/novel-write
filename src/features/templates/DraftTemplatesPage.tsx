@@ -674,7 +674,7 @@ function AnimationPresetPicker({
   );
 }
 
-function DraftFontFamilyField({ layerLabel, value, onChange }: { layerLabel: string; value: DraftFontFamily; onChange: (value: DraftFontFamily) => void }) {
+export function DraftFontFamilyField({ layerLabel, value, onChange }: { layerLabel: string; value: DraftFontFamily; onChange: (value: DraftFontFamily) => void }) {
   return (
     <SelectField label="字体"
         aria-label={`${layerLabel}字体`}

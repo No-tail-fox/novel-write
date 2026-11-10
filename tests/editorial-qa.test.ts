@@ -1,7 +1,14 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { createElement, type ComponentProps } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+import { AppShell } from '../src/app/AppShell';
+import { initialState } from '../src/app/app-state';
+import { newTaskPrimaryAction } from '../src/app/navigation';
+import { IconButton, StoryDreamProvider } from '../src/ui';
+import { storyDreamTheme } from '../src/ui/theme';
 import {
   editorialQaCaptureRequirement,
   editorialQaCaptureIds,
@@ -11,6 +18,39 @@ import {
   resolveEditorialQaConfig,
   type EditorialQaEnvironment,
 } from '../electron/editorial-qa';
+
+function renderEditorialShell(theme: 'light' | 'dark'): string {
+  const props: ComponentProps<typeof AppShell> = {
+    activeView: 'editorial-collage', returnView: 'projects', state: { ...initialState, ui: { ...initialState.ui, theme } },
+    saveTone: 'saved', isBrowserPreview: false, busy: false, feedback: null,
+    navigate: vi.fn(), openTaskDetail: vi.fn(), minimizeWindow: vi.fn(),
+    toggleMaximizeWindow: vi.fn(), closeWindow: vi.fn(), toggleTheme: vi.fn(),
+    updateStatus: null, updateBusy: false, updateAction: null,
+    openAnnouncements: vi.fn(), checkForUpdate: vi.fn(), downloadUpdate: vi.fn(),
+    installUpdate: vi.fn(), children: null,
+  };
+  return renderToStaticMarkup(createElement(StoryDreamProvider, { theme, children: createElement(AppShell, props) }));
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const luminance = (hex: string) => {
+    const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+      .map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+// QA fixture seeding moved from main.ts to editorial-qa-seed.ts (O-5); seed first so slices that end at createWindow still work.
+async function readMainSources(): Promise<string> {
+  const { readFile } = await import('node:fs/promises');
+  const [seed, main] = await Promise.all([
+    readFile(new URL('../electron/editorial-qa-seed.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+  ]);
+  return `${seed}\n${main}`;
+}
 
 describe('editorial Electron QA configuration', () => {
   it('requires the complete QA environment and rejects smoke mode', () => {
@@ -192,7 +232,7 @@ describe('editorial Electron QA configuration', () => {
 
   it('captures truthful project status fixtures in the shell QA scope', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
-    const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const main = await readMainSources();
 
     expect(main).toContain("editorialQaConfig?.scope === 'shell'");
     expect(main).toContain('const sceneVideoScope =');
@@ -293,28 +333,37 @@ describe('editorial Electron QA configuration', () => {
   });
 
   it('keeps icon-only window controls discoverable and accent fills readable in both themes', async () => {
-    const shell = await (await import('node:fs/promises')).readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
-    const iconButton = await (await import('node:fs/promises')).readFile(new URL('../src/ui/IconButton.tsx', import.meta.url), 'utf8');
     const shellStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/shell.css', import.meta.url), 'utf8');
     const newTaskStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/features/new-task.css', import.meta.url), 'utf8');
-    const theme = await (await import('node:fs/promises')).readFile(new URL('../src/ui/theme.ts', import.meta.url), 'utf8');
     const redesignStyles = await (await import('node:fs/promises')).readFile(new URL('../src/styles/redesign.css', import.meta.url), 'utf8');
     const stylesEntry = await (await import('node:fs/promises')).readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-    for (const label of ['最小化', '最大化', '关闭']) {
-      expect(shell).toContain(`label="${label}"`);
+    // Every icon-only window control renders with the same accessible name and hover title.
+    for (const theme of ['light', 'dark'] as const) {
+      const shell = renderEditorialShell(theme);
+      const windowControls = shell.match(/<div[^>]*aria-label="窗体控制"[^>]*>[\s\S]*?<\/div>/u)?.[0] ?? '';
+      const controls = (windowControls.match(/<button\b[^>]*>/gu) ?? []).map((tag) => [tag.match(/aria-label="([^"]*)"/u)?.[1], tag.match(/title="([^"]*)"/u)?.[1]]);
+      expect(controls).toEqual([['最小化', '最小化'], ['最大化', '最大化'], ['关闭', '关闭']]);
     }
-    expect(iconButton).toContain('title = label');
-    expect(iconButton).toContain('aria-label={label} title={title}');
+    // IconButton defaults the title to the label but keeps an explicit title distinct from the accessible name.
+    const iconButtonTag = (props: { label: string; title?: string }) => renderToStaticMarkup(createElement(IconButton, { icon: createElement('span'), ...props })).match(/<button\b[^>]*>/u)?.[0] ?? '';
+    expect(iconButtonTag({ label: '刷新' })).toMatch(/aria-label="刷新"[^>]*title="刷新"|title="刷新"[^>]*aria-label="刷新"/u);
+    const titled = iconButtonTag({ label: '刷新', title: '刷新列表 (F5)' });
+    expect(titled).toContain('aria-label="刷新"');
+    expect(titled).toContain('title="刷新列表 (F5)"');
     // Accent-filled primary actions use the contrast foreground both in the base shell rule and in the
     // later-loaded redesign layer that restyles the non-Fluent buttons.
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button,\s*\.app-shell\[data-editorial-shell\] \.primary-action \{[^}]*?background: var\(--shell-accent\);[^}]*?color: var\(--shell-focus-contrast\);/u);
     expect(redesignStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.new-task-button:not\(\.fui-Button\),\s*\.app-shell\[data-editorial-shell\] \.primary-action:not\(\.fui-Button\) \{[^}]*?background: var\(--shell-accent\);[^}]*?color: var\(--shell-focus-contrast\);/u);
     expect(stylesEntry.indexOf("@import './styles/redesign.css';")).toBeGreaterThan(stylesEntry.indexOf("@import './styles/shell.css';"));
     expect(shellStyles).toMatch(/\.app-shell\[data-editorial-shell\] \.trial-activation-bar strong \{[\s\S]*?color: var\(--shell-text\);/u);
-    expect(theme).toContain("colorNeutralForegroundOnBrand: '#101214'");
-    expect(theme).toContain("colorNeutralForegroundOnBrand: '#ffffff'");
-    expect(theme).toContain('colorCompoundBrandForeground1:');
+    // Fluent brand fills get a readable on-brand foreground per theme, plus a compound brand foreground.
+    expect(storyDreamTheme('dark').colorNeutralForegroundOnBrand).toBe('#101214');
+    expect(storyDreamTheme('light').colorNeutralForegroundOnBrand).toBe('#ffffff');
+    for (const theme of ['dark', 'light'] as const) {
+      expect(storyDreamTheme(theme).colorCompoundBrandForeground1).toMatch(/^#[0-9a-f]{6}$/iu);
+      expect(contrastRatio(storyDreamTheme(theme).colorNeutralForegroundOnBrand, storyDreamTheme(theme).colorBrandBackground)).toBeGreaterThanOrEqual(4.5);
+    }
     expect(newTaskStyles).not.toMatch(/\.new-task-stage-tabs button\.active|\.new-task-source-actions button\.active|\.new-task-stage-panel \.segmented button\.selected/u);
     expect(newTaskStyles).toMatch(/\.new-task-summary-title small \{[\s\S]*?color: var\(--shell-accent-strong\);/u);
   });
@@ -413,7 +462,7 @@ describe('editorial Electron QA configuration', () => {
   it('renders and exercises the shared light-theme error summary in the real queue', async () => {
     const [source, main] = await Promise.all([
       (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8'),
-      (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readMainSources(),
     ]);
     const queueScenario = source.slice(
       source.indexOf("if (scenarioId === 'queue-operations-desktop')"),
@@ -437,7 +486,7 @@ describe('editorial Electron QA configuration', () => {
 
   it('records and gates the rendered HTML animation type in every History capture', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
-    const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    const main = await readMainSources();
     const htmlFixture = main.slice(
       main.indexOf('async function seedHtmlVideoEditorialQa'),
       main.indexOf('async function createWindow'),
@@ -466,7 +515,7 @@ describe('editorial Electron QA configuration', () => {
   it('gates the failed-image borrowing control and borrowed task-detail evidence', async () => {
     const [source, main] = await Promise.all([
       (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8'),
-      (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8'),
+      readMainSources(),
     ]);
 
     expect(source).toContain("document.querySelector('.new-task-borrow-toggle input')");
@@ -561,8 +610,7 @@ describe('editorial Electron QA configuration', () => {
   it('keeps the real Electron capture contract on native capturePage and deterministic matrices', async () => {
     const source = await (await import('node:fs/promises')).readFile(new URL('../electron/editorial-qa.ts', import.meta.url), 'utf8');
     const harness = await (await import('node:fs/promises')).readFile(new URL('../scripts/editorial-qa-electron.ts', import.meta.url), 'utf8');
-    const main = await (await import('node:fs/promises')).readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-    const shell = await (await import('node:fs/promises')).readFile(new URL('../src/app/AppShell.tsx', import.meta.url), 'utf8');
+    const main = await readMainSources();
     expect(harness).toContain('mkdtemp(join(tmpdir(), \'storydream-editorial-qa-\'))');
     expect(harness).toContain('STORYDREAM_QA_RUN_TOKEN');
     expect(harness).toContain('runBoundedProcess');
@@ -584,7 +632,10 @@ describe('editorial Electron QA configuration', () => {
     expect(main).toContain('backgroundThrottling: !editorialQaConfig');
     expect(main).toContain('captureEditorialQa');
     expect(main).toContain("editorialQaConfig?.scope !== 'workflow'");
-    expect(shell).toContain('data-nav-view={newTaskPrimaryAction.view}');
+    // The capture script targets the primary new-task action through its rendered data-nav-view hook.
+    const newTaskActions = (renderEditorialShell('dark').match(/<button\b[^>]*data-nav-view="new-task"[^>]*>/gu) ?? []);
+    expect(newTaskActions).toHaveLength(1);
+    expect(newTaskActions[0]).toContain(`aria-label="${newTaskPrimaryAction.label}"`);
     expect(source).toContain('await writeEditorialQaReport');
   });
 

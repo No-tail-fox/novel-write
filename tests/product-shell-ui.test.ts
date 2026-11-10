@@ -913,30 +913,26 @@ describe('product shell ui', () => {
   });
 
   it('groups standalone generation under the asset library while keeping inspiration separate', async () => {
-    const navigation = await navigationSourcePromise;
-    const { assetLabNavItems } = await import('../src/app/navigation');
-    const generationStart = navigation.indexOf('export const generationNavItems');
-    const assetStart = navigation.indexOf('export const assetLabNavItems');
-    const inspirationStart = navigation.indexOf('const inspirationNavItems');
-    const generationNav = navigation.slice(generationStart, assetStart);
-    const assetNav = navigation.slice(assetStart, inspirationStart);
-    const inspirationEnd = navigation.indexOf('export const templateSystemNavItems');
-    const inspirationNav = navigation.slice(inspirationStart, inspirationEnd);
+    const { assetLabNavItems, generationNavItems, primaryNavGroups } = await import('../src/app/navigation');
+    const generationViews = generationNavItems.map((item) => item.view);
+    const assetViews = assetLabNavItems.map((item) => item.view);
+    const inspirationViews = primaryNavGroups.find((group) => group.id === 'inspiration')?.items.map((item) => item.view) ?? [];
 
-    expect(assetNav).toContain("view: 'person-assets'");
-    expect(assetNav).toContain('...generationNavItems');
-    expect(assetLabNavItems.map((item) => item.view)).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab', 'music-lab']);
-    for (const view of ['image-lab', 'voice-lab', 'video-lab', 'music-lab']) {
-      expect(generationNav).toContain(`view: '${view}'`);
-    }
+    expect(generationViews).toEqual(['image-lab', 'voice-lab', 'video-lab', 'music-lab']);
+    // The asset library starts with the material library and ends with every standalone generator, in order.
+    expect(assetViews[0]).toBe('person-assets');
+    expect(assetViews.slice(-generationViews.length)).toEqual(generationViews);
+    expect(assetLabNavItems.slice(-generationNavItems.length)).toEqual(generationNavItems);
+    expect(assetViews).toEqual(['person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab', 'music-lab']);
     for (const view of ['music-mv', 'html-video', 'viral-analyzer', 'prompt-templates']) {
-      expect(assetNav).not.toContain(`view: '${view}'`);
+      expect(assetViews).not.toContain(view);
     }
 
     for (const view of ['hot-board', 'benchmark', 'book-selection', 'viral-analyzer']) {
-      expect(inspirationNav).toContain(`view: '${view}'`);
+      expect(inspirationViews).toContain(view);
+      expect(assetViews).not.toContain(view);
     }
-    expect(inspirationNav.indexOf("view: 'book-selection'")).toBeLessThan(inspirationNav.indexOf("view: 'viral-analyzer'"));
+    expect(inspirationViews.indexOf('book-selection')).toBeLessThan(inspirationViews.indexOf('viral-analyzer'));
   });
 
   it('exposes local book selection and person asset APIs through preload', async () => {
@@ -2537,8 +2533,7 @@ describe('product shell ui', () => {
 
   it('uses Chinese labels for prompt template types and variable insertion chips', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
-    const options = await editorialOptionsSourcePromise;
-    const promptSources = `${main}\n${options}`;
+    const { promptTemplateTypeLabels, promptTemplateVariableDefinitions } = await import('../src/shared/editorial-options');
     const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
     expect(main).toContain('promptTemplateTypeLabels');
@@ -2547,14 +2542,16 @@ describe('product shell ui', () => {
     expect(main).toContain('prompt-template-variable-chip');
     expect(css).toContain('.prompt-template-variable-chip');
 
-    for (const text of ['任务模板', '预审提示词', '改写提示词', '出图提示词', '原文素材', '联网资料', '预审结果', '改写正文', '额外要求']) {
-      expect(promptSources).toContain(text);
-    }
+    // Template types and insertable variables carry Chinese display labels.
+    expect(promptTemplateTypeLabels).toMatchObject({ task: '任务模板', review: '预审提示词', rewrite: '改写提示词', 'image-prompt': '出图提示词' });
+    const variableLabels = Object.fromEntries(promptTemplateVariableDefinitions.map((item) => [item.key, item.label]));
+    expect(variableLabels).toMatchObject({ inputText: '原文素材', sourceContext: '联网资料', reviewedText: '预审结果', rewrittenCopy: '改写正文', extraRequirements: '额外要求' });
+    for (const item of promptTemplateVariableDefinitions) expect(item.label, item.key).toMatch(/\p{Script=Han}/u);
     expect(main).not.toContain('>{`{{${item}}}`}</button>');
   });
 
   it('documents the canonical StoryDream runtime variables in the template editor', async () => {
-    const options = await editorialOptionsSourcePromise;
+    const { promptTemplateVariableDefinitions, promptTemplateVariables } = await import('../src/shared/editorial-options');
 
     for (const key of [
       'taskTemplateName',
@@ -2572,17 +2569,21 @@ describe('product shell ui', () => {
       'characterCard',
       'imageSeedPoolsJson',
     ]) {
-      expect(options).toContain(`key: '${key}'`);
+      expect(promptTemplateVariables).toContain(key);
+      const definition = promptTemplateVariableDefinitions.find((item) => item.key === key);
+      expect(definition?.description, key).toBeTruthy();
+      expect(definition?.scopes.length, key).toBeGreaterThan(0);
     }
+    expect(new Set(promptTemplateVariables).size).toBe(promptTemplateVariables.length);
   });
 
   it('keeps targetLength and storyboard scene count out of visible prompt variable scopes', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/templates/PromptTemplateEditor.tsx');
-    const options = await editorialOptionsSourcePromise;
+    const { promptTemplateVariables } = await import('../src/shared/editorial-options');
 
-    expect(options).not.toContain("key: 'targetLength'");
-    expect(options).not.toContain("key: 'targetLengthRange'");
-    expect(options).not.toContain("key: 'storyboardSceneCount'");
+    for (const hidden of ['targetLength', 'targetLengthRange', 'storyboardSceneCount']) {
+      expect(promptTemplateVariables).not.toContain(hidden);
+    }
     expect(main).toContain("step.type === 'review' || step.type === 'rewrite'");
     expect(main).toContain('<PromptVariablePicker');
     expect(main).toContain('scope={step.type}');
@@ -2858,7 +2859,9 @@ describe('product shell ui', () => {
   it('replaces a generated scene image with managed video while keeping image restore available', async () => {
     const main = (await rendererSourcesPromise).requiredFile('src/features/tasks/TaskArtifactPreview.tsx');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
-    const electronMain = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    // QA fixture seeding moved out of main.ts into editorial-qa-seed.ts (O-5).
+    const electronMain = (await Promise.all(['../electron/main.ts', '../electron/editorial-qa-seed.ts']
+      .map(path => readFile(new URL(path, import.meta.url), 'utf8')))).join('\n');
 
     for (const method of ['listSceneVideoLibrary', 'replaceTaskSceneVideo', 'restoreTaskSceneImage', 'updateTaskSceneVideoTrim', 'getTaskMediaUrl']) {
       expect(`${main}\n${preload}`).toContain(method);
@@ -3302,7 +3305,7 @@ describe('product shell ui', () => {
     const managers = sources.requiredFile('src/features/settings/ProviderProfileManagers.tsx');
     const controls = sources.requiredFile('src/features/settings/settings-controls.tsx');
     const settingsOwners = `${managers}\n${controls}`;
-    const options = await editorialOptionsSourcePromise;
+    const { volcengineVoicePresets } = await import('../src/shared/editorial-options');
 
     expect(controls).toContain('volcengineVoicePresets');
     expect(managers).toContain("options={['v3', 'legacy']}");
@@ -3323,7 +3326,9 @@ describe('product shell ui', () => {
     expect(managers).toContain('默认音色');
     expect(managers).toContain('自定义 voice_type');
     expect(managers).toContain('voice_type');
-    expect(options).toContain('zh_female_vv_uranus_bigtts');
+    // The default Doubao 2.0 voice stays selectable among the Volcengine presets.
+    expect(volcengineVoicePresets.map((preset) => preset[1])).toContain('zh_female_vv_uranus_bigtts');
+    expect(volcengineVoicePresets.find((preset) => preset[1] === 'zh_female_vv_uranus_bigtts')?.[0]).toBe('Vivi 2.0');
   });
 
   it('uses provider-specific task voice defaults in the new task form', async () => {

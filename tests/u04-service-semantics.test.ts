@@ -1,24 +1,42 @@
 import { readFile } from 'node:fs/promises';
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { initialState } from '../src/app/app-state';
 import { WorkspaceNavigationProvider } from '../src/app/workspace-navigation';
+import { DirectorDeskWorkspace } from '../src/features/director-desk/DirectorDeskWorkspace';
 import { MusicMvPage } from '../src/features/music-mv/MusicMvPage';
 import type { StoryDreamApi } from '../src/shared/storydream-api';
 import { StoryDreamProvider } from '../src/ui/StoryDreamProvider';
+import { fieldControl, markupText } from './helpers/ssr-markup';
+
+// Server markup cannot mount a Fluent portal; render the inspector drawer inline.
+vi.mock('../src/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/ui')>(),
+  Drawer: ({ children }: { children: ReactNode }) => createElement('aside', { 'data-ssr-inspector': true }, children),
+}));
 
 async function source(path: string): Promise<string> {
   return readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 }
 
 describe('U04 service terminology and capability semantics', () => {
-  it('keeps voice selection in the voice inspector instead of a fake single-option dropdown', async () => {
-    const workspace = await source('src/features/director-desk/DirectorDeskWorkspace.tsx');
-    expect(workspace).not.toContain('李立宏（男声）');
-    expect(workspace).toContain('跟随旁白设置');
-    expect(workspace).toContain('请在“旁白与字幕”中选择真实音色');
-    expect(workspace).toContain('TextField label="音色" value={voice} readOnly');
+  it('keeps voice selection in the voice inspector instead of a fake single-option dropdown', () => {
+    const markup = renderToStaticMarkup(createElement(DirectorDeskWorkspace, {
+      mode: 'motion-comic', projectTitle: '雨夜来信', projectMeta: '', episodeTitle: '第 1 集', stageLabel: '镜头生成',
+      selectedShotId: 'shot', dirty: false, providerConnected: true,
+      shots: [{ id: 'shot', index: 1, title: '镜头', scene: '', durationMs: 3000, framing: '', characterLabel: '', prompt: '', motionPrompt: '', subtitle: '' }],
+      onSelectShot: () => {}, onUpdateShot: () => {}, onSave: () => {},
+    }));
+    // The generation inspector shows a read-only "音色" field that defers to the narration settings…
+    const voiceField = fieldControl(markup, '音色');
+    expect(voiceField).toBeDefined();
+    expect(voiceField).toMatch(/^<input\b/u);
+    expect(voiceField).toContain('readOnly=""');
+    expect(voiceField).toContain('value="跟随旁白设置"');
+    expect(markupText(markup)).toContain('请在“旁白与字幕”中选择真实音色');
+    // …and never offers a hard-coded celebrity voice.
+    expect(markup.includes('李立宏（男声）')).toBe(false);
   });
 
   it('blocks image profiles that cannot support the workflow before saving them', async () => {

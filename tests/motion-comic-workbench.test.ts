@@ -3,6 +3,14 @@ import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { DirectorDeskWorkspace } from '../src/features/director-desk/DirectorDeskWorkspace';
+import { productionNavItems, taskWorkspaceView } from '../src/app/navigation';
+import { routeLoaders } from '../src/app/route-registry';
+import { DirectorCopyAssist } from '../src/features/director-desk/DirectorProjectStart';
+import { MotionComicPage } from '../src/features/motion-comic/MotionComicPage';
+import { MotionComicReferenceEditor } from '../src/features/motion-comic/MotionComicReferenceEditor';
+import type { ProductionAssetVersion } from '../src/shared/production-workflow';
+import { SHELL_VIEWS } from '../src/shared/types';
+import { elementWithClass, fieldControl, markupButtons, markupText, openingTag } from './helpers/ssr-markup';
 
 // Server markup cannot mount a Fluent portal; render the inspector drawer inline
 // so the shot action footer is inspectable.
@@ -31,23 +39,21 @@ function openOutputButtons(markup: string): string[] {
 
 describe('motion comic workbench', () => {
   it('owns an independent route and history handoff', async () => {
-    const [types, registry, routes, navigation, app] = await Promise.all([
-      source('src/shared/types.ts'), source('src/app/route-registry.ts'), source('src/app/AppRoutes.tsx'),
-      source('src/app/navigation.ts'), source('src/app/App.tsx'),
-    ]);
-    expect(types).toContain("'motion-comic'");
-    expect(registry).toContain("'motion-comic': loadMotionComicPage");
+    const [routes, app] = await Promise.all([source('src/app/AppRoutes.tsx'), source('src/app/App.tsx')]);
+    expect(SHELL_VIEWS).toContain('motion-comic');
+    expect((await routeLoaders['motion-comic']()).default).toBe(MotionComicPage);
     expect(routes).toContain("activeView === 'motion-comic'");
-    expect(navigation).toContain("view: 'motion-comic', label: 'AI 漫剧'");
-    expect(navigation).toContain("taskType === 'motion-comic'");
+    expect(productionNavItems.find((item) => item.view === 'motion-comic')?.label).toBe('AI 漫剧');
+    // History rows of motion-comic tasks open the AI 漫剧 workspace regardless of the production route hint.
+    expect(taskWorkspaceView('motion-comic')).toBe('motion-comic');
+    expect(taskWorkspaceView('motion-comic', 'template')).toBe('motion-comic');
     expect(app).toContain("setRequestedMotionComicTaskId(targetView === 'motion-comic' ? taskId : '')");
   });
 
   it('uses the shared Director Desk for shot production while preserving AI 漫剧 create/save ownership', async () => {
-    const [page, workspace, start, css, shellCss] = await Promise.all([
+    const [page, workspace, css, shellCss] = await Promise.all([
       source('src/features/motion-comic/MotionComicPage.tsx'),
       source('src/features/director-desk/DirectorDeskWorkspace.tsx'),
-      source('src/features/director-desk/DirectorProjectStart.tsx'),
       source('src/styles/features/director-desk.css'),
       source('src/styles/shell.css'),
     ]);
@@ -76,8 +82,9 @@ describe('motion comic workbench', () => {
     expect(page).toContain('api.composeResearchCopy');
     expect(page).toContain('buildDirectorCopyAssistRequest');
     expect(page).toContain('<DirectorCopyAssist');
-    expect(start).toContain('AI 创作');
-    expect(start).toContain('AI 修改');
+    const assist = markupButtons(renderToStaticMarkup(createElement(DirectorCopyAssist, { activeIntent: 'revise', canCreate: true, canRevise: true, onCreate: () => {}, onRevise: () => {} })));
+    expect(assist.map(markupText)).toEqual(['AI 创作', '修改中']);
+    expect(assist.every((button) => /\sdisabled=""/u.test(openingTag(button)))).toBe(true);
     expect(page).toContain('api.openTaskOutputDirectory');
     expect(page).toContain('onGenerateShot={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateShot(shotId))}');
     expect(page).toContain('onNewProject={startCreate}');
@@ -93,19 +100,27 @@ describe('motion comic workbench', () => {
     expect(page).toContain('个角色造型');
     expect(page).not.toContain('onGenerateShot={() => undefined}');
     expect(page).toContain('onSave={() => void saveProject()}');
-    expect(workspace).toContain('label="保存版本"');
-    expect(workspace).toContain('生成当前镜头');
-    expect(workspace).toContain('director-shot-list');
+    // Render the AI 漫剧 desk: labelled save, per-shot generation, shot list, preview copy and scrubber,
+    // project-scoped provider switcher, asset grid and generation queue.
+    const desk = directorDeskMarkup({ dirty: true, onProviderProfileChange: () => {}, projects: [{ id: 'p1', title: '雨夜来信', meta: '第 1 集' }], onSelectProject: () => {} });
+    const saveHeader = markupButtons(desk).find((button) => openingTag(button).includes('aria-label="保存版本"'));
+    expect(saveHeader).toBeDefined();
+    expect(/\sdisabled=""/u.test(openingTag(saveHeader ?? ''))).toBe(false);
+    expect(markupButtons(desk).some((button) => markupText(button) === '生成当前镜头')).toBe(true);
+    expect(desk).toContain('class="director-shot-list');
     expect(workspace).toContain('director-preview-title');
-    expect(workspace).toContain('director-preview-copy');
-    expect(workspace).toContain('label="播放进度"');
-    expect(workspace).toContain('onProviderProfileChange');
-    expect(workspace).toContain('director-asset-grid');
-    expect(workspace).toContain('director-queue-panel');
+    expect(desk).toContain('class="director-preview-copy');
+    expect(fieldControl(desk, '播放进度')).toBeDefined();
+    expect(fieldControl(desk, '图片生成服务')).toBeDefined();
+    expect(fieldControl(directorDeskMarkup({}), '图片生成服务')).toBeUndefined();
+    expect(desk).toContain('class="director-asset-grid');
+    expect(desk).toMatch(/<section class="director-queue-panel" aria-label="生成队列">/u);
     expect(css).toContain('.director-copy-assist');
+    // Voice generation lives in the 声音与字幕 inspector tab (client-side tab switch, not SSR-reachable).
     expect(workspace).toContain('generateVoice');
-    expect(workspace).toContain('renderProject');
-    expect(workspace).toContain('openOutput');
+    const renderAction = (markup: string) => markupButtons(markup).find((button) => markupText(button) === '生成成片') ?? '';
+    expect(/\sdisabled=""/u.test(openingTag(renderAction(directorDeskMarkup({ onRender: async () => {} }))))).toBe(false);
+    expect(/\sdisabled=""/u.test(openingTag(renderAction(directorDeskMarkup({ onRender: async () => {}, rendering: true }))))).toBe(true);
     // The open-output control stays disabled until a rendered output exists
     // (either a playable URL or a persisted output flagged by the page).
     const onOpenOutput = async () => {};
@@ -122,12 +137,17 @@ describe('motion comic workbench', () => {
     expect(css).toContain('grid-template-columns: 274px minmax(0, 1fr) clamp(396px, calc(100vw - 1044px), 492px)');
     expect(css).toContain('.director-episode-row .sd-button__content');
     expect(css).toContain('flex: 0 0 auto');
-    expect(workspace).toContain('director-status-footer');
-    expect(workspace).toContain('director-project-menu');
-    expect(workspace).toContain('director-shot-search');
-    expect(workspace).toContain('director-asset-search');
+    expect(elementWithClass(desk, 'director-status-footer', 'footer')).toBeDefined();
+    expect(markupButtons(desk).some((button) => openingTag(button).includes('director-project-menu') && button.includes('雨夜来信'))).toBe(true);
+    expect(fieldControl(desk, '搜索镜头')).toBeDefined();
+    expect(fieldControl(desk, '搜索素材')).toBeDefined();
+    // The version list belongs to the 版本 inspector tab (client-side tab switch).
     expect(workspace).toContain('director-version-list');
-    expect(workspace).toContain("role={statusError ? 'alert' : undefined}");
+    // Errors reported by the page are announced as an alert in the header; normal status is not.
+    const headerMessage = (markup: string) => markup.match(/<span class="director-header-message"[^>]*>/u)?.[0] ?? '';
+    expect(headerMessage(directorDeskMarkup({ errorMessage: '保存失败：磁盘已满' }))).toContain('role="alert"');
+    expect(directorDeskMarkup({ errorMessage: '保存失败：磁盘已满' })).toContain('>保存失败：磁盘已满</span>');
+    expect(headerMessage(directorDeskMarkup({}))).not.toContain('role=');
     expect(workspace).not.toContain('onChange={() => undefined}');
     expect(workspace).not.toContain('item.progress + 9');
     expect(css).toContain('grid-template-rows: 56px minmax(0, 1fr) 38px');
@@ -144,7 +164,28 @@ describe('motion comic workbench', () => {
     ]);
     expect(page).toContain('MotionComicReferenceEditor');
     for (const label of ['导入参考图', '导入新版本']) expect(page).toContain(label);
-    for (const label of ['固定此版本', '取消固定', '缺少参考图', '文件不可用']) expect(reference).toContain(label);
+    // Render the reference editor in its missing / unfixed / fixed states.
+    const version = (id: string, localPath?: string): ProductionAssetVersion => ({ id, assetId: 'hero', kind: 'image', localPath, createdAt: '2026-10-20T08:00:00.000Z' });
+    const referenceMarkup = (versions: ProductionAssetVersion[], fixedVersionId?: string) => renderToStaticMarkup(createElement(MotionComicReferenceEditor, {
+      label: '林雨', versions, fixedVersionId, busy: false, active: true, feedback: null,
+      importControl: createElement('span', null, '导入参考图'), onSetFixed: () => {}, onImageStatus: () => {},
+    }));
+    const missing = referenceMarkup([]);
+    expect(missing).toContain('data-motion-comic-reference="missing"');
+    expect(markupText(missing)).toContain('缺少参考图');
+    // An unfixed version can only be fixed after its file has been verified readable; a version without a file reports it.
+    const unfixed = referenceMarkup([version('v1', 'I:/refs/v1.png'), version('v2')]);
+    expect(unfixed).toContain('data-motion-comic-reference="unfixed"');
+    const fixButton = markupButtons(unfixed).find((button) => markupText(button) === '固定此版本');
+    expect(fixButton).toBeDefined();
+    expect(/\sdisabled=""/u.test(openingTag(fixButton ?? ''))).toBe(true);
+    expect(markupText(unfixed)).toContain('文件不可用');
+    // The fixed version offers an explicit un-fix action instead of the fix action.
+    const fixed = referenceMarkup([version('v1', 'I:/refs/v1.png'), version('v2', 'I:/refs/v2.png')], 'v1');
+    expect(fixed).toContain('data-motion-comic-reference="fixed"');
+    expect(markupButtons(fixed).some((button) => openingTag(button).includes('aria-label="取消固定参考版本"'))).toBe(true);
+    expect(markupButtons(fixed).some((button) => markupText(button) === '固定此版本')).toBe(false);
+    // Click handlers cannot be fired through server markup.
     expect(reference).toContain('onSetFixed(preview.id)');
     expect(reference).toContain('onSetFixed(null)');
     expect(page).toContain('imageLabRecordIdFromMutation(imported)');

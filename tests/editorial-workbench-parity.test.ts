@@ -1,7 +1,13 @@
 import { readFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
 import { sidebarNavItems } from '../src/app/navigation';
+import { HistoryPage } from '../src/features/tasks/HistoryPage';
+import type { StoryDreamApi } from '../src/shared/storydream-api';
+import type { HistoryFamily } from '../src/shared/types';
 import { SHELL_VIEWS } from '../src/shared/types';
+import { StoryDreamProvider } from '../src/ui/StoryDreamProvider';
 import { HTML_VIDEO_CONTROL_FIELDS } from '../src/shared/html-video-control-manifest';
 import {
   CUSTOM_COVER_TEMPLATE_FIELDS,
@@ -9,6 +15,29 @@ import {
   MINIMAX_CLONE_VOICE_FIELDS,
 } from '../src/shared/editorial-data-contracts';
 import { approvedConceptVisibleCopy, approvedEditorialInventories } from './fixtures/editorial-workbench-parity';
+
+// HistoryPage starts on the task family and only switches families after a select change event, which
+// server markup cannot dispatch. Seed the initial family state instead (all other state is untouched).
+const historyFamilySeed = vi.hoisted(() => ({ family: undefined as string | undefined }));
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  const useState = ((initial: unknown) => actual.useState(initial === 'task' && historyFamilySeed.family ? historyFamilySeed.family : initial)) as typeof actual.useState;
+  return { ...actual, default: { ...actual, useState }, useState };
+});
+
+function historyMarkup(family?: Exclude<HistoryFamily, 'task'>): string {
+  const pending = () => new Promise<never>(() => {});
+  const api = { listTasks: pending, listViralAnalyses: pending, listImageLabRecords: pending, listVoiceLabRecords: pending } as unknown as StoryDreamApi;
+  historyFamilySeed.family = family;
+  try {
+    return renderToStaticMarkup(createElement(StoryDreamProvider, {
+      theme: 'dark',
+      children: createElement(HistoryPage, { api, applyState: () => {}, openTaskDetail: () => {}, isTombstoned: () => false, familyEpochs: {} }),
+    }));
+  } finally {
+    historyFamilySeed.family = undefined;
+  }
+}
 
 describe('editorial workbench functional parity inventory', () => {
   it('matches every independently approved value inventory exactly', async () => {
@@ -54,14 +83,22 @@ describe('editorial workbench functional parity inventory', () => {
   });
 
   it('preserves the accepted task-history copy while adding other history families', async () => {
-    const [history, css] = await Promise.all([
-      readFile(new URL('../src/features/tasks/HistoryPage.tsx', import.meta.url), 'utf8'),
-      readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8'),
-    ]);
-    expect(history).toContain("placeholder={family === 'task' ? '搜索任务标题' : '搜索记录'}");
-    expect(history).toContain("family === 'task' ? ['任务', '类型', '当前状态', '进度', '更新时间', '操作']");
-    expect(history).toContain("['记录', '状态', '详情', '创建时间', '操作']");
-    expect(history).toContain('className="task-operations-view history-page"');
+    const css = await readFile(new URL('../src/styles/features/task-operations.css', import.meta.url), 'utf8');
+    const columns = (markup: string) => [...markup.matchAll(/<span role="columnheader">([^<]*)<\/span>/gu)].map((match) => match[1]);
+    const searchPlaceholder = (markup: string) => markup.match(/<input\b[^>]*placeholder="([^"]*)"/u)?.[1];
+    // Task family (the default view): accepted task copy and columns.
+    const task = historyMarkup();
+    expect(task).toMatch(/<section class="task-operations-view history-page" data-task-operations="history" data-history-family="task">/u);
+    expect(searchPlaceholder(task)).toBe('搜索任务标题');
+    expect(columns(task)).toEqual(['任务', '类型', '当前状态', '进度', '更新时间', '操作']);
+    // Every other history family uses the generic record copy and columns.
+    for (const family of ['viral-analysis', 'image-lab', 'voice-lab'] as const) {
+      const markup = historyMarkup(family);
+      expect(markup).toContain(`data-history-family="${family}"`);
+      expect(markup).toContain('class="task-operations-view history-page"');
+      expect(searchPlaceholder(markup)).toBe('搜索记录');
+      expect(columns(markup)).toEqual(['记录', '状态', '详情', '创建时间', '操作']);
+    }
     expect(css).toMatch(/\.history-page\[data-task-operations="history"\] \.table-head,[\s\S]*?grid-template-columns:[\s\S]*?minmax\(180px, auto\)/u);
     expect(css).toMatch(/\.history-page\[data-task-operations="history"\] \.row-actions[\s\S]*?flex-wrap:\s*nowrap/u);
   });
