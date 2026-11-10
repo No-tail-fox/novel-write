@@ -5,6 +5,7 @@ import { NetworkPolicyError, readJsonBounded, readTextBounded, type NetworkFetch
 import { llmEndpoint, resolveLlmProtocol, type LlmProtocol } from './llm-protocol';
 import { LlmTextStream } from './llm-text-stream';
 import { LLM_RESPONSE_MAX_BYTES } from './llm-response-limits';
+import { parseRetryAfterMs } from './provider-failure';
 import type { NetworkFetchOptions } from './network-policy';
 
 export type LlmRole = 'system' | 'user' | 'assistant';
@@ -109,7 +110,13 @@ interface AnthropicContentPart {
   input?: unknown;
 }
 
-const TRANSIENT_LLM_STATUS_CODES = new Set([429, 500, 502, 503, 504, 529]);
+// G-2: 521-523 mean the gateway never reached the model (safe); 524 stays unknown and is not resent.
+const TRANSIENT_LLM_STATUS_CODES = new Set([429, 500, 502, 503, 504, 521, 522, 523, 529]);
+const isTransientLlmStatus = (status: number) => TRANSIENT_LLM_STATUS_CODES.has(status);
+/** Fixed schedule, but never sooner than the provider's Retry-After (capped at 60 s). */
+function llmRetryDelay(attempt: number, response?: Response): number {
+  return Math.max(retryDelayForAttempt(attempt), parseRetryAfterMs(response?.headers.get('retry-after')) ?? 0);
+}
 const LLM_RETRY_DELAYS_MS = [500, 1500];
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096;
@@ -405,10 +412,10 @@ async function fetchLlmJsonWithRetries(endpoint: string, config: LlmConfig, requ
       },
       body: JSON.stringify(body),
     });
-    if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+    if (!isTransientLlmStatus(response.status) || attempt === maxAttempts) {
       return response;
     }
-    await sleepBeforeRetry(LLM_RETRY_DELAYS_MS[attempt - 1], request.signal, `LLM step ${request.step} ${request.name}`);
+    await sleepBeforeRetry(llmRetryDelay(attempt, response), request.signal, `LLM step ${request.step} ${request.name}`);
   }
   throw new Error('Unexpected LLM retry state.');
 }
@@ -430,10 +437,10 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
       },
       body: JSON.stringify(buildAnthropicRequestBody(config, request)),
     });
-    if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+    if (!isTransientLlmStatus(response.status) || attempt === maxAttempts) {
       return response;
     }
-    await sleepBeforeRetry(LLM_RETRY_DELAYS_MS[attempt - 1], request.signal, `LLM step ${request.step} ${request.name}`);
+    await sleepBeforeRetry(llmRetryDelay(attempt, response), request.signal, `LLM step ${request.step} ${request.name}`);
   }
   throw new Error('Unexpected LLM retry state.');
 }
@@ -441,6 +448,7 @@ async function fetchAnthropicJsonWithRetries(endpoint: string, config: LlmConfig
 async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, request: OpenAiCompatibleTextRequest, body = buildTextRequestBody(config, request), onResponseChunk?: NetworkFetchOptions['onResponseChunk']): Promise<Response> {
   const maxAttempts = textRequestMaxAttempts(request);
   let lastError: unknown = null;
+  let retryResponse: Response | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const response = await fetchWithTimeout(endpoint, {
@@ -457,16 +465,18 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
         },
         body: JSON.stringify(body),
       });
-      if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+      if (!isTransientLlmStatus(response.status) || attempt === maxAttempts) {
         return response;
       }
+      retryResponse = response;
     } catch (error) {
+      retryResponse = undefined;
       lastError = error;
       if (attempt === maxAttempts || request.signal?.aborted) {
         throw error;
       }
     }
-    await sleepBeforeRetry(retryDelayForAttempt(attempt), request.signal, `LLM step ${request.step} ${request.name}`);
+    await sleepBeforeRetry(llmRetryDelay(attempt, retryResponse), request.signal, `LLM step ${request.step} ${request.name}`);
   }
   if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
   throw new Error('Unexpected LLM retry state.');
@@ -475,6 +485,7 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
 async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig, request: AnthropicMessagesTextRequest, onResponseChunk?: NetworkFetchOptions['onResponseChunk']): Promise<Response> {
   const maxAttempts = textRequestMaxAttempts(request);
   let lastError: unknown = null;
+  let retryResponse: Response | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const response = await fetchWithTimeout(endpoint, {
@@ -492,16 +503,18 @@ async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig
         },
         body: JSON.stringify(buildAnthropicTextRequestBody(config, request)),
       });
-      if (!TRANSIENT_LLM_STATUS_CODES.has(response.status) || attempt === maxAttempts) {
+      if (!isTransientLlmStatus(response.status) || attempt === maxAttempts) {
         return response;
       }
+      retryResponse = response;
     } catch (error) {
+      retryResponse = undefined;
       lastError = error;
       if (attempt === maxAttempts || request.signal?.aborted) {
         throw error;
       }
     }
-    await sleepBeforeRetry(retryDelayForAttempt(attempt), request.signal, `LLM step ${request.step} ${request.name}`);
+    await sleepBeforeRetry(llmRetryDelay(attempt, retryResponse), request.signal, `LLM step ${request.step} ${request.name}`);
   }
   if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError));
   throw new Error('Unexpected LLM retry state.');

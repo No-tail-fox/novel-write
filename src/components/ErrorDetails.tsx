@@ -30,8 +30,6 @@ export function summarizeErrorMessage(message: string): string {
   const reset = normalized.match(/ECONNRESET|UND_ERR_SOCKET|ECONNREFUSED|EPIPE|ETIMEDOUT/iu)?.[0];
   if (reset) return host ? `与 ${host} 连接中断（${reset.toUpperCase()}）` : '网络连接中断';
   if (/ENOTFOUND|EAI_AGAIN/iu.test(normalized)) return host ? `服务域名解析失败：${host}` : '服务域名解析失败';
-  const gateway = normalized.match(/\b(?:HTTP|status|error)\s*\(?(52[0-4]|502|503|504)\)?/iu)?.[1];
-  if (gateway) return `${host ? host + ' ' : ''}上游网关错误 ${gateway}，结果可能未知`;
   if (/Image generation is not enabled for this group|分组未开通生图/iu.test(normalized)) return '图片服务分组未开通生图';
   if (/No available compatible accounts|No available channel for model\s|没有可用于模型.*上游账号或通道/iu.test(normalized)) {
     return '图片服务暂无可用账号';
@@ -42,6 +40,9 @@ export function summarizeErrorMessage(message: string): string {
   if (/Image provider.*\(400\)/iu.test(normalized) && isImageProviderTextOnlyResponse(normalized)) {
     return '图片服务未返回图片';
   }
+  // Generic gateway errors only after provider-specific explanations (e.g. 503 "no available channel").
+  const gateway = normalized.match(/\b(?:HTTP|status|error)\s*\(?(52[0-4]|502|503|504)\)?/iu)?.[1];
+  if (gateway) return `${host ? host + ' ' : ''}上游网关错误 ${gateway}，结果可能未知`;
   const imageTimeout = normalized.match(/Image provider (?:request|edit request|async submit|async poll) timed out after (\d+)ms/iu);
   if (imageTimeout) return `生图等待超时（${Number(imageTimeout[1]) / 1000} 秒）`;
   const imageApiStatus = normalized.match(/Image provider API error \((\d+)\)/i)?.[1];

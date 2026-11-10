@@ -5,9 +5,12 @@ import { isDefinitiveImageProviderFailure } from '@shared/image-provider-error';
 
 describe('image provider error presentation', () => {
   it.each([
-    ['连接 api.example 超时（UND_ERR_CONNECT_TIMEOUT）', '服务连接超时'],
+    // U-2: when a host is known the summary names it and the system code.
+    ['连接 api.example 超时（UND_ERR_CONNECT_TIMEOUT）', '与 api.example 服务连接超时（UND_ERR_CONNECT_TIMEOUT）'],
+    ['连接超时（UND_ERR_CONNECT_TIMEOUT）', '服务连接超时'],
     ['连接中断（UND_ERR_SOCKET）', '网络连接中断'],
-    ['无法解析 api.example（EAI_AGAIN）', '服务域名解析失败'],
+    ['无法解析 api.example（EAI_AGAIN）', '服务域名解析失败：api.example'],
+    ['域名解析失败（EAI_AGAIN）', '服务域名解析失败'],
   ])('identifies transport failures separately from generation deadlines', (message, expected) => {
     expect(summarizeErrorMessage(message)).toBe(expected);
     expect(isDefinitiveImageProviderFailure(message)).toBe(false);
