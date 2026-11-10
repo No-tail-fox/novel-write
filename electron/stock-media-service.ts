@@ -16,8 +16,8 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { basename, extname, join, resolve } from 'node:path';
+import { copyFile, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import { classifyProviderFailure } from '../src/shared/provider-failure';
 import { sanitizePersonName } from '../src/shared/person-assets';
@@ -39,6 +39,7 @@ import {
   stockMediaCancelRequestSchema,
   stockMediaDownloadRequestSchema,
   stockMediaFingerprint,
+  stockMediaImageLibrarySchema,
   stockMediaKeyMissingMessage,
   stockMediaSearchRequestSchema,
   isAllowedStockMediaUrl,
@@ -89,7 +90,7 @@ const CONTAINERS_BY_KIND: Record<StockMediaKind, readonly StockMediaContainer[]>
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const ITEM_CACHE_LIMIT = 1000;
 const MANIFEST_SUFFIX = '.source.json';
-const MANAGED_FILE_PATTERN = /^(?:pexels|pixabay)-(?:video|photo)-[0-9A-Za-z_-]{1,64}\.(?:mp4|mov|webm|jpg|png|webp)$/u;
+const MANAGED_FILE_PATTERN = /^(?:pexels|pixabay)-(?:video|photo)-[1-9][0-9]{0,19}\.(?:mp4|mov|webm|jpg|png|webp)$/u;
 const EARLY_CANCEL_LIMIT = 200;
 const CANCELLED_MESSAGES = { search: '已取消检索。', download: '已取消下载，未保存任何文件。' } as const;
 
@@ -103,13 +104,21 @@ interface InflightOperation {
   operation: 'search' | 'download';
   controller: AbortController;
   fingerprint?: string;
+  /** Set at the download commit point; afterwards cancel() no longer aborts it (files are being kept). */
+  committed?: boolean;
+}
+
+const LIBRARY_IMAGE_EXTENSIONS = new Set(['.jpg', '.png', '.webp']);
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
 const manifestSchema = z.object({
   schemaVersion: z.literal(1),
   provider: z.enum(STOCK_MEDIA_PROVIDERS),
   kind: z.enum(STOCK_MEDIA_KINDS),
-  id: z.string().regex(/^[0-9A-Za-z_-]{1,64}$/u),
+  id: z.string().regex(/^[1-9][0-9]{0,19}$/u),
   author: z.string(),
   authorUrl: z.string(),
   sourceUrl: z.string(),
@@ -186,11 +195,12 @@ export class StockMediaService {
     const fingerprint = 'requestId' in request ? undefined : stockMediaFingerprint(request);
     for (const [requestId, entry] of this.inflight) {
       const matches = 'requestId' in request ? requestId === request.requestId : entry.operation === 'download' && entry.fingerprint === fingerprint;
-      if (!matches || entry.controller.signal.aborted) continue;
+      if (!matches || entry.committed || entry.controller.signal.aborted) continue;
       entry.controller.abort(new StockMediaCancelReason());
       cancelledCount += 1;
     }
-    if (!cancelledCount && 'requestId' in request) {
+    // Remember only ids that have not reached the service yet (bounded FIFO); a known-but-committed id is not re-armed.
+    if (!cancelledCount && 'requestId' in request && !this.inflight.has(request.requestId)) {
       this.earlyCancelled.add(request.requestId);
       while (this.earlyCancelled.size > EARLY_CANCEL_LIMIT) {
         const oldest = this.earlyCancelled.values().next().value;
@@ -212,14 +222,16 @@ export class StockMediaService {
 
   async download(input: StockMediaDownloadRequest, signal?: AbortSignal): Promise<StockMediaDownloadResult | StockMediaCancelledResult> {
     const request = stockMediaDownloadRequestSchema.parse(input);
-    return this.track('download', request.requestId, stockMediaFingerprint(request), signal, combined => this.runDownload(request, combined));
+    return this.track('download', request.requestId, stockMediaFingerprint(request), signal, (combined, commit) => this.runDownload(request, combined, commit));
   }
 
   /**
    * Registers the operation for `cancel()`. A cancel() abort becomes a cancelled result; an abort of the caller's
-   * own signal keeps throwing its reason (unchanged contract for internal callers).
+   * own signal keeps throwing its reason (unchanged contract for internal callers). `commit()` marks the point after
+   * which files are kept: it throws if already aborted, and later cancels are ignored so a failure after it is
+   * reported as a real error instead of "已取消，未保存任何文件".
    */
-  private async track<T>(operation: InflightOperation['operation'], requestedId: string | undefined, fingerprint: string | undefined, signal: AbortSignal | undefined, run: (signal: AbortSignal) => Promise<T>): Promise<T | StockMediaCancelledResult> {
+  private async track<T>(operation: InflightOperation['operation'], requestedId: string | undefined, fingerprint: string | undefined, signal: AbortSignal | undefined, run: (signal: AbortSignal, commit: () => void) => Promise<T>): Promise<T | StockMediaCancelledResult> {
     const requestId = requestedId ?? randomUUID();
     const cancelled = (): StockMediaCancelledResult => ({ cancelled: true, operation, requestId, message: CANCELLED_MESSAGES[operation] });
     if (this.earlyCancelled.delete(requestId)) return cancelled();
@@ -227,10 +239,16 @@ export class StockMediaService {
     const controller = new AbortController();
     const entry: InflightOperation = { operation, controller, ...(fingerprint ? { fingerprint } : {}) };
     this.inflight.set(requestId, entry);
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const commit = () => {
+      if (entry.committed) return;
+      combined.throwIfAborted();
+      entry.committed = true; // synchronous with the check: no cancel() can slip in between
+    };
     try {
-      return await run(signal ? AbortSignal.any([signal, controller.signal]) : controller.signal);
+      return await run(combined, commit);
     } catch (error) {
-      if (controller.signal.aborted && !signal?.aborted) return cancelled();
+      if (controller.signal.aborted && !signal?.aborted && !entry.committed) return cancelled();
       throw error;
     } finally {
       if (this.inflight.get(requestId) === entry) this.inflight.delete(requestId);
@@ -267,30 +285,57 @@ export class StockMediaService {
     return { ...parsed, items };
   }
 
-  private async runDownload(request: z.output<typeof stockMediaDownloadRequestSchema>, signal: AbortSignal): Promise<StockMediaDownloadResult> {
-    const managed = await this.downloadManaged(request, signal);
+  private async runDownload(request: z.output<typeof stockMediaDownloadRequestSchema>, signal: AbortSignal, commit: () => void): Promise<StockMediaDownloadResult> {
+    const managed = await this.downloadManaged(request, signal, commit);
     if (!request.imageLibrary) return managed;
-    // Last cancellation point: once the managed file is committed the library copy is quick and always completes.
-    signal.throwIfAborted();
-    return { ...managed, library: await this.placeInImageLibrary(managed, request.imageLibrary) };
+    // A reused managed file has not committed anything new yet: a cancel up to here is still a true "nothing saved".
+    commit();
+    try {
+      return { ...managed, library: await this.placeInImageLibrary(managed, request.imageLibrary) };
+    } catch (error) {
+      if (error instanceof StockMediaError && error.code === 'STOCK_MEDIA_LIBRARY_REJECTED') throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new StockMediaError('STOCK_MEDIA_LIBRARY_COPY_FAILED', `图片已保存到素材目录（${managed.path}），但复制进本地人物素材库「${request.imageLibrary}」失败：${detail}`);
+    }
   }
 
-  /** Copies a managed photo into `<imageLibraryRoot>/<library>/` (atomic, idempotent by provider+id file name). */
+  /**
+   * Copies a managed photo into `<imageLibraryRoot>/<library>/` (atomic, idempotent by provider+id file name).
+   * The library folder must be a real direct child of the (realpath'd) root: an existing symlink/junction, or
+   * anything resolving outside the root, is refused instead of followed.
+   */
   private async placeInImageLibrary(managed: StockMediaDownloadResult, library: string): Promise<NonNullable<StockMediaDownloadResult['library']>> {
-    if (managed.manifest.kind !== 'photo') throw new StockMediaError('STOCK_MEDIA_REQUEST_FAILED', '只有图片素材可以加入本地图片库。');
-    const root = this.options.imageLibraryRoot?.();
-    if (!root) throw new StockMediaError('STOCK_MEDIA_REQUEST_FAILED', '本地图片库目录不可用。');
-    const name = sanitizePersonName(library);
-    const directory = join(resolve(root), name);
-    await mkdir(directory, { recursive: true });
     const { provider, kind, id } = managed.manifest;
-    const target = join(directory, `${provider}-${kind}-${id}${extname(managed.path)}`);
-    const existing = await stat(target).catch(() => null);
-    if (existing?.isFile() && existing.size === managed.sizeBytes && await hashFile(target).catch(() => '') === managed.sha256) {
+    const extension = extname(managed.path).toLowerCase();
+    if (kind !== 'photo' || !LIBRARY_IMAGE_EXTENSIONS.has(extension)) throw new StockMediaError('STOCK_MEDIA_LIBRARY_REJECTED', '只有 JPG/PNG/WebP 图片素材可以加入本地图片库。');
+    const fileName = `${provider}-${kind}-${id}${extension}`;
+    if (!MANAGED_FILE_PATTERN.test(fileName)) throw new StockMediaError('STOCK_MEDIA_LIBRARY_REJECTED', '素材文件名无效，已拒绝。');
+    const configuredRoot = this.options.imageLibraryRoot?.();
+    if (!configuredRoot) throw new StockMediaError('STOCK_MEDIA_LIBRARY_REJECTED', '本地图片库目录不可用。');
+    const name = sanitizePersonName(library);
+    if (!stockMediaImageLibrarySchema.safeParse(name).success) throw new StockMediaError('STOCK_MEDIA_LIBRARY_REJECTED', '图片素材库名称无效。');
+    await mkdir(resolve(configuredRoot), { recursive: true });
+    const root = await realpath(resolve(configuredRoot));
+    const directory = join(root, name);
+    const rejectLink = () => new StockMediaError('STOCK_MEDIA_LIBRARY_REJECTED', `本地人物素材库「${name}」是符号链接/联接或不在素材库目录内，已拒绝写入。`);
+    let info = await lstat(directory).catch(() => null);
+    if (!info) {
+      await mkdir(directory).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+      info = await lstat(directory);
+    }
+    if (info.isSymbolicLink() || !info.isDirectory()) throw rejectLink();
+    const real = await realpath(directory);
+    if (!samePath(dirname(real), root) || !samePath(basename(real), name)) throw rejectLink();
+    const target = join(real, fileName);
+    const existing = await lstat(target).catch(() => null);
+    if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
+      throw new StockMediaError('STOCK_MEDIA_LIBRARY_REJECTED', `本地人物素材库「${name}」里已有同名的非普通文件 ${fileName}，已拒绝覆盖。`);
+    }
+    if (existing && existing.size === managed.sizeBytes && await hashFile(target).catch(() => '') === managed.sha256) {
       return { name, path: target, reused: true };
     }
     // `.partial-*` has no image extension, so listPersonImages never picks it up mid-copy.
-    const temporary = join(directory, `.partial-${randomUUID()}`);
+    const temporary = join(real, `.partial-${randomUUID()}`);
     try {
       await copyFile(managed.path, temporary);
       await rename(temporary, target);
@@ -300,13 +345,16 @@ export class StockMediaService {
     return { name, path: target, reused: false };
   }
 
-  private async downloadManaged(request: z.output<typeof stockMediaDownloadRequestSchema>, signal: AbortSignal): Promise<StockMediaDownloadResult> {
+  private async downloadManaged(request: z.output<typeof stockMediaDownloadRequestSchema>, signal: AbortSignal, commit: () => void): Promise<StockMediaDownloadResult> {
     const directory = resolve(this.options.managedDirectory());
     await mkdir(directory, { recursive: true });
     const stem = `${request.provider}-${request.kind}-${request.id}`;
     const manifestPath = join(directory, stem + MANIFEST_SUFFIX);
     const existing = await this.readManifest(manifestPath, directory, signal, true);
-    if (existing) return { path: join(directory, existing.fileName), manifestPath, sha256: existing.sha256, sizeBytes: existing.sizeBytes, reused: 'provider-id', manifest: existing };
+    // Identity must match exactly (case-insensitive file systems would otherwise alias ids like "AbC"/"abc").
+    if (existing && existing.provider === request.provider && existing.kind === request.kind && existing.id === request.id) {
+      return { path: join(directory, existing.fileName), manifestPath, sha256: existing.sha256, sizeBytes: existing.sizeBytes, reused: 'provider-id', manifest: existing };
+    }
 
     const item = this.items.get(stockMediaFingerprint(request));
     if (!item) throw new StockMediaError('STOCK_MEDIA_ITEM_UNKNOWN', '该素材不在最近的检索结果中，请重新检索后再添加。');
@@ -317,8 +365,8 @@ export class StockMediaService {
       const fetched = await this.fetchToTemporary(item, rendition.url, temporary, signal);
       signal.throwIfAborted();
       const duplicate = await this.findByContent(directory, fetched.sha256, fetched.sizeBytes);
-      // Commit point: nothing is renamed into place or recorded once a cancel arrived.
-      signal.throwIfAborted();
+      // Commit point: nothing is renamed into place or recorded once a cancel arrived; later cancels are ignored.
+      commit();
       let fileName = `${stem}.${fetched.container}`;
       let reused: StockMediaDownloadResult['reused'] = null;
       if (duplicate) {

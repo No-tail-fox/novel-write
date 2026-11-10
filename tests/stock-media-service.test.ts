@@ -3,7 +3,7 @@
  * (127.0.0.1, ephemeral port). No real Pexels/Pixabay request is ever made.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { StockMediaService, detectStockMediaContainer } from '../electron/stock-media-service';
@@ -387,7 +387,7 @@ describe('stock media image download (mock relay)', () => {
     expect(relay.requests.map(request => request.url)).not.toContain('/img/7-original.webp');
     expect(first.path).toBe(join(dir, 'pexels-photo-7.webp'));
     expect(first.manifest).toMatchObject({ kind: 'photo', contentType: 'image/webp', width: 800, height: 1200, author: 'Photographer 7' });
-    expect(first.library).toEqual({ name: '素材站图片', path: join(libraryRoot, '素材站图片', 'pexels-photo-7.webp'), reused: false });
+    expect(first.library).toEqual({ name: '素材站图片', path: join(await realpath(libraryRoot), '素材站图片', 'pexels-photo-7.webp'), reused: false });
     expect(await readFile(first.library!.path, 'latin1')).toBe(WEBP);
     expect(await listing(dir)).toEqual(['pexels-photo-7.source.json', 'pexels-photo-7.webp']);
     expect(await listing(join(libraryRoot, '素材站图片'))).toEqual(['pexels-photo-7.webp']);
@@ -431,7 +431,7 @@ describe('stock media image download (mock relay)', () => {
     shareItems(jpeg, helper);
     const ok = done(await jpeg.download({ provider: 'pexels', kind: 'photo', id: '7', imageLibrary: '人物甲' }));
     expect(ok.path).toBe(join(dir, 'pexels-photo-7.jpg'));
-    expect(ok.library?.path).toBe(join(libraryRoot, '人物甲', 'pexels-photo-7.jpg'));
+    expect(ok.library?.path).toBe(join(await realpath(libraryRoot), '人物甲', 'pexels-photo-7.jpg'));
   });
 
   it('cancelling an image download removes the temp file and never touches the image library', async () => {
@@ -447,6 +447,122 @@ describe('stock media image download (mock relay)', () => {
     expect(isStockMediaCancelled(await pending)).toBe(true);
     expect(await listing(dir)).toEqual([]);
     expect(await listing(libraryRoot)).toEqual([]);
+  });
+});
+
+describe('stock media review hardening', () => {
+  const jpegFetch = async () => new Response(JPEG, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+
+  async function photoService(dir: string, options: Partial<ConstructorParameters<typeof StockMediaService>[0]>) {
+    const helper = service(dir);
+    await searchPhotos(helper, {});
+    const svc = service(dir, { fetch: jpegFetch, ...options });
+    shareItems(svc, helper);
+    return svc;
+  }
+
+  it('refuses an image library that is an existing junction/symlink and writes nothing outside person-assets', async () => {
+    const dir = await managedDir();
+    const libraryRoot = join(dir, '..', 'person-assets');
+    const outside = join(dir, '..', 'outside');
+    await mkdir(libraryRoot, { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, join(libraryRoot, '素材站图片'), 'junction');
+    const svc = await photoService(dir, { imageLibraryRoot: () => libraryRoot });
+    await expect(svc.download({ provider: 'pexels', kind: 'photo', id: '7', imageLibrary: '素材站图片' }))
+      .rejects.toMatchObject({ code: 'STOCK_MEDIA_LIBRARY_REJECTED' });
+    expect(await listing(outside)).toEqual([]);
+    // The validated managed copy is kept and truthfully not reported as "cancelled / nothing saved".
+    expect(await listing(dir)).toEqual(['pexels-photo-7.jpg', 'pexels-photo-7.source.json']);
+  });
+
+  it('accepts a junctioned person-assets root itself (realpath) but still writes only into a real child folder', async () => {
+    const dir = await managedDir();
+    const realRoot = join(dir, '..', 'real-person-assets');
+    const linkedRoot = join(dir, '..', 'person-assets-link');
+    await mkdir(realRoot, { recursive: true });
+    await symlink(realRoot, linkedRoot, 'junction');
+    const svc = await photoService(dir, { imageLibraryRoot: () => linkedRoot });
+    const result = done(await svc.download({ provider: 'pexels', kind: 'photo', id: '7', imageLibrary: '人物甲' }));
+    expect(result.library?.path.toLowerCase()).toContain(join('real-person-assets', '人物甲', 'pexels-photo-7.jpg').toLowerCase());
+    expect(await listing(join(realRoot, '人物甲'))).toEqual(['pexels-photo-7.jpg']);
+  });
+
+  it('refuses to overwrite a non-regular file occupying the library target name', async () => {
+    const dir = await managedDir();
+    const libraryRoot = join(dir, '..', 'person-assets');
+    await mkdir(join(libraryRoot, '素材站图片', 'pexels-photo-7.jpg'), { recursive: true });
+    const svc = await photoService(dir, { imageLibraryRoot: () => libraryRoot });
+    await expect(svc.download({ provider: 'pexels', kind: 'photo', id: '7', imageLibrary: '素材站图片' }))
+      .rejects.toMatchObject({ code: 'STOCK_MEDIA_LIBRARY_REJECTED' });
+    expect(await listing(join(libraryRoot, '素材站图片'))).toEqual(['pexels-photo-7.jpg']);
+  });
+
+  it('only accepts provider-style numeric ids and safe library names; a forged manifest id is never trusted', async () => {
+    const download = ipcInputSchemas['stock-media:download'];
+    for (const id of ['7', '1234567890']) expect(download.safeParse({ provider: 'pexels', kind: 'photo', id }).success, id).toBe(true);
+    for (const id of ['abc', 'AbC', '0', '07', '1_2', '1-2', '1'.repeat(21), '..', '7.jpg']) {
+      expect(download.safeParse({ provider: 'pexels', kind: 'photo', id }).success, id).toBe(false);
+      expect(ipcInputSchemas['stock-media:cancel'].safeParse({ provider: 'pexels', kind: 'photo', id }).success, id).toBe(false);
+    }
+    for (const imageLibrary of ['CON', 'nul', 'Com1', 'lpt9.txt', 'aux.']) {
+      expect(download.safeParse({ provider: 'pexels', kind: 'photo', id: '7', imageLibrary }).success, imageLibrary).toBe(false);
+    }
+    expect(download.safeParse({ provider: 'pexels', kind: 'photo', id: '7', imageLibrary: 'Connie' }).success).toBe(true);
+
+    const dir = await managedDir();
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'pexels-photo-7.jpg'), JPEG);
+    await writeFile(join(dir, 'pexels-photo-7.source.json'), JSON.stringify({
+      schemaVersion: 1, provider: 'pexels', kind: 'photo', id: '../../x', author: '', authorUrl: '', sourceUrl: '',
+      license: { name: '', url: '', attributionRequired: false }, downloadUrl: '', width: 1, height: 1, downloadedAt: '',
+      sha256: 'a'.repeat(64), sizeBytes: JPEG.byteLength, contentType: 'image/jpeg', fileName: 'pexels-photo-7.jpg',
+    }));
+    const calls: string[] = [];
+    const svc = await photoService(dir, { fetch: async (url: string | URL) => { calls.push(String(url)); return jpegFetch(); } });
+    const result = done(await svc.download({ provider: 'pexels', kind: 'photo', id: '7' }));
+    expect(result.reused).toBeNull(); // forged manifest ignored; re-downloaded and re-recorded
+    expect(calls).toHaveLength(1);
+    expect(result.manifest.id).toBe('7');
+  });
+
+  it('keeps the early-cancel memory bounded and does not re-arm ids that already reached the service', async () => {
+    const svc = service(await managedDir());
+    const early = () => (svc as unknown as { earlyCancelled: Set<string> }).earlyCancelled;
+    for (let index = 0; index < 1000; index += 1) svc.cancel({ requestId: `early-${String(index).padStart(6, '0')}` });
+    expect(early().size).toBe(200);
+    expect(early().has('early-000000')).toBe(false);
+    expect(early().has('early-000999')).toBe(true);
+    // A consumed id leaves the set.
+    await expect(svc.download({ requestId: 'early-000999', provider: 'pexels', kind: 'video', id: '1' })).resolves.toMatchObject({ cancelled: true });
+    expect(early().size).toBe(199);
+  });
+
+  it('a cancel after the commit point is ignored: success stays success, and a library copy failure is a real error, not "未保存"', async () => {
+    const dir = await managedDir();
+    let svc: StockMediaService | undefined;
+    let lateCancel: unknown;
+    svc = await photoService(dir, {
+      imageLibraryRoot: () => { lateCancel = svc!.cancel({ requestId: 'late-cancel-0001' }); return join(dir, '..', 'person-assets'); },
+    });
+    const ok = done(await svc.download({ requestId: 'late-cancel-0001', provider: 'pexels', kind: 'photo', id: '7', imageLibrary: '素材站图片' }));
+    expect(lateCancel).toEqual({ cancelledCount: 0 });
+    expect(ok.library?.reused).toBe(false);
+    expect((svc as unknown as { earlyCancelled: Set<string> }).earlyCancelled.size).toBe(0);
+
+    const failingDir = await managedDir();
+    const fileRoot = join(failingDir, '..', 'not-a-directory');
+    await mkdir(join(failingDir, '..'), { recursive: true });
+    await writeFile(fileRoot, 'x');
+    let failing: StockMediaService | undefined;
+    failing = await photoService(failingDir, {
+      imageLibraryRoot: () => { lateCancel = failing!.cancel({ requestId: 'late-cancel-0002' }); return fileRoot; },
+    });
+    const outcome = failing.download({ requestId: 'late-cancel-0002', provider: 'pexels', kind: 'photo', id: '7', imageLibrary: '素材站图片' });
+    await expect(outcome).rejects.toMatchObject({ code: 'STOCK_MEDIA_LIBRARY_COPY_FAILED' });
+    await expect(outcome).rejects.toThrow('图片已保存到素材目录');
+    expect(lateCancel).toEqual({ cancelledCount: 0 });
+    expect(await listing(failingDir)).toEqual(['pexels-photo-7.jpg', 'pexels-photo-7.source.json']);
   });
 });
 

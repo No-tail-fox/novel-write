@@ -137,9 +137,10 @@ export function isStockMediaCancelled(value: unknown): value is StockMediaCancel
 
 /** Renderer-generated correlation id so a later `stock-media:cancel` can target exactly this request. */
 export const stockMediaRequestIdSchema = z.string().regex(/^[0-9A-Za-z_-]{8,64}$/u);
-/** Local image library (person-assets folder) name; no path separators, no hidden/dot names. */
+/** Local image library (person-assets folder) name; no path separators, no hidden/dot names, no Windows device names. */
 export const stockMediaImageLibrarySchema = z.string().trim().min(1).max(128)
-  .refine(value => !/[\\/<>:"|?*\u0000-\u001f]/u.test(value) && !value.startsWith('.'), { message: '图片素材库名称无效' });
+  .refine(value => !/[\\/<>:"|?*\u0000-\u001f]/u.test(value) && !value.startsWith('.')
+    && !/^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\..*)?$/iu.test(value.replace(/[. ]+$/u, '')), { message: '图片素材库名称无效' });
 export const STOCK_MEDIA_DEFAULT_IMAGE_LIBRARY = '素材站图片';
 
 export const stockMediaSearchRequestSchema = z.object({
@@ -159,7 +160,8 @@ export const stockMediaSearchRequestSchema = z.object({
 export type StockMediaSearchRequest = z.input<typeof stockMediaSearchRequestSchema>;
 export type ParsedStockMediaSearchRequest = z.output<typeof stockMediaSearchRequestSchema>;
 
-const stockMediaItemIdSchema = z.string().regex(/^[0-9A-Za-z_-]{1,64}$/u);
+/** Pexels and Pixabay ids are positive integers (parsers emit String(id)); digits only keeps file names case-safe. */
+const stockMediaItemIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/u);
 
 export const stockMediaDownloadRequestSchema = z.object({
   requestId: stockMediaRequestIdSchema.optional(),
@@ -194,7 +196,9 @@ export type StockMediaErrorCode =
   | 'STOCK_MEDIA_URL_REJECTED'
   | 'STOCK_MEDIA_NOT_MEDIA'
   | 'STOCK_MEDIA_TOO_LARGE'
-  | 'STOCK_MEDIA_INCOMPLETE';
+  | 'STOCK_MEDIA_INCOMPLETE'
+  | 'STOCK_MEDIA_LIBRARY_REJECTED'
+  | 'STOCK_MEDIA_LIBRARY_COPY_FAILED';
 
 export class StockMediaError extends AppError {
   constructor(
