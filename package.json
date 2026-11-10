@@ -19,7 +19,9 @@
     "qa:motion-comic": "scripts\\run-npm-powershell.cmd scripts/build.ps1 && vendor\\python\\python.exe scripts\\qa-motion-comic.py",
     "test": "scripts\\run-npm-powershell.cmd scripts/test.ps1",
     "test:watch": "scripts\\run-npm-powershell.cmd scripts/test-watch.ps1",
-    "typecheck": "scripts\\run-npm-powershell.cmd scripts/typecheck.ps1"
+    "typecheck": "scripts\\run-npm-powershell.cmd scripts/typecheck.ps1",
+    "lint": "scripts\\run-npm-node.cmd node_modules/eslint/bin/eslint.js src electron scripts tests",
+    "verify": "scripts\\run-npm-powershell.cmd scripts/verify.ps1"
   },
   "keywords": [],
   "author": "",
@@ -36,6 +38,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@hyperframes/core": "0.8.40",
     "@hyperframes/lint": "0.8.40",
     "@hyperframes/player": "0.8.40",
@@ -50,6 +53,8 @@
     "electron": "^41.7.0",
     "electron-builder": "^26.0.12",
     "esbuild": "^0.28.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "gsap": "3.12.5",
     "lucide-react": "^1.16.0",
     "react": "^19.2.6",
@@ -58,6 +63,7 @@
     "three": "0.170.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
     "uuid": "^14.0.0",
     "vite": "^8.1.4",
     "vitest": "^4.1.7",

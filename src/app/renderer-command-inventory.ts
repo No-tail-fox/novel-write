@@ -236,7 +236,7 @@ export const rendererCommandInventory = {
     owner('music-lab', musicLabSource, 'downloadTrack', "onClick={() => void downloadTrack('mp3')}", 'MP3', musicLabTest),
     owner('music-lab', musicLabSource, 'downloadTrack', "onClick={() => void downloadTrack('wav')}", 'WAV', musicLabTest),
     owner('music-lab', musicLabSource, 'downloadTrack', 'onClick={() => void downloadTrack(exportFormat)}', '导出', musicLabTest),
-    owner('music-lab', musicLabSource, 'useInMv', 'onClick={() => void useInMv()}', '用于音乐 MV', musicLabTest),
+    owner('music-lab', musicLabSource, 'sendToMusicMv', 'onClick={() => void sendToMusicMv()}', '用于音乐 MV', musicLabTest),
     owner('music-lab', musicLabSource, 'togglePlayback', 'onClick={() => void togglePlayback()}', '播放音乐', musicLabTest),
   ),
   importMusicLabTrackAsBgm: command(owner('music-lab', musicLabSource, 'importBgm', 'onClick={() => void importBgm()}', '加入背景音乐库', musicLabTest)),

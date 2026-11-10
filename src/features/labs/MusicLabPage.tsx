@@ -218,7 +218,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
     if (!record) return;
     await runAction('folder', async () => { await api.openMusicLabOutputDirectory(record.id); });
   }
-  async function useInMv() {
+  async function sendToMusicMv() {
     if (!record || !track) return;
     await runAction('mv', async () => {
       let path = localPath;
@@ -334,7 +334,7 @@ export function MusicLabPage({ api, applyState, onUseInMv, musicConfig, openSett
           <div className="music-lab__download-actions"><Button density="compact" icon={<Download size={14} />} disabled={busy || track?.status !== 'completed'} onClick={() => void downloadTrack('mp3')}>{pendingAction === 'download-mp3' ? '下载中…' : 'MP3'}</Button><Button density="compact" icon={<Download size={14} />} disabled={busy || track?.status !== 'completed'} onClick={() => void downloadTrack('wav')}>{pendingAction === 'download-wav' ? '下载中…' : 'WAV'}</Button><IconButton label="打开音乐文件夹" icon={<FolderOpen size={15} />} disabled={busy} onClick={() => void openOutput()} /></div>
           <div className="music-lab__export-row"><SelectField label="更多格式" value={exportFormat} onChange={(_,data) => setExportFormat(data.value as MusicMediaFormat)} options={[{value:'lyrics',label:'歌词 TXT'},{value:'lrc',label:'时间轴歌词 LRC'},{value:'cover',label:'歌曲封面'},{value:'mp4',label:'歌曲视频 MP4'},{value:'midi',label:'分轨 MIDI',disabled:!track?.stemType && !['separate','vocal-removal'].includes(record.operation?.operation ?? '')}]} /><Button density="compact" disabled={busy || track?.status !== 'completed' || exportFormat === 'midi' && !track.stemType && !['separate','vocal-removal'].includes(record.operation?.operation ?? '')} onClick={() => void downloadTrack(exportFormat)}>导出</Button></div>
           <Button icon={track?.bgmId ? <Check size={15} /> : <Library size={15} />} disabled={busy || track?.status !== 'completed' || !!track?.bgmId} onClick={() => void importBgm()}>{pendingAction === 'bgm' ? '正在加入…' : track?.bgmId ? '已加入背景音乐库' : '加入背景音乐库'}</Button>
-          <Button icon={<Clapperboard size={15} />} disabled={busy || track?.status !== 'completed'} onClick={() => void useInMv()}>{pendingAction === 'mv' ? '准备音频…' : '用于音乐 MV'}</Button>
+          <Button icon={<Clapperboard size={15} />} disabled={busy || track?.status !== 'completed'} onClick={() => void sendToMusicMv()}>{pendingAction === 'mv' ? '准备音频…' : '用于音乐 MV'}</Button>
           <Button icon={<SlidersHorizontal size={15} />} disabled={busy || track?.status !== 'completed'} onClick={() => setToolsOpen(true)}>编辑、翻唱与分轨</Button>
           <Button variant="subtle" density="compact" icon={<RotateCcw size={14} />} disabled={busy} onClick={() => { patchDraft(musicRecordDraft(record.input)); setNotice('已复用创作参数，修改后可再次生成。'); }}>复用创作参数</Button>
           <div className="music-lab__lyrics"><h4>歌词</h4><pre>{track?.lyrics || (record.input.mode === 'custom' && !record.input.instrumental ? record.input.lyrics : '暂无歌词 · 纯音乐作品可直接用于配乐')}</pre></div>

@@ -1,0 +1,22 @@
+name: verify
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # vendor/lemo-upstream and vendor/pixelle-upstream are imported locally and never committed
+      # (see .gitignore / README). CI therefore runs the gate without them: tests that need the
+      # pinned upstream trees are listed under requiresLocalVendor in tests/known-failures.json.
+      - run: node scripts/verify.mjs --ci

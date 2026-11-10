@@ -157,7 +157,7 @@
 |---|---|---|---|---|---|
 | Q-1 | **处理 44 个失败用例**：A 类更新断言或改成行为测试；B 类修骨架；C 类逐个确认（C4 漫剧样本优先）；D 类调超时 | §1.2 | P1 | M | — |
 | Q-2 | 源码字符串断言 → 行为断言（降低重构成本） | A/B 类，共约 26 个用例 | P2 | M | O-5 |
-| Q-3 | **没有 CI**（没有 `.github/`），也没有 lint 配置（没有 eslint/prettier）；`package.json` 没有一键 `verify`（tsc×3 + vitest） | 仓库根目录 | P1 | S | — |
+| Q-3 | **✅ 已实现**：`npm run verify`（`scripts/verify.mjs`：上游哈希 → tsc×3 → eslint → 全量 vitest，对比 `tests/known-failures.json` 只在**新增**失败时报错，修好的会提示从基线删除）；`npm run lint`（`eslint.config.mjs`，只开会抓真缺陷的规则，顺手修了 `MusicLabPage` 里被误判为 Hook 的 `useInMv`）；`.github/workflows/verify.yml`（`--ci` 模式容忍依赖本地 vendor 的测试）。原条目：**没有 CI**（没有 `.github/`），也没有 lint 配置（没有 eslint/prettier）；`package.json` 没有一键 `verify`（tsc×3 + vitest） | 仓库根目录 | P1 | S | — |
 | Q-4 | 本地模拟中转站做故障注入测试（ECONNRESET、TLS、524、429、截断） | P0-2 验收 `technical-roadmap.md:136`；`code-video-foundation.md:399` | P0 | M | G-2 |
 | Q-5 | 黄金帧测试、适配器契约测试 | `code-video-foundation.md:386-397` | P2 | M | E-2 |
 | Q-6 | 真实回归集（每条路线 2–3 个固定题材，人工触发，有预算，归档成片和响度），以 2026-11-10 那轮为第一版基线 | `technical-roadmap.md:187`；`code-video-foundation.md:421` | P3 | M | U-5 |
@@ -171,16 +171,16 @@
 | P-2 | **没有代码签名**：`build.win.signAndEditExecutable: false`；`appId: "local.storydream"` | `package.json` 的 build 段 | P1 | M | 证书采购 |
 | P-3 | 在干净 Windows 上做安装验收：`vendor/python`（含 playwright-browsers）、Lemo render root 暂存、ffmpeg 别名都要在安装目录/用户目录下跑通 | `task_plan.md:181`；`electron/lemo-upstream-video.ts:61,165`【未核实安装版】 | P1 | M | — |
 | P-4 | SDK worker 和原生 CLI（约 301 MB）没进 `extraResources`（只有走 H1 时才需要） | `findings.md:192` | P3 | S | L-8 |
-| P-5 | `package.json.bak` 遗留；发版前检查硬编码版本（U-1） | 仓库根目录 | P2 | S | — |
+| P-5 | **✅ 已处理**：`*.bak` 已忽略；硬编码版本由 U-1 的 `app-version` 行为测试守住。原条目：`package.json.bak` 遗留；发版前检查硬编码版本（U-1） | 仓库根目录 | P2 | S | — |
 | P-6 | 第三方署名覆盖：HyperFrames Apache-2.0、Lemo 样片 CC-BY-4.0 | `THIRD_PARTY_NOTICES.md`；`code-video-foundation.md:461` 【未核实覆盖是否完整】 | P2 | S | — |
 
 ### 2.8 仓库整理（只给建议，没有删除任何东西）
 
 | 编号 | 事项 | 证据 | 优先级 | 工作量 |
 |---|---|---|---|---|
-| R-1 | **`vendor/lemo-upstream`（109 MB/2520 文件）和 `vendor/pixelle-upstream`（10.6 MB）既没跟踪也没忽略**，但已提交的代码和 `extraResources` 都依赖它们。新克隆的仓库无法构建。二选一：要么加进 `.gitignore`，在构建里强制跑 `scripts/import-lemo-upstream.mjs` / `import-pixelle-upstream.mjs` 并校验哈希；要么纳入跟踪（LFS 或子模块） | `git status`；`.gitignore:11`（只忽略了 `vendor/python/`） | P1 | S |
-| R-2 | 根目录杂项分类：①**非本项目**的申报/汇报材料（平顶山×13、AI·OPC×4 docx、`OPC方案优化研讨.m4a`、PPT 相关 md、`_ppt_outline_*`）→ 移出仓库；②**机器维护脚本**（`disk_*.ps1/md`×13、`configure_pagefile_admin.ps1`、`lghub_cache_result.txt`、`pagefile_config_result.txt`）→ 移到个人工具目录；③**演示/实验产物**（`pelican-*`×21、`fal*.html`、`seedvr2.html`、`flashvsr.html`、`bytedance.html`、`concept-*`、`generate-concept.ps1`、`prompt-scenes-*.txt`）→ 归档；④**临时文件**（`temp_*`、`test_*.txt`、`test_dv.verified.xlsx`、`temp_test.js`、`test-electron-*.{mjs,cjs}`、`.tmp-navigation-new.ts`、`.tmp-settings-config-contract.txt`、`@AutomationLog.txt`、`do_patch.py`、`do_update.py`、`append_all.py`、`build_panel.js`、`package.json.bak`）→ 删除；⑤`free-api-router/`（0.2 MB）判断是否独立仓库 | `git status --short` | P2 | S |
-| R-3 | 大目录：`.artifacts` 10.3 GB（已忽略）、`release` 4.6 GB（已忽略）、**`.codex-temp` 2.4 GB（没忽略）**、`.worktrees` 2.25 GB、`.codex-audit-temp` 1.25 GB、`.tmp` 535 MB、**`projects/` 370 MB（没忽略）**、`_ppt_outline_qa` 90 MB、`.tmp-codex` 67 MB、`tmp/` 29 MB、`output/` 18 MB。建议把 `.codex-temp/ .tmp/ .tmp-codex/ tmp/ output/ outputs/ projects/` 加进 `.gitignore`；`.artifacts` 按日期归档（保留 `real-route-qa` 基线） | 目录统计 | P2 | S |
+| R-1 | **✅ 已处理（选“忽略 + 构建校验”）**：两个上游树加入 `.gitignore`；`build-electron.mjs` 和新的 `scripts/verify.mjs` 都强制跑 `--verify` 哈希校验，缺失时报出导入命令和固定 revision。原条目：**`vendor/lemo-upstream`（109 MB/2520 文件）和 `vendor/pixelle-upstream`（10.6 MB）既没跟踪也没忽略**，但已提交的代码和 `extraResources` 都依赖它们。新克隆的仓库无法构建。二选一：要么加进 `.gitignore`，在构建里强制跑 `scripts/import-lemo-upstream.mjs` / `import-pixelle-upstream.mjs` 并校验哈希；要么纳入跟踪（LFS 或子模块） | `git status`；`.gitignore:11`（只忽略了 `vendor/python/`） | P1 | S |
+| R-2 | **✅ 按用户决定只加 `.gitignore`、不移动文件**：①–⑤ 各类已忽略，`git status` 只剩 4 个待归档的过程文档（见 D-2）。原条目：根目录杂项分类：①**非本项目**的申报/汇报材料（平顶山×13、AI·OPC×4 docx、`OPC方案优化研讨.m4a`、PPT 相关 md、`_ppt_outline_*`）→ 移出仓库；②**机器维护脚本**（`disk_*.ps1/md`×13、`configure_pagefile_admin.ps1`、`lghub_cache_result.txt`、`pagefile_config_result.txt`）→ 移到个人工具目录；③**演示/实验产物**（`pelican-*`×21、`fal*.html`、`seedvr2.html`、`flashvsr.html`、`bytedance.html`、`concept-*`、`generate-concept.ps1`、`prompt-scenes-*.txt`）→ 归档；④**临时文件**（`temp_*`、`test_*.txt`、`test_dv.verified.xlsx`、`temp_test.js`、`test-electron-*.{mjs,cjs}`、`.tmp-navigation-new.ts`、`.tmp-settings-config-contract.txt`、`@AutomationLog.txt`、`do_patch.py`、`do_update.py`、`append_all.py`、`build_panel.js`、`package.json.bak`）→ 删除；⑤`free-api-router/`（0.2 MB）判断是否独立仓库 | `git status --short` | P2 | S |
+| R-3 | **✅ 已加忽略（没有移动/删除任何文件）**：`.codex-temp/ .tmp/ .tmp-* tmp/ output/ outputs/*/ projects/ concept-output/` 以及 R-2 列出的根目录个人材料/实验产物/临时文件都已加入 `.gitignore`（全部锚定根目录，`src/features/projects/` 不受影响）。`.artifacts` 归档仍需人工决定。原条目：大目录：`.artifacts` 10.3 GB（已忽略）、`release` 4.6 GB（已忽略）、**`.codex-temp` 2.4 GB（没忽略）**、`.worktrees` 2.25 GB、`.codex-audit-temp` 1.25 GB、`.tmp` 535 MB、**`projects/` 370 MB（没忽略）**、`_ppt_outline_qa` 90 MB、`.tmp-codex` 67 MB、`tmp/` 29 MB、`output/` 18 MB。建议把 `.codex-temp/ .tmp/ .tmp-codex/ tmp/ output/ outputs/ projects/` 加进 `.gitignore`；`.artifacts` 按日期归档（保留 `real-route-qa` 基线） | 目录统计 | P2 | S |
 | R-4 | worktree 回收：已合并的 4 个可以移除（`codex/storybound-music-mv`、`storyboard-prompt-edit`、`storydream-local-hardening`、`draft-template-export-link`）；没合并的 2 个要决策（`codex/account-credits-implementation` 领先 2 个提交，09-16，涉及积分/商业交付；`codex/storydream-project-plan-20261102-upload` 领先 1 个提交）。本地分支共 20 个 | `git worktree list`；`git rev-list` | P2 | S |
 
 ### 2.9 文档

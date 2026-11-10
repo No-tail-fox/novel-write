@@ -41,3 +41,53 @@ Thumbs.db
 # Upstream tracks these alignment receipts; retain them despite our general out/ rule.
 !vendor/lemo-upstream/**/out/
 !vendor/lemo-upstream/**/out/*.json
+
+# Pinned upstream trees are imported byte-for-byte and verified by hash on every build
+# (scripts/import-lemo-upstream.mjs / import-pixelle-upstream.mjs --verify); never committed.
+vendor/lemo-upstream/
+vendor/pixelle-upstream/
+
+# Local scratch, generated output and per-machine project data (R-3).
+/.codex-temp/
+/.tmp/
+/.tmp-*
+/tmp/
+/output/
+/outputs/*/
+/projects/
+/concept-output/
+*.bak
+@AutomationLog.txt
+/temp_*
+/test_*.txt
+/test_*.xlsx
+/test-electron-*
+
+# Unrelated personal material kept in the working copy; ignored, not moved (R-2).
+/*.docx
+/*.pptx
+/*.m4a
+/_ppt_outline_*
+/PPT*.md
+/平顶山*
+/disk_*
+/configure_pagefile_admin.ps1
+/lghub_cache_result.txt
+/pagefile_config_result.txt
+/pelican-*
+/fal*.html
+/seedvr2.html
+/flashvsr.html
+/bytedance.html
+/concept-scenes-board.png
+/generate-concept.ps1
+/prompt-scenes-*.txt
+/do_patch.py
+/do_update.py
+/append_all.py
+/build_panel.js
+/creative-asset-dedup-evidence.json
+/FRONTEND_REFACTOR_README.md
+/REFACTOR_COMPLETION_REPORT.md
+/前端重构完成说明.md
+/free-api-router/

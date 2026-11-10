@@ -12,7 +12,11 @@ const source = process.argv[2];
 if (!source) throw new Error('Usage: node scripts/import-lemo-upstream.mjs <local-upstream-checkout> | --verify');
 const sha256 = data => createHash('sha256').update(data).digest('hex');
 if (source === '--verify') {
-  const manifest = JSON.parse(await readFile(resolve(target, 'storydream-upstream.json'), 'utf8'));
+  const manifestText = await readFile(resolve(target, 'storydream-upstream.json'), 'utf8').catch(() => {
+    // The tree is git-ignored (R-1): a fresh clone must import it once from a local upstream checkout.
+    throw new Error(`vendor/lemo-upstream is missing. Clone the upstream repository, then run: node scripts/import-lemo-upstream.mjs <checkout> (pinned revision ${revision}).`);
+  });
+  const manifest = JSON.parse(manifestText);
   if (manifest.revision !== revision) throw new Error('Unexpected upstream revision');
   for (const file of manifest.files) {
     if (sha256(await readFile(resolve(target, file.path))) !== file.sha256) throw new Error(`Upstream modified: ${file.path}`);
