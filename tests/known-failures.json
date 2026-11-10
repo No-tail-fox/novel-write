@@ -6,6 +6,7 @@
   "requiresLocalVendor": [
     "tests/draft-font-selection.test.ts",
     "tests/draft-template-normalization.test.ts",
+    "tests/install-layout.test.ts",
     "tests/lemo-agent-sdk.test.ts",
     "tests/lemo-opuscar98.test.ts",
     "tests/lemo-upstream-agent.test.ts",
