@@ -12,7 +12,8 @@ import { isSubtitleAlignmentValid } from './audio-alignment';
 import { productionAudioClipsForShot, resolveProductionAudioClips, validateProductionAudioTimeline, type ResolvedProductionAudioClip } from './production-audio';
 import { evaluateDirectorSubtitleLayout, type ProductionSubtitleLayoutEvidence } from './production-subtitle-layout';
 import { directorSceneLayoutClass, directorSceneSubtitleClass } from './director-scene-layout';
-import { evaluateDirectorVisualContinuity, type ProductionVisualContinuityEvidence } from './production-visual-continuity';
+import { DIRECTOR_VISUAL_FPS, directorVisualFps, evaluateDirectorVisualContinuity, type ProductionVisualContinuityEvidence } from './production-visual-continuity';
+import { lemoLockedPictureShotIds } from './lemo-locked-shots';
 import { measureProductionNarrationAlignment, type ProductionNarrationAlignmentEvidence } from './production-audio-alignment';
 import { resolveDirectorTransition, type DirectorTransition } from './director-transitions';
 import { motionComicVideoJobInputsMatch } from './motion-comic-video';
@@ -99,7 +100,8 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
     : {
         workflowKind: document.workflowKind,
         ...(document.beats.some(beat => beat.shots.some(shot => shot.animation?.authoring)) ? { creativeRenderRevision: 2 } : {}),
-        ...(document.upstreamFilm ? { upstream: { runId: document.upstreamFilm.runId, sourceHash: document.upstreamFilm.sourceHash, compositionRevision: 4 } } : {}),
+        ...(document.upstreamFilm ? { upstream: { runId: document.upstreamFilm.runId, sourceHash: document.upstreamFilm.sourceHash, compositionRevision: 4,
+          ...(lemoLockedPictureShotIds(document).size ? { lockedShotIds: [...lemoLockedPictureShotIds(document)] } : {}) } } : {}),
         id: document.id,
         ratio: document.ratio,
         title: document.title,
@@ -543,7 +545,10 @@ export function buildDirectorRenderScenes(
   explicitEpisodeId?: string,
   scope?: { shotIds?: readonly string[]; upstreamVideoPath?: string },
 ): DirectorRenderScene[] {
-  if (document.workflowKind === 'editorial-collage' && document.productionRun?.authoringVersion === 3 && !scope?.upstreamVideoPath) {
+  // L-3: locked shots of a v3 run keep their own per-shot picture; everything else comes from the Agent film.
+  const lockedPicture = document.workflowKind === 'editorial-collage' ? lemoLockedPictureShotIds(document) : new Set<string>();
+  if (document.workflowKind === 'editorial-collage' && document.productionRun?.authoringVersion === 3 && !scope?.upstreamVideoPath
+    && !(scope?.shotIds?.length && scope.shotIds.every(id => lockedPicture.has(id)))) {
     throw new Error('LEMO_PICTURE_REQUIRED: 原生工程必须使用已验证的整片画面，不能回退到旧逐镜动画。');
   }
   const assets = new Map(document.assets.map((asset) => [asset.id, asset]));
@@ -610,7 +615,7 @@ export function buildDirectorRenderScenes(
       );
       const audioPath = authoredAudio !== undefined ? '' : resolveAssetPath(shot.voiceAssetVersionId, 'audio', shotLabel);
 
-      if (scope?.upstreamVideoPath) {
+      if (scope?.upstreamVideoPath && !lockedPicture.has(shot.id)) {
         if (!document.upstreamFilm || document.upstreamFilm.status !== 'ready' || document.upstreamFilm.runId !== document.productionRun?.id) throw new Error('LEMO_AGENT_NOT_READY');
         scenes.push({ id: shot.id, index, title: editorialShotTitle(document, beat, shot), caption, subtitleCues,
           durationMs: shot.durationMs, renderStrategy: 'living-poster', preserveSourcePicture: true, transitionIn: { type: 'cut', durationMs: 0 },
@@ -739,6 +744,12 @@ export function buildDirectorRenderScenes(
         subtitleStyle: shot.subtitleStyle,
       });
     }));
+    // L-3: a locked window replaces exactly its own frames of the Agent film: hard cuts, one 24 fps output clock.
+    if (lockedPicture.size) scenes.forEach((scene, i) => {
+      if (!lockedPicture.has(scene.id)) return;
+      if (directorVisualFps([scene]) > DIRECTOR_VISUAL_FPS) issues.push(`镜头 ${scene.index}：LEMO_LOCKED_SHOT_FPS 锁定镜头帧率高于原生整片的 ${DIRECTOR_VISUAL_FPS} fps，无法混合`);
+      scenes[i] = { ...scene, transitionIn: { type: 'cut', durationMs: 0 } };
+    });
   } else {
     const episode = document.episodes.find((candidate) => candidate.id === (explicitEpisodeId ?? document.activeEpisodeId));
     if (!episode) throw new Error('DIRECTOR_RENDER_EPISODE_MISSING: AI 漫剧没有可渲染的集。');

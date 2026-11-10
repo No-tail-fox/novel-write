@@ -1,6 +1,7 @@
 import type { EditorialCollagePipelineData } from './editorial-collage';
 import type { VoxProductionNode, VoxProductionSettings } from './vox-production';
 import { lemoAgentBudgetExhausted } from './creative-animation/upstream-agent';
+import { lemoLockedShotIds } from './lemo-locked-shots';
 
 /** New runs only. Old version-1/2 projects retain their existing graphs. */
 export function buildLemoUpstreamNodes(document: EditorialCollagePipelineData, settings: VoxProductionSettings): VoxProductionNode[] {
@@ -9,10 +10,12 @@ export function buildLemoUpstreamNodes(document: EditorialCollagePipelineData, s
     nodes.push({ id, kind, dependencies, paid, shotId, fileId, status: 'pending', attempt: 0 }); return id;
   };
   const timings: string[] = [];
+  // L-3: locked shots keep their narration/picture (no new voice) and get a local renderability check.
+  const locked = new Set(lemoLockedShotIds(document, settings));
   for (const shot of document.beats.flatMap(beat => beat.shots)) {
     const continuation = shot.narrationSplit && shot.narrationSplit.sourceShotId !== shot.id;
     const text = document.beats.flatMap(beat => beat.subtitleCues).filter(cue => shot.subtitleCueIds.includes(cue.id)).map(cue => cue.text).join(' ');
-    const voice = settings.narration && !continuation && /[\p{L}\p{N}]/u.test(text) ? add('voice', `voice:${shot.id}`, [], true, shot.id) : undefined;
+    const voice = settings.narration && !continuation && !locked.has(shot.id) && /[\p{L}\p{N}]/u.test(text) ? add('voice', `voice:${shot.id}`, [], true, shot.id) : undefined;
     timings.push(add('timing', `timing:${shot.id}`, voice ? [voice] : continuation ? [`timing:${shot.narrationSplit!.sourceShotId}`] : [], false, shot.id));
   }
   const film = document.upstreamFilm?.runId === document.productionRun?.id ? document.upstreamFilm : undefined;
@@ -24,6 +27,7 @@ export function buildLemoUpstreamNodes(document: EditorialCollagePipelineData, s
   for (let turn = 1; turn <= Math.max(1, count); turn++) dependencies = [add('film-edit', `upstream-turn:${turn}`, dependencies, true, undefined, String(turn))];
   // This explicit gate also prevents a budget-exhausted authoring run being marked complete.
   const finalize = add('film-finalize', 'upstream-ready', dependencies);
-  add('render', 'render', [finalize]); add('verify', 'verify', ['render']);
+  const compiled = [...locked].map(id => add('compile', `compile:${id}`, [], false, id));
+  add('render', 'render', [finalize, ...compiled]); add('verify', 'verify', ['render']);
   return nodes;
 }

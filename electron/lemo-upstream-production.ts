@@ -1,8 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EditorialCollagePipelineData } from '../src/shared/editorial-collage';
-import type { VoxProductionNode } from '../src/shared/vox-production';
-import { directorCanvasForRatio } from '../src/shared/director-render';
+import { rebuildEditorialTimeline } from '../src/shared/editorial-collage';
+import type { VoxProductionNode, VoxProductionRun, VoxProductionSettings } from '../src/shared/vox-production';
+import { buildDirectorRenderScenes, directorCanvasForRatio } from '../src/shared/director-render';
+import { DIRECTOR_VISUAL_FPS, directorVisualFps } from '../src/shared/production-visual-continuity';
+import { lemoLockedShotIds, lemoReservedWindowsBrief } from '../src/shared/lemo-locked-shots';
 import { resolveCreativeStyle } from '../src/shared/creative-animation/styles';
 import { readLemoUpstreamManifest, type LemoSourceOptions } from './lemo-upstream-source';
 import { stepLemoUpstreamAgent, recoverLemoUpstreamAgentTurn, LemoAgentImageUnknownError, type LemoAgentImages, type LemoAgentOptions } from './lemo-upstream-agent';
@@ -31,13 +34,39 @@ export function lemoProductionContext(document: EditorialCollagePipelineData, st
   const style = resolveCreativeStyle(run.settings.authoring?.styleId, run.settings.presetId);
   if (!style) throw new Error('LEMO_STYLE_MISSING');
   if (opuscar98Number(style.slug) !== undefined && !styleReference) throw new Error('LEMO_O98_REFERENCE_MISSING');
+  // L-3: only runs with locked shots get the reserved-window line; default contexts (and hashes) are unchanged.
+  const reserved = lemoReservedWindowsBrief(document, run.settings);
   return { runId: run.id, styleId: style.slug, ...(styleReference ? { styleReference } : {}), ...directorCanvasForRatio(document.ratio), durationSeconds: (document.timeline?.durationMs ?? 0) / 1000,
     brief: [document.title, document.sourceText, run.settings.authoring?.brief ?? '',
       'Approved narration and absolute timeline in milliseconds; keep the wording and respect all cue windows:',
       JSON.stringify({ cues: document.beats.flatMap(beat => beat.subtitleCues), shots: document.beats.flatMap(beat => beat.shots.map(shot => ({ id: shot.id, title: shot.title, direction: shot.scenePrompt, durationMs: shot.durationMs, startMs: document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs }))) }),
       'Sourced facts (do not invent data): ' + JSON.stringify(run.settings.data),
       'Imported archive descriptions (do not invent evidence or unavailable media): ' + JSON.stringify(run.settings.archives),
+      ...(reserved ? [reserved] : []),
     ].join('\n') };
+}
+/**
+ * L-3 preflight: every locked shot must be renderable by its own per-shot path (existing code,
+ * layers or video), because its frames replace the Agent film's window at export.
+ */
+export function assertLemoLockedShotsRenderable(document: EditorialCollagePipelineData, settings: VoxProductionSettings) {
+  const ids = lemoLockedShotIds(document, settings);
+  if (!ids.length) return;
+  // Probe as a per-shot (non-v3) render with this run's settings; the run start rebuilds the timeline the same way.
+  const run = { ...(document.productionRun ?? {}), settings, authoringVersion: undefined } as unknown as VoxProductionRun;
+  const probe = rebuildEditorialTimeline({ ...document, productionRun: run });
+  const shots = probe.beats.flatMap(beat => beat.shots);
+  const failures = ids.flatMap(id => {
+    const index = shots.findIndex(shot => shot.id === id), label = `镜头 ${index + 1}「${shots[index]?.title || id}」`;
+    try {
+      const [scene] = buildDirectorRenderScenes(probe, undefined, { shotIds: [id] });
+      if (directorVisualFps([scene]) > DIRECTOR_VISUAL_FPS) return [`${label}帧率高于 ${DIRECTOR_VISUAL_FPS} fps`];
+      return [];
+    } catch (error) {
+      return [`${label}：${(error instanceof Error ? error.message : String(error)).replace(/^DIRECTOR_RENDER_PREFLIGHT_FAILED:\s*/, '').replace(/镜头 1(?![0-9])[：:]?/g, '')}`];
+    }
+  });
+  if (failures.length) throw new Error(`LEMO_LOCKED_SHOT_UNRENDERABLE: 保留的镜头没有可直接渲染的画面，无法拼回原生整片：${failures.join('；').slice(0, 1500)}。请解除这些镜头的锁定，或先补齐它们的画面后再制作。`);
 }
 export function createLemoUpstreamOperations(library: LemoProductionLibrary, work: string, model: LemoAgentOptions['model'], host?: LemoUpstreamMaterialHost) {
   const options = async (d: EditorialCollagePipelineData, node: VoxProductionNode): Promise<LemoAgentOptions> => {

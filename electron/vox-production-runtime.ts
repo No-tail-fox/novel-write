@@ -1,4 +1,5 @@
 import { buildLemoUpstreamNodes } from '../src/shared/lemo-upstream-graph';
+import { lemoReservedWindows } from '../src/shared/lemo-locked-shots';
 import { lemoAgentBudgetError, lemoAgentBudgetExhausted } from '../src/shared/creative-animation/upstream-agent';
 import { assertLemoUpstreamFilmCurrent } from './lemo-upstream-agent';
 import { reconcileLemoEditSessions } from './lemo-incremental-resume';
@@ -105,6 +106,8 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
         // Material channel runs bind the turn to the exact imported files and the illustration budget.
         ...(d.productionRun!.assetChannel ? { archives: d.productionRun!.settings.archives.map(ref => ({ ...ref, sha256: d.assets.find(a => a.id === ref.assetVersionId)?.sha256 })),
           agentImages: d.productionRun!.settings.agentImages, imageModel: d.productionRun!.settings.agentImages?.enabled ? ops.imageModel : undefined } : {}),
+        // L-3: reserved locked-shot windows are part of the Agent context only when a run has locks.
+        ...(lemoReservedWindows(d) ? { reserved: lemoReservedWindows(d) } : {}),
       };
       if (upstream && node.kind === 'film-finalize') return { runId: d.productionRun!.id, sourceHash: d.upstreamFilm?.sourceHash, duration: d.timeline?.durationMs };
       const project = upstream ? undefined : lemoProjectInput(d, node);

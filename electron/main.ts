@@ -31,7 +31,7 @@ import { MotionComicScriptBatchService } from './motion-comic-script-batch-servi
 import { VoxProductionService, voxInputHash } from './vox-production-service';
 import { createVoxProductionReceipt, voxReceiptBeforeHash, voxReceiptContentHash } from './vox-production-receipt';
 import { createVoxProductionRuntime } from './vox-production-runtime';
-import { createLemoUpstreamOperations, preflightLemoUpstream } from './lemo-upstream-production';
+import { assertLemoLockedShotsRenderable, createLemoUpstreamOperations, preflightLemoUpstream } from './lemo-upstream-production';
 import { createFfmpegLemoAssetMedia } from './lemo-upstream-assets';
 import type { LemoAgentImageRequest, LemoAgentImages } from './lemo-upstream-agent';
 import { isDefinitiveImageProviderFailure } from '../src/shared/image-provider-error';
@@ -3305,7 +3305,8 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
         // Validate local references before claiming a paid request.
         const native = voxProductionEngine(settings) === LEMO_NATIVE_ENGINE;
         const upstream = nodes.some(n => n.id.startsWith('upstream-turn:')) || document.productionRun?.authoringVersion === 3;
-        if (upstream && settings.lockedShotIds.length) throw new Error('LEMO_LOCKED_SHOTS: 新原生整片工程暂不支持混合锁定镜头；请选择未锁定的新任务，旧任务仍按原链路续跑。');
+        // L-3: locked shots are spliced into the Agent film at export; each must be renderable on its own.
+        if (upstream && settings.lockedShotIds.length) assertLemoLockedShotsRenderable(document, settings);
         if (upstream) await preflightLemoUpstream(upstreamLibrary, resolveCreativeStyle(settings.authoring?.styleId, settings.presetId)!.slug);
         if (upstream && lemoAgentImagePolicy(settings).enabled && !image.connected) throw new Error('已允许 AI 生成插画，但生图服务不可用：' + image.unavailableReason);
         if (!upstream && (nodes.some(n => ['code', 'code-repair', 'film-edit', 'film-code', 'film-scene', 'film-director', 'film-sample-repair', 'film-repair'].includes(n.kind)) || native && nodes.some(n => ['plan', 'film-plan-materials', 'film-plan-scene'].includes(n.kind)))) {
