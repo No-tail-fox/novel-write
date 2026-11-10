@@ -288,6 +288,7 @@ export function normalizeTtsProfileForUi(profile: TtsProviderProfile, index: num
     speaker: volcengine.speaker,
     volcengine,
     minimax,
+    ...(typeof profile.proxyUrl === 'string' && profile.proxyUrl.trim() ? { proxyUrl: profile.proxyUrl } : {}),
   };
 }
 

@@ -33,7 +33,7 @@ function volcengineSecretId(profileId: string, name: 'accessKeyId' | 'secretAcce
   return `tts/${encodeURIComponent(profileId)}/volcengine/${name}`;
 }
 
-async function fetchVolcengineVoiceCatalog(api: StoryDreamApi, profileId: string): Promise<TtsVoiceOption[]> {
+async function fetchVolcengineVoiceCatalog(api: StoryDreamApi, profileId: string, proxyUrl?: string): Promise<TtsVoiceOption[]> {
   const accessKeyIdSecretId = volcengineSecretId(profileId, 'accessKeyId');
   const secretAccessKeySecretId = volcengineSecretId(profileId, 'secretAccessKey');
   let options: TtsVoiceOption[] = [];
@@ -47,6 +47,7 @@ async function fetchVolcengineVoiceCatalog(api: StoryDreamApi, profileId: string
         resourceId,
         page,
         limit: VOLCENGINE_VOICE_PAGE_LIMIT,
+        ...(proxyUrl?.trim() ? { proxyUrl } : {}),
       });
       if (result.status === 'fail') throw new Error(result.detail);
       options = mergeTtsVoiceOptions(options, volcengineSpeakersToVoiceOptions(result.speakers));
@@ -103,7 +104,7 @@ export function VoiceLabPage({ api, state, applyState }: { api: StoryDreamApi; s
     setCatalogError('');
     let request = volcengineVoiceCatalogCache.get(volcengineCatalogKey);
     if (!request) {
-      request = fetchVolcengineVoiceCatalog(api, currentTtsProfileId);
+      request = fetchVolcengineVoiceCatalog(api, currentTtsProfileId, currentTtsProfile?.proxyUrl);
       volcengineVoiceCatalogCache.set(volcengineCatalogKey, request);
     }
     void request.then((options) => {

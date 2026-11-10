@@ -37,7 +37,7 @@ export const approvedEditorialInventories = {
   htmlVideoFields: inventory([
     'style', 'voiceId', 'ttsProvider', 'ttsSpeed', 'bgmId', 'captionPreset', 'captionAnim', 'captionColors', 'captionLayout',
     'bgmVolume', 'transitionType', 'sceneMotion', 'coverImageMode', 'coverTemplate', 'coverRatio', 'coverPrompt', 'draftTemplate',
-    'foreground', 'maxScenes', 'ratio', 'previewLongEdge', 'renderLongEdge',
+    'foreground', 'maxScenes', 'ratio', 'previewLongEdge', 'renderLongEdge', 'imageBudget',
   ], 'src/shared/html-video-control-manifest.ts', 'src/features/html-video/HtmlVideoPage.tsx', 'tests/html-video-control-manifest.test.ts'),
   imageSmartModes: inventory([
     'text-to-image', 'cover', 'blog-cover', 'podcast-cover', 'video-narration', 'two-host-podcast', 'reference-edit',

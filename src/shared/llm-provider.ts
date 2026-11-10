@@ -1013,6 +1013,7 @@ export async function listOpenAiCompatibleModels(
         },
       },
       15000,
+      request.proxyUrl,
     );
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
@@ -1106,6 +1107,7 @@ export async function listAnthropicModels(
         },
       },
       15000,
+      request.proxyUrl,
     );
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);

@@ -291,7 +291,13 @@ function normalizeTtsProfile(profile: Partial<TtsProviderProfile>, index: number
     speaker: volcengine.speaker,
     volcengine,
     minimax,
+    ...optionalProxyUrl(profile.proxyUrl),
   };
+}
+
+/** G-5: keep a non-blank proxy string as typed; absent/blank/non-string = direct (old configs load unchanged). */
+function optionalProxyUrl(value: unknown): { proxyUrl?: string } {
+  return typeof value === 'string' && value.trim() ? { proxyUrl: value } : {};
 }
 
 function defaultTtsProfileName(provider: TtsProviderProfile['provider'], index: number): string {
@@ -326,6 +332,7 @@ function ttsProfileFromLegacy(partial: Partial<AppConfig>): TtsProviderProfile {
       speaker: tts.speaker,
       volcengine: tts.volcengine,
       minimax: tts.minimax,
+      proxyUrl: tts.proxyUrl,
     },
     0,
   );
@@ -370,12 +377,13 @@ function normalizeTtsProfiles(partial: Partial<AppConfig>): {
     speaker: active.speaker ?? volcengine.speaker,
     volcengine,
     minimax,
+    ...optionalProxyUrl(active.proxyUrl),
   };
   return { tts, ttsProfiles, activeTtsProfileId: active.id! };
 }
 
 export function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToText']> | undefined): AppConfig['speechToText'] {
-  const merged = { ...defaultConfig.speechToText, ...(input ?? {}) };
+  const { proxyUrl: rawProxyUrl, ...merged } = { ...defaultConfig.speechToText, ...(input ?? {}) };
   const provider = normalizeSpeechToTextProvider(merged.provider);
   const defaultBaseUrl = speechToTextDefaultBaseUrl(provider);
   const defaultModel = provider === 'siliconflow' ? SILICONFLOW_STT_DEFAULT_MODEL : defaultConfig.speechToText.model;
@@ -396,6 +404,7 @@ export function normalizeSpeechToTextConfig(input: Partial<AppConfig['speechToTe
       provider === 'siliconflow' ? ['segment'] : normalizeSpeechToTextTimestampGranularities(merged.timestampGranularities),
     chunkingStrategy: provider === 'siliconflow' ? 'none' : normalizeSpeechToTextChunkingStrategy(merged.chunkingStrategy),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.speechToText.timeoutMs),
+    ...optionalProxyUrl(rawProxyUrl),
   };
 }
 
@@ -522,7 +531,7 @@ function migrateKnownVideoCapabilities(model: string, capabilities: VideoCapabil
 
 export function normalizeVideoProvider(input: Partial<VideoProviderConfig> | undefined, index: number): VideoProviderConfig {
   const fallback = defaultConfig.video.providers[0];
-  const source = { ...fallback, ...(input ?? {}) };
+  const { proxyUrl: rawProxyUrl, ...source } = { ...fallback, ...(input ?? {}) };
   const declaredCapabilities = Array.isArray(source.capabilities)
     ? Array.from(new Set(source.capabilities.filter((item): item is VideoCapability => VIDEO_CAPABILITIES.includes(item as VideoCapability))))
     : [...fallback.capabilities];
@@ -547,6 +556,7 @@ export function normalizeVideoProvider(input: Partial<VideoProviderConfig> | und
     capabilities: capabilities.length ? capabilities : ['t2v'],
     license: String(source.license || fallback.license).trim() || fallback.license,
     requestParamsJson: normalizeJsonText(source.requestParamsJson, fallback.requestParamsJson),
+    ...optionalProxyUrl(rawProxyUrl),
   };
 }
 
@@ -602,6 +612,7 @@ export function normalizeMusicProfile(input: Partial<MusicProviderProfile>, inde
     apiKey: String(input.apiKey ?? '').trim(),
     model: input.model === 'suno-v6-wild' || input.model === 'suno-v6-mini' ? input.model : 'suno-v6',
     useEnvironmentKey: input.useEnvironmentKey === true,
+    ...optionalProxyUrl(input.proxyUrl),
   };
 }
 

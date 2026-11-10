@@ -193,7 +193,9 @@ export async function transcribeViralAudio(audioPath: string, config: AppConfig,
     return await transcribeViralAudioWithOpenAiApi(audioPath, config, signal);
   } catch (error) {
     if (isCancellation(error)) throw error;
-    throw new Error(formatOpenAiTranscriptionError(error, config.speechToText));
+    // Keep the network code (e.g. NETWORK_PROXY_FAILED = not sent) for failure classification.
+    const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+    throw Object.assign(new Error(formatOpenAiTranscriptionError(error, config.speechToText)), typeof code === 'string' ? { code } : {});
   }
 }
 
@@ -227,6 +229,7 @@ async function transcribeViralAudioWithOpenAiApi(audioPath: string, config: AppC
     timeoutMs: request.timeoutMs,
     timeoutLabel: '语音转文字请求',
     maxBytes: STT_RESPONSE_MAX_BYTES,
+    proxyUrl: config.speechToText.proxyUrl,
     signal,
   });
   if (!response.ok) {

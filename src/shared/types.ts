@@ -85,6 +85,8 @@ export interface ProviderModelListRequest {
   apiKey: string;
   protocol?: LlmConfig['protocol'];
   secretId?: string;
+  /** G-5: proxy of the profile whose models are listed; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface ProviderModelListResult {
@@ -113,6 +115,8 @@ export interface VolcengineSpeakerListRequest {
   voiceTypes?: string[];
   page?: number;
   limit?: number;
+  /** G-5: proxy of the TTS profile; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface VolcengineSpeakerListResult {
@@ -223,6 +227,8 @@ export interface VideoProviderConfig {
   capabilities: VideoCapability[];
   license: string;
   requestParamsJson: string;
+  /** G-5: optional HTTP(S) forward proxy; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface VideoAutomationConfig {
@@ -249,6 +255,8 @@ export interface MusicProviderProfile {
   apiKey: string;
   model: 'suno-v6' | 'suno-v6-wild' | 'suno-v6-mini';
   useEnvironmentKey: boolean;
+  /** G-5: optional HTTP(S) forward proxy; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface MusicConfig {
@@ -292,6 +300,8 @@ export interface TtsConfig {
     model: string;
     voiceId: string;
   };
+  /** G-5: optional HTTP(S) forward proxy of the active TTS profile; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface TtsProviderProfile {
@@ -304,6 +314,8 @@ export interface TtsProviderProfile {
   speaker?: string;
   volcengine?: TtsConfig['volcengine'];
   minimax?: TtsConfig['minimax'];
+  /** G-5: optional HTTP(S) forward proxy; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export type SpeechToTextResponseFormat = 'json' | 'text' | 'srt' | 'verbose_json' | 'vtt';
@@ -323,6 +335,8 @@ export interface SpeechToTextConfig {
   timestampGranularities: SpeechToTextTimestampGranularity[];
   chunkingStrategy: SpeechToTextChunkingStrategy;
   timeoutMs: number;
+  /** G-5: optional HTTP(S) forward proxy; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface SpeechToTextProviderProfile extends SpeechToTextConfig {

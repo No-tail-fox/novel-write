@@ -121,7 +121,8 @@ export function normalizeMusicTracks(value: unknown): MusicRemoteTrack[] {
   });
 }
 
-export function createMusicProvider(options: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch }): MusicProvider {
+/** `proxyUrl` (G-5): the music profile's optional HTTP(S) forward proxy; absent/empty = direct. */
+export function createMusicProvider(options: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch; proxyUrl?: string }): MusicProvider {
   const baseUrl = normalizeMusicApiBaseUrl(options.baseUrl);
   const apiKey = options.apiKey.trim();
   if (!apiKey) throw new MusicProviderError('MUSIC_KEY_MISSING: 尚未配置音乐生成服务。', true);
@@ -142,7 +143,7 @@ export function createMusicProvider(options: { apiKey: string; baseUrl?: string;
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         timeoutMs: binary || path.endsWith('/wav') ? 150_000 : 120_000,
         maxBytes: binary ? MUSIC_MAX_AUDIO_BYTES : 2 * 1024 * 1024,
-        maxRedirects: 0, fetchImpl: options.fetchImpl,
+        maxRedirects: 0, fetchImpl: options.fetchImpl, proxyUrl: options.proxyUrl,
       });
       if (!response.ok) {
         const data = await response.clone().json().catch(() => ({}));

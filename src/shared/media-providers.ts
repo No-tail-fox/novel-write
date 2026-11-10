@@ -137,6 +137,8 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       model: config.tts.minimax.model || profileMinimax?.model,
       voiceId: config.tts.minimax.voiceId || profileMinimax?.voiceId,
     };
+    // G-5: proxy of the profile actually used (a task may pick a provider other than the active one).
+    const proxyUrl = (config.tts.provider === provider ? config.tts.proxyUrl : undefined) || providerProfile?.proxyUrl || undefined;
     if (config.tts.provider === 'mock' && !taskProvider) {
       throw new Error('TTS provider is set to mock; real narration audio is required.');
     }
@@ -154,6 +156,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
         speaker,
         cluster: volcengine.cluster || 'volcano_tts',
         endpoint: volcengine.endpoint || 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+        proxyUrl,
         signal,
         segmentOptions,
       });
@@ -165,6 +168,7 @@ export function createConfiguredNarrationSynthesizer(config: AppConfig, workDir:
       apiKey: minimax.apiKey ?? '',
       model: minimax.model ?? '',
       voiceId: taskProvider ? task.speaker : minimax.voiceId ?? '',
+      proxyUrl,
       signal,
       segmentOptions,
     });
@@ -621,6 +625,7 @@ async function synthesizeMiniMaxNarration(input: {
   apiKey: string;
   model: string;
   voiceId: string;
+  proxyUrl?: string;
   signal?: AbortSignal;
   segmentOptions?: TtsSegmentSynthesisOptions;
 }): Promise<SceneAsset[]> {
@@ -638,6 +643,7 @@ async function synthesizeMiniMaxNarration(input: {
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'MiniMax TTS request',
+      proxyUrl: input.proxyUrl,
       signal,
       headers: {
         'Content-Type': 'application/json',
@@ -695,6 +701,7 @@ async function synthesizeVolcengineNarration(input: {
   speaker: string;
   cluster: string;
   endpoint: string;
+  proxyUrl?: string;
   signal?: AbortSignal;
   segmentOptions?: TtsSegmentSynthesisOptions;
 }): Promise<SceneAsset[]> {
@@ -717,6 +724,7 @@ async function synthesizeVolcengineNarration(input: {
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS request',
+      proxyUrl: input.proxyUrl,
       signal,
       headers: {
         'Content-Type': 'application/json',
@@ -759,6 +767,7 @@ async function synthesizeVolcengineV3Narration(input: {
   resourceId: string;
   speaker: string;
   endpoint: string;
+  proxyUrl?: string;
   signal?: AbortSignal;
   segmentOptions?: TtsSegmentSynthesisOptions;
 }): Promise<SceneAsset[]> {
@@ -782,6 +791,7 @@ async function synthesizeVolcengineV3Narration(input: {
       method: 'POST',
       timeoutMs: 180_000,
       timeoutLabel: 'Volcengine TTS V3 request',
+      proxyUrl: input.proxyUrl,
       signal,
       headers: {
         'Content-Type': 'application/json',

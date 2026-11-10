@@ -599,6 +599,7 @@ export const providerModelListSchema = z
     apiKey: z.string().max(MAX_IPC_TEXT),
     protocol: z.enum(['openai', 'responses', 'anthropic']).optional(),
     secretId: secretIdSchema.optional(),
+    proxyUrl: z.string().max(2048).optional(),
   })
   .strict();
 
@@ -612,6 +613,7 @@ const volcengineSpeakerListSchema = z
     voiceTypes: stringArray().optional(),
     page: nonNegativeInteger.max(100_000).optional(),
     limit: nonNegativeInteger.min(1).max(500).optional(),
+    proxyUrl: z.string().max(2048).optional(),
   })
   .strict();
 

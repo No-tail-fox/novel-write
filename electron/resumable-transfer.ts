@@ -14,6 +14,7 @@
 import { createHash } from 'node:crypto';
 import { closeSync, createReadStream, ftruncateSync, openSync, writeFileSync, writeSync } from 'node:fs';
 import { open, readFile, rename, rm, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fetchWithTimeout } from '../src/shared/http';
 import type { NetworkFetch } from '../src/shared/network-policy';
 
@@ -41,6 +42,8 @@ export interface ResumableDownloadOptions {
   retryDelayMs?: number;
   allowPrivateNetwork?: boolean;
   fetchImpl?: NetworkFetch;
+  /** G-5: optional HTTP(S) forward proxy for every attempt; absent/empty = direct. */
+  proxyUrl?: string;
 }
 
 export interface ResumableDownloadResult {
@@ -81,6 +84,28 @@ class TransferFatal extends Error {
 
 export function resumablePartPaths(targetPath: string): { part: string; sidecar: string } {
   return { part: `${targetPath}.part`, sidecar: `${targetPath}.part.json` };
+}
+
+/** True while this process is writing `partPath` (cleanup sweeps must leave it alone). */
+export function isResumablePartActive(partPath: string): boolean {
+  const wanted = resolve(partPath);
+  for (const active of activeParts) if (samePartPath(resolve(active), wanted)) return true;
+  return false;
+}
+
+function samePartPath(left: string, right: string): boolean {
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
+/**
+ * Failures after which the partial bytes can never be resumed: the remote result is gone (400/404/410)
+ * or the payload itself was rejected (fatal size/format/hash errors). Auth (401/403, e.g. an expired
+ * signed URL), 408/429 and 5xx keep the part: a later recovery polls a fresh URL for the same object.
+ */
+function isPermanentTransferFailure(error: unknown): boolean {
+  if (error instanceof TransferFatal) return error.code !== 'RESUMABLE_TRANSFER_BUSY';
+  const status = Number(errorText(error).match(/^(\d{3})\b/u)?.[1]);
+  return status === 400 || status === 404 || status === 410;
 }
 
 /** Hash of origin + path only; query strings (signatures, tokens) never reach disk. */
@@ -142,8 +167,12 @@ async function runDownload(options: ResumableDownloadOptions, part: string, side
         }
         continue;
       }
-      if (error instanceof TransferFatal) throw error;
+      if (error instanceof TransferFatal) {
+        await discardPart(part, sidecarPath);
+        throw error;
+      }
       if (!isRetryableTransferError(error)) {
+        if (isPermanentTransferFailure(error)) await discardPart(part, sidecarPath);
         // Same message shape as the previous non-resumable downloader (no `status` property on purpose).
         throw new Error(`VIDEO_PROVIDER_DOWNLOAD_FAILED: ${errorText(error)}`, { cause: error });
       }
@@ -284,6 +313,7 @@ async function transferOnce(
       purpose: 'provider-api',
       allowPrivateNetwork: options.allowPrivateNetwork,
       fetchImpl: options.fetchImpl,
+      proxyUrl: options.proxyUrl,
       onResponseChunk: (chunk, chunkResponse) => {
         if (decided !== chunkResponse) decide(chunkResponse);
         if (!accept || fd === undefined) return;
@@ -411,6 +441,7 @@ export async function downloadVerifiedVideoResult(input: {
   timeoutMs: number;
   maxBytes: number;
   timeoutLabel: string;
+  proxyUrl?: string;
 }): Promise<void> {
   await resumableDownload({ ...input, verify: 'video' });
 }

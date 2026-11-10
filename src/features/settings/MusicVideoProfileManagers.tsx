@@ -118,6 +118,8 @@ export function MusicProfileManager({ config, selectedProfileId, saving, secrets
       <TextField fieldClassName="media-profile-wide" label="音乐 API 地址" value={selected.baseUrl}
         onChange={(_, data) => update({ baseUrl: data.value, useEnvironmentKey: data.value.trim().replace(/\/+$/, '') === 'https://www.suno-api.io' && selected.useEnvironmentKey })}
         hint="填写 HTTPS 站点根地址。目前支持 Suno-API 兼容协议。" />
+      <TextField fieldClassName="media-profile-wide" label="代理地址（选填）" value={selected.proxyUrl ?? ''} onChange={(_, data) => update({ proxyUrl: data.value })}
+        hint="仅支持 HTTP(S) 代理，例如 http://127.0.0.1:7890；留空则直连。" />
       <div className="media-profile-wide media-profile-key-source">
         <CheckboxField label="使用已登记的系统 Suno 密钥" checked={selected.useEnvironmentKey} disabled={!defaultOrigin}
           onChange={(_, data) => update({ useEnvironmentKey: Boolean(data.checked) })} />

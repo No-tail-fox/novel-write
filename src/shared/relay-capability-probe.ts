@@ -9,7 +9,9 @@
  *
  * Pure apart from the injected fetch; never retries, never resends.
  */
+import { fetchWithTimeout } from './http';
 import { llmEndpoint, resolveLlmProtocol } from './llm-protocol';
+import type { NetworkFetch } from './network-policy';
 import type { LlmConfig } from './types';
 
 export type RelayProbeStatus = 'supported' | 'unsupported' | 'unknown';
@@ -30,6 +32,7 @@ export interface RelayProbeResult {
 }
 
 const PROBE_TIMEOUT_MS = 30_000;
+const PROBE_RESPONSE_MAX_BYTES = 4 * 1024 * 1024;
 const PROBE_PROMPT = 'Reply with the single word: ok';
 
 interface ProbeResponse { status: number; text: string; headers: Headers }
@@ -169,13 +172,22 @@ function finish(endpoint: string, model: string, protocol: 'openai' | 'anthropic
 }
 
 /** Run the probe for an LLM profile. Responses-protocol profiles are probed as OpenAI-compatible chat. */
-export async function probeRelayCapabilities(config: LlmConfig, fetchImpl: typeof fetch = fetch, signal?: AbortSignal): Promise<RelayProbeResult> {
+export async function probeRelayCapabilities(config: LlmConfig, fetchImpl?: typeof fetch, signal?: AbortSignal): Promise<RelayProbeResult> {
   if (!config.apiKey.trim()) throw new Error('RELAY_PROBE_KEY_MISSING: 请先填写接口密钥。');
   if (!config.model.trim()) throw new Error('RELAY_PROBE_MODEL_MISSING: 请先选择模型。');
-  return resolveLlmProtocol(config) === 'anthropic' ? probeAnthropic(config, fetchImpl, signal) : probeOpenAi(config, fetchImpl, signal);
+  // G-5: same network policy + profile proxy as the LLM client (empty proxyUrl = direct). Never redirects,
+  // so the key is not forwarded elsewhere; proxy failures surface with the credential-free proxy address.
+  const transport = ((url: string | URL | Request, init?: RequestInit) => fetchWithTimeout(String(url), {
+    ...init,
+    timeoutMs: PROBE_TIMEOUT_MS,
+    timeoutLabel: '中转站能力探测',
+    maxBytes: PROBE_RESPONSE_MAX_BYTES,
+    maxRedirects: 0,
+    proxyUrl: config.proxyUrl,
+    fetchImpl: fetchImpl as NetworkFetch | undefined,
+  })) as typeof fetch;
+  return resolveLlmProtocol(config) === 'anthropic' ? probeAnthropic(config, transport, signal) : probeOpenAi(config, transport, signal);
 }
 
-/** One-paragraph Chinese report for the settings page. */
-export function formatRelayProbeResult(result: RelayProbeResult): string {
-  return [result.summary, ...result.checks.map(check => `· ${check.detail}`)].join('\n');
-}
+/** One-paragraph Chinese report for the settings page (renderer imports it from the format module). */
+export { formatRelayProbeResult } from './relay-capability-probe-format';

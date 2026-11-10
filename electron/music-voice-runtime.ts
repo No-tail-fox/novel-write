@@ -14,7 +14,7 @@ export function normalizeMusicVoice(value: unknown): MusicVoiceTask {
   if (!Number.isSafeInteger(id) || id <= 0) throw new Error('服务未返回有效的人声任务编号。');
   return { id, name: text(voice.voice_name), description: text(voice.description), style: text(voice.style), language: text(voice.language), status: text(voice.status ?? voice.voice_status ?? voice.validate_status), validationText: text(voice.validate_info), available: voice.is_available === true, voiceId: text(voice.voice_id), error: text(voice.error_message), updatedAt: new Date().toISOString() };
 }
-export function createMusicVoiceRuntime(options: { dataDir: string; storageDirectory?: string; baseUrl?: string; resolveApiKey: () => Promise<string>; onSongsReady: (songIds: string[], model: MusicModel) => Promise<unknown>; fetchImpl?: typeof fetch }) {
+export function createMusicVoiceRuntime(options: { dataDir: string; storageDirectory?: string; baseUrl?: string; resolveApiKey: () => Promise<string>; resolveProxyUrl?: () => string | undefined | Promise<string | undefined>; onSongsReady: (songIds: string[], model: MusicModel) => Promise<unknown>; fetchImpl?: typeof fetch }) {
   if (options.storageDirectory !== undefined && !isAbsolute(options.storageDirectory)) throw new Error('MUSIC_STORAGE_PATH_INVALID: 人声存储目录必须为绝对路径。');
   const root = options.storageDirectory === undefined ? resolve(options.dataDir, 'music-voices') : resolve(options.storageDirectory);
   const baseUrl = normalizeMusicApiBaseUrl(options.baseUrl);
@@ -55,10 +55,11 @@ export function createMusicVoiceRuntime(options: { dataDir: string; storageDirec
       return state;
     }
     const apiKey = (await options.resolveApiKey()).trim(); if (!apiKey) throw new Error('尚未配置音乐服务。');
+    const proxyUrl = await options.resolveProxyUrl?.();
     const redact = (value: string) => value.split(apiKey).join('[已隐藏]').slice(0, 2000);
     async function request(path: string, method = 'GET', body?: unknown, idempotencyKey?: string) {
       try {
-        const response = await fetchWithTimeout(`${baseUrl}${path}`, { generation: method === 'POST' && !path.endsWith('/check'), method, headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), timeoutMs: 120000, maxBytes: 4 * 1024 * 1024, maxRedirects: 0, fetchImpl: options.fetchImpl });
+        const response = await fetchWithTimeout(`${baseUrl}${path}`, { generation: method === 'POST' && !path.endsWith('/check'), method, headers: { Authorization: `Bearer ${apiKey}`, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), timeoutMs: 120000, maxBytes: 4 * 1024 * 1024, maxRedirects: 0, fetchImpl: options.fetchImpl, proxyUrl });
         const value: unknown = await response.json(); const result = object(value);
         if (!response.ok || result.success === false || result.error || (result.code !== undefined && ![0,200,'0','200'].includes(result.code as number | string))) throw new Error(text(result.message ?? result.error) || `服务请求失败（${response.status}）`);
         return value;

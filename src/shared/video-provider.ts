@@ -82,6 +82,8 @@ export interface VideoResultDownloadInput {
   timeoutMs: number;
   maxBytes: number;
   timeoutLabel: string;
+  /** G-5: the provider profile's proxy (absent = direct); downloaders must route through it. */
+  proxyUrl?: string;
 }
 
 export function createConfiguredVideoProvider(
@@ -290,6 +292,7 @@ async function persistVideoResult(
       timeoutMs: provider.timeoutMs,
       maxBytes: MAX_VIDEO_BYTES,
       timeoutLabel: '云端视频下载',
+      ...(provider.proxyUrl?.trim() ? { proxyUrl: provider.proxyUrl } : {}),
     });
     await rename(stagingPath, outputPath);
   } else {
@@ -438,6 +441,7 @@ async function requestJsonWithRetries(
         timeoutMs: provider.timeoutMs,
         timeoutLabel: label,
         maxBytes: 4 * 1024 * 1024,
+        proxyUrl: provider.proxyUrl,
       });
       const text = await response.text();
       const parsed = text ? JSON.parse(text) as unknown : {};
@@ -468,6 +472,7 @@ async function downloadVideo(url: string, provider: VideoProviderConfig, signal?
     timeoutLabel: '云端视频下载',
     maxBytes: MAX_VIDEO_BYTES,
     purpose: 'provider-api',
+    proxyUrl: provider.proxyUrl,
   });
   if (!response.ok) throw new Error(`VIDEO_PROVIDER_DOWNLOAD_FAILED: ${response.status} ${response.statusText}`);
   return Buffer.from(await response.arrayBuffer());

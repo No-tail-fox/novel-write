@@ -1,8 +1,6 @@
 {
   "$comment": "Baseline for scripts/verify.mjs: the gate fails only on failures NOT listed here. Shrink this list; never grow it without a backlog entry (Q-1). requiresLocalVendor: files tolerated in --ci runs without the git-ignored vendor/lemo-upstream, vendor/pixelle-upstream and vendor/python trees.",
-  "failures": [
-    "tests/director-batch.test.ts > director batch DAG execution bounds unsaved transitions by concurrency on a 1501-node project"
-  ],
+  "failures": [],
   "requiresLocalVendor": [
     "tests/draft-font-selection.test.ts",
     "tests/draft-template-normalization.test.ts",

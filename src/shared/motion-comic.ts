@@ -25,6 +25,7 @@ import {
   type MotionComicEpisodeSplitDraft,
   type MotionComicSourceSplitEvidence,
 } from './motion-comic-episode-planning';
+import { motionComicShotContinuityAdviceSchema, type MotionComicShotContinuityAdvice } from './motion-comic-continuity';
 
 export const MOTION_COMIC_TASK_TYPE = 'motion-comic' as const;
 export const MOTION_COMIC_PIPELINE_VERSION = 1 as const;
@@ -181,6 +182,8 @@ export interface MotionComicShot {
   videoProduction?: MotionComicVideoProduction;
   productionUnit?: { sourceShotId: string; sourceStartMs: number; sourceEndMs: number; index: number; total: number; generationDurationSec: number };
   continuity?: MotionComicShotContinuity;
+  /** Advisory perceptual-hash cut score vs the previous shot (C-2); absent in old documents. Never gates anything. */
+  continuityAdvice?: MotionComicShotContinuityAdvice;
   sourceBeatIds?: string[];
   dialogueCueIds: string[];
   voiceId?: string;
@@ -644,6 +647,7 @@ const shotSchema = z.object({
     referenceAudioAssetVersionIds: z.array(idSchema).max(10).optional(),
   }).strict().optional(),
   continuity: motionComicShotContinuitySchema.optional(),
+  continuityAdvice: motionComicShotContinuityAdviceSchema.optional(),
   sourceBeatIds: z.array(idSchema).max(MAX_REFERENCES).optional(),
   dialogueCueIds: z.array(idSchema).max(MAX_REFERENCES),
   voiceId: z.string().max(512).optional(),

@@ -44,7 +44,12 @@ export function createMusicProfileService(options: Options) {
       try { sameSite = !!current && normalizeMusicApiBaseUrl(current.baseUrl) === original.baseUrl; } catch { /* Use original job binding. */ }
       return keyFor(current && sameSite ? { ...current, baseUrl: original.baseUrl } : original);
     };
-    const common = { dataDir: options.dataDir, baseUrl: original.baseUrl, resolveApiKey, fetchImpl: options.fetchImpl };
+    // G-5: the proxy only changes the route, never the site, so the latest saved value of this profile applies.
+    const resolveProxyUrl = async () => {
+      const current = (await options.getConfig()).music.profiles.find((item) => item.id === original.id);
+      return (current ?? original).proxyUrl;
+    };
+    const common = { dataDir: options.dataDir, baseUrl: original.baseUrl, resolveApiKey, resolveProxyUrl, fetchImpl: options.fetchImpl };
     const lab = createMusicLabRuntime({ ...common, autoPoll: options.autoPoll, storageDirectory: musicProfileStorageDirectory(options.dataDir, 'music-lab', original) });
     const voice = createMusicVoiceRuntime({ ...common, storageDirectory: musicProfileStorageDirectory(options.dataDir, 'music-voices', original), onSongsReady: (ids, model) => lab.importSongs(ids, model) });
     const enhanced = createMusicEnhancedRuntime({ ...common, storageDirectory: musicProfileStorageDirectory(options.dataDir, 'music-enhanced', original), onSongsReady: (ids) => lab.importSongs(ids) });
@@ -79,7 +84,7 @@ export function createMusicProfileService(options: Options) {
         endpoint = `${profile.baseUrl}/api/user/balance`;
         const apiKey = await keyFor(profile);
         if (!apiKey) return { target: 'music', status: 'fail', endpoint, requestId, detail: '请填写此配置的 API Key，或选择已登记的系统密钥。', latencyMs: Date.now() - started };
-        const balance = await createMusicProvider({ apiKey, baseUrl: profile.baseUrl, fetchImpl: options.fetchImpl }).getBalance();
+        const balance = await createMusicProvider({ apiKey, baseUrl: profile.baseUrl, fetchImpl: options.fetchImpl, proxyUrl: profile.proxyUrl }).getBalance();
         return { target: 'music', status: 'pass', endpoint, requestId, detail: `${profile.name} 连接成功，余额 ¥${balance.balance.toFixed(2)}。仅查询余额，未提交音乐生成。`, latencyMs: Date.now() - started };
       } catch (error) {
         return { target: 'music', status: 'fail', endpoint, requestId, detail: error instanceof Error ? error.message : '音乐服务测试失败。', latencyMs: Date.now() - started };

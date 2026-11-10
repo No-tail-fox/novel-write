@@ -6,7 +6,7 @@ import { musicEnhancedRequestSchema, type MusicEnhancedJob, type MusicEnhancedRe
 import { normalizeMusicApiBaseUrl } from '../src/shared/music-provider';
 const object = (value:unknown):Record<string,unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string,unknown> : {};
 const text = (value:unknown) => typeof value === 'string' ? value : '';
-export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirectory?:string;baseUrl?:string;resolveApiKey:()=>Promise<string>;onSongsReady:(ids:string[])=>Promise<unknown>;fetchImpl?:typeof fetch}) {
+export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirectory?:string;baseUrl?:string;resolveApiKey:()=>Promise<string>;resolveProxyUrl?:()=>string|undefined|Promise<string|undefined>;onSongsReady:(ids:string[])=>Promise<unknown>;fetchImpl?:typeof fetch}) {
   if (options.storageDirectory !== undefined && !isAbsolute(options.storageDirectory)) throw new Error('MUSIC_STORAGE_PATH_INVALID: 强化上传存储目录必须为绝对路径。');
   const root = options.storageDirectory === undefined ? resolve(options.dataDir,'music-enhanced') : resolve(options.storageDirectory);
   const baseUrl = normalizeMusicApiBaseUrl(options.baseUrl);
@@ -17,9 +17,10 @@ export function createMusicEnhancedRuntime(options:{dataDir:string;storageDirect
     const jobs:MusicEnhancedJob[]=await readFile(file,'utf8').then((body)=>JSON.parse(body) as MusicEnhancedJob[]).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return []; throw error;});
     if(input.action==='list'){let changed=false;for(const job of jobs)if(job.status==='submitting'){job.status='needs-recovery';job.error='应用在提交期间关闭，请在网站核对本次上传，勿重复提交。';changed=true;}if(changed)await save(jobs);return jobs;}
     const key=(await options.resolveApiKey()).trim();if(!key)throw new Error('尚未配置音乐服务。');
+    const proxyUrl=await options.resolveProxyUrl?.();
     const redact=(value:string)=>value.split(key).join('[已隐藏]').slice(0,2000);
     async function request(path:string,body?:BodyInit,post=false) {
-      try { const response=await fetchWithTimeout(`${baseUrl}${path}`,{generation:post,method:post?'POST':'GET',headers:{Authorization:`Bearer ${key}`},body,timeoutMs:180000,maxBytes:4*1024*1024,maxRedirects:0,fetchImpl:options.fetchImpl});
+      try { const response=await fetchWithTimeout(`${baseUrl}${path}`,{generation:post,method:post?'POST':'GET',headers:{Authorization:`Bearer ${key}`},body,timeoutMs:180000,maxBytes:4*1024*1024,maxRedirects:0,fetchImpl:options.fetchImpl,proxyUrl});
         const value=object(await response.json());if(!response.ok||value.success===false||value.error||(value.code!==undefined&&![0,200,'0','200','success'].includes(value.code as number|string)))throw new Error(text(value.message??value.error)||`服务请求失败（${response.status}）`); return object(value.data??value);
       }catch(error){throw new Error(redact(error instanceof Error?error.message:String(error)));}
     }

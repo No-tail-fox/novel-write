@@ -150,6 +150,7 @@ import {
   reapHistoryQuarantines,
   resolveManagedHistoryWorkDir,
 } from './managed-history-paths';
+import { sweepStaleResumablePartsForAppData } from './resumable-part-sweep';
 import {
   finalizeTaskRunIntent,
   requestTaskRunIntent,
@@ -390,6 +391,7 @@ async function initializeDatabase(): Promise<FileDatabase> {
       (family, id, managedStorageKey) => database.backfillManagedStorageKey(family, id, managedStorageKey),
     );
     await reapHistoryQuarantines(artifacts, database);
+    void sweepStaleResumablePartsForAppData(artifacts, () => database.listTaskManagedStorageKeys());
     await service.migrateLegacySecrets();
     await ensureRuntimeJianyingDraftPath(database, service);
     await ensureRuntimeManagedBgmPaths(database, service, artifacts);

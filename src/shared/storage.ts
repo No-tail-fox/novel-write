@@ -3321,6 +3321,15 @@ export class FileDatabase {
     ).map((row) => ({ family: row.family as HistoryFamily, id: String(row.id), managedStorageKey: null }));
   }
 
+  /** Managed storage keys of every task row (archived included); used by stale-download cleanup (C-2). */
+  async listTaskManagedStorageKeys(): Promise<string[]> {
+    await this.waitForWrites();
+    return getRows<{ managed_storage_key: string }>(
+      this.db,
+      'SELECT managed_storage_key FROM tasks WHERE managed_storage_key IS NOT NULL',
+    ).map((row) => String(row.managed_storage_key));
+  }
+
   async archiveTask(id: string): Promise<TaskSummary> {
     return this.withProjectCover(await this.enqueueCommit(() => this.archiveHistoryRecord('task', id, taskSummaryColumns, rowToTaskSummary, true)));
   }

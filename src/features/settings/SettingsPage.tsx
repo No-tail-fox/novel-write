@@ -13,7 +13,7 @@ import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/tas
 import type { SecretChanges, SecretId } from "../../shared/config-secrets";
 import { changeRuntimeTheme, type RuntimeThemeStateSynchronizer } from "./theme-controller";
 import { configTargetStatus } from "../../shared/config-utils";
-import { formatRelayProbeResult } from '../../shared/relay-capability-probe';
+import { formatRelayProbeResult } from '../../shared/relay-capability-probe-format';
 import { activeImageProfileId, activeLlmProfileId, activeMusicProfileId, activeTtsProfileId, activeVideoProfileId, buildConfigForSelectedProfileTest, enableImageProfile, enableLlmProfile, enableMusicProfile, enableTtsProfile, enableVideoProfile, getMusicProfile, getVideoProfile, normalizeEditableConfigProviders, ttsProfileVolcengine } from "../../shared/provider-profile-utils";
 import { activeSpeechToTextProfileId, activeVisionProfileId, enableSpeechToTextProfile, enableVisionProfile, getSpeechToTextProfile, getVisionProfile } from '../../shared/provider-profile-utils';
 import { useAsyncAction } from "../../ui/async-action";
@@ -316,6 +316,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
           accessKeyIdSecretId: accessKeyId.secretId,
           secretAccessKeySecretId: secretAccessKey.secretId,
           limit,
+          ...(profile.proxyUrl?.trim() ? { proxyUrl: profile.proxyUrl } : {}),
         };
         const first = await api.listVolcengineSpeakers({ ...request, page: 1 });
         if (first.status === 'fail') {
@@ -568,7 +569,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               onClearModels={() => { clearProviderModels('llm'); setConfigTestResult(''); }}
               onRefreshModels={(profile) => {
                 const secret = secrets.reference(profileSecretId('llm', profile.id, 'apiKey'));
-                return refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: secret.value, protocol: profile.protocol, secretId: secret.secretId }, profile.model);
+                return refreshProviderModels('llm', { baseUrl: profile.baseUrl, apiKey: secret.value, protocol: profile.protocol, secretId: secret.secretId, ...(profile.proxyUrl?.trim() ? { proxyUrl: profile.proxyUrl } : {}) }, profile.model);
               }}
             />
             <ProviderPortalLinks links={providerKeyPortals('llm', selectedLlmTestConfig)} onOpen={api.openProviderPortal} />
@@ -618,6 +619,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               <ConfigInput label="状态路径模板" value={selectedVideoProvider.statusPathTemplate} onChange={(value) => updateSelectedVideoProvider({ statusPathTemplate: value })} />
               <ConfigNumberInput label="轮询间隔（秒）" value={selectedVideoProvider.pollIntervalMs / 1000} min={0.25} step={0.25} onChange={(value) => updateSelectedVideoProvider({ pollIntervalMs: value * 1000 })} />
               <ConfigNumberInput label="任务超时（秒）" value={selectedVideoProvider.timeoutMs / 1000} min={10} step={10} onChange={(value) => updateSelectedVideoProvider({ timeoutMs: value * 1000 })} />
+              <ConfigInput label="代理地址（选填）" value={selectedVideoProvider.proxyUrl ?? ''} onChange={(value) => updateSelectedVideoProvider({ proxyUrl: value })} />
               <ConfigNumberInput label="每秒费用" value={selectedVideoProvider.pricePerSecond} min={0} step={0.01} onChange={(value) => updateSelectedVideoProvider({ pricePerSecond: value })} />
               <ConfigNumberInput label="最长时长（秒）" value={selectedVideoProvider.maxDurationSec} min={1} step={1} onChange={(value) => updateSelectedVideoProvider({ maxDurationSec: value })} />
               <ConfigInput label="最高分辨率" value={selectedVideoProvider.maxResolution} onChange={(value) => updateSelectedVideoProvider({ maxResolution: value })} />
@@ -761,6 +763,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               step={10}
               onChange={(value) => updateSpeechToTextConfig({ timeoutMs: value * 1000 })}
             />
+            <ConfigInput label="代理地址（选填）" value={selectedSpeechToTextProfile.proxyUrl ?? ''} onChange={(value) => updateSpeechToTextConfig({ proxyUrl: value })} />
             {!isSiliconFlowSpeechToText ? (
               <Field label="时间戳">
                 <div className="settings-inline-actions">

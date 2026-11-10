@@ -20,6 +20,8 @@ export interface MusicLabRuntimeOptions {
   storageDirectory?: string;
   baseUrl?: string;
   resolveApiKey: () => string | Promise<string>;
+  /** G-5: current proxy of the bound music profile (read per request); absent/empty = direct. */
+  resolveProxyUrl?: () => string | undefined | Promise<string | undefined>;
   createProvider?: (apiKey: string, baseUrl: string) => MusicProvider;
   fetchImpl?: typeof fetch;
   pollIntervalMs?: number;
@@ -71,7 +73,8 @@ export function createMusicLabRuntime(options: MusicLabRuntimeOptions) {
 
   async function provider(): Promise<MusicProvider> {
     const apiKey = await options.resolveApiKey();
-    return options.createProvider?.(apiKey, baseUrl) ?? createMusicProvider({ apiKey, baseUrl, fetchImpl: options.fetchImpl });
+    const proxyUrl = await options.resolveProxyUrl?.();
+    return options.createProvider?.(apiKey, baseUrl) ?? createMusicProvider({ apiKey, baseUrl, fetchImpl: options.fetchImpl, proxyUrl });
   }
   async function directory(id: string, create = false): Promise<string> {
     musicLabRecordIdSchema.parse(id);

@@ -62,6 +62,7 @@ import { DirectorAudioPreview, type DirectorPreviewAudioClip } from './DirectorA
 import { DirectorSoundInspector } from './DirectorSoundInspector';
 import { DirectorMotionInspector } from './DirectorMotionInspector';
 import { DirectorVisualEvidence } from './DirectorVisualEvidence';
+import { DirectorContinuityBadge, type DirectorContinuityAdvice } from './DirectorContinuityBadge';
 import { DirectorHistoryPager, useDirectorHistoryPage } from './DirectorHistoryPager';
 import type { EditorialCollageLayer, EditorialMotionEdit } from '../../shared/editorial-collage';
 import type { DirectorSoundInspectorProps } from './DirectorSoundInspector';
@@ -196,6 +197,8 @@ export interface DirectorShot {
   videoJobStatus?: DirectorVideoJobStatus;
   videoJobError?: string;
   videoEstimatedCost?: number;
+  /** Advisory cut-continuity score vs the previous shot (AI 漫剧 C-2); display only. */
+  continuityAdvice?: DirectorContinuityAdvice;
 }
 
 export interface DirectorAsset {
@@ -1633,7 +1636,7 @@ export function DirectorDeskWorkspace({
               <Button key={shot.id} density="compact" variant="subtle" aria-pressed={shot.id === selectedShot?.id} className={`director-shot-row ${shot.id === selectedShot?.id ? 'is-active' : ''}`} onClick={() => selectShotAndSeek(shot.id)}>
                 <span className="director-shot-row__index">{String(shot.index).padStart(2, '0')}</span>
                 <span className="director-shot-thumbnail">{shot.thumbnail ? <DirectorMediaImage src={shot.thumbnail} alt="" /> : <ImageOff size={16} aria-hidden="true" />}</span>
-                <span className="director-shot-row__copy"><strong>{shot.title}</strong><small>{formatDuration(shot.durationMs)} · {shot.framing} · {directorShotStatusLabel(videoBusyShotId === shot.id || localGeneration[shot.id] === 'running' ? 'generating' : shot.status)}</small></span>
+                <span className="director-shot-row__copy"><strong>{shot.title}</strong><small>{formatDuration(shot.durationMs)} · {shot.framing} · {directorShotStatusLabel(videoBusyShotId === shot.id || localGeneration[shot.id] === 'running' ? 'generating' : shot.status)}<DirectorContinuityBadge advice={shot.continuityAdvice} /></small></span>
                 <span className={`director-mini-status is-${videoBusyShotId === shot.id || localGeneration[shot.id] === 'running' ? 'generating' : shot.status ?? 'idle'}`} aria-label={directorShotStatusLabel(videoBusyShotId === shot.id || localGeneration[shot.id] === 'running' ? 'generating' : shot.status)} />
               </Button>
             ))}
@@ -1758,7 +1761,7 @@ export function DirectorDeskWorkspace({
                   {filteredShots.map((shot) => (
                     <Button key={shot.id} aria-label={`选择镜头 ${String(shot.index).padStart(2, '0')} ${shot.title}`} density="compact" variant="subtle" aria-pressed={shot.id === selectedShot.id} className={`director-filmstrip-card ${shot.id === selectedShot.id ? 'is-active' : ''}`} onClick={() => selectShotAndSeek(shot.id)}>
                        <span className="director-filmstrip-image">{shot.thumbnail ? <DirectorMediaImage src={shot.thumbnail} alt="" /> : <span className="director-filmstrip-empty"><ImageIcon size={18} aria-label="暂无画面" /></span>}<small>{String(shot.index).padStart(2, '0')}</small></span>
-                       <span className="director-filmstrip-meta"><strong>{shot.title}</strong><small><Clock3 size={11} />{formatDuration(shot.durationMs)} <span className="director-mini-status-label">{directorShotStatusLabel(videoBusyShotId === shot.id || localGeneration[shot.id] === 'running' ? 'generating' : shot.status)}</span></small></span>
+                       <span className="director-filmstrip-meta"><strong>{shot.title}</strong><small><Clock3 size={11} />{formatDuration(shot.durationMs)} <span className="director-mini-status-label">{directorShotStatusLabel(videoBusyShotId === shot.id || localGeneration[shot.id] === 'running' ? 'generating' : shot.status)}</span><DirectorContinuityBadge advice={shot.continuityAdvice} /></small></span>
                     </Button>
                   ))}
                 </div>

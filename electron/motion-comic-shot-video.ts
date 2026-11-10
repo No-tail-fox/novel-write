@@ -1,10 +1,11 @@
 // AI motion-comic remote shot-video generation (submit / resume / stale-result preservation), split out of main.ts (O-5).
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { normalizeAppError } from '../src/shared/app-error';
 import { directorCanvasForRatio, type DirectorGenerateShotVideoRequest, type DirectorGenerateShotVideoResult } from '../src/shared/director-render';
-import { parseMotionComicPipelineData, type MotionComicPipelineData } from '../src/shared/motion-comic';
+import { parseMotionComicPipelineData, type MotionComicEpisode, type MotionComicPipelineData } from '../src/shared/motion-comic';
+import { buildMotionComicShotContinuityAdvice, motionComicPreviousShot, type MotionComicShotContinuityAdvice } from '../src/shared/motion-comic-continuity';
 import { motionComicVideoFrames, motionComicVideoInputFingerprintSource, selectMotionComicVideoRoute } from '../src/shared/motion-comic-video';
 import type { ProductionHistoryReservation } from '../src/shared/production-history';
 import { latestProductionProviderJob } from '../src/shared/production-workflow';
@@ -13,6 +14,8 @@ import type { FileDatabase } from '../src/shared/storage';
 import type { AppDelta, Task } from '../src/shared/types';
 import { createConfiguredVideoProvider, validateVideoGenerationRequest, type VideoGenerationRequest } from '../src/shared/video-provider';
 import { downloadVerifiedVideoResult } from './resumable-transfer';
+import { sampleMotionComicCutFrames, type ContinuityFramePair } from './motion-comic-continuity-probe';
+import { sweepStaleResumableParts } from './resumable-part-sweep';
 
 export interface MotionComicShotVideoDependencies {
   getProjectRuntimeConfig: (project: Task | string) => Promise<ReturnType<typeof projectRuntimeConfig>>;
@@ -192,6 +195,8 @@ async function generateMotionComicShotVideo(
   const temporaryPath = `${outputPath}.tmp.mp4`;
   let chargedCost: number | undefined;
   let preservedStaleResult = false;
+  // C-2: drop this task's abandoned resumable download parts (age-bounded) before a new download.
+  await sweepTaskResumableParts(taskWorkDir(task));
   try {
     const generated = resumableJob
       ? await provider.resume!(resumableJob.remoteTaskId!, { estimatedCost: resumableJob.estimatedCost })
@@ -200,6 +205,8 @@ async function generateMotionComicShotVideo(
     await mkdir(outputDir, { recursive: true });
     const probe = await normalizeSceneVideo(generated.path, temporaryPath, preserveSubmittedAudio);
     if (probe.width <= 0 || probe.height <= 0) throw new Error('DIRECTOR_VIDEO_OUTPUT_INVALID: 视频尺寸不可读取。');
+    // Advisory only (C-2): sampled before the final read so the save window stays short; failures are ignored.
+    const cutFrames = await sampleShotCutFrames(database, document.id, episode.id, shot.id, temporaryPath);
 
     const latestTask = await database.getTaskDetail(document.id);
     if (!latestTask) throw new Error(`DIRECTOR_PROJECT_NOT_FOUND: ${document.id}`);
@@ -231,6 +238,7 @@ async function generateMotionComicShotVideo(
     const finishedAt = new Date().toISOString();
     const assetId = `director-video-asset-${randomUUID()}`;
     const logicalAssetId = `shot-video-${shot.id}`;
+    const continuityAdvice = stale ? undefined : shotContinuityAdvice(cutFrames, latestEpisode, shot.id, assetId);
     const videoAsset: MotionComicPipelineData['assets'][number] = {
       id: assetId,
       assetId: logicalAssetId,
@@ -264,7 +272,7 @@ async function generateMotionComicShotVideo(
         scenes: candidateEpisode.scenes.map((scene) => ({
           ...scene,
           shots: scene.shots.map((candidate) => !stale && candidate.id === shot.id
-            ? { ...candidate, videoJobId: jobId, videoAssetVersionId: assetId }
+            ? { ...candidate, videoJobId: jobId, videoAssetVersionId: assetId, continuityAdvice }
             : candidate),
         })),
         timeline: {
@@ -384,4 +392,55 @@ function assertMotionComicVideoOutputRatio(ratio: string, width: number, height:
 }
 
   return { generateMotionComicShotVideo };
+}
+
+async function sweepTaskResumableParts(workDir: string): Promise<void> {
+  await sweepStaleResumableParts({ tasksRoot: dirname(workDir), storageKeys: [basename(workDir)] }).catch(() => undefined);
+}
+
+interface ShotCutFrames extends ContinuityFramePair {
+  previousShotId: string;
+  previousVideoAssetVersionId: string;
+}
+
+/** Last frame of the previous shot's selected video + first frame of the new video. Never throws. */
+async function sampleShotCutFrames(
+  database: FileDatabase,
+  documentId: string,
+  episodeId: string,
+  shotId: string,
+  videoPath: string,
+): Promise<ShotCutFrames | undefined> {
+  try {
+    const task = await database.getTaskDetail(documentId);
+    if (!task) return undefined;
+    const current = parseMotionComicPipelineData(task.pipelineData);
+    const episode = current.episodes.find((candidate) => candidate.id === episodeId);
+    const previous = episode ? motionComicPreviousShot(episode, shotId) : undefined;
+    const previousVideoAssetVersionId = previous?.videoAssetVersionId;
+    if (!previous || !previousVideoAssetVersionId) return undefined;
+    const previousVideo = current.assets.find((asset) => asset.id === previousVideoAssetVersionId && asset.kind === 'video' && asset.localPath);
+    if (!previousVideo?.localPath) return undefined;
+    const frames = await sampleMotionComicCutFrames({ previousVideoPath: previousVideo.localPath, videoPath });
+    return frames ? { ...frames, previousShotId: previous.id, previousVideoAssetVersionId } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Advisory record, only when the previous shot still shows the video that was sampled. Never throws. */
+function shotContinuityAdvice(
+  frames: ShotCutFrames | undefined,
+  episode: MotionComicEpisode | undefined,
+  shotId: string,
+  videoAssetVersionId: string,
+): MotionComicShotContinuityAdvice | undefined {
+  if (!frames || !episode) return undefined;
+  try {
+    const previous = motionComicPreviousShot(episode, shotId);
+    if (previous?.id !== frames.previousShotId || previous.videoAssetVersionId !== frames.previousVideoAssetVersionId) return undefined;
+    return buildMotionComicShotContinuityAdvice({ ...frames, videoAssetVersionId });
+  } catch {
+    return undefined;
+  }
 }

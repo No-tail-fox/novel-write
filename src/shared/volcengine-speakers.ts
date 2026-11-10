@@ -56,6 +56,7 @@ export async function listVolcengineSpeakers(
       timeoutMs: 30_000,
       timeoutLabel: 'Volcengine speaker list request',
       maxBytes: SPEAKER_LIST_RESPONSE_MAX_BYTES,
+      proxyUrl: request.proxyUrl,
       fetchImpl: options.fetchImpl as NetworkFetch | undefined,
       headers: {
         'Content-Type': 'application/json; charset=UTF-8',

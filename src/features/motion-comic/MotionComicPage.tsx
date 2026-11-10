@@ -79,6 +79,7 @@ import { resolveMotionComicActiveEpisodeReadiness, resolveMotionComicStageState 
 import { motionComicVideoReferences, motionComicVideoDialogue } from '../../shared/motion-comic-video';
 import { planMotionComicProductionUnits, splitMotionComicProductionUnits } from '../../shared/motion-comic-production';
 import { invalidateMotionComicVideosForChangedInputs } from '../../shared/motion-comic-video';
+import { currentMotionComicShotContinuityAdvice } from '../../shared/motion-comic-continuity';
 import { toLocalAssetUrl, toLocalImageUrl } from '../tasks/task-formatters';
 import { directorQualityReview, directorRenderOutputs } from '../../shared/director-render';
 import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from '../../shared/director-render';
@@ -2107,6 +2108,7 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
   const videoReady = Boolean(videoAsset?.localPath && videoJob?.status === 'completed' && videoAsset.providerJobId === videoJob.id);
   const remoteVideo = shot.renderStrategy === 'remote-video';
   const activeJob = remoteVideo ? videoJob : job;
+  const continuity = remoteVideo && videoReady ? currentMotionComicShotContinuityAdvice(episode, shot) : undefined;
   return {
     id: shot.id,
     index: shot.index,
@@ -2151,6 +2153,7 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     videoInputUnavailableReason: firstFrameReady ? undefined : '请先生成或选择一张可读取的关键帧图片。',
     videoUrl: videoAsset?.localPath ? toLocalAssetUrl(videoAsset.localPath) : undefined,
     videoJobId: shot.videoJobId,
+    continuityAdvice: continuity ? { level: continuity.level, score: continuity.score } : undefined,
     videoJobStatus: videoJob?.status ?? 'idle',
     videoJobError: videoJob?.error,
     videoEstimatedCost: videoJob && (videoJob.status === 'completed' || videoJob.status === 'running' || videoJob.providerId === videoProviderStatus?.providerId)

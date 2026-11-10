@@ -450,7 +450,7 @@ export function ImageProfileManager({
               status={modelStatus['gpt-image']}
               onRefresh={() => onRefreshModels(
                 'gpt-image',
-                { baseUrl: gptImage.baseUrl || 'https://api.openai.com', apiKey: secrets.reference(gptApiKeyId).value, secretId: secrets.reference(gptApiKeyId).secretId },
+                { baseUrl: gptImage.baseUrl || 'https://api.openai.com', apiKey: secrets.reference(gptApiKeyId).value, secretId: secrets.reference(gptApiKeyId).secretId, proxyUrl: gptImage.proxyUrl || undefined },
                 gptImage.model,
                 (current, model) => saveImageProfile(current, { ...selectedProfile, gptImage: { ...gptImage, model } }),
               )}
@@ -488,7 +488,7 @@ export function ImageProfileManager({
               status={modelStatus['custom-image']}
               onRefresh={() => onRefreshModels(
                 'custom-image',
-                { baseUrl: customImage.baseUrl, apiKey: secrets.reference(customApiKeyId).value, secretId: secrets.reference(customApiKeyId).secretId },
+                { baseUrl: customImage.baseUrl, apiKey: secrets.reference(customApiKeyId).value, secretId: secrets.reference(customApiKeyId).secretId, proxyUrl: customImage.proxyUrl || undefined },
                 customImage.model,
                 (current, model) => saveImageProfile(current, { ...selectedProfile, customImage: { ...customImage, model } }),
               )}
@@ -656,6 +656,7 @@ export function TtsProfileManager({
           labels={['火山引擎', 'MiniMax']}
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, provider: value as TtsProviderProfile['provider'] })}
         />
+        <ConfigInput label="代理地址（选填）" value={selectedProfile.proxyUrl ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, proxyUrl: value })} />
         {provider === 'volcengine' ? (
           <>
             <Segmented
