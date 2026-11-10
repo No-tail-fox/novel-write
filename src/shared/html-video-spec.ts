@@ -25,8 +25,8 @@ export function htmlVideoVideoSpecRenderEnabled(config: Pick<AppConfig, 'htmlVid
 
 /**
  * 创建任务时按设置给 pipelineData 打标记。只处理“全新创建”的 V2 pipeline（`createHtmlVideoPipelineData` 的形态：
- * revision 0、还没有素材 / 配音 / 场景页面 / 封面 / 成片）；其它任何形态（例如从已有任务复制出来的 pipeline）
- * 原样返回，所以复制的旧任务保持旧版渲染（不会被打标记，也不会被删标记）。
+ * revision 0、还没有素材 / 配音 / 场景页面 / 封面 / 成片）；其它形态原样返回，保留已有标记。
+ * 当前入口只接受新建表单；形状无法区分全新任务和空旧草稿，将来增加整任务克隆时须显式保留源标记。
  * 全新创建时：开 → 写 `videoSpecVersion: 1`；关 → 去掉渲染进程可能带来的标记（标记只能由主进程按设置写入）。
  */
 export function markHtmlVideoPipelineDataForCreation(pipelineData: string | undefined, enabled: boolean): string | undefined {
