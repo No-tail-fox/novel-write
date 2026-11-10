@@ -7,7 +7,7 @@ import { DEFAULT_IMAGE_REQUEST_TIMEOUT_MS, defaultConfig } from "../../shared/co
 import { LLM_PROTOCOL_OPTIONS, resolveLlmProtocol, type LlmProtocol } from '../../shared/llm-protocol';
 import { Button, IconButton, SelectField, SliderField } from '../../ui';
 import { ttsVoiceOptionsForProvider } from '../../shared/tts-voices';
-import { describeModelCapabilities } from '../../shared/model-capabilities';
+import { describeModelCapabilities, recommendFallbackModels } from '../../shared/model-capabilities';
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import {
   ConfigInput,
@@ -272,6 +272,15 @@ export function LlmProfileManager({
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, fallbackModels: value.split(/[,，]/u) })}
         />
         <ProviderConfigNote title="模型能力档案" value={describeModelCapabilities(selectedProfile.model, selectedProfile.fallbackModels)} />
+        {!(selectedProfile.fallbackModels ?? []).length && recommendFallbackModels(selectedProfile.model, models.map((model) => model.id)).length > 0 && (
+          <Button
+            variant="secondary"
+            disabled={saving}
+            onClick={() => updateSelectedProfile({ ...selectedProfile, fallbackModels: recommendFallbackModels(selectedProfile.model, models.map((model) => model.id)) })}
+          >
+            {`填入推荐备选：${recommendFallbackModels(selectedProfile.model, models.map((model) => model.id)).join('、')}`}
+          </Button>
+        )}
       </div>
     </div>
   );

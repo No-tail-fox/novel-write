@@ -94,3 +94,19 @@ describe('model fallback visibility (U-4)', () => {
     expect(summarizeErrorMessage('PROVIDER_RESULT_UNKNOWN: 「改写」上次已发出请求')).toBe('上次请求结果未知，请核对服务商记录后再重试');
   });
 });
+
+describe('fallback recommendation from the endpoint model list (G-6)', () => {
+  it('proposes same-family, same-or-better chat models and skips media models', async () => {
+    const { recommendFallbackModels } = await import('../src/shared/model-capabilities');
+    const available = ['claude-sonnet-5-5', 'gpt-image-2', 'text-embedding-3', 'gemini-3.1-pro-preview', 'claude-opus-4-1', 'gpt-4o-mini', 'whisper-1', 'mystery-model'];
+    expect(recommendFallbackModels('claude-sonnet-5-5', available)).toEqual(['claude-opus-4-1', 'gemini-3.1-pro-preview']);
+    expect(recommendFallbackModels('gpt-4o-mini', available, 4)).toEqual(['claude-opus-4-1', 'claude-sonnet-5-5', 'gemini-3.1-pro-preview']);
+    expect(recommendFallbackModels('claude-sonnet-5-5', [])).toEqual([]);
+  });
+
+  it('offers a one-click fill only when the profile has no fallbacks yet', () => {
+    const source = readFileSync('src/features/settings/ProviderProfileManagers.tsx', 'utf8');
+    expect(source).toContain('!(selectedProfile.fallbackModels ?? []).length && recommendFallbackModels(');
+    expect(source).toContain('填入推荐备选');
+  });
+});

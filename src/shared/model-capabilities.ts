@@ -79,3 +79,24 @@ export function normalizeFallbackModels(primary: string, value: unknown): string
   }
   return result;
 }
+
+const NON_CHAT_MODEL = /image|dall-e|embedding|embed|tts|whisper|audio|speech|moderation|rerank|vision-preview|realtime|transcribe|search|seedream|jimeng|flux|sdxl|midjourney|video|veo|sora|kling/iu;
+
+/**
+ * G-6/U-6: suggest fallback models from the endpoint's own model list (same key, same billing), so a
+ * 404/no-channel on the primary does not stop the task. Only recognised chat models of the same family
+ * tier or better are proposed, closest family first. The user still decides; nothing is saved here.
+ */
+export function recommendFallbackModels(primary: string, available: readonly string[], max = 2): string[] {
+  const primaryCaps = inferModelCapabilities(primary);
+  const candidates = [...new Set(available.map(id => id.trim()).filter(Boolean))]
+    .filter(id => id !== primary.trim() && !NON_CHAT_MODEL.test(id))
+    .map(id => ({ id, caps: inferModelCapabilities(id) }))
+    .filter(({ caps }) => caps.known && TIER_RANK[caps.tier] <= TIER_RANK[primaryCaps.tier]);
+  candidates.sort((a, b) =>
+    Number(b.caps.family === primaryCaps.family) - Number(a.caps.family === primaryCaps.family)
+    || TIER_RANK[a.caps.tier] - TIER_RANK[b.caps.tier]
+    || Number(/preview|exp|beta/iu.test(a.id)) - Number(/preview|exp|beta/iu.test(b.id))
+    || a.id.localeCompare(b.id));
+  return candidates.slice(0, Math.max(0, Math.min(4, max))).map(({ id }) => id);
+}
