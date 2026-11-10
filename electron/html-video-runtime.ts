@@ -1009,7 +1009,7 @@ export async function rewriteHtmlVideoCompositionMediaUrls(
         if (!Number.isFinite(duration) || duration <= 0) return;
         const protocol = typeof hyperframesProtocol === 'object' ? hyperframesProtocol : {};
         const declaredFps = Number(protocol.fps?.numerator) / Number(protocol.fps?.denominator);
-        const fps = Number.isFinite(declaredFps) && declaredFps > 0 ? declaredFps : 30;
+        const fps = Number.isFinite(declaredFps) && declaredFps > 0 ? declaredFps : ${defaultFps};
         window.parent.postMessage({
           source: 'hf-preview', ...protocol, type: 'timeline',
           durationSeconds: duration,

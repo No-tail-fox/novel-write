@@ -101,7 +101,7 @@
 | H-1 | **✅ 已实现（随 G-4）**。原条目：吞错（同 G-4）；配音失败的确切请求次数被 `HTML_VIDEO_VOICE_FAILED` 掩盖 | `route-split…md:121` | P0 | S | — |
 | H-2 | **✅ 已随 E-1 实现**：`createHtmlVideoComposePayload` 默认 `normalize_audio:true`。原条目：响度 −20.9 → −14 LUFS | `src/shared/html-video.ts:294`（`normalizeAudio` 需要显式打开）；实测 `route-split…md:110` | P1 | S | E-1 |
 | H-3 | **✅ 已修复**：诊断信息改为 `readinessDiagnostics` 属性和日志，消息去掉重复 `Error:` 和本地路径，`html-video` 2 个捕获契约测试恢复通过。原条目：场景图片加载失败的错误被包了两层 `Error:`（捕获契约 2 个测试失败） | `tests/html-video.test.ts:1957`；`electron/html-video-scene-ready.ts:16` | P1 | S | — |
-| H-4 | 分辨率/fps 默认值不一致：实测成片 1280×720；`html-video-runtime.ts:35` 默认 24，而 `:1012` 的兜底是 30 | 【未核实 720p 是否只是这次的配置】 | P2 | S | E-6 |
+| H-4 | **✅ 已修**：预览握手的 fps 兜底从 30 改为运行时默认 `defaultFps`（24），与成片一致；1280×720 是有意的默认长边（界面标注“默认 · 1280 px”，可选 1080/1920），不是 bug。测试 `tests/html-video-defaults.test.ts`。原条目：分辨率/fps 默认值不一致：实测成片 1280×720；`html-video-runtime.ts:35` 默认 24，而 `:1012` 的兜底是 30 | 【未核实 720p 是否只是这次的配置】 | P2 | S | E-6 |
 | H-5 | 生图次数多（一条约 11 次），成本偏高 | `technical-roadmap.md:45,47` | P3 | M | U-5 |
 | H-6 | 用户需确认：P0-4 和 P1-1 都要改动 HTML 路线 | `technical-roadmap.md:212` | P0 | — | 用户决策 |
 
@@ -158,7 +158,7 @@
 | Q-1 | **✅ 已处理**：A 类改成行为断言或更新为当前实现（多数用 `renderToStaticMarkup` 渲染检查）；B 类补齐 `task-run-lifecycle` 骨架依赖；C2/C3 确认是有意变化后更新夹具；C4 新增旧分句 id 映射 `legacyMotionComicSourceUnitMap`；C5 `browser-fallback` 在没有 Web Storage 时退回内存存储；U-2 引入的 3 个回归已修。全量 4431 个用例中只剩 `director-batch` 1501 节点用例在高负载下偶发超时（留在 `tests/known-failures.json`）。原条目：**处理 44 个失败用例**：A 类更新断言或改成行为测试；B 类修骨架；C 类逐个确认（C4 漫剧样本优先）；D 类调超时 | §1.2 | P1 | M | — |
 | Q-2 | 源码字符串断言 → 行为断言（降低重构成本） | A/B 类，共约 26 个用例 | P2 | M | O-5 |
 | Q-3 | **✅ 已实现**：`npm run verify`（`scripts/verify.mjs`：上游哈希 → tsc×3 → eslint → 全量 vitest，对比 `tests/known-failures.json` 只在**新增**失败时报错，修好的会提示从基线删除）；`npm run lint`（`eslint.config.mjs`，只开会抓真缺陷的规则，顺手修了 `MusicLabPage` 里被误判为 Hook 的 `useInMv`）；`.github/workflows/verify.yml`（`--ci` 模式容忍依赖本地 vendor 的测试）。原条目：**没有 CI**（没有 `.github/`），也没有 lint 配置（没有 eslint/prettier）；`package.json` 没有一键 `verify`（tsc×3 + vitest） | 仓库根目录 | P1 | S | — |
-| Q-4 | 本地模拟中转站做故障注入测试（ECONNRESET、TLS、524、429、截断） | P0-2 验收 `technical-roadmap.md:136`；`code-video-foundation.md:399` | P0 | M | G-2 |
+| Q-4 | **✅ 已实现**：`tests/helpers/mock-relay.ts`（127.0.0.1 上可编排的中转站：ECONNRESET、读体前关闭、520–524、429 Retry-After、503 有/无通道、截断 JSON/SSE、慢响应头，另有明文 TLS 断路器和拒连端口）+ `tests/provider-fault-injection.test.ts`（约 38 个用例，真实 socket，按中转站实际收到的请求数断言重试/不重发）。由此发现并修复 3 个问题：① `http.ts` 超时丢了 `NETWORK_TIMEOUT` 码，被误判为“未发出”，现保留码和 cause；② 非流式文本 LLM 对任何异常都重发（含结果未知的 ECONNRESET/超时），现只在 `shouldRetryProviderFailure(...,{idempotent:false})` 为真（请求确实没发出）时重试；③ TLS 握手失败（`ERR_SSL_*`/`ERR_TLS_*`）归为 not-sent，证书错误不重试。未覆盖：MiniMax TTS（地址写死）、火山旧版、图片 edit/异步【未核实】。原条目：本地模拟中转站做故障注入测试（ECONNRESET、TLS、524、429、截断） | P0-2 验收 `technical-roadmap.md:136`；`code-video-foundation.md:399` | P0 | M | G-2 |
 | Q-5 | 黄金帧测试、适配器契约测试 | `code-video-foundation.md:386-397` | P2 | M | E-2 |
 | Q-6 | 真实回归集（每条路线 2–3 个固定题材，人工触发，有预算，归档成片和响度），以 2026-11-10 那轮为第一版基线 | `technical-roadmap.md:187`；`code-video-foundation.md:421` | P3 | M | U-5 |
 | Q-7 | **✅ 已修**：根因是租约过期测试只伪造了 Date，而 `LicenseService.now()` 还读真实 `performance.now()`，且 service 在伪造计时器前创建；现同时伪造 performance 并先伪造后创建。TLS 组同步调用 python，单独给 60 s。`vitest.config.ts` 全局 testTimeout 20 s / hookTimeout 30 s（高负载下 sql.js 用例偶发超 5 s）。断言未改；全量 4481 个通过，并发负载下 licensing 连跑 5 次全过。原条目：`licensing.test.ts` 在并行负载下不稳定 | 已知 | P2 | S | — |

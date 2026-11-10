@@ -59,6 +59,9 @@ export interface ProviderFailureInput {
 
 const NOT_SENT_CODES = new Set(['UND_ERR_CONNECT_TIMEOUT', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EADDRNOTAVAIL']);
 const DNS_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN']);
+// TLS handshake failures happen before any request byte is sent (Q-4). Certificate problems do not heal by retrying.
+const TLS_CERT_CODES = /^(?:CERT_|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_(?:VERIFY|GET)_|ERR_TLS_CERT_)/u;
+const TLS_HANDSHAKE_CODES = /^(?:ERR_SSL_|ERR_TLS_)/u;
 const LOST_CODES = new Set(['ECONNRESET', 'UND_ERR_SOCKET', 'EPIPE', 'ECONNABORTED', 'UND_ERR_CLOSED', 'ERR_STREAM_PREMATURE_CLOSE']);
 const RESPONSE_TIMEOUT_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'ETIMEDOUT', 'NETWORK_TIMEOUT']);
 const MAX_RETRY_AFTER_MS = 60_000;
@@ -145,6 +148,8 @@ export function classifyProviderFailure(input: ProviderFailureInput): ProviderFa
     ?? text.match(/\b(UND_ERR_[A-Z_]+|E[A-Z]{4,}|NETWORK_TIMEOUT)\b/u)?.[1];
   if (code) {
     if (NOT_SENT_CODES.has(code)) return withMeta(make('connect', 'not-sent', 'always', `连接失败（${code}），请求未发出`, { code }));
+    if (TLS_CERT_CODES.test(code)) return withMeta(make('connect', 'not-sent', 'never', `证书校验失败（${code}），请求未发出`, { code }));
+    if (TLS_HANDSHAKE_CODES.test(code)) return withMeta(make('connect', 'not-sent', 'always', `TLS 握手失败（${code}），请求未发出`, { code }));
     if (DNS_CODES.has(code)) return withMeta(make('dns', 'not-sent', code === 'EAI_AGAIN' ? 'always' : 'never', `域名解析失败（${code}）`, { code }));
     if (LOST_CODES.has(code)) return withMeta(make('transport-lost', 'unknown', 'idempotent', `连接中断（${code}），结果未知`, { code }));
     if (RESPONSE_TIMEOUT_CODES.has(code)) return withMeta(make('response-timeout', 'unknown', 'idempotent', `等待响应超时（${code}），结果未知`, { code }));

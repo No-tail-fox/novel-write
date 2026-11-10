@@ -49,7 +49,8 @@ export async function fetchWithTimeout(url: string | URL, options: FetchWithTime
     });
   } catch (error) {
     if (error instanceof NetworkPolicyError && error.code === 'NETWORK_TIMEOUT') {
-      throw new Error(`${timeoutLabel} timed out after ${timeoutMs}ms.`);
+      // Keep the code: a response timeout means the request was sent and its outcome is unknown.
+      throw Object.assign(new Error(`${timeoutLabel} timed out after ${timeoutMs}ms.`, { cause: error }), { code: 'NETWORK_TIMEOUT' });
     }
     throw error;
   }

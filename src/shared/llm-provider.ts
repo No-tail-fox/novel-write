@@ -5,7 +5,7 @@ import { NetworkPolicyError, readJsonBounded, readTextBounded, type NetworkFetch
 import { llmEndpoint, resolveLlmProtocol, type LlmProtocol } from './llm-protocol';
 import { LlmTextStream } from './llm-text-stream';
 import { LLM_RESPONSE_MAX_BYTES } from './llm-response-limits';
-import { classifyProviderFailure, parseRetryAfterMs, type ProviderFailureKind } from './provider-failure';
+import { classifyProviderFailure, parseRetryAfterMs, shouldRetryProviderFailure, type ProviderFailureKind } from './provider-failure';
 import { normalizeFallbackModels } from './model-capabilities';
 import type { NetworkFetchOptions } from './network-policy';
 
@@ -541,7 +541,8 @@ async function fetchLlmTextWithRetries(endpoint: string, config: LlmConfig, requ
     } catch (error) {
       retryResponse = undefined;
       lastError = error;
-      if (attempt === maxAttempts || request.signal?.aborted) {
+      // Q-4/G-2: resend only when the request provably never reached the provider (paid call, unknown = no resend).
+      if (attempt === maxAttempts || request.signal?.aborted || !shouldRetryProviderFailure(classifyProviderFailure({ error }), { idempotent: false })) {
         throw error;
       }
     }
@@ -579,7 +580,8 @@ async function fetchAnthropicTextWithRetries(endpoint: string, config: LlmConfig
     } catch (error) {
       retryResponse = undefined;
       lastError = error;
-      if (attempt === maxAttempts || request.signal?.aborted) {
+      // Q-4/G-2: resend only when the request provably never reached the provider (paid call, unknown = no resend).
+      if (attempt === maxAttempts || request.signal?.aborted || !shouldRetryProviderFailure(classifyProviderFailure({ error }), { idempotent: false })) {
         throw error;
       }
     }
