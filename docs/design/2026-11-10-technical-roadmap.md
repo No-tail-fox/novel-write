@@ -159,6 +159,12 @@ rewrite → planning（LLM）→ assets（生图 + 抠图）→ voice → previe
     - 用 `kino-montage` 加 3 张导入的档案照片出一条片，画面使用的确实是导入素材（抽帧比对）。
     - 不导入素材时，行为与现在完全一致。
     - 素材缺失或损坏时报 `LEMO_ASSET_*` 错误。
+  - **实现状态（2026-11-10）：已实现，离线测试通过；真实素材出片验收（上面第 1 条）还没做。**实现和设计的差异如下：
+    - 没有新增 `scope: "assets"` 参数。`list_files` 只列出 `assets/MANIFEST.json`，二进制文件不进入列表和上下文；Agent 用 `read_file assets/MANIFEST.json` 读元数据，用 `view_asset {id}` 看缩略图。宿主拒绝 Agent 写入 `assets/**`。
+    - 视频在宿主端预先抽成 `assets/<id>/f%05d.jpg`（24 fps，只缩小不放大，最长 30 s），所以源码服务器不需要支持 mp4/webm 的 MIME。
+    - 素材 id 按导入顺序编为 `a01…`。sha256 同时写进 journal 的 `contextHash` 和 film-edit 节点的 inputHash。导出前 `verifyLemoAssets` 会逐个文件复核。素材变化后报 `LEMO_AGENT_CONTEXT_CHANGED` / `LEMO_ASSET_CHANGED`，需要重新开始一次制作。
+    - 只有新 run 才带 `assetChannel: 1` 标记。旧 v3 run 的 contextHash 和 inputHash 完全不变。
+    - 代码：`electron/lemo-upstream-assets.ts`、`src/shared/creative-animation/agent-assets.ts`；测试：`tests/lemo-upstream-assets.test.ts`、`tests/lemo-material-ui.test.ts`。
 
 ### P2 编排与数据模型（只用于新项目）
 
@@ -180,6 +186,12 @@ rewrite → planning（LLM）→ assets（生图 + 抠图）→ voice → previe
     - 开关关闭时，Agent 看不到这个工具，生图调用为 0。
     - 开关打开时，生图次数不超过上限，并且全部出现在费用面板中。
     - 在纪实类风格下，即使开关打开也拒绝生图。
+  - **实现状态（2026-11-10）：已实现，默认关闭；离线测试通过，还没对真实生图服务商验收。**实现和设计的差异如下：
+    - 禁用范围扩大为「Edit & Documentary」和「Evidence Films」两类风格；界面锁定开关，`voxProductionInputErrors` 也会拦截。
+    - 工具格式为 `request_image {id, prompt, transparent?}`，尺寸由宿主按画布比例决定。宿主会在提示词末尾追加「不画文字、不伪造证据」的约束；透明主体先在 #00FF00 绿幕上生成，再在本地抠图，不会产生第二次付费。
+    - 上限：默认 6 张，可调到 12 张。目前只有张数上限，没有金额预算；费用面板（U-5）还不存在。
+    - 回执：P0-3 的全局账本还没有，暂时用每轮的 `image.json` 回执代替（付费前先写 `submitted`，之后改成 `received` / `rejected`）。结果未知时整个节点进入 `unknown`，不自动重发；用户确认服务商没有出图后，才凭 `retryOfRequestId` 重试一次。免费恢复只调用服务商的 `recoveryOnly` 查询，不发起新请求。
+    - 生成的图写入 `assets/generated/<id>.png`，在清单里标记为 `origin: "generated"`，不会被当作真实资料。
 
 ### P3 模型分层与产品化
 
@@ -214,4 +226,8 @@ rewrite → planning（LLM）→ assets（生图 + 抠图）→ voice → previe
    - 好处：插画类主体更丰富。
    - 代价：每条片多出生图费用，风格一致性也会下降（生图和代码绘制的质感不同）。
    - 建议先做 P1-4 素材通道，等实际需求明确后再决定是否做 P2-4。
+   - **已按你的要求两个都做了**。生图通道默认关闭，需要在项目里手动打开。
 6. **素材版权**：P1-4 要求用户为导入的素材填写来源和授权。纪实类风格会在画面上标注来源。应用只记录、展示用户填写的信息，不核实版权。
+   - 现状：来源和许可已经写进 MANIFEST 并交给 Agent。画面上是否标注来源，取决于风格文档和 Agent 的执行，宿主还没有强制检查（见 [项目待办](./2026-11-10-project-backlog.md) L-2b）。
+
+全项目剩余工作的完整盘点见 [2026-11-10-project-backlog.md](./2026-11-10-project-backlog.md)。

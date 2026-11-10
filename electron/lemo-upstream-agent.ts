@@ -8,6 +8,7 @@ import type { LlmMessage, LlmTextRequest, LlmTextResult } from '../src/shared/ll
 import { LEMO_AGENT_MAX_TURNS, parseLemoAgentAction, type LemoUpstreamFilm, type LemoAgentAction } from '../src/shared/creative-animation/upstream-agent';
 import { readLemoUpstreamManifest, LEMO_UPSTREAM_REVISION } from './lemo-upstream-source';
 import type { LemoUpstreamReviewReceipt } from './lemo-upstream-renderer';
+import { LEMO_ASSET_DIR, LEMO_ASSET_MANIFEST, addGeneratedLemoAsset, hasLemoAssetChannel, readLemoAssetManifest, stageLemoAssets, verifyLemoAssets, type LemoAssetInput, type LemoAssetMedia } from './lemo-upstream-assets';
 
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const textFile = /\.(?:html|m?js|css|json|md|txt|svg)$/i;
@@ -15,11 +16,32 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_PROJECT_BYTES = 16 * 1024 * 1024;
 interface Turn { index: number; reply: string; observation: string; tool: string; modelRequestId: string | null }
 interface Journal { version: 1; contextHash: string; film: LemoUpstreamFilm; turns: Turn[] }
-export interface LemoAgentContext { runId: string; styleId: string; brief: string; durationSeconds: number; width: number; height: number; styleReference?: string }
+export interface LemoAgentContext {
+  runId: string; styleId: string; brief: string; durationSeconds: number; width: number; height: number; styleReference?: string;
+  /** Imported material (asset channel). Present only for runs created with the channel; part of the context hash. */
+  assets?: LemoAssetInput[];
+  /** Optional illustration channel; absent = disabled. */
+  imageGeneration?: { maxImages: number };
+}
+export interface LemoAgentImageRequest { requestId: string; id: string; prompt: string; transparent: boolean; width: number; height: number }
+export interface LemoAgentImages {
+  provider: string;
+  /** Submit one paid image request. Resolve with a local PNG/JPEG path. */
+  generate(request: LemoAgentImageRequest): Promise<{ path: string }>;
+  /** Look up an already submitted request without charging; undefined = unknown. */
+  recover?(request: LemoAgentImageRequest): Promise<{ path: string } | undefined>;
+  /** True only when the provider definitively refused the request (no charge). */
+  isRejection(message: string): boolean;
+  /** Free replay mode: a new request must never be written or submitted. */
+  recoveryOnly?: boolean;
+}
 export interface LemoAgentOptions {
   root: string; upstreamRoot: string; context: LemoAgentContext;
   model(request: LlmTextRequest): Promise<LlmTextResult>;
   review(directory: string, outputDir: string, times: number[]): Promise<LemoUpstreamReviewReceipt>;
+  /** Source files and media tools for staging context.assets (required when assets or images are enabled). */
+  assetHost?: { files: Record<string, string>; media: LemoAssetMedia };
+  images?: LemoAgentImages;
   signal?: AbortSignal;
   turn?: number;
   requestId?: string;
@@ -27,6 +49,9 @@ export interface LemoAgentOptions {
 }
 export class LemoAgentUnknownRequestError extends Error {
   constructor() { super('LEMO_AGENT_REQUEST_UNKNOWN: 上轮请求已提交但未保存完整回执；先核对服务商结果，禁止自动重复收费。'); }
+}
+export class LemoAgentImageUnknownError extends Error {
+  constructor(detail = '') { super('LEMO_IMAGE_REQUEST_UNKNOWN: Agent 申请的插画已提交但结果未知；请先核对生图服务商记录，确认无结果后再继续，避免重复计费。' + (detail ? ` (${detail})` : '')); }
 }
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 async function readOptional<T>(path: string): Promise<T | undefined> {
@@ -62,10 +87,13 @@ export async function lemoAgentPath(root: string, name: string) {
 async function projectFiles(root: string) {
   const files: Array<{ path: string; sha256: string; bytes: number }> = [];
   let total = 0;
+  // Host-managed binaries are covered by MANIFEST.json hashes (verified before export), not the source budget.
+  const assetChannel = await hasLemoAssetChannel(root);
   async function walk(prefix: string, depth: number) {
     if (depth > 12) throw new Error('LEMO_AGENT_PROJECT_DEPTH');
     for (const item of await readdir(join(root, prefix), { withFileTypes: true })) {
       const name = prefix ? prefix + '/' + item.name : item.name;
+      if (assetChannel && name.startsWith(LEMO_ASSET_DIR + '/') && name !== LEMO_ASSET_MANIFEST) continue;
       const path = await lemoAgentPath(root, name);
       if (item.isDirectory()) await walk(name, depth + 1);
       else {
@@ -88,9 +116,22 @@ function styleInstruction(context: LemoAgentContext) {
   return `The user chose OPUSCAR 98 light style ${context.styleId}; it has a style prompt but no library STYLE.md. Read DIRECTOR.md, TECHNIQUE.md and MY-STYLES.md using tools, then follow MY-STYLES.md "Start from a blank page" without interviewing the user (the look is already chosen): pick ONE library style as the technique base (closest materials and engine; at most two to borrow moves from), read its styles/<base>/STYLE.md, and write the film's own STYLE.md in the project (invariants only, in the sections of a library STYLE.md, built from the style prompt below) before TREATMENT.md. Keep every later decision consistent with that STYLE.md. Inspect demo source only to learn technique.
 ${context.styleReference}`;
 }
+function materialInstruction(context: LemoAgentContext) {
+  const lines: string[] = [];
+  if (context.assets?.length || context.imageGeneration) {
+    lines.push(`Material: ${LEMO_ASSET_MANIFEST} (read it with read_file) lists host-managed files under ${LEMO_ASSET_DIR}/. They are read-only: never write under ${LEMO_ASSET_DIR}/. Reference them by relative URL (./${LEMO_ASSET_DIR}/…) and preload them before window.READY. Video assets are 24 fps JPEG frame sequences: pick the frame for absolute film time inside render(t), never use <video> playback.`);
+  }
+  if (context.assets?.length) {
+    lines.push(`The user imported ${context.assets.length} real asset(s): ${JSON.stringify(context.assets.map(({ id, kind, description, source, license }) => ({ id, kind, description, source, license })))}. Build the film around this material where it serves the narration; keep its meaning, never fabricate missing evidence, and show source tags where the style calls for them. To look at one asset, use {"tool":"view_asset","id":"a01"}; the thumbnail is attached to your next turn.`);
+  }
+  if (context.imageGeneration) {
+    lines.push(`Illustrations: you may request at most ${context.imageGeneration.maxImages} generated image(s) for the whole film with {"tool":"request_image","id":"g1","prompt":"…","transparent":false}. Each request is paid; request only what code cannot draw well (complex painted subjects, characters, textures). Prompts describe pictorial subjects and texture only: NO text, letters, numbers, logos, maps, charts, documents, photographs of real events or anything that could pass as evidence. Use transparent:true for a cut-out subject. The host writes ${LEMO_ASSET_DIR}/generated/<id>.png and updates the manifest. Generated pictures are illustrations, never evidence. Titles, labels, data and stamps stay in code.`);
+  }
+  return lines.length ? '\n' + lines.join('\n') : '';
+}
 function systemPrompt(context: LemoAgentContext) {
   return `You are the film director and native HTML/ESM author inside StoryDream, using the unmodified Lemo library (${LEMO_UPSTREAM_REVISION}).
-Create an ORIGINAL film for the user, not a copy of a demo story. ${styleInstruction(context)}
+Create an ORIGINAL film for the user, not a copy of a demo story. ${styleInstruction(context)}${materialInstruction(context)}
 Work in separate HTML/JS/CSS modules of your own design. No fixed scene factories, no whole-film JSON. You may write outline.md first. Create index.html as the entry. Expose window.READY=true only after assets load, window.DUR=${context.durationSeconds}, and deterministic window.render(t). Use exact ${context.width}x${context.height} viewport and fit the camera to it.
 ESM import maps may map three to /node_modules/three/build/three.module.js and three/addons/ to /node_modules/three/examples/jsm/. Read-only /core/ and /styles/ paths are served. Your files are under /@film/. There is NO network, shell, npm install or Node access. Do not request external URLs or missing fonts; local system fonts are available. Do not alter library files or copy entire demos. Use substantive scene construction, lighting, composition, transitions and appropriate scale. Avoid repetitive title-card slides.
 The host owns narration, ordinary subtitles and final mixing. Do not synthesize speech, play audio or render ordinary subtitles inside your film; in-scene labels are allowed. Respect approved narration and timing supplied below.
@@ -119,8 +160,68 @@ async function messagesFor(options: LemoAgentOptions, journal: Journal): Promise
   if (journal.film.review?.sourceHash === journal.film.sourceHash && journal.film.review.frames.length) {
     latest.images = await Promise.all(journal.film.review.frames.map(async (path, index) => ({ dataUrl: 'data:image/png;base64,' + (await readFile(path)).toString('base64'), label: `Current source frame ${index + 1}` })));
   }
+  if (journal.film.assetPreview && journal.film.lastTool === 'view_asset') {
+    const preview = journal.film.assetPreview;
+    latest.images = [...(latest.images ?? []), { dataUrl: 'data:image/jpeg;base64,' + (await readFile(preview.path)).toString('base64'), label: `Asset ${preview.id} (thumbnail)` }];
+  }
   messages.push(latest);
   return messages;
+}
+
+const previewDir = (options: LemoAgentOptions) => join(resolve(options.root), 'asset-previews');
+interface ImageReceipt { status: 'submitted' | 'received' | 'rejected'; imageRequestId: string; nodeRequestId?: string; id: string; prompt: string; transparent: boolean; path?: string; error?: string }
+/** Host-side guard rails appended to every agent prompt; the agent's words stay first. */
+export function lemoAgentImagePrompt(prompt: string, transparent: boolean) {
+  return [prompt.trim(), 'Illustration for an animated film. No text, letters, numbers, captions, labels, logos, signatures or watermarks. Not a photograph of a real event, not a document, chart or map.',
+    transparent ? 'One complete subject, centered, fully in frame with generous margin, on a solid pure green chroma-key background (#00FF00); no green on the subject.' : ''].filter(Boolean).join('\n\n');
+}
+async function requestImage(options: LemoAgentOptions, film: LemoUpstreamFilm, action: Extract<LemoAgentAction, { tool: 'request_image' }>, turnDir: string): Promise<string> {
+  const policy = options.context.imageGeneration;
+  if (!policy || !options.images || !options.assetHost) throw new Error('LEMO_IMAGE_DISABLED: illustration requests are not enabled for this film. Draw it in code or use imported assets.');
+  const manifest = await readLemoAssetManifest(film.directory);
+  if (!manifest) throw new Error('LEMO_ASSET_CHANNEL: material manifest is missing.');
+  const generated = manifest.assets.filter(entry => entry.origin === 'generated');
+  const receiptPath = join(turnDir, 'image.json');
+  let receipt = await readOptional<ImageReceipt>(receiptPath);
+  const request = (imageRequestId: string): LemoAgentImageRequest => ({ requestId: imageRequestId, id: action.id, prompt: lemoAgentImagePrompt(action.prompt, action.transparent),
+    transparent: action.transparent, width: options.context.width, height: options.context.height });
+  let result: { path: string } | undefined;
+  if (receipt?.status === 'rejected') throw new Error(`LEMO_IMAGE_REJECTED: the image provider refused this request (${receipt.error ?? 'no detail'}). Change the prompt or draw it in code.`);
+  if (receipt?.status === 'received') result = { path: receipt.path! };
+  if (receipt?.status === 'submitted') {
+    // The user confirmed with the provider that the earlier submission produced nothing: retry that one only.
+    if (options.retryOfRequestId && receipt.nodeRequestId === options.retryOfRequestId && options.requestId !== receipt.nodeRequestId) {
+      await rename(receiptPath, join(turnDir, `image-abandoned-${randomUUID()}.json`));
+      receipt = undefined;
+    } else {
+      result = await options.images.recover?.(request(receipt.imageRequestId));
+      if (!result) throw new LemoAgentImageUnknownError();
+    }
+  }
+  if (!receipt) {
+    if (manifest.assets.some(entry => entry.id === action.id)) throw new Error(`LEMO_IMAGE_ID_TAKEN: "${action.id}" already exists in the manifest; choose a new id.`);
+    if (generated.length >= policy.maxImages) throw new Error(`LEMO_IMAGE_BUDGET: all ${policy.maxImages} illustration(s) for this film are used. Reuse existing assets or draw it in code.`);
+    if (options.images.recoveryOnly) throw new Error('LEMO_RECOVERY_MUST_NOT_CHARGE: image request not yet submitted');
+    receipt = { status: 'submitted', imageRequestId: randomUUID(), nodeRequestId: options.requestId, id: action.id, prompt: action.prompt, transparent: action.transparent };
+    try { await writeFile(receiptPath, JSON.stringify(receipt), { encoding: 'utf8', flag: 'wx' }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LemoAgentImageUnknownError(); throw error; }
+    try { result = await options.images.generate(request(receipt.imageRequestId)); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (options.images.isRejection(message)) {
+        await atomic(receiptPath, { ...receipt, status: 'rejected', error: message.slice(0, 500) });
+        throw new Error(`LEMO_IMAGE_REJECTED: ${message.slice(0, 500)}. Change the prompt or draw it in code.`);
+      }
+      throw new LemoAgentImageUnknownError(message.slice(0, 300));
+    }
+  }
+  if (receipt.status !== 'received') { receipt = { ...receipt, status: 'received', path: result!.path }; await atomic(receiptPath, receipt); }
+  const entry = await addGeneratedLemoAsset({ projectDir: film.directory, previewDir: previewDir(options), media: options.assetHost.media, id: action.id,
+    sourcePath: result!.path, prompt: action.prompt, transparent: action.transparent, provider: options.images.provider });
+  film.sourceHash = await fingerprint(film.directory);
+  film.status = 'authoring'; delete film.visualReview;
+  const used = generated.some(item => item.id === entry.id) ? generated.length : generated.length + 1;
+  return JSON.stringify({ ...entry, remaining: Math.max(0, policy.maxImages - used), message: 'Illustration saved and listed in the manifest. Use it by relative URL.' });
 }
 
 async function executeAction(options: LemoAgentOptions, journal: Journal, action: LemoAgentAction, turnDir: string): Promise<string> {
@@ -136,6 +237,9 @@ async function executeAction(options: LemoAgentOptions, journal: Journal, action
   }
   if (action.tool === 'write_file' || action.tool === 'replace_text') {
     if (!textFile.test(action.path)) throw new Error('LEMO_AGENT_WRITE_DENIED: only film source files can be written.');
+    if ((action.path === LEMO_ASSET_DIR || action.path.startsWith(LEMO_ASSET_DIR + '/')) && (await hasLemoAssetChannel(film.directory) || options.context.assets?.length || options.context.imageGeneration)) {
+      throw new Error(`LEMO_AGENT_WRITE_DENIED: ${LEMO_ASSET_DIR}/ is host-managed material and read-only.`);
+    }
     const path = await lemoAgentPath(film.directory, action.path);
     let before = '';
     try { before = await readFile(path, 'utf8'); } catch (error) { if (!missing(error)) throw error; }
@@ -176,6 +280,15 @@ async function executeAction(options: LemoAgentOptions, journal: Journal, action
     return JSON.stringify({ ...receipt, expectedDurationSeconds: duration, durationMatches: correctDuration,
       message: 'These are real current-source captures, not an aesthetic approval. Examine the images in your next turn and repair defects.' });
   }
+  if (action.tool === 'view_asset') {
+    const entry = (await readLemoAssetManifest(film.directory))?.assets.find(item => item.id === action.id);
+    if (!entry) throw new Error(`LEMO_ASSET_UNKNOWN: no asset "${action.id}" in ${LEMO_ASSET_MANIFEST}.`);
+    const path = join(previewDir(options), `${entry.id}.jpg`);
+    await readFile(path);
+    film.assetPreview = { id: entry.id, path };
+    return JSON.stringify({ ...entry, message: 'Thumbnail attached to your next turn. It is a reduced preview; the film uses the full file.' });
+  }
+  if (action.tool === 'request_image') return requestImage(options, film, action, turnDir);
   if (!film.review?.technicalPassed || film.review.sourceHash !== film.sourceHash || film.review.frames.length < 3) throw new Error('LEMO_AGENT_REVIEW_REQUIRED: render and inspect current sources before finishing.');
   // Images must have existed in the input of this model turn, never merely captured after its response.
   film.visualReview = { sourceHash: film.sourceHash, notes: action.notes, turn: journal.turns.length + 1 };
@@ -190,9 +303,15 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
   if (!/^[a-z0-9][a-z0-9-]*$/.test(context.styleId) || !Number.isFinite(context.durationSeconds) || context.durationSeconds <= 0) throw new Error('LEMO_AGENT_CONTEXT');
   const root = resolve(options.root), directory = join(root, 'project'), journalPath = join(root, 'journal.json');
   await mkdir(directory, { recursive: true });
+  // Optional fields are omitted by JSON.stringify, so runs without material keep their original hash.
   const contextHash = hash(JSON.stringify(context));
   let journal = await readOptional<Journal>(journalPath);
   if (journal && journal.contextHash !== contextHash) throw new Error('LEMO_AGENT_CONTEXT_CHANGED: create a new run for changed inputs.');
+  if (context.assets?.length || context.imageGeneration) {
+    if (!options.assetHost) throw new Error('LEMO_ASSET_CHANNEL: 素材通道缺少宿主文件与媒体工具。');
+    await stageLemoAssets({ projectDir: directory, previewDir: previewDir(options), inputs: context.assets ?? [], files: options.assetHost.files,
+      media: options.assetHost.media, canvas: { width: context.width, height: context.height } });
+  }
   if (!journal) {
     journal = { version: 1, contextHash, turns: [], film: { version: 1, runId: context.runId, styleId: context.styleId, directory, turn: 0, status: 'authoring', sourceHash: await fingerprint(directory), lastTool: 'start', message: '原生工程已创建。' } };
     await atomic(journalPath, journal);
@@ -245,7 +364,8 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
     // Local infrastructure failures are not an invitation to buy another model turn.
     // Keep response.json replayable; the same action resumes after the host is repaired.
     options.signal?.throwIfAborted();
-    if ((error as Error)?.name === 'AbortError'
+    if ((error as Error)?.name === 'AbortError' || error instanceof LemoAgentImageUnknownError
+      || /^LEMO_RECOVERY_MUST_NOT_CHARGE/.test((error as Error)?.message ?? '')
       || /^(?:EACCES|EPERM|ENOSPC|EMFILE|ENFILE|EIO|EROFS|EBUSY)$/.test((error as NodeJS.ErrnoException)?.code ?? '')) throw error;
     observation = `Tool rejected; no success claimed: ${error instanceof Error ? error.message : String(error)}. Read actual files and correct the next action.`;
   }
@@ -268,4 +388,6 @@ export async function assertLemoUpstreamFilmCurrent(film: LemoUpstreamFilm, dura
     || film.review.sourceHash !== film.sourceHash || film.visualReview.sourceHash !== film.sourceHash
     || Math.abs((film.review.durationSeconds ?? 0) - durationSeconds) > 1 / 30
     || await fingerprint(film.directory) !== film.sourceHash) throw new Error('LEMO_AGENT_NOT_READY: 原生工程未完成当前版本审片，不能导出。');
+  // Binary assets are outside the source fingerprint; their bytes must still match the manifest.
+  await verifyLemoAssets(film.directory);
 }

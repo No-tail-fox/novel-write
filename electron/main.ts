@@ -30,6 +30,10 @@ import { MotionComicScriptBatchService } from './motion-comic-script-batch-servi
 import { VoxProductionService, voxInputHash } from './vox-production-service';
 import { createVoxProductionRuntime } from './vox-production-runtime';
 import { createLemoUpstreamOperations, preflightLemoUpstream } from './lemo-upstream-production';
+import { createFfmpegLemoAssetMedia } from './lemo-upstream-assets';
+import type { LemoAgentImageRequest, LemoAgentImages } from './lemo-upstream-agent';
+import { isDefinitiveImageProviderFailure } from '../src/shared/image-provider-error';
+import { lemoAgentImagePolicy } from '../src/shared/creative-animation/agent-assets';
 import { LEMO_PICTURE_FPS, prepareLemoUpstreamPicture } from './lemo-upstream-picture';
 import { defaultLemoUpstreamPythonRoot, finalizeLemoUpstreamFilm, lemoFilmGrain, resolveLemoUpstreamRenderRuntime } from './lemo-upstream-video';
 import { listVoxProductionProjects } from './vox-production-projects';
@@ -3247,7 +3251,26 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
     const work = join(taskWorkDir(task), 'vox-production');
     const styleReferences = new Map<string, string>();
     const upstreamLibrary = lemoProductionLibrary();
-    const upstreamOperations = createLemoUpstreamOperations(upstreamLibrary, work, request => createConfiguredTextLlm(config.llm).run(request));
+    const agentImageInput = (request: LemoAgentImageRequest) => ({ id: request.requestId, prompt: request.prompt, ratio: request.width > request.height ? '16:9' : request.width < request.height ? '9:16' : '1:1',
+      style: 'none', provider: image.provider, smartMode: 'text-to-image' as const, resolution: image.resolution, quality: image.quality });
+    const agentImageResult = async (request: LemoAgentImageRequest, record: ImageLabRecord) => {
+      if (record.status !== 'generated') throw new Error(record.errorMessage || 'LEMO_IMAGE_FAILED');
+      // Transparent subjects are generated on #00FF00 and keyed locally (no second paid call).
+      return { path: request.transparent ? (await removeImageLabBackgroundFromSource(record.imagePath, 'green-key')).outputPath : record.imagePath };
+    };
+    const upstreamOperations = createLemoUpstreamOperations(upstreamLibrary, work, request => createConfiguredTextLlm(config.llm).run(request), {
+      media: async () => createFfmpegLemoAssetMedia((await resolveLemoUpstreamRenderRuntime({ pythonRoot: upstreamLibrary.pythonRoot, cacheDir: upstreamLibrary.cacheDir })).ffmpegPath),
+      ...(image.connected ? { images: {
+        provider: image.model || image.provider,
+        isRejection: isDefinitiveImageProviderFailure,
+        generate: async request => agentImageResult(request, await generateImageLabRecord(config, join(work, 'agent-images', request.requestId), agentImageInput(request))),
+        recover: async request => {
+          const record = await generateImageLabRecord(config, join(work, 'agent-images', request.requestId), agentImageInput(request), undefined, undefined, { recoveryOnly: true });
+          if (record.status === 'failed' && record.errorMessage.startsWith('IMAGE_RECOVERY_UNAVAILABLE:')) return undefined;
+          return agentImageResult(request, record);
+        },
+      } satisfies LemoAgentImages } : {}),
+    });
     return createVoxProductionRuntime({
       ...upstreamOperations,
       nativePlanningVersion: 1,
@@ -3267,6 +3290,7 @@ function createMainVoxProductionService(database: FileDatabase, service: ConfigS
         const upstream = nodes.some(n => n.id.startsWith('upstream-turn:')) || document.productionRun?.authoringVersion === 3;
         if (upstream && settings.lockedShotIds.length) throw new Error('LEMO_LOCKED_SHOTS: 新原生整片工程暂不支持混合锁定镜头；请选择未锁定的新任务，旧任务仍按原链路续跑。');
         if (upstream) await preflightLemoUpstream(upstreamLibrary, resolveCreativeStyle(settings.authoring?.styleId, settings.presetId)!.slug);
+        if (upstream && lemoAgentImagePolicy(settings).enabled && !image.connected) throw new Error('已允许 AI 生成插画，但生图服务不可用：' + image.unavailableReason);
         if (!upstream && (nodes.some(n => ['code', 'code-repair', 'film-edit', 'film-code', 'film-scene', 'film-director', 'film-sample-repair', 'film-repair'].includes(n.kind)) || native && nodes.some(n => ['plan', 'film-plan-materials', 'film-plan-scene'].includes(n.kind)))) {
           const style = resolveCreativeStyle(settings.authoring?.styleId, settings.presetId)!;
           if (!style.adapter) throw new Error('LEMO_STYLE_NEEDS_UPSTREAM: 此风格（新增完整风格或 OPUSCAR 98 轻量风格）只支持新原生整片工程；请重新开始制作，或在模板动画里选择已适配风格。');

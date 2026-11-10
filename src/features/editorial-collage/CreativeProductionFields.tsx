@@ -1,17 +1,21 @@
+import { useState } from 'react';
 import { CheckboxField, PreviewSelectField, SelectField, TextAreaField, TextField, Button } from '../../ui';
 import { CREATIVE_STYLES, LEMO_LIBRARY_STYLES, OPUSCAR98_STYLES, creativeStyleSupportsMode, resolveCreativeStyle } from '../../shared/creative-animation/styles';
 import { VOX_PRODUCTION_PRESETS, type VoxProductionSettings } from '../../shared/vox-production';
+import { LEMO_AGENT_ASSET_LIMIT, LEMO_AGENT_IMAGE_DEFAULT, LEMO_AGENT_IMAGE_MAX, LEMO_ASSET_VIDEO_MAX_SECONDS, lemoStyleRequiresRealMaterial } from '../../shared/creative-animation/agent-assets';
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { CreativeStyleCover, CreativeStyleFilm } from './CreativeStylePreview';
 
 /** Creation and project settings deliberately edit the same persisted inputs. */
-export function CreativeProductionFields({ settings, onChange, onOpenUrl, document, busy = false, showNarration = true }: {
+export function CreativeProductionFields({ settings, onChange, onOpenUrl, document, busy = false, showNarration = true, onImportAsset }: {
   settings: VoxProductionSettings;
   onChange(settings: VoxProductionSettings): void;
   onOpenUrl(url: string): Promise<void>;
   document?: EditorialCollagePipelineData;
   busy?: boolean;
   showNarration?: boolean;
+  /** Lemo material channel: import a local image/video into the project; resolves with the new asset id. */
+  onImportAsset?(kind: 'image' | 'video'): Promise<string | undefined>;
 }) {
   const preset = VOX_PRODUCTION_PRESETS.find(item => item.id === settings.presetId)!;
   const style = resolveCreativeStyle(settings.authoring?.styleId, settings.presetId);
@@ -19,7 +23,20 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
   const authoring = settings.authoring ?? { mode: 'template' as const, styleId: 'auto' };
   const previewMode = authoring.mode === 'ai-code' ? 'ai-code' : 'template';
   const coordinates = settings.data.some(row => row.lat !== undefined || row.lng !== undefined);
-  const images = document?.assets.filter(asset => asset.kind === 'image' && asset.localPath) ?? [];
+  const lemo = authoring.mode === 'ai-code';
+  const images = document?.assets.filter(asset => (asset.kind === 'image' || lemo && asset.kind === 'video') && asset.localPath) ?? [];
+  const evidenceStyle = lemo && lemoStyleRequiresRealMaterial(authoring.styleId, settings.presetId);
+  const agentImages = settings.agentImages ?? { enabled: false, maxImages: LEMO_AGENT_IMAGE_DEFAULT };
+  const [importing, setImporting] = useState<'image' | 'video' | null>(null);
+  const [importError, setImportError] = useState('');
+  const importAsset = async (kind: 'image' | 'video') => {
+    setImporting(kind); setImportError('');
+    try {
+      const id = await onImportAsset?.(kind);
+      if (id) onChange({ ...settings, archives: [...settings.archives, { assetVersionId: id, source: '', license: '' }] });
+    } catch (error) { setImportError(error instanceof Error ? error.message : String(error)); }
+    finally { setImporting(null); }
+  };
   const updateRow = (index: number, patch: Partial<VoxProductionSettings['data'][number]>) => onChange({ ...settings, data: settings.data.map((row, i) => i === index ? { ...row, ...patch } : row) });
   const updateArchive = (index: number, patch: Partial<VoxProductionSettings['archives'][number]>) => onChange({ ...settings, archives: settings.archives.map((row, i) => i === index ? { ...row, ...patch } : row) });
   return <div className="vox-production-fields">
@@ -27,8 +44,12 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
     <p className="vox-hint" data-production-route={authoring.mode === 'ai-code' ? 'lemo' : 'template'}>{authoring.mode === 'ai-code'
       ? 'Lemo 创意动画：导演型 AI 按上游 Lemo 文档整片创作，自己读风格、写代码、看静帧、修改；66 种完整风格 + OPUSCAR 98 的 98 种轻量风格。最终输出一部连续影片。'
       : 'Remotion 模板动画：画面规划 → 背景与主体分层 → 去底 → 跟随旁白编排图文、图表与运动。用已适配的 59 种风格和模板，稳定、可批量。'}</p>
-    <CheckboxField label="自动生成图片" checked={settings.generateImages} disabled={busy} onChange={(_, event) => onChange({ ...settings, generateImages: event.checked === true })} />
-    {authoring.mode === 'ai-code' ? <p className="vox-hint">按导演方案准备插画和已有图片，再与代码绘制画面组合。真实证据需导入并填写出处与许可；生成插画不能替代真实资料。</p> : null}
+    {lemo ? <>
+      <CheckboxField label="允许 AI 生成插画" checked={agentImages.enabled && !evidenceStyle} disabled={busy || evidenceStyle} onChange={(_, event) => onChange({ ...settings, agentImages: { ...agentImages, enabled: event.checked === true } })} />
+      {agentImages.enabled && !evidenceStyle ? <TextField label="插画数量上限" type="number" value={String(agentImages.maxImages)} disabled={busy} hint={`整片最多 ${LEMO_AGENT_IMAGE_MAX} 张；每张按生图服务商计费，恢复和续跑不会重复收费。`}
+        onChange={(_, event) => onChange({ ...settings, agentImages: { ...agentImages, maxImages: Math.min(LEMO_AGENT_IMAGE_MAX, Math.max(1, Math.round(Number(event.value) || 1))) } })} /> : null}
+      <p className="vox-hint">{evidenceStyle ? '纪实/证据类风格只使用导入的真实素材，不生成插画。' : agentImages.enabled ? 'Agent 只在代码画不好的地方（复杂人物、手绘质感等）申请插画；文字、数据和图章仍用代码绘制。生成插画不会被当作真实资料。' : '默认全部用代码绘制，不调用生图。可以导入真实图片或视频作为素材。'}</p>
+    </> : <CheckboxField label="自动生成图片" checked={settings.generateImages} disabled={busy} onChange={(_, event) => onChange({ ...settings, generateImages: event.checked === true })} />}
     <PreviewSelectField label="视觉风格" value={authoring.styleId} disabled={busy} detailLabel="播放样片" showSelectedPreview selectedPreviewHint="LemoLab 官方封面 · 点击播放样片"
       options={[
         { value: 'auto', label: '自动匹配（推荐）', description: `当前素材流程匹配：${autoStyle.cn}`, preview: () => <CreativeStyleCover key={autoStyle.slug} style={autoStyle} />, thumbnail: () => <CreativeStyleCover key={autoStyle.slug} style={autoStyle} thumbnail />, detailPreview: () => <CreativeStyleFilm style={autoStyle} mode={previewMode} automatic onOpenUrl={onOpenUrl} /> },
@@ -61,14 +82,23 @@ export function CreativeProductionFields({ settings, onChange, onOpenUrl, docume
       <Button disabled={busy || settings.data.length >= (coordinates ? 24 : 12)} onClick={() => onChange({ ...settings, data: [...settings.data, { label: '', value: 0, source: '', ...(coordinates ? { lat: 0, lng: 0 } : {}) }] })}>添加有来源的数据</Button>
       {!settings.data.length ? <p className="vox-hint">自动制作前需填写至少两条有来源的数据，可先创建项目。</p> : null}
     </section> : null}
-    {settings.presetId === 'archival-story' || authoring.mode === 'ai-code' ? <section className="vox-production-fields" aria-label="真实档案输入">
-      {settings.archives.map((row, index) => <fieldset key={index} className="vox-production-source-row"><legend>档案 {index + 1}</legend>
-        <SelectField label="已导入的图片" value={row.assetVersionId} disabled={busy} options={[{ value: '', label: '请选择真实资料图片' }, ...images.map(asset => ({ value: asset.id, label: asset.prompt?.slice(0, 60) || asset.assetId }))]} onChange={(_, event) => updateArchive(index, { assetVersionId: event.value })} />
+    {settings.presetId === 'archival-story' || lemo ? <section className="vox-production-fields" aria-label={lemo ? '导入素材' : '真实档案输入'}>
+      {lemo ? <p className="vox-hint">{`导入的图片或视频会复制进影片工程，Agent 可以查看并直接使用；视频最长 ${LEMO_ASSET_VIDEO_MAX_SECONDS} 秒，会转成 24 fps 图片序列。每份素材需填写出处与许可，最多 ${LEMO_AGENT_ASSET_LIMIT} 份。`}</p> : null}
+      {settings.archives.map((row, index) => <fieldset key={index} className="vox-production-source-row"><legend>{lemo ? '素材' : '档案'} {index + 1}</legend>
+        <SelectField label={lemo ? '已导入的图片或视频' : '已导入的图片'} value={row.assetVersionId} disabled={busy} options={[{ value: '', label: lemo ? '请选择素材' : '请选择真实资料图片' }, ...images.map(asset => ({ value: asset.id, label: (asset.kind === 'video' ? '视频 · ' : '') + (asset.prompt?.slice(0, 60) || asset.assetId) }))]} onChange={(_, event) => updateArchive(index, { assetVersionId: event.value })} />
         <TextField label="资料出处" value={row.source} disabled={busy} onChange={(_, event) => updateArchive(index, { source: event.value })} />
         <TextField label="许可或使用说明" value={row.license} disabled={busy} onChange={(_, event) => updateArchive(index, { license: event.value })} />
-        <Button variant="subtle" disabled={busy} onClick={() => onChange({ ...settings, archives: settings.archives.filter((_, i) => i !== index) })}>删除档案 {index + 1}</Button>
+        {lemo ? <TextField label="画面说明（选填）" value={row.description ?? ''} disabled={busy} hint="告诉 Agent 这份素材是什么、适合放在哪一段。" onChange={(_, event) => updateArchive(index, { description: event.value || undefined })} /> : null}
+        <Button variant="subtle" disabled={busy} onClick={() => onChange({ ...settings, archives: settings.archives.filter((_, i) => i !== index) })}>{lemo ? '删除素材' : '删除档案'} {index + 1}</Button>
       </fieldset>)}
-      {images.length ? <Button disabled={busy || settings.archives.length >= 100} onClick={() => onChange({ ...settings, archives: [...settings.archives, { assetVersionId: images[0].id, source: '', license: '' }] })}>添加档案引用</Button> : <p className="vox-hint">创建项目后，在镜头设置中导入资料图片，再补充出处与许可。</p>}
+      {lemo && onImportAsset ? <div className="vox-production-actions">
+        <Button disabled={busy || importing !== null || settings.archives.length >= LEMO_AGENT_ASSET_LIMIT} onClick={() => void importAsset('image')}>导入图片</Button>
+        <Button disabled={busy || importing !== null || settings.archives.length >= LEMO_AGENT_ASSET_LIMIT} onClick={() => void importAsset('video')}>导入视频</Button>
+        {importing ? <span className="vox-hint" role="status">正在导入素材…</span> : null}
+      </div> : null}
+      {importError ? <p role="alert">{importError}</p> : null}
+      {images.length ? <Button disabled={busy || settings.archives.length >= (lemo ? LEMO_AGENT_ASSET_LIMIT : 100)} onClick={() => onChange({ ...settings, archives: [...settings.archives, { assetVersionId: (images.find(asset => !settings.archives.some(ref => ref.assetVersionId === asset.id)) ?? images[0]).id, source: '', license: '' }] })}>{lemo ? '引用已导入的素材' : '添加档案引用'}</Button>
+        : lemo && onImportAsset ? null : <p className="vox-hint">{lemo ? '创建项目后，在“自动制作设置”中导入图片或视频，再补充出处与许可。' : '创建项目后，在镜头设置中导入资料图片，再补充出处与许可。'}</p>}
     </section> : null}
   </div>;
 }

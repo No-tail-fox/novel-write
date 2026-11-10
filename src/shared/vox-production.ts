@@ -6,6 +6,7 @@ import type { EditorialCollagePipelineData, EditorialCollageShot } from './edito
 import { creativeStyleSupportsMode, resolveCreativeStyle } from './creative-animation/styles';
 import { isDefinitiveImageProviderFailure } from './image-provider-error';
 import { isDefinitiveLlmProviderRejection } from './llm-provider-error';
+import { LEMO_AGENT_IMAGE_DEFAULT, LEMO_AGENT_IMAGE_MAX, lemoAgentAssetErrors } from './creative-animation/agent-assets';
 
 const id = z.string().min(1).max(256);
 export const VOX_PRODUCTION_PRESETS = [
@@ -25,6 +26,8 @@ export const voxProductionSettingsSchema = z.object({
   version: z.literal(1), presetId: z.enum(['paper-explainer', 'data-map', 'archival-story']), presetVersion: z.literal(1),
   narration: z.boolean().default(true),
   generateImages: z.boolean().optional(),
+  /** Lemo v3 only: let the agent request illustrations (off by default; never for evidence styles). */
+  agentImages: z.object({ enabled: z.boolean(), maxImages: z.number().int().min(1).max(LEMO_AGENT_IMAGE_MAX).default(LEMO_AGENT_IMAGE_DEFAULT) }).strict().optional(),
   music: voxProjectMusicSchema.optional(),
   lockedShotIds: z.array(id).max(500).default([]),
   authoring: z.object({ mode: z.enum(['template', 'ai-code', 'existing-assets']), styleId: z.string().min(1).max(120), brief: z.string().max(2000).optional() }).strict().optional(),
@@ -32,7 +35,7 @@ export const voxProductionSettingsSchema = z.object({
   data: z.array(z.object({ label: z.string().min(1).max(160), value: z.number().finite(), source: z.string().min(1).max(400),
     lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional(),
   }).strict()).max(24).default([]),
-  archives: z.array(z.object({ assetVersionId: id, source: z.string().min(1).max(400), license: z.string().min(1).max(512) }).strict()).max(100).default([]),
+  archives: z.array(z.object({ assetVersionId: id, source: z.string().min(1).max(400), license: z.string().min(1).max(512), description: z.string().max(400).optional() }).strict()).max(100).default([]),
 }).strict().transform(({ authoring, ...settings }) => ({
   ...settings,
   generateImages: settings.generateImages ?? authoring?.mode !== 'existing-assets',
@@ -79,6 +82,8 @@ export const voxProductionRunSchema = z.object({
   settings: voxProductionSettingsSchema,
   planningVersion: z.literal(1).optional(),
   engine: z.literal(LEMO_NATIVE_ENGINE).optional(), filmId: id.optional(), authoringVersion: z.union([z.literal(2), z.literal(3)]).optional(),
+  /** v3 runs created with the asset/image channels; older in-flight journals keep their original context. */
+  assetChannel: z.literal(1).optional(),
   sourceHash: z.string().max(128), runtimeIdentity: z.string().max(8000),
   nodes: z.array(voxProductionNodeSchema).max(8003),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
@@ -110,6 +115,7 @@ export function voxProductionInputErrors(document: EditorialCollagePipelineData,
   if (settings.presetId === 'data-map' && settings.data.some(row => row.lat !== undefined) && !settings.data.every(row => row.lat !== undefined && row.lng !== undefined)) errors.push('路线中的每条数据都需填写经纬度。');
   if (settings.data.some(row => (row.lat === undefined) !== (row.lng === undefined))) errors.push('地点必须同时填写纬度和经度。');
   if (settings.presetId === 'archival-story' && (!settings.archives.length || settings.archives.some(ref => !document.assets.some(asset => asset.id === ref.assetVersionId && asset.kind === 'image' && asset.localPath)))) errors.push('请导入真实档案图片并填写出处与许可；也可以切换纸拼贴讲解。');
+  errors.push(...lemoAgentAssetErrors(document, settings));
   const shotIds = new Set(document.beats.flatMap(beat => beat.shots.map(shot => shot.id)));
   if (settings.lockedShotIds.some(shotId => !shotIds.has(shotId))) errors.push('锁定的镜头已删除，请重新选择。');
   for (const shot of document.beats.flatMap(beat => beat.shots)) {

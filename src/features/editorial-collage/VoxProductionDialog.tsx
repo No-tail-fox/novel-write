@@ -8,12 +8,13 @@ import { ProjectMusicFields } from './ProjectMusicFields';
 import type { BgmItem } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 
-export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, onApply, onOpenUrl, musicLibrary, api }: {
+export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, onApply, onOpenUrl, onImportAsset, musicLibrary, api }: {
   document: EditorialCollagePipelineData; busy: boolean; onClose(): void;
   onStart(settings: VoxProductionSettings): Promise<void>;
   onApply(settings: VoxProductionSettings): Promise<void>;
   onSave(settings: VoxProductionSettings): Promise<void>;
   onOpenUrl(url: string): Promise<void>;
+  onImportAsset?(kind: 'image' | 'video'): Promise<string | undefined>;
   musicLibrary: readonly BgmItem[];
   api: Pick<StoryDreamApi, 'importBgmAudio'>;
 }) {
@@ -32,7 +33,7 @@ export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, 
     <Button variant="primary" disabled={busy || !parsed.success || Boolean(error)} onClick={() => parsed.success && void onStart(parsed.data)}>{busy ? '准备中…' : nativeAuthoring ? '按此风格创作全片' : '开始自动制作'}</Button>
   </>}>
     <div className="director-batch-dialog vox-production-form">
-      <CreativeProductionFields settings={settings} onChange={setSettings} onOpenUrl={onOpenUrl} document={document} busy={busy} />
+      <CreativeProductionFields settings={settings} onChange={setSettings} onOpenUrl={onOpenUrl} document={document} busy={busy} onImportAsset={onImportAsset} />
       <p className="vox-hint">{nativeAuthoring ? '保存设置只记录下一次制作的选择。点击“按此风格创作全片”，将用完整文案和所选风格重新编排画面、文字、材质与运动。已锁定镜头和手动代码会保留。' : '保存设置只记录下一次制作的选择。应用风格会更新现有镜头的构图、标题和运动，保留图片原材质；完整更新素材请开始自动制作。已锁定镜头和手动代码会保留。'}</p>
       {!nativeAuthoring && applyUnavailable && applyUnavailable !== error ? <p className="vox-hint" role="status">{applyUnavailable}</p> : null}
       <details className="vox-settings-disclosure"><summary>{nativeAuthoring ? '镜头实际风格与待创作状态' : '镜头实际风格与待应用状态'}</summary><ol>{shots.map((shot, index) => <li key={shot.id}>{shot.title || `镜头 ${index + 1}`} · {creativeStyleStatus(shot.animation, settings)}</li>)}</ol></details>
@@ -46,7 +47,7 @@ export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, 
         </div>
       </details>
       {error ? <p role="alert">{error}</p> : null}
-      <p className="vox-hint">{nativeAuthoring ? 'Lemo 先完成创意大纲、素材规划和分段导演方案（每段最多 8 个镜头），校验后再准备素材、创作并检查连续影片。每步独立保存方案、源码与回执，成功步骤可复用；网络中断且结果不明的请求需先核对。' : 'Vox 使用现有文本、图片与配音模型，按已选素材流程制作独立图层。'}云端生成按服务商计费。应用保持打开时可离开页面继续制作。</p>
+      <p className="vox-hint">{nativeAuthoring ? 'Lemo 导演型 Agent 按上游文档整片创作：每轮执行一个动作（读资料、写代码、看静帧、查看素材或申请插画），每轮的回复、源码和回执都会保存，成功的轮次可复用；网络中断且结果不明的请求需先核对。' : 'Vox 使用现有文本、图片与配音模型，按已选素材流程制作独立图层。'}云端生成按服务商计费。应用保持打开时可离开页面继续制作。</p>
     </div>
   </Dialog>;
 }

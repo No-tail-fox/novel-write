@@ -9,6 +9,8 @@ export const lemoUpstreamFilmSchema = z.object({
   lastTool: z.string(), message: z.string().max(12000),
   review: z.object({ sourceHash: z.string(), technicalPassed: z.boolean(), frames: z.array(z.string()).max(8), durationSeconds: z.number().optional() }).optional(),
   visualReview: z.object({ sourceHash: z.string(), notes: z.string().min(20).max(8000), turn: z.number().int().positive() }).optional(),
+  /** One asset thumbnail shown to the model on the turn after view_asset (multimodal input, not image generation). */
+  assetPreview: z.object({ id: z.string().min(1).max(64), path: z.string().min(1) }).strict().optional(),
 }).strict();
 export type LemoUpstreamFilm = z.infer<typeof lemoUpstreamFilmSchema>;
 
@@ -20,6 +22,8 @@ const actionSchema = z.discriminatedUnion('tool', [
   z.object({ tool: z.literal('replace_text'), path, before: z.string().min(1).max(100000), after: z.string().max(100000) }).strict(),
   z.object({ tool: z.literal('review_frames') }).strict(),
   z.object({ tool: z.literal('finish'), notes: z.string().min(20).max(8000) }).strict(),
+  z.object({ tool: z.literal('view_asset'), id: z.string().min(1).max(64) }).strict(),
+  z.object({ tool: z.literal('request_image'), id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/), prompt: z.string().min(12).max(1500), transparent: z.boolean().default(false) }).strict(),
 ]);
 export type LemoAgentAction = z.infer<typeof actionSchema> & { body?: string };
 

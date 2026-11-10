@@ -100,7 +100,7 @@ export class VoxProductionService {
       const now = new Date().toISOString();
       const runId = randomUUID();
       const next = await this.store.save(rebuildEditorialTimeline({ ...document, ...(authoringVersion === 3 ? { upstreamFilm: undefined } : {}), productionSettings: input.settings, productionRun: {
-        version: 1, id: runId, status: 'running', settings: input.settings, ...(planningVersion ? { planningVersion } : {}), ...(engine ? { engine, ...(authoringVersion ? { authoringVersion } : {}), ...(nodes.some(n => n.id === 'plan' && n.status === 'completed') && previous?.filmId ? { filmId: previous.filmId } : {}) } : {}),
+        version: 1, id: runId, status: 'running', settings: input.settings, ...(planningVersion ? { planningVersion } : {}), ...(authoringVersion === 3 ? { assetChannel: 1 as const } : {}), ...(engine ? { engine, ...(authoringVersion ? { authoringVersion } : {}), ...(nodes.some(n => n.id === 'plan' && n.status === 'completed') && previous?.filmId ? { filmId: previous.filmId } : {}) } : {}),
         sourceHash: voxInputHash(document.sourceText), runtimeIdentity: runtime.identity,
         nodes, createdAt: now, updatedAt: now,
       } }), runId);

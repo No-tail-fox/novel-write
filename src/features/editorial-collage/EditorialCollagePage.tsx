@@ -516,6 +516,21 @@ export function EditorialCollagePage({
     });
   }
 
+  /** Lemo material channel: project-level image/video, referenced from production settings (not a shot). */
+  async function importProductionAsset(kind: 'image' | 'video'): Promise<string | undefined> {
+    return withHistoryCapacity({ assets: 1 }, async () => {
+      const projectId = documentRef.current?.id;
+      const request = projectOpenRequestRef.current;
+      const path = kind === 'image' ? await api.selectLocalImage() : await api.selectLocalVideo();
+      if (!path) return undefined;
+      if (kind === 'image') await api.readVoxAnimationAsset(path);
+      if (documentRef.current?.id !== projectId || request !== projectOpenRequestRef.current) throw new Error('项目已切换，请重新导入。');
+      const id = crypto.randomUUID(), createdAt = new Date().toISOString(), title = path.split(/[\\/]/).at(-1)!;
+      mutateDocument(current => ({ ...current, assets: [...current.assets, { id, assetId: id, kind, localPath: path, prompt: title, provider: 'local-import', createdAt }] }));
+      return id;
+    });
+  }
+
   async function importSubtitleTimestamps(shotId: string, cueId: string) {
     await projectAction.run(async () => {
       const selected = await api.selectLocalSubtitleTimestampFile();
@@ -1242,7 +1257,7 @@ export function EditorialCollagePage({
           : productionRun?.status === 'paused' ? '已暂停' : undefined;
   return <div data-editorial-collage-workbench="true">
     <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} />
-    {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} musicLibrary={state.config.jianying.bgmLibrary} api={api} /> : null}
+    {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} onImportAsset={importProductionAsset} musicLibrary={state.config.jianying.bgmLibrary} api={api} /> : null}
     {musicOpen && musicSettings ? <Dialog key={document.id} open title="整片背景音乐" onOpenChange={open => { if (!projectAction.busy) setMusicOpen(open); }} actions={<>
       <Button disabled={projectAction.busy} onClick={() => setMusicOpen(false)}>取消</Button>
       <Button variant="primary" disabled={projectAction.busy || productionRunning} onClick={() => void saveProductionSettings(musicSettings)}>保存音乐</Button>
