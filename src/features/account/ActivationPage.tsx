@@ -49,8 +49,8 @@ export function ActivationPage({ api, onLicenseStatusChange }: { api: StoryDream
   return (
     <div className="license-settings">
       <section aria-labelledby="license-heading">
-        <div className="license-heading"><h2 id="license-heading">软件授权</h2><span role="status">{license ? labels[license.status] : '正在读取'}</span></div>
-        <p className="license-message">{license?.message}</p>
+        <div className="license-heading"><h2 id="license-heading">软件授权</h2><span className={`license-status license-status-${license?.status ?? 'loading'}`} role="status">{license ? labels[license.status] : '正在读取'}</span></div>
+        {license?.message ? <p className={`license-message license-status-message license-status-message-${license.status}`} role={license.status === 'error' ? 'alert' : undefined}>{license.message}</p> : null}
         <form onSubmit={(event) => { event.preventDefault(); void activate(); }}>
           <TextField label="激活码" value={code} onChange={(_, data) => setCode(data.value)} autoComplete="off" spellCheck={false} disabled={changing || !license?.configured} />
           <div className="license-actions">
@@ -66,7 +66,7 @@ export function ActivationPage({ api, onLicenseStatusChange }: { api: StoryDream
       </section>
       <section aria-labelledby="update-heading">
         <div className="license-heading"><h2 id="update-heading">软件更新</h2><span>当前版本 {update?.currentVersion ?? '--'}</span></div>
-        <p role="status" className="license-message">{update?.message}</p>
+        <p role="status" className={`license-message license-update-message license-update-${update?.phase ?? 'loading'}`}>{update?.message ?? '正在读取更新状态'}</p>
         {update?.release && <><h3>{update.required ? '需要更新' : '新版本'} {update.release.version}</h3><p className="license-release-notes">{update.release.notes}</p><p className="license-message">{bytes(update.release.size)}</p></>}
         {update?.phase === 'downloading' && <div className="license-progress"><progress aria-label="安装包下载进度" max={update.release?.size || 1} value={update.downloaded} /><span>{bytes(update.downloaded)} / {bytes(update.release?.size || 0)}</span></div>}
         <div className="license-actions">
