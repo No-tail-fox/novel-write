@@ -274,15 +274,29 @@ export function AppShell({
               <span />
               {saveTone === 'saving' ? '保存中' : saveTone === 'dirty' ? '有未保存改动' : '工作区状态已同步'}
             </div>
-            <IconButton
-              className="theme-toggle"
-              variant="subtle"
-              density="compact"
-              label={themeLabel}
-              icon={state.ui.theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
-              disabled={busy}
-              onClick={toggleTheme}
-            />
+            <div className="page-head-actions">
+              <div className="announcement-entry">
+                <IconButton
+                  className="announcement-trigger"
+                  variant="subtle"
+                  density="compact"
+                  label={unreadAnnouncementCount ? `公告通知，有 ${unreadAnnouncementCount} 条未读` : '公告通知'}
+                  icon={<Bell size={17} />}
+                  disabled={updateBusy}
+                  onClick={() => { setAnnouncementsOpen(true); openAnnouncements(); }}
+                />
+                {unreadAnnouncementCount ? <span className="announcement-unread-count" aria-hidden="true">{unreadAnnouncementCount > 9 ? '9+' : unreadAnnouncementCount}</span> : null}
+              </div>
+              <IconButton
+                className="theme-toggle"
+                variant="subtle"
+                density="compact"
+                label={themeLabel}
+                icon={state.ui.theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+                disabled={busy}
+                onClick={toggleTheme}
+              />
+            </div>
           </header>
           {feedback || notice ? (
             <div className="global-action-banner">

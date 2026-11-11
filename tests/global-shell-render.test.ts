@@ -38,6 +38,10 @@ describe('global shell rendered behavior', () => {
     const themeButton = buttons.find((button) => button.includes(`aria-label="切换${theme === 'light' ? '深' : '浅'}色主题"`));
     expect(themeButton).toBeDefined();
     expect(themeButton).not.toContain('disabled');
+    const announcementButton = buttons.find((button) => button.includes('aria-label="公告通知"'));
+    expect(announcementButton).toBeDefined();
+    expect(announcementButton).not.toContain('disabled');
+    expect(html.indexOf('aria-label="公告通知"')).toBeGreaterThan(html.indexOf('class="save-state saved"'));
     expect(props.navigate).not.toHaveBeenCalled();
   });
 
