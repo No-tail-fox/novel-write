@@ -117,18 +117,6 @@ export function AppShell({
 
       <div className="shell-grid">
         <aside className="sidebar">
-          <div className="announcement-entry">
-            <IconButton
-              className="announcement-trigger"
-              variant="subtle"
-              density="compact"
-              label={unreadAnnouncementCount ? `公告通知，有 ${unreadAnnouncementCount} 条未读` : '公告通知'}
-              icon={<Bell size={17} />}
-              disabled={updateBusy}
-              onClick={() => { setAnnouncementsOpen(true); openAnnouncements(); }}
-            />
-            {unreadAnnouncementCount ? <span className="announcement-unread-count" aria-hidden="true">{unreadAnnouncementCount > 9 ? '9+' : unreadAnnouncementCount}</span> : null}
-          </div>
           <Button
             className="new-task-button"
             variant="primary"

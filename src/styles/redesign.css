@@ -16,7 +16,7 @@
 }
 
 .app-shell[data-editorial-shell] .window-title {
-  gap: 7px;
+  gap: 12px;
   color: var(--shell-text);
   font-size: 12px;
 }
@@ -33,14 +33,14 @@
 }
 
 .app-shell[data-editorial-shell] .window-controls.sd-toolbar {
-  min-height: 32px;
+  min-height: var(--sd-window-height);
   margin-right: -12px;
 }
 
 .app-shell[data-editorial-shell] .window-control-button.sd-icon-button {
   width: 40px;
   min-width: 40px;
-  height: 32px;
+  height: var(--sd-window-height);
 }
 
 .app-shell[data-editorial-shell] .shell-grid {
@@ -208,10 +208,10 @@
 
 .app-shell[data-editorial-shell] .page-head,
 .app-shell[data-editorial-shell] .page-head.task-operations-page-head {
-  min-height: 88px;
+  min-height: 104px;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   gap: 20px;
-  padding: 16px var(--sd-page-inset);
+  padding: 24px var(--sd-page-inset);
   border-bottom: 1px solid var(--shell-border);
   background: var(--shell-surface-raised);
 }
@@ -545,4 +545,26 @@
 
 .app-shell[data-runtime='browser-fallback'] > .window-line {
   display: none;
+}
+
+/* Keep global utilities together, outside the navigation column. */
+.app-shell[data-editorial-shell] .page-head-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+
+.app-shell[data-editorial-shell] .page-head-actions .announcement-entry {
+  margin: 0;
+  min-height: 36px;
+}
+
+.app-shell[data-editorial-shell] .page-head-actions :is(.announcement-trigger, .theme-toggle) {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  color: var(--shell-muted);
 }
