@@ -150,9 +150,9 @@ def set_size(page: Page, width: int, height: int) -> None:
 
 
 def wait_app(page: Page) -> None:
-    page.wait_for_selector(".app-shell", state="visible", timeout=30_000)
+    page.wait_for_selector(".app-shell, .license-gate", state="visible", timeout=30_000)
     page.wait_for_function(
-        "() => Boolean(document.querySelector('.app-shell') && document.body.innerText.includes('StoryDream'))",
+        "() => Boolean(document.querySelector('.app-shell, .license-gate') && document.body.innerText.includes('StoryDream'))",
         timeout=30_000,
     )
     page.wait_for_timeout(350)
