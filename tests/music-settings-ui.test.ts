@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { defaultConfig } from '../src/shared/config';
 import { normalizeAppConfig } from '../src/shared/config-utils';
 import { MusicProfileManager, ProfileSecretField, TranscriptionVisionProfileSwitcher, VideoProfileSwitcher, VisionProfileManager } from '../src/features/settings/MusicVideoProfileManagers';
-import { profileSecretId, type SecretEditor } from '../src/features/settings/settings-controls';
+import { ModelPicker, profileSecretId, type SecretEditor } from '../src/features/settings/settings-controls';
 import { StoryDreamProvider } from '../src/ui';
 
 const secrets: SecretEditor = { value: () => '', configured: () => true, reference: (id) => ({ value: '', secretId: id }), change: vi.fn() };
@@ -52,6 +52,21 @@ describe('music and video settings', () => {
     expect(profileSecretId('music', 'recording/a', 'apiKey')).toBe('music/recording%2Fa/apiKey');
     expect(html).toContain('type="password"');
     expect(html).toContain('已保存密钥；输入新值可替换');
+  });
+
+  it('renders a refreshable video model picker with fetched choices and status', () => {
+    const onRefresh = vi.fn();
+    const onChange = vi.fn();
+    const html = render(createElement(ModelPicker, {
+      label: '视频模型', value: 'model-two', models: [{ id: 'model-one' }, { id: 'model-two' }],
+      loading: false, status: '[pass] Loaded 2 models.', onRefresh, onChange,
+    }));
+    expect(html).toContain('model-one');
+    expect(html).toContain('model-two');
+    expect(html).toContain('Loaded 2 models.');
+    expect(html).toContain('获取模型');
+    expect(onRefresh).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('presents all saved video models without changing the active provider on selection', () => {

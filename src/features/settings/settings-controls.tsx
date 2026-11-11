@@ -7,7 +7,7 @@ import { imageGenerationQualityLabel } from '../../shared/image-quality';
 import { volcengineVoicePresets } from '../../shared/editorial-options';
 import { IconButton, SelectField, TextAreaField, TextField } from '../../ui';
 
-export type ModelListKey = 'llm' | 'gpt-image' | 'custom-image';
+export type ModelListKey = 'llm' | 'gpt-image' | 'custom-image' | 'video';
 
 export type SecretEditor = {
   value: (id: SecretId) => string;

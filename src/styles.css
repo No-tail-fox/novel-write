@@ -5726,6 +5726,10 @@ section.error-dialog .error-dialog-head > div > strong {
   color: var(--accent);
 }
 
+.config-card .provider-config-note {
+  grid-column: 1 / -1;
+}
+
 .config-card-head {
   display: flex;
   justify-content: space-between;

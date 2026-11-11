@@ -35,6 +35,7 @@ import { VIDEO_MODEL_PRESETS, videoModelPreset, type VideoModelPreset } from '..
 import {
   ConfigInput,
   ConfigNumberInput,
+  ModelPicker,
   LocalInfo,
   ProviderConfigNote,
   SecretInput,
@@ -64,7 +65,7 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
   const [jianyingDetection, setJianyingDetection] = useState<JianyingDraftPathDetection | null>(null);
   const [imaKnowledgeResult, setImaKnowledgeResult] = useState<ImaKnowledgeResult | null>(null);
   const [testingConfig, setTestingConfig] = useState(false);
-  const [modelLists, setModelLists] = useState<Record<ModelListKey, ProviderModel[]>>({ llm: [], 'gpt-image': [], 'custom-image': [] });
+  const [modelLists, setModelLists] = useState<Record<ModelListKey, ProviderModel[]>>({ llm: [], 'gpt-image': [], 'custom-image': [], video: [] });
   const [modelListStatus, setModelListStatus] = useState<Partial<Record<ModelListKey, string>>>({});
   const [loadingModelList, setLoadingModelList] = useState<ModelListKey | null>(null);
   const [volcengineSpeakers, setVolcengineSpeakers] = useState<VolcengineSpeaker[]>([]);
@@ -614,7 +615,29 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               <ConfigInput label="Provider 名称" value={selectedVideoProvider.name} onChange={(value) => updateSelectedVideoProvider({ name: value })} />
               <ConfigInput label="接口地址" value={selectedVideoProvider.baseUrl} onChange={(value) => updateSelectedVideoProvider({ baseUrl: value })} />
               <ProfileSecretField domain="video" profileId={selectedVideoProvider.id} secrets={secrets} />
-              <ConfigInput label="视频模型" value={selectedVideoProvider.model} onChange={(value) => updateSelectedVideoProvider({ model: value })} />
+              <ModelPicker
+                 label="视频模型"
+                 value={selectedVideoProvider.model}
+                 models={modelLists.video}
+                 loading={loadingModelList === 'video'}
+                 status={modelListStatus.video}
+                 onChange={(value) => updateSelectedVideoProvider({ model: value })}
+                 onRefresh={() => {
+                   const secret = secrets.reference(selectedVideoSecretId);
+                   void refreshProviderModels(
+                     'video',
+                     { baseUrl: selectedVideoProvider.baseUrl, apiKey: secret.value, secretId: secret.secretId },
+                     selectedVideoProvider.model,
+                     (config, model) => ({
+                       ...config,
+                       video: {
+                         ...config.video,
+                         providers: config.video.providers.map((profile) => profile.id === selectedVideoProvider.id ? { ...profile, model } : profile),
+                       },
+                     }),
+                   );
+                 }}
+               />
               <ConfigInput label="提交路径" value={selectedVideoProvider.submitPath} onChange={(value) => updateSelectedVideoProvider({ submitPath: value })} />
               <ConfigInput label="状态路径模板" value={selectedVideoProvider.statusPathTemplate} onChange={(value) => updateSelectedVideoProvider({ statusPathTemplate: value })} />
               <ConfigNumberInput label="轮询间隔（秒）" value={selectedVideoProvider.pollIntervalMs / 1000} min={0.25} step={0.25} onChange={(value) => updateSelectedVideoProvider({ pollIntervalMs: value * 1000 })} />
