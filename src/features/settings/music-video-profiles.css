@@ -35,7 +35,22 @@
 .media-profile-row-detail { color: var(--shell-muted); font-size: var(--sd-text-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-profile-toolbar > div { display: flex; flex-wrap: wrap; gap: 6px; }
 .media-profile-toolbar strong { color: var(--shell-text); }
-.media-profile-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding-top: 14px; border-top: 1px solid var(--shell-border); }
+.media-profile-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--shell-border);
+  align-items: start;
+}
+.media-profile-editor > .sd-field { align-self: start; }
+.media-profile-editor > .sd-field > .fui-Field__label {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  line-height: 1.4;
+}
+.media-profile-editor > .sd-field > :is(.sd-input, .sd-select) { margin-top: 1px; }
 .media-profile-wide { grid-column: 1 / -1; min-width: 0; }
 .media-profile-key-source p { margin: 4px 0 0; }
 .media-profile-footnote { margin: 0; line-height: 1.6; }
