@@ -83,6 +83,7 @@ export function AppShell({
   const backView = shellBackView(activeView, returnView);
   const NewTaskIcon = newTaskPrimaryAction.icon;
   const themeLabel = state.ui.theme === 'light' ? '切换深色主题' : '切换浅色主题';
+  const remoteUpdateAvailable = Boolean(updateStatus?.release?.version && isRemoteVersionNewer(updateStatus.release.version, version));
   const taskOperationsView = activeView === 'queue' || activeView === 'history' || activeView === 'task-detail';
   const activePrimaryGroup = primaryNavigationGroupForView(activeView);
   const secondaryItems = secondaryNavigationItems(activePrimaryGroup);
@@ -286,6 +287,7 @@ export function AppShell({
                   onClick={() => { setAnnouncementsOpen(true); openAnnouncements(); }}
                 />
                 {unreadAnnouncementCount ? <span className="announcement-unread-count" aria-hidden="true">{unreadAnnouncementCount > 9 ? '9+' : unreadAnnouncementCount}</span> : null}
+                {remoteUpdateAvailable ? <span className="announcement-update-dot" aria-hidden="true" /> : null}
               </div>
               <IconButton
                 className="theme-toggle"
@@ -321,6 +323,20 @@ export function AppShell({
       />
     </main>
   );
+}
+
+export function isRemoteVersionNewer(remoteVersion: string, localVersion: string): boolean {
+  const parse = (value: string) => value.trim().replace(/^[vV]/u, '').split(/[+-]/u, 1)[0].split('.').map(part => {
+    const match = /^(\d+)/u.exec(part);
+    return match ? Number(match[1]) : 0;
+  });
+  const remote = parse(remoteVersion);
+  const local = parse(localVersion);
+  for (let index = 0; index < Math.max(remote.length, local.length); index += 1) {
+    const delta = (remote[index] ?? 0) - (local[index] ?? 0);
+    if (delta !== 0) return delta > 0;
+  }
+  return false;
 }
 
 function NavButton({ item, active, current = active, level, busy, navigate }: { item: NavItem; active: boolean; current?: boolean; level: 'primary' | 'secondary'; busy: boolean; navigate: (view: ShellView) => void }) {

@@ -560,6 +560,10 @@
   min-height: 36px;
 }
 
+.app-shell[data-editorial-shell] .announcement-entry {
+  position: relative;
+}
+
 .app-shell[data-editorial-shell] .page-head-actions :is(.announcement-trigger, .theme-toggle) {
   width: 36px;
   min-width: 36px;
@@ -567,4 +571,16 @@
   border: 1px solid var(--shell-border);
   border-radius: 6px;
   color: var(--shell-muted);
+}
+
+.app-shell[data-editorial-shell] .announcement-update-dot {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--shell-surface-raised);
+  border-radius: 50%;
+  background: var(--danger);
+  pointer-events: none;
 }

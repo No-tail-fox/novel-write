@@ -1,7 +1,7 @@
 import { createElement, type ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { AppShell } from '../src/app/AppShell';
+import { AppShell, isRemoteVersionNewer } from '../src/app/AppShell';
 import { initialState } from '../src/app/app-state';
 import { productionNavItems } from '../src/app/navigation';
 import { StoryDreamProvider } from '../src/ui';
@@ -24,6 +24,33 @@ function renderShell(overrides: Partial<ComponentProps<typeof AppShell>> = {}) {
 }
 
 // Render real controls, not just declarations: the route and label must reach the accessible button.
+describe('remote update version indicator', () => {
+  it.each([
+    ['1.0.10', '1.0.3', true],
+    ['v1.2.0', '1.1.99', true],
+    ['1.2.0-beta.1', '1.2.0', false],
+    ['1.2.0', '1.2.0', false],
+    ['1.2', '1.2.0', false],
+    ['1.1.99', '1.2.0', false],
+  ])('compares %s against %s', (remote, local, expected) => {
+    expect(isRemoteVersionNewer(remote, local)).toBe(expected);
+  });
+
+  it('shows a red dot on the announcement bell only when a newer remote release exists', () => {
+    const { html: withUpdate } = renderShell({ updateStatus: {
+      currentVersion: '1.0.3', phase: 'available', release: { version: '1.0.10' } as never,
+      announcements: [], downloaded: 0, required: false, message: '',
+    } });
+    const { html: sameVersion } = renderShell({ updateStatus: {
+      currentVersion: '1.0.3', phase: 'available', release: { version: '1.0.3' } as never,
+      announcements: [], downloaded: 0, required: false, message: '',
+    } });
+    expect(withUpdate).toContain('class="announcement-update-dot"');
+    expect(withUpdate.indexOf('announcement-update-dot')).toBeGreaterThan(withUpdate.indexOf('class="announcement-entry"'));
+    expect(sameVersion).not.toContain('announcement-update-dot');
+  });
+});
+
 describe('global shell rendered behavior', () => {
   it.each(['light', 'dark'] as const)('renders accessible production navigation in %s mode', (theme) => {
     const { html, buttons, props } = renderShell({ state: { ...initialState, ui: { ...initialState.ui, theme } } });
