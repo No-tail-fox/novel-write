@@ -649,17 +649,17 @@
   min-height: 0;
   height: 100%;
   overflow: auto;
-  padding: 16px 20px;
+  padding: 0 22px 20px;
   box-sizing: border-box;
-  background: radial-gradient(circle at 50% 0%, rgba(255, 107, 74, 0.04) 0%, transparent 70%);
+  background: var(--shell-bg);
 }
 
 .motion-comic-create__page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 0;
   width: 100%;
-  max-width: 1160px;
+  max-width: 1180px;
   min-height: 0;
   height: 100%;
 }
@@ -698,8 +698,8 @@
   color: var(--shell-muted, #8e8e93);
 }
 
-/* 步骤指示条 */
-.motion-comic-create__steps {
+/* Legacy steps are superseded by shared creation-page-steps. */
+.motion-comic-create__steps:not(.creation-page-steps) {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -710,7 +710,7 @@
   width: fit-content;
 }
 
-.motion-comic-create__steps button {
+.motion-comic-create__steps:not(.creation-page-steps) button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -721,14 +721,14 @@
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-.motion-comic-create__steps button.is-active {
+.motion-comic-create__steps:not(.creation-page-steps) button.is-active {
   background: rgba(255, 107, 74, 0.2) !important;
   border: 1px solid rgba(255, 107, 74, 0.4) !important;
   color: var(--shell-accent-strong) !important;
   box-shadow: 0 2px 8px rgba(255, 107, 74, 0.2) !important;
 }
 
-.motion-comic-create__steps button.is-complete {
+.motion-comic-create__steps:not(.creation-page-steps) button.is-complete {
   color: var(--ok) !important;
   background: color-mix(in srgb, var(--ok) 8%, transparent) !important;
 }
@@ -736,8 +736,9 @@
 /* 核心两栏 Grid 布局：左主区 1fr，右摘要 320px */
 .motion-comic-create__layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  gap: 16px;
+  padding-top: 20px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
   align-items: stretch;
   flex: 1 1 0;
   min-height: 0;

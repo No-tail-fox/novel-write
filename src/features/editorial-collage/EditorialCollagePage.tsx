@@ -1,3 +1,4 @@
+import { AspectRatioField } from '../../components/AspectRatioField';
 import { ProjectModelFields, ProjectModelBar, useProjectModelConfig } from '../projects/ProjectModelFields';
 import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
 import { LEMO_FOLLOW_STYLE_SUBTITLES, lemoShotPreviewPath, resolveLemoAnimation } from '../../shared/creative-animation/native-film';
@@ -32,7 +33,6 @@ import { createProductionHistoryReservations, productionHistoryUsage, PRODUCTION
 import type { ShellView } from '../../shared/types';
 import type { SettingsSection } from '../settings/SettingsPage';
 import {
-  EDITORIAL_COLLAGE_RATIOS,
   EDITORIAL_STARTER_DURATIONS_MS,
   EDITORIAL_STYLE_PRESETS,
   parseEditorialCollagePipelineData,
@@ -1215,7 +1215,7 @@ export function EditorialCollagePage({
             onRevise={() => void runCopyAssist('revise')}
           />
         </div>
-        <SegmentedControl label="画幅" value={createRatio} options={EDITORIAL_COLLAGE_RATIOS.map((ratio) => ({ value: ratio, label: ratio }))} onChange={setCreateRatio} />
+        <AspectRatioField value={createRatio} onChange={setCreateRatio} />
         <SelectField label="起步时长" value={String(createDurationMs)} options={[...EDITORIAL_STARTER_DURATIONS_MS.map((value) => ({ value: String(value), label: `${value / 1000} 秒${value === 60_000 ? ' · 长版' : ''}` })), { value: 'auto', label: '按全文分配时长' }]} onChange={(event) => setCreateDurationMs(event.target.value === 'auto' ? 'auto' : Number(event.target.value) as EditorialCollageStarterDurationMs)} />
         <div className="director-structure-preview" aria-live="polite"><strong>{createStructure}</strong>{createPlan.plan ? <span>预计朗读至少 {formatScriptDuration(createPlan.plan.minimumDurationMs)} · {createReadingSpeed}</span> : null}</div>
       </> : null}

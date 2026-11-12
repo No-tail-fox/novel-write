@@ -1,3 +1,5 @@
+import { AspectRatioField } from '../../components/AspectRatioField';
+import { CreationPageHeader } from '../../components/CreationPageHeader';
 import { ProjectModelFields, ProjectModelBar } from '../projects/ProjectModelFields';
 import { defaultProjectModels, projectRuntimeConfig, readProjectModelsDraft } from '../../shared/project-models';
 import { describeImageBudget, estimateHtmlVideoImageCalls, IMAGE_BUDGET_MODES, imageBudgetFromControl, planHtmlVideoImageBudget, sameImageBudget, type ImageBudgetMode, type ImageBudgetPolicy } from '../../shared/image-budget';
@@ -623,20 +625,21 @@ export function HtmlVideoPage({
     return (
       <div className="hv-create-page" data-html-video-create-page="true">
         <div className="hv-create-shell">
-          <header className="hv-create-header">
-            <div>
-              <h1>HTML 动画视频</h1>
-              <p>输入文案，AI 自动规划分镜 → 出素材 → 配音 → 生成动画分镜</p>
-            </div>
-            <SelectField fieldClassName="hv-create-history" label={`已有 HTML 任务${taskListState === 'ready' ? ` · ${htmlTaskOptions.length}` : ''}`}
-                  value={taskSelectValue}
-                  aria-label="打开已有 HTML 动画视频任务"
-                  disabled={taskListState === 'loading' && htmlTaskOptions.length === 0}
-                  title={taskListMessage || undefined}
-                  onChange={(event) => void openHtmlVideoTask(event.target.value)}
-                  options={[{ value: '', label: taskListState === 'loading' ? '正在同步任务...' : taskListState === 'error' ? '同步失败，显示最近任务' : htmlTaskOptions.length ? '打开已有任务...' : '暂无 HTML 动画任务' }, ...htmlTaskOptions.map((task) => ({ value: task.id, label: task.title || task.id }))]}
+          <CreationPageHeader
+            title="新建 HTML 动画"
+            description="输入文案，AI 自动规划分镜 → 出素材 → 配音 → 生成动画分镜"
+            icon={<FileText size={20} />}
+            actions={
+              <SelectField fieldClassName="hv-create-history" label={`已有 HTML 任务${taskListState === 'ready' ? ` · ${htmlTaskOptions.length}` : ''}`}
+                value={taskSelectValue}
+                aria-label="打开已有 HTML 动画视频任务"
+                disabled={taskListState === 'loading' && htmlTaskOptions.length === 0}
+                title={taskListMessage || undefined}
+                onChange={(event) => void openHtmlVideoTask(event.target.value)}
+                options={[{ value: '', label: taskListState === 'loading' ? '正在同步任务...' : taskListState === 'error' ? '同步失败，显示最近任务' : htmlTaskOptions.length ? '打开已有任务...' : '暂无 HTML 动画任务' }, ...htmlTaskOptions.map((task) => ({ value: task.id, label: task.title || task.id }))]}
               />
-          </header>
+            }
+          />
 
           <div className="hv-create-sheet">
             <section className="hv-create-section"><h2>项目模型</h2><ProjectModelFields config={state.config} value={projectModels} onChange={setProjectModels} disabled={running} route="html" /></section>
@@ -756,7 +759,7 @@ export function HtmlVideoPage({
                 </div>
                 <div className="advanced-grid">
                   <div data-html-video-create-field="ratio">
-                    <Segmented label="画布比例" value={ratio} options={[...HTML_VIDEO_RATIOS]} onChange={setRatio} />
+                    <AspectRatioField label="画布比例" value={ratio} onChange={setRatio} />
                   </div>
                   <div data-html-video-create-field="maxScenes">
                     <TextField label="场景上限" type="number" min={1} max={30} step={1} value={String(maxScenes)} onChange={(event) => setMaxScenes(Number(event.target.value))} />

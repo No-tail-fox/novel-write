@@ -1577,7 +1577,10 @@ describe('product shell ui', () => {
     expect(htmlPage).toContain('useState<string>(HTML_VIDEO_JOB_DEFAULTS.ratio)');
     expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.maxScenes)');
     expect(htmlPage).toContain('useState<boolean>(HTML_VIDEO_JOB_DEFAULTS.foreground)');
-    expect(htmlPage).toContain('options={[...HTML_VIDEO_RATIOS]}');
+    expect(htmlPage).toContain('<AspectRatioField label="画布比例" value={ratio} onChange={setRatio} />');
+    // The existing task config editor remains separate and retains its disabled contract.
+    expect(htmlPage).toContain('options={[...HTML_VIDEO_RATIOS]} disabled={disabled}');
+    expect(htmlPage).toContain('setRatio(draft.ratio)');
     expect(htmlPage).toContain('useState<number>(HTML_VIDEO_JOB_DEFAULTS.ttsSpeed)');
     expect(workflow).toContain('htmlVideoAspectRatioOrDefault,');
     expect(workflow).toContain('const aspectRatio = htmlVideoAspectRatioOrDefault(ratio);');

@@ -76,6 +76,8 @@ import { useAsyncAction } from '../../ui/async-action';
 import { Button, CheckboxField, IconButton, SegmentedControl as Choice, SelectField, Tabs, TextAreaField, TextField } from '../../ui';
 import { buildTaskCreateInput } from './task-create-input';
 import { TaskCreationTypePicker, taskCreationTarget, type TaskCreationType } from './TaskCreationTypePicker';
+import { CreationPageHeader } from '../../components/CreationPageHeader';
+import { shortVideoEditorStage } from './new-task-entry';
 import {
   clearNewTaskDraft,
   createNewTaskPreset,
@@ -129,7 +131,6 @@ function newTaskPresetId(): string {
 }
 
 const NEW_TASK_STAGE_META: ReadonlyArray<{ id: NewTaskStage; label: string; heading: string; description: string }> = [
-  { id: 'material', label: '制作类型', heading: '制作类型', description: '选择制作方式；不同类型会进入各自最合适的创作流程' },
   { id: 'creative', label: '内容', heading: '内容', description: '补充名称、正文或对应类型的核心输入与来源' },
   { id: 'output', label: '制作设置', heading: '制作设置', description: '确认画幅、模板、时长策略与本次会执行的步骤' },
 ];
@@ -177,6 +178,7 @@ export function NewTaskPage({
   openTaskDetail,
   isBrowserPreview,
   navigate,
+  entryRevision,
 }: {
   api: StoryDreamApi;
   state: AppState;
@@ -184,9 +186,15 @@ export function NewTaskPage({
   openTaskDetail: (taskId: string) => void;
   isBrowserPreview: boolean;
   navigate: (view: ShellView) => void;
+  entryRevision?: number;
 }) {
   const initialDraftTemplateId = defaultTaskDraftTemplateId(state.draftTemplates);
+  const [choosingType, setChoosingType] = useState(true);
   const [activeStage, setActiveStage] = useState<NewTaskStage>('material');
+  useEffect(() => {
+    // Re-entering this route changes navigation only, never the auto-saved fields.
+    setChoosingType(true);
+  }, [entryRevision]);
   const [mode, setMode] = useState<TaskMode>('paste');
   const [title, setTitle] = useState(() => deriveTaskTitle(sampleText));
   const [inputText, setInputText] = useState(sampleText);
@@ -442,7 +450,7 @@ export function NewTaskPage({
   function applyDraftSnapshot(draft: NewTaskDraftSnapshot): void {
     const values = draft.values;
     searchRequestIdRef.current += 1;
-    setActiveStage(draft.activeStage);
+    setActiveStage(shortVideoEditorStage(draft.activeStage));
     if (typeof values.title === 'string') setTitle(values.title);
     if (typeof values.inputText === 'string') setInputText(values.inputText);
     if (values.mode === 'paste' || values.mode === 'ai') setMode(values.mode);
@@ -531,6 +539,8 @@ export function NewTaskPage({
       return;
     }
     applyDraftSnapshot(draft);
+    // Only an explicit restore may enter the saved editor step.
+    setChoosingType(draft.activeStage === 'material');
     setDraftNotice('已恢复本地任务草稿。');
   }
 
@@ -1108,6 +1118,48 @@ export function NewTaskPage({
 
   const activeStageMeta = NEW_TASK_STAGE_META.find((stage) => stage.id === activeStage) ?? NEW_TASK_STAGE_META[0];
 
+  if (choosingType) {
+    return (
+      <div className="new-task-scroll new-task-entry" data-new-task-choosing-type>
+        <Tabs className="new-task-stage-tabs" label="新建项目步骤" value="type" items={[{ value: 'type', label: '1 制作类型' }]} onChange={() => {}} />
+        <div className="new-task-workbench">
+        <main className="new-task-editor">
+        <header className="new-task-stage-heading">
+          <h2>制作类型</h2>
+          <p>选择制作方式；不同类型会进入各自最合适的创作流程</p>
+        </header>
+        <section className="new-task-type-step" data-create-fields="task-type">
+          <TaskCreationTypePicker
+            navigate={navigate}
+            onSelect={(type: TaskCreationType) => {
+              if (type === 'smart-video') {
+                setChoosingType(false);
+                setActiveStage('creative');
+                return;
+              }
+              navigate(taskCreationTarget(type));
+            }}
+          />
+        </section>
+        </main>
+        <aside className="new-task-summary new-task-entry-guide" aria-label="创作流程说明">
+          <div className="new-task-summary-title"><div><span>创作流程</span><strong>从制作类型开始</strong></div><small>待选择</small></div>
+          <p>选择左侧制作类型，进入对应的内容与制作设置。</p>
+          <dl>
+            <div><dt>短片生成</dt><dd>图文素材、配音与剪辑</dd></div>
+            <div><dt>创意动画</dt><dd>导演式整片创作</dd></div>
+            <div><dt>HTML 动画</dt><dd>网页场景与镜头编辑</dd></div>
+            <div><dt>模板动画</dt><dd>模板化稳定制作</dd></div>
+            <div><dt>AI 漫剧</dt><dd>角色、系列与分集</dd></div>
+            <div><dt>音乐 MV</dt><dd>歌曲、歌词与节奏</dd></div>
+          </dl>
+          <div className="new-task-readiness"><span><Check size={15} />已有短片草稿会自动保留</span><span><Check size={15} />选择类型不会开始生成</span></div>
+        </aside>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="new-task-scroll"
@@ -1118,9 +1170,11 @@ export function NewTaskPage({
         void run();
       }}
     >
+      <CreationPageHeader title="新建短片" description="先整理内容，再确认制作设置；创建后将按所选配置开始生成。" />
+      <div className="new-task-type-back"><Button icon={<ArrowLeft size={15} />} onClick={() => setChoosingType(true)}>更换制作类型</Button></div>
       <Tabs
         className="new-task-stage-tabs"
-        label="新建任务步骤"
+        label="新建短片步骤"
         value={activeStage}
         items={NEW_TASK_STAGE_META.map((stage, index) => ({ value: stage.id, label: `${index + 1} ${stage.label}` }))}
         onChange={(value) => setActiveStage(value as NewTaskStage)}
@@ -1132,22 +1186,6 @@ export function NewTaskPage({
             <h2>{activeStageMeta.heading}</h2>
             <p>{activeStageMeta.description}</p>
           </header>
-
-          {activeStage === 'material' ? (
-            <section className="new-task-type-step" data-create-fields="task-type">
-              <TaskCreationTypePicker
-                activeType="smart-video"
-                navigate={navigate}
-                onSelect={(type: TaskCreationType) => {
-                  if (type === 'smart-video') {
-                    setActiveStage('creative');
-                    return;
-                  }
-                  navigate(taskCreationTarget(type));
-                }}
-              />
-            </section>
-          ) : null}
 
           {activeStage === 'creative' ? (
             <section className="new-task-stage-panel" data-create-fields={NEW_TASK_CREATE_FIELDS_BY_STAGE.material.join(' ')}>
@@ -1446,7 +1484,10 @@ export function NewTaskPage({
           ) : null}
 
           <footer className="new-task-stage-footer">
-            <Button icon={<ArrowLeft size={15} />} disabled={activeStage === 'material'} onClick={() => setActiveStage(activeStage === 'output' ? 'creative' : 'material')}>上一步</Button>
+            <Button icon={<ArrowLeft size={15} />} onClick={() => {
+              if (activeStage === 'output') setActiveStage('creative');
+              else setChoosingType(true);
+            }}>上一步</Button>
             <Button
               variant={activeStage === 'output' ? 'primary' : 'secondary'}
               icon={activeStage === 'output' ? <Play size={15} /> : <ArrowRight size={15} />}

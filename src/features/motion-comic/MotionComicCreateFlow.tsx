@@ -1,3 +1,5 @@
+import { AspectRatioField } from '../../components/AspectRatioField';
+import { CreationPageHeader } from '../../components/CreationPageHeader';
 import type { ReactElement, ReactNode } from 'react';
 import {
   ArrowLeft,
@@ -5,7 +7,6 @@ import {
   BookOpenText,
   Check,
   Clapperboard,
-  FileText,
   Loader2,
   Scissors,
   Sparkles,
@@ -64,9 +65,9 @@ interface MotionComicCreateFlowProps {
   onCreate: () => void;
 }
 const STEPS = [
-  { label: '剧本导入', icon: <FileText size={14} /> },
-  { label: '分集确认', icon: <Scissors size={14} /> },
-  { label: '创建项目', icon: <Clapperboard size={14} /> },
+  { label: '剧本导入' },
+  { label: '分集确认' },
+  { label: '创建项目' },
 ] as const;
 
 export function MotionComicCreateFlow({
@@ -125,24 +126,23 @@ export function MotionComicCreateFlow({
   return (
     <div className="motion-comic-create" data-motion-comic-create-flow data-step={step}>
       <div className="motion-comic-create__page">
-        <header className="motion-comic-create__header">
-          <span className="motion-comic-create__mark"><Clapperboard size={20} /></span>
-          <div><h1>新建 AI 漫剧</h1><p>先确定源文和分集，再进入人物、分镜与视频制作。</p></div>
-        </header>
+        <CreationPageHeader
+          title="新建 AI 漫剧"
+          description="先确定源文和分集，再进入人物、分镜与视频制作。"
+          icon={<Clapperboard size={20} />}
+        />
 
-        <nav className="motion-comic-create__steps" aria-label="创建步骤">
+        <nav className="motion-comic-create__steps creation-page-steps" aria-label="创建步骤">
           {STEPS.map((item, index) => (
             <Button
               key={item.label}
-              density="compact"
               variant="subtle"
               className={index === step ? 'is-active' : index < step ? 'is-complete' : ''}
               aria-current={index === step ? 'step' : undefined}
               disabled={busy || index > step}
-              icon={index < step ? <Check size={14} /> : item.icon}
               onClick={() => onStepChange(index)}
             >
-              {item.label}
+              <span>{index < step ? <Check size={13} /> : index + 1}</span><strong>{item.label}</strong>
             </Button>
           ))}
         </nav>
@@ -161,7 +161,7 @@ export function MotionComicCreateFlow({
               {models}
               <div className="motion-comic-create__row">
                 <TextField label="项目名称" value={title} placeholder="例如：雨夜来信" onChange={(_, data) => onTitleChange(data.value)} />
-                <SegmentedControl label="成片画幅" value={ratio} options={(['9:16', '16:9', '1:1', '4:3'] as const).map((value) => ({ value, label: value }))} onChange={onRatioChange} />
+                <AspectRatioField label="成片画幅" value={ratio} onChange={onRatioChange} />
               </div>
               <div className="motion-comic-create__row">
                 <SegmentedControl label="源文类型" value={sourceKind} options={[

@@ -95,6 +95,7 @@ function AppWorkspace() {
     dispatchState({ update });
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
+  const [newProjectEntryRevision, setNewProjectEntryRevision] = useState(0);
   const [bootstrapReady, setBootstrapReady] = useState(false);
   const bootstrapReadyRef = useRef(false);
   const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string; taskReturnView: ShellView } | null>(null);
@@ -686,7 +687,13 @@ function AppWorkspace() {
   }
 
   function navigate(view: ShellView) {
-    if (view === activeViewRef.current) return;
+    if (view === activeViewRef.current) {
+      // “新建项目” is an entry action even when its short-video editor is already open.
+      if (view === 'new-task') {
+        void navigation.requestLeave(() => setNewProjectEntryRevision((revision) => revision + 1));
+      }
+      return;
+    }
     void navigation.requestLeave(() => navigateNow(view));
   }
 
@@ -838,6 +845,7 @@ function AppWorkspace() {
         <RouteErrorBoundary resetKey={activeView} onNavigate={navigate}>
           {bootstrapReady ? <AppRoutes
             activeView={activeView}
+            newProjectEntryRevision={newProjectEntryRevision}
             api={api}
             state={state}
             selectedTask={selectedTask}

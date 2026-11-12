@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
-describe('three-stage new task workbench', () => {
-  it('owns three persistent stages and the computed execution summary', async () => {
+describe('two-step short video workbench with a separate creation entry', () => {
+  it('keeps the legacy stage model but exposes only two editor steps and the execution summary', async () => {
     const page = await readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8');
 
     expect(page).toContain("import '../../styles/features/new-task.css';");
@@ -10,11 +10,13 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain("const [activeStage, setActiveStage] = useState<NewTaskStage>('material');");
     expect(page).toContain('data-new-task-workbench');
     expect(page).toContain('data-new-task-stage={activeStage}');
-    expect(page).toContain("{ id: 'material', label: '制作类型'");
+    expect(page).not.toContain("{ id: 'material', label: '制作类型'");
+    expect(page).toContain('const [choosingType, setChoosingType] = useState(true)');
+    expect(page).toContain('data-new-task-choosing-type');
     expect(page).toContain("{ id: 'creative', label: '内容'");
     expect(page).toContain("{ id: 'output', label: '制作设置'");
     expect(page).toContain('className="new-task-type-step"');
-    expect(page).toContain('label="新建任务步骤"');
+    expect(page).toContain('label="新建短片步骤"');
     expect(page).toContain('value={activeStage}');
     expect(page).toContain('value: stage.id');
     expect(page).toContain('onChange={(value) => setActiveStage(value as NewTaskStage)}');
@@ -35,7 +37,7 @@ describe('three-stage new task workbench', () => {
     expect(page).toContain('setTemplateId(nextTemplateId)');
   });
 
-  it('turns the third-stage next action into the existing creation command', async () => {
+  it('turns the production-settings action into the existing creation command', async () => {
     const page = await readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8');
     const footer = page.slice(page.indexOf('<footer className="new-task-stage-footer">'), page.indexOf('</footer>', page.indexOf('<footer className="new-task-stage-footer">')));
 
@@ -172,8 +174,11 @@ describe('three-stage new task workbench', () => {
     expect(component).toContain('className="aspect-ratio-swatch"');
     expect(component).toContain('className="aspect-ratio-swatch-shape"');
     expect(newTask).toContain('<AspectRatioSwatch ratio={value} />');
-    expect(musicMv).toContain('<SelectField label="成片画幅" value={ratio}');
-    expect(musicMv).toContain("options={['16:9', '9:16', '1:1', '4:3'].map(value => ({ value, label: value }))}");
+    expect(musicMv).toContain('<AspectRatioField label="成片画幅" value={ratio} onChange={setRatio} />');
+    expect(musicMv).toContain("import { AspectRatioField } from '../../components/AspectRatioField'");
+    expect(musicMv).toContain("const [ratio, setRatio] = useState('16:9')");
+    expect(musicMv).toContain('setRatio(draft.ratio)');
+    expect(musicMv).not.toContain('normalizeAspectRatio(');
     expect(imageLab).toContain('<AspectRatioSwatch ratio={value} />');
     expect(css).toMatch(/\.aspect-ratio-swatch\s*\{[\s\S]*width:\s*26px;[\s\S]*height:\s*24px;/u);
     expect(css).toMatch(/\.aspect-ratio-swatch-shape\s*\{[\s\S]*width:\s*min\(24px, calc\(22px \* var\(--aspect-ratio-value\)\)\);[\s\S]*aspect-ratio:\s*var\(--aspect-ratio-value\);/u);

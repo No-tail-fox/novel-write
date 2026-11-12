@@ -1,3 +1,4 @@
+import { ASPECT_RATIOS } from '../../shared/aspect-ratio';
 import { VoxAnimationEditor } from '../vox-animation/VoxAnimationEditor';
 import { VoxAnimationPreview, type VoxApi, type VoxLocalAsset } from '../vox-animation/VoxAnimationPreview';
 import { createVoxAnimation, type VoxAnimation } from '../../shared/vox-animation';
@@ -1657,7 +1658,7 @@ export function DirectorDeskWorkspace({
                   {outputHistory.length ? <IconButton label="成片历史" icon={<History size={14} />} density="compact" variant="subtle" onClick={() => setHistoryOutputId(outputHistory[0].id)} /> : null}
                   <Menu
                     trigger={<Button density="compact" variant="subtle" className="director-preview-ratio">{ratio.split(':')[0]}:{ratio.split(':')[1]} <ChevronDown size={12} /></Button>}
-                    options={(['9:16', '16:9', '1:1', '4:3'] as const).map((option) => ({ id: option, label: option, onSelect: () => onRatioChange?.(option) }))}
+                    options={ASPECT_RATIOS.map((option) => ({ id: option, label: option, onSelect: () => onRatioChange?.(option) }))}
                   />
                   <Button aria-label={safeAreaVisible ? '隐藏安全区' : '显示安全区'} density="compact" variant={safeAreaVisible ? 'secondary' : 'subtle'} className="director-preview-safe" onClick={() => setSafeAreaVisible((value) => !value)}><ShieldCheck size={13} />安全区</Button>
                   <IconButton label="预览设置" icon={<Settings2 size={14} />} density="compact" variant="subtle" onClick={() => setPreviewSettingsOpen(true)} />
@@ -2051,7 +2052,7 @@ export function DirectorDeskWorkspace({
       >
         <div className="director-dialog-stack">
           <CheckboxField label="显示安全区" checked={safeAreaVisible} onChange={(_, data) => setSafeAreaVisible(Boolean(data.checked))} />
-          <SelectField label="预览画幅" value={ratio} options={(['9:16', '16:9', '1:1', '4:3'] as const).map((option) => ({ value: option, label: option }))} onChange={(event) => onRatioChange?.(event.target.value as NonNullable<DirectorDeskWorkspaceProps['ratio']>)} />
+          <SelectField label="预览画幅" value={ratio} options={ASPECT_RATIOS.map((option) => ({ value: option, label: option }))} onChange={(event) => onRatioChange?.(event.target.value as NonNullable<DirectorDeskWorkspaceProps['ratio']>)} />
           <div className="director-inspector-note"><BookOpenText size={14} /><span>预览比例会同步到项目并影响下一次成片画布。</span></div>
         </div>
       </Dialog>
@@ -2185,7 +2186,7 @@ function GenerationDetails({ compact = false, shot, ratio, onUpdate, onRatioChan
   if (compact) return durationEditable ? <ShotDurationField key={shot.id} shot={shot} disabled={busy} onUpdate={onUpdate} /> : null;
   const voice = shot.voice || '跟随旁白设置';
   const subtitleStyle = shot.subtitleStyle ?? '简体中文 · 白色描边';
-  return <div className="director-form-stack director-generation-details"><SelectField label="画面比例" value={ratio ?? '16:9'} options={(['9:16', '16:9', '1:1', '4:3'] as const).map((option) => ({ value: option, label: ratioLabel(option) }))} onChange={(event) => onRatioChange?.(event.target.value as NonNullable<DirectorDeskWorkspaceProps['ratio']>)} /><div className="director-two-col">{durationEditable ? <ShotDurationField key={shot.id} shot={shot} disabled={busy} onUpdate={onUpdate} /> : <TextField label="时长" value={formatDuration(shot.durationMs)} readOnly />}<TextField label="帧率" value="24 fps" readOnly /></div><TextField label="音色" value={voice} readOnly hint="请在“旁白与字幕”中选择真实音色" /><SelectField label="字幕样式" value={subtitleStyle} options={[{ value: '简体中文 · 白色描边', label: '简体中文 · 白色描边' }, { value: '简体中文 · 下方黑底', label: '简体中文 · 下方黑底' }]} onChange={(event) => onUpdate(shot.id, { subtitleStyle: event.target.value })} /></div>;
+  return <div className="director-form-stack director-generation-details"><SelectField label="画面比例" value={ratio ?? '16:9'} options={ASPECT_RATIOS.map((option) => ({ value: option, label: ratioLabel(option) }))} onChange={(event) => onRatioChange?.(event.target.value as NonNullable<DirectorDeskWorkspaceProps['ratio']>)} /><div className="director-two-col">{durationEditable ? <ShotDurationField key={shot.id} shot={shot} disabled={busy} onUpdate={onUpdate} /> : <TextField label="时长" value={formatDuration(shot.durationMs)} readOnly />}<TextField label="帧率" value="24 fps" readOnly /></div><TextField label="音色" value={voice} readOnly hint="请在“旁白与字幕”中选择真实音色" /><SelectField label="字幕样式" value={subtitleStyle} options={[{ value: '简体中文 · 白色描边', label: '简体中文 · 白色描边' }, { value: '简体中文 · 下方黑底', label: '简体中文 · 下方黑底' }]} onChange={(event) => onUpdate(shot.id, { subtitleStyle: event.target.value })} /></div>;
 }
 
 function ShotDurationField({ shot, disabled, onUpdate }: { shot: DirectorShot; disabled?: boolean; onUpdate: DirectorDeskWorkspaceProps['onUpdateShot'] }) {

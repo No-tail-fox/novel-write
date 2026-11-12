@@ -1,3 +1,5 @@
+import { AppError, describeErrorCause, isCancellation, normalizeAppError } from './app-error';
+import { classifyProviderFailure } from './provider-failure';
 import { buildDirectorCopyAssistRequest } from './director-copy-assist';
 import { EDITORIAL_WRITING_STYLES } from './editorial-writing-styles';
 import { workflowPrompt } from './workflow-prompt-runtime';
@@ -672,6 +674,75 @@ async function searchToutiaoHtml(query: string, fetchImpl: FetchLike): Promise<A
   return extractToutiaoItems(html).slice(0, 15).map((item) => ({ source: 'web', provider: 'toutiao', ...item }));
 }
 
+// Only these internally authored code prefixes are retained from plain Error messages.
+// Even for allowed codes, use fixed text: a provider can echo any prefix or secret.
+const RESEARCH_COPY_INTERNAL_ERRORS: Readonly<Record<string, string>> = {
+  LLM_PROFILE_MISSING: '所选语言模型配置已删除，请重新选择。',
+  PROJECT_LLM_PROFILE_MISSING: '项目的语言模型配置已不存在，请在项目模型设置中重新选择。',
+  PROJECT_IMAGE_PROFILE_MISSING: '项目的生图模型配置已不存在，请在项目模型设置中重新选择。',
+  PROJECT_VIDEO_PROFILE_MISSING: '项目的视频模型配置已不存在，请在项目模型设置中重新选择。',
+  CREDENTIAL_ENCRYPTION_UNAVAILABLE: '系统凭据加密服务不可用。请使用原操作系统账户重启应用后重试。',
+  CREDENTIAL_VAULT_READ_FAILED: '无法读取已保存的密钥。请检查应用数据目录的访问权限后重试。',
+  CREDENTIAL_VAULT_CORRUPT: '已保存的密钥无法解密或数据已损坏。请使用原操作系统账户启动应用，或在系统设置中重新填写密钥。',
+  CREDENTIAL_VAULT_INVALID_SECRETS: '密钥数据格式无效。请在系统设置中检查并重新填写密钥。',
+  CREDENTIAL_VAULT_ENCRYPT_FAILED: '密钥加密失败。请检查系统凭据加密服务后重新保存密钥。',
+  CREDENTIAL_VAULT_WRITE_FAILED: '无法保存加密密钥。请检查应用数据目录的权限与可用空间后重试。',
+};
+
+/** Normalize only at the research-copy boundary; provider bodies/URLs never become UI text. */
+export function normalizeResearchCopyError(error: unknown): AppError {
+  const normalized = normalizeAppError(error);
+  if (error instanceof AppError || isCancellation(error)) return normalized;
+  // describeErrorCause is redacted and bounded. Use it only as classification input,
+  // not as a message: redaction cannot make arbitrary provider prose safe to display.
+  const cause = describeErrorCause(error) ?? '';
+  const failure = classifyProviderFailure({ error, body: cause });
+  const fail = (code: string, message: string, retryable = false) =>
+    new AppError(code, message, retryable, normalized.diagnosticId);
+  const internalCode = error instanceof Error ? /^([A-Z][A-Z0-9_]{2,63})(?::|$)/u.exec(error.message)?.[1] : undefined;
+  if (internalCode && Object.hasOwn(RESEARCH_COPY_INTERNAL_ERRORS, internalCode)) {
+    return fail(internalCode, RESEARCH_COPY_INTERNAL_ERRORS[internalCode]);
+  }
+  if (failure.kind === 'aborted') return fail('ACTION_CANCELLED', '操作已取消。');
+  if (/LLM API key is missing/iu.test(cause)) {
+    return fail('RESEARCH_COPY_API_KEY_MISSING', '未配置 AI 文案模型的 API Key。请在系统设置的 LLM 配置中填写当前模型的密钥，并测试连接。');
+  }
+  if (failure.status === 401) {
+    return fail('RESEARCH_COPY_AUTH_FAILED', 'AI 服务认证失败（HTTP 401）。请检查当前 LLM 的 API Key 是否正确或已过期，并确认接口地址与密钥所属服务一致。');
+  }
+  if (failure.status === 403) {
+    return fail('RESEARCH_COPY_ACCESS_DENIED', 'AI 服务拒绝访问（HTTP 403）。请检查当前 API Key 的模型权限、账户状态与服务商访问限制。');
+  }
+  if (failure.status === 429) {
+    return fail('RESEARCH_COPY_RATE_LIMITED', 'AI 服务限流或额度不足（HTTP 429）。请检查账户额度，降低请求频率后稍后手动重试。', true);
+  }
+  if (failure.kind === 'model-not-found') {
+    return fail('RESEARCH_COPY_MODEL_UNAVAILABLE', '所选 AI 模型不存在或当前账户没有可用通道。请检查 LLM 模型名称与服务商可用模型列表，或切换可用模型后重试。');
+  }
+  if (failure.kind === 'not-found') {
+    return fail('RESEARCH_COPY_ENDPOINT_NOT_FOUND', 'AI 接口不存在（HTTP 404）。请检查 LLM 接口地址与 API 协议是否匹配，并测试连接。');
+  }
+  if (failure.kind === 'billing') {
+    return fail('RESEARCH_COPY_QUOTA_EXHAUSTED', 'AI 服务账户余额或额度不足。请检查服务商账户余额、配额和计费状态后重试。');
+  }
+  if (failure.kind === 'bad-request') {
+    return fail('RESEARCH_COPY_REQUEST_REJECTED', 'AI 服务拒绝了文案请求。请检查 LLM 的模型、API 协议及自定义请求参数，并尝试缩短输入后重试。');
+  }
+  if (failure.status && failure.status >= 500 && failure.status < 600) {
+    return fail('RESEARCH_COPY_SERVICE_UNAVAILABLE', `AI 服务暂时异常（HTTP ${failure.status}）。请查看服务商状态，稍后手动重试；若持续失败，可切换可用模型或服务。`, true);
+  }
+  if (failure.kind === 'response-timeout' || /\b(?:timeout|timed out|ETIMEDOUT|UND_ERR_\w*TIMEOUT)\b|超时/iu.test(cause)) {
+    return fail('RESEARCH_COPY_TIMEOUT', '等待 AI 服务响应超时，结果可能未知。请检查网络、代理与服务状态，稍后手动重试，避免连续提交。', true);
+  }
+  if (['connect', 'dns', 'transport-lost'].includes(failure.kind) || /\bnetwork error\b/iu.test(cause)) {
+    return fail('RESEARCH_COPY_NETWORK_FAILED', '无法正常连接 AI 服务或连接已中断。请检查网络、代理及 LLM 接口地址后手动重试。', true);
+  }
+  if (/returned empty content|没有返回文本|AI 未返回可用文案/iu.test(cause)) {
+    return fail('RESEARCH_COPY_EMPTY_RESPONSE', 'AI 未返回可用文案。请检查所选模型是否支持文本输出，调整要求或切换模型后手动重试。', true);
+  }
+  return fail('RESEARCH_COPY_FAILED', 'AI 文案生成失败。请在系统设置中测试当前 LLM 配置；若仍失败，请凭诊断号排查。');
+}
+
 export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
   if (input.directorCopyAssist) input = buildDirectorCopyAssistRequest(input.directorCopyAssist);
   const selectedSources = input.selectedSources
@@ -716,7 +787,7 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
   });
   const copy = cleanStoryboundAiCreationOutput(result.text);
   if (!copy) {
-    throw new Error('AI 未返回可用文案，请重试。');
+    throw new AppError('RESEARCH_COPY_EMPTY_RESPONSE', 'AI 未返回可用文案。请检查所选模型是否支持文本输出，调整要求或切换模型后手动重试。', true);
   }
   return { title: input.keyword.trim(), copy, raw: result.raw, requestId: result.requestId };
 }

@@ -1,3 +1,4 @@
+import { ASPECT_RATIOS } from './aspect-ratio';
 import {
   HTML_VIDEO_CONTROL_FIELDS,
   HTML_VIDEO_CONTROL_MANIFEST_V1,
@@ -59,7 +60,7 @@ export const HTML_VIDEO_SCENE_MOTION_LABELS = {
   pan_left: '向左横移',
   pan_right: '向右横移',
 } as const satisfies Record<HtmlVideoSceneMotion, string>;
-export const HTML_VIDEO_RATIOS = ['9:16', '16:9', '1:1', '4:3'] as const;
+export const HTML_VIDEO_RATIOS = ASPECT_RATIOS;
 
 type HtmlVideoDefaultedField =
   | 'style'

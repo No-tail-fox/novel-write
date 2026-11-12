@@ -1,9 +1,38 @@
 .new-task-scroll {
   min-height: 0;
   overflow: auto;
-  padding: 20px var(--sd-page-inset) 28px;
+  padding: 0 var(--sd-page-inset) 28px;
   background: var(--shell-bg);
   color: var(--shell-text);
+}
+
+.new-task-scroll > .creation-page-header,
+.new-task-type-back,
+.new-task-stage-tabs,
+.new-task-entry > .new-task-type-step {
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+.new-task-entry {
+  padding-top: 20px;
+}
+
+.new-task-entry > .new-task-stage-tabs {
+  min-height: 60px;
+}
+
+.new-task-entry-guide > p {
+  line-height: 1.65;
+}
+
+.new-task-entry-guide .new-task-readiness span {
+  align-items: flex-start;
+}
+
+.new-task-entry-guide .new-task-readiness svg {
+  flex-shrink: 0;
 }
 
 .new-task-type-picker {

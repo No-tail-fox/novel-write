@@ -550,8 +550,10 @@ h2 {
 
 .music-mv-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-content: start;
+  gap: 20px;
+  padding: 0 max(22px, calc((100% - 1180px) / 2)) 40px;
 }
 
 .music-mv-layout .panel-title-row {

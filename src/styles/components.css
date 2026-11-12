@@ -53,7 +53,7 @@ textarea:disabled {
 
 .aspect-ratio-swatch-shape {
   width: min(24px, calc(22px * var(--aspect-ratio-value)));
-  max-height: 22px;
+  height: min(22px, calc(24px / var(--aspect-ratio-value)));
   aspect-ratio: var(--aspect-ratio-value);
   border: 1px solid currentColor;
   border-radius: 2px;

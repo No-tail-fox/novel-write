@@ -39,6 +39,7 @@ const {
 
 export function AppRoutes({
   activeView,
+  newProjectEntryRevision,
   api,
   state,
   selectedTask,
@@ -67,6 +68,7 @@ export function AppRoutes({
   isBrowserPreview,
 }: {
   activeView: ShellView;
+  newProjectEntryRevision?: number;
   api: StoryDreamApi;
   state: AppState;
   selectedTask: Task | null;
@@ -112,7 +114,7 @@ export function AppRoutes({
         />
       ) : null}
       {activeView === 'conversation-workbench' ? <ConversationWorkbenchPage api={api} state={state} /> : null}
-      {activeView === 'new-task' ? <NewTaskPage api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, 'projects')} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
+      {activeView === 'new-task' ? <NewTaskPage entryRevision={newProjectEntryRevision} api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, 'projects')} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
       {activeView === 'hot-board' ? <HotBoardPage api={api} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
       {activeView === 'benchmark' ? <BenchmarkImportPage api={api} applyState={applyState} openTaskDetail={openTaskDetail} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}

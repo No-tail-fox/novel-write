@@ -89,7 +89,7 @@ import { createPersonAsset, importPersonAssetFiles, listPersonAssets, listPerson
 import { createConfiguredJsonLlm, createConfiguredTextLlm, listConfiguredProviderModels, onLlmModelFallback, testConfiguredLlm } from '../src/shared/llm-provider';
 import { markSceneImageForRegeneration, markSceneImagesForRegeneration, markSceneNarrationForRegeneration, markTaskDraftForRepack, markTaskStepForRerun, removeSceneVideoAsset, replaceSceneImageAssets, replaceSceneVideoAsset, updateSceneImagePrompt, updateSceneVideoTrim, updateTaskSubtitleLines } from '../src/shared/pipeline-cache';
 import { setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
-import { composeCopyFromSources, createAiSourceResearcher, DEFAULT_WEB_SEARCH_PROVIDERS, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
+import { composeCopyFromSources, createAiSourceResearcher, DEFAULT_WEB_SEARCH_PROVIDERS, normalizeResearchCopyError, readPublicSourceContent, researchSearchErrorMessage, searchWebSources, searchWebSourcesDetailed } from '../src/shared/research';
 import { runTask } from '../src/shared/runner';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { FileDatabase, type HistoryDeletionCleanup, type HistoryTombstone } from '../src/shared/storage';
@@ -2015,6 +2015,8 @@ trustedHandle('research:compose-copy', async (_event, input: ResearchCopyCompose
     const runtimeConfig = input.projectId ? await getProjectRuntimeConfig(input.projectId)
       : selectedLanguageConfig(await (await getConfigService()).getRuntimeConfig(), input.llmProfileId);
     return await composeCopyFromSources(createConfiguredTextLlm(runtimeConfig.llm), input);
+  } catch (error) {
+    throw normalizeResearchCopyError(error);
   } finally { release(); }
 });
 

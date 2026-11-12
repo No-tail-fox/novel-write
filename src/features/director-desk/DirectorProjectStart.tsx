@@ -14,6 +14,7 @@ import {
   Sparkles,
   Volume2,
 } from 'lucide-react';
+import { CreationPageHeader } from '../../components/CreationPageHeader';
 import { Button, Pane, Toolbar } from '../../ui';
 import type { DirectorDeskMode } from './DirectorDeskWorkspace';
 
@@ -93,14 +94,13 @@ export function DirectorCreateWizard({
   return (
     <div className="director-create-panel" data-director-create-wizard data-director-mode={mode}>
       <div className="director-create-page">
-        <header className="director-create-header">
-          <div className="director-create-heading">
-            {mode === 'vox' ? <Film size={19} /> : <BookOpenCheck size={19} />}
-            <div><h2>{copy.createTitle}</h2><span>{copy.createDescription}</span></div>
-          </div>
-        </header>
+        <CreationPageHeader
+          title={copy.createTitle}
+          description={copy.createDescription}
+          icon={mode === 'vox' ? <Film size={19} /> : <BookOpenCheck size={19} />}
+        />
 
-        <nav className="director-create-steps" aria-label="创建步骤">
+        <nav className="director-create-steps creation-page-steps" aria-label="创建步骤">
           {steps.map((label, index) => (
             <Button key={label} variant="subtle" className={index === step ? 'is-active' : index < step ? 'is-complete' : ''} aria-current={index === step ? 'step' : undefined} disabled={index > step || busy} onClick={() => onStepChange(index)}>
               <span>{index < step ? <Check size={13} /> : index + 1}</span><strong>{label}</strong>

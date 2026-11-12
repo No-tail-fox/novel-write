@@ -1,0 +1,38 @@
+/* Shared creation-page chrome only; route-specific forms and execution stay independent. */
+.creation-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 20px;
+  min-width: 0;
+  min-height: 96px;
+  padding: 24px 0 18px;
+  border-bottom: 1px solid var(--shell-border);
+  box-sizing: border-box;
+}
+.creation-page-heading { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+.creation-page-heading > div { min-width: 0; }
+.creation-page-header-icon { display: flex; flex: 0 0 auto; color: var(--shell-accent-strong); padding-top: 2px; }
+.creation-page-header-icon > svg { width: 20px; height: 20px; }
+.creation-page-heading h2 { margin: 0; color: var(--shell-text); font-size: 20px; font-weight: 600; line-height: 1.3; }
+.creation-page-heading p { margin: 4px 0 0; color: var(--shell-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.creation-page-header-actions { display: flex; flex: 0 1 300px; justify-content: flex-end; align-items: center; min-width: 0; }
+.creation-page-header-actions > * { min-width: 0; max-width: 100%; }
+.director-create-steps.creation-page-steps,
+.motion-comic-create__steps.creation-page-steps {
+  display: flex; flex: 0 0 auto; align-items: center; width: 100%; box-sizing: border-box;
+  gap: 7px; padding: 18px 0 14px; margin: 0;
+  overflow-x: auto; border: 0; border-bottom: 1px solid var(--shell-border);
+  border-radius: 0; background: transparent;
+}
+.creation-page-steps > .sd-button { flex: 0 0 auto; min-height: 34px; padding-inline: 11px; border: 1px solid var(--shell-border); border-radius: 5px; }
+.creation-page-steps > .sd-button .sd-button__content { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.creation-page-steps > .sd-button .sd-button__content > span:first-child { display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid var(--shell-border); border-radius: 50%; font-size: 11px; }
+.creation-page-steps > .sd-button.is-active { border-color: var(--shell-accent); background: color-mix(in srgb, var(--shell-accent) 10%, transparent); color: var(--shell-accent-strong); }
+.creation-page-steps > .sd-button.is-complete { border-color: var(--ok); color: var(--ok); }
+.music-mv-layout > .creation-page-header { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .creation-page-header { flex-wrap: wrap; gap: 12px; }
+  .creation-page-header-actions { flex-basis: 100%; justify-content: flex-start; }
+}

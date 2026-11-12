@@ -28,7 +28,7 @@ export function TaskCreationTypePicker({
   navigate,
   onSelect,
 }: {
-  activeType: TaskCreationType;
+  activeType?: TaskCreationType;
   navigate: (view: ShellView) => void;
   onSelect?: (type: TaskCreationType) => void;
 }) {

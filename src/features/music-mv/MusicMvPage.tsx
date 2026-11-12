@@ -1,3 +1,5 @@
+import { AspectRatioField } from '../../components/AspectRatioField';
+import { CreationPageHeader } from '../../components/CreationPageHeader';
 import { ProjectModelFields } from '../projects/ProjectModelFields';
 import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
 import { useState } from 'react';
@@ -93,13 +95,17 @@ export function MusicMvPage({ api, state, applyState, openTaskDetail, isBrowserP
 
   return (
     <div className="music-mv-layout">
-      <section className="task-card">
-        <div className="panel-title-row">
-          <div><h2>音乐 MV</h2><span>主歌曲与完整歌词 → Lemo 自动制作 → 预览与 MP4 导出</span></div>
+      <CreationPageHeader
+        title="新建音乐 MV"
+        description="主歌曲与完整歌词 → Lemo 自动制作 → 预览与 MP4 导出"
+        icon={<Music size={20} />}
+        actions={
           <Button variant="primary" onClick={runMusicMv} disabled={running || musicAction.busy || !lyrics.trim() || !musicMvAudioPath.trim()} icon={running ? <Loader2 className="spin" size={15} /> : <Music size={15} />}>
             {processingMode === 'manual' ? '创建 MV 项目' : '生成音乐 MV'}
           </Button>
-        </div>
+        }
+      />
+      <section className="task-card">
         {pendingMusic ? (
           <section className="local-note" aria-label="来自音乐创作的歌曲">
             <strong>来自音乐创作：{pendingMusic.title || '未命名歌曲'}</strong>
@@ -126,7 +132,7 @@ export function MusicMvPage({ api, state, applyState, openTaskDetail, isBrowserP
           <SelectField label="目标分镜数量" value={String(storyboardSceneCount)} onChange={event => setStoryboardSceneCount(Number(event.target.value))}
             hint="镜头数量不影响歌词完整性；长歌曲会自动增加镜头，保证单镜头不超过 15 秒。" options={[2, 4, 6, 8, 12, 16, 24, 32, 48, 64].map(value => ({ value: String(value), label: `${value} 个镜头` }))} />
           <SelectField label="Lemo 视觉风格" value={style} onChange={event => setStyle(event.target.value)} options={[...LEMO_LIBRARY_STYLES, ...OPUSCAR98_STYLES].map(item => ({ value: item.slug, label: item.family === 'opuscar98' ? `${item.cn} · ${item.opuscar98?.zh ?? ''}` : item.cn, group: item.family === 'opuscar98' ? 'OPUSCAR 98 轻量风格' : `Lemo 完整风格 · ${item.category_cn}` }))} />
-          <SelectField label="成片画幅" value={ratio} onChange={event => setRatio(event.target.value)} options={['16:9', '9:16', '1:1', '4:3'].map(value => ({ value, label: value }))} />
+          <AspectRatioField label="成片画幅" value={ratio} onChange={setRatio} />
         </div>
         <TextField label="视觉母题" value={musicMvVisualMotif} onChange={event => setMusicMvVisualMotif(event.target.value)} disabled={running} />
         <div className="upload-row">

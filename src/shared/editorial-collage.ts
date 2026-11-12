@@ -1,3 +1,4 @@
+import { ASPECT_RATIOS } from './aspect-ratio';
 import { lemoUpstreamFilmSchema, type LemoUpstreamFilm } from './creative-animation/upstream-agent';
 import { projectModelsSchema } from './project-models';
 import type { ProjectModels } from './types';
@@ -26,7 +27,7 @@ import { editorialProjectMusicClips, PROJECT_MUSIC_PREFIX } from './editorial-mu
 export const EDITORIAL_COLLAGE_TASK_TYPE = 'editorial-collage' as const;
 export const EDITORIAL_COLLAGE_PIPELINE_VERSION = 1 as const;
 
-export const EDITORIAL_COLLAGE_RATIOS = ['9:16', '16:9', '1:1', '4:3'] as const;
+export const EDITORIAL_COLLAGE_RATIOS = ASPECT_RATIOS;
 export const EDITORIAL_COLLAGE_STAGES = [
   'draft',
   'script-approved',

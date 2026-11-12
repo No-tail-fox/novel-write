@@ -1,3 +1,4 @@
+import { ASPECT_RATIOS } from './aspect-ratio';
 import { projectModelsSchema } from './project-models';
 import type { ProjectModels } from './types';
 import type { MotionComicSpeakerRole, MotionComicBubbleStyle, MotionComicBubblePosition } from "./motion-comic-dialogue";
@@ -29,7 +30,7 @@ import { motionComicShotContinuityAdviceSchema, type MotionComicShotContinuityAd
 
 export const MOTION_COMIC_TASK_TYPE = 'motion-comic' as const;
 export const MOTION_COMIC_PIPELINE_VERSION = 1 as const;
-export const MOTION_COMIC_RATIOS = ['9:16', '16:9', '1:1', '4:3'] as const;
+export const MOTION_COMIC_RATIOS = ASPECT_RATIOS;
 export const MOTION_COMIC_STAGES = [
   'draft',
   'series-bible',
