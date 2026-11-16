@@ -10,6 +10,7 @@ import {
   splitMotionComicSource,
   summarizeMotionComicPlan,
   validateMotionComicScriptDraft,
+  repairMotionComicTitleNarration,
   validateMotionComicStoryboard,
   normalizeMotionComicScriptRaw,
   normalizeMotionComicStoryboardRaw,
@@ -68,7 +69,7 @@ export async function generateMotionComicScript(
     parsedScript = { value: resume.script, issues: validateMotionComicScriptDraft(resume.script, sourceUnits, document, input.instructions), adjustments: resume.adjustments };
   } else if (input.scriptDraft) {
     // A human-edited draft is authoritative: validate locally, never regenerate its script with an LLM.
-    parsedScript = parseScriptStage(input.scriptDraft, sourceUnits, document, input.instructions);
+    parsedScript = parseScriptStage(input.scriptDraft, sourceUnits, document, input.instructions, false);
     if (options.manualRepairBase) parsedScript.adjustments = [
       ...options.manualRepairBase.adjustments,
       ...collectMotionComicPlanAdjustments(options.manualRepairBase.script, input.scriptDraft, 'script').map((item) => ({ ...item, kind: 'manual' as const })),
@@ -200,13 +201,16 @@ function parseScriptStage(
   sourceUnits: ReturnType<typeof splitMotionComicSource>,
   document: MotionComicPipelineData,
   instructions?: string,
+  repairTitles = true,
 ): ParsedStage<MotionComicScriptDraft> {
   const normalized = normalizeMotionComicScriptRaw(value, sourceUnits);
   const adjustments = collectMotionComicPlanAdjustments(value, normalized, 'script');
   const parsed = motionComicScriptDraftSchema.safeParse(normalized);
   if (!parsed.success) return { issues: zodIssues(parsed.error), adjustments };
-  const issues = validateMotionComicScriptDraft(parsed.data, sourceUnits, document, instructions);
-  return { value: parsed.data, issues, adjustments };
+  const script = repairTitles ? repairMotionComicTitleNarration(parsed.data, sourceUnits) : parsed.data;
+  adjustments.push(...collectMotionComicPlanAdjustments(parsed.data, script, 'script'));
+  const issues = validateMotionComicScriptDraft(script, sourceUnits, document, instructions);
+  return { value: script, issues, adjustments };
 }
 
 function parseStoryboardStage(
@@ -333,6 +337,7 @@ function storyboardPlanningMessages(
         '【严格分镜规范与字段强约束】',
         '1. 节拍归属与顺序（beatKeys）：',
         '   - 每个剧情节拍（beat）必须按剧本原本顺序、连续且恰好归属于一个镜头，不可遗漏、不可重复、不可倒序、不可跨场次混搭。',
+        '   - 【场次绑定强约束】每个镜头的 beatKeys 中所列节拍 key，必须全部来自该镜头 sceneKey 所指向场次的 beats 数组；严禁把属于场次 A 的节拍放入 sceneKey 指向场次 B 的镜头，即使全局顺序看起来正确。填写前请先确认该节拍在剧本 scenes 数组中所属场次的 key，再填入 sceneKey。',
         '2. 镜头时长（durationSec）：允许 3 至 60 秒，通常 4 至 15 秒。每秒约 4 个汉字，为停顿留出余量。每个节拍只归属一个镜头，长对白节拍不得重复引用来凑时长。镜头时长可自动调宽；超过 60 秒的节拍需回到剧本拆小。远程视频模型的实际时长限制在制作阶段另行检查。',
         '3. 关联实体引用：characterLookKeys、propKeys、sceneKey 必须且只能引用第一阶段剧本中已经定义的 key；同一角色在一个镜头内只能使用一个造型。',
         '4. 镜头连续性（continuity 必填且严格包含 4 个键）：',

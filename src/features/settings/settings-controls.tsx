@@ -185,16 +185,32 @@ export function SecretInput({
   onClear: () => void;
 }) {
   const [revealed, setRevealed] = useState(false);
+  const [strippedPrefix, setStrippedPrefix] = useState(false);
+  const bearerPrefixed = /^\s*bearer\s+/iu.test(value);
+  const hint = bearerPrefixed || strippedPrefix
+    ? '已自动去掉多余的 Bearer 前缀，只保留 sk- 开头的密钥本身'
+    : configured ? '已配置' : '待配置';
   return (
     <TextField
       fieldClassName="config-input"
       label={label}
-      hint={configured ? '已配置' : '待配置'}
+      hint={hint}
       type={revealed ? 'text' : 'password'}
       value={value}
       autoComplete="new-password"
       spellCheck={false}
-      onChange={(_, data) => onChange(data.value)}
+      onChange={(_, data) => {
+        const raw = data.value;
+        // Keys are sent as `Authorization: Bearer <key>`; a pasted prefix would produce `Bearer Bearer ...`
+        // and every OpenAI-compatible relay answers 401 "无效的令牌". Strip it here and say so.
+        if (/^\s*bearer\s+/iu.test(raw)) {
+          setStrippedPrefix(true);
+          onChange(raw.replace(/^\s*bearer\s+/iu, '').trimStart());
+          return;
+        }
+        if (strippedPrefix && !/^\s*bearer\s+/iu.test(raw)) setStrippedPrefix(false);
+        onChange(raw);
+      }}
       contentAfter={<>
         <IconButton variant="subtle" label={revealed ? '隐藏密钥' : '显示密钥'} icon={revealed ? <EyeOff size={15} /> : <Eye size={15} />} onClick={() => setRevealed((current) => !current)} />
         <IconButton variant="subtle" label="清除密钥" icon={<Trash2 size={15} />} disabled={!configured && !value} onClick={onClear} />

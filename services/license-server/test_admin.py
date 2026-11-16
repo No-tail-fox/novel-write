@@ -62,7 +62,7 @@ class AdminManagementTests(unittest.TestCase):
         return {'payload': payload, 'signature': b64(key.sign((path + '\n' + payload).encode()))}
 
     def test_all_management_endpoints_require_auth_and_origin(self):
-        for kind in ('summary', 'licenses', 'devices', 'releases', 'audit'):
+        for kind in ('summary', 'licenses', 'devices', 'releases', 'audit', 'v3/devices', 'v3/bindings', 'v3/recovery'):
             self.assertEqual(self.call('GET', f'/admin/api/{kind}', cookie='')[0], 401)
         for path, body in (
             ('/admin/api/licenses', {'days': 30, 'maxDevices': 1}),
@@ -71,11 +71,51 @@ class AdminManagementTests(unittest.TestCase):
             ('/admin/api/releases', {}),
             (f'/admin/api/licenses/{uuid.uuid4()}/revoke', {}),
             (f'/admin/api/devices/{"0" * 64}/lock', {}),
+            (f'/admin/api/v3/devices/{uuid.uuid4()}/lock', {}),
+            (f'/admin/api/v3/devices/{uuid.uuid4()}/unlock', {}),
+            (f'/admin/api/v3/bindings/{uuid.uuid4()}/release', {'expectedRevision': 0}),
+            (f'/admin/api/v3/recovery/{uuid.uuid4()}/approve', {}),
+            (f'/admin/api/v3/recovery/{uuid.uuid4()}/reject', {}),
         ):
             self.assertEqual(self.call('POST', path, body, cookie='')[0], 401)
             self.assertEqual(self.call('POST', path, body, origin='https://attacker.invalid')[0], 403)
         self.assertEqual(self.call('GET', '/admin/api/licenses?page=bad')[0], 400)
         self.assertEqual(self.call('GET', '/admin/api/licenses?page=0')[0], 400)
+
+    def v3_call(self, action, key, **fields):
+        path = '/v3/license/' + action
+        serialized = json.dumps({'publicKey': public_pem(key.public_key()), 'nonce': str(uuid.uuid4()),
+                                 'timestamp': int(time.time()), **fields})
+        return self.call('POST', path, {'payload': serialized, 'signature': b64(key.sign((path + '\n' + serialized).encode()))})
+
+    def test_v3_admin_binding_and_recovery_http_lifecycle(self):
+        issued = self.store.issue(days=30, max_devices=1, label='v3 isolated customer')
+        old_key, new_key = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+        status, challenge, _ = self.v3_call('challenge', old_key, purpose='activate', code=issued['code'])
+        self.assertEqual(status, 200)
+        status, envelope, _ = self.v3_call('activate', old_key, code=issued['code'], label='v3 HTTP device', challengeId=challenge['challengeId'])
+        self.assertEqual(status, 200)
+        lease = json.loads(envelope['payload'])
+        device_id, binding_id = lease['deviceRecordId'], lease['bindingId']
+        devices = self.call('GET', '/admin/api/v3/devices?q=v3%20HTTP')[1]
+        self.assertEqual([item['id'] for item in devices['items']], [device_id])
+        self.assertNotIn('public_key', devices['items'][0])
+        bindings = self.call('GET', '/admin/api/v3/bindings')[1]
+        self.assertEqual(bindings['items'][0]['id'], binding_id)
+        self.assertEqual(self.call('GET', '/admin/api/licenses')[1]['items'][0]['seats'], 1)
+        summary = self.call('GET', '/admin/api/summary')[1]
+        self.assertEqual((summary['v3DeviceRecords'], summary['v3ActiveBindings']), (1, 1))
+        self.assertEqual(self.call('POST', f'/admin/api/v3/devices/{device_id}/lock', {'reason': 'isolated test'})[0], 200)
+        self.assertEqual(self.call('POST', f'/admin/api/v3/devices/{device_id}/unlock', {})[0], 200)
+        challenge = self.v3_call('challenge', new_key, purpose='recovery', code=issued['code'])[1]
+        status, recovery, _ = self.v3_call('recover', new_key, code=issued['code'], label='recovered HTTP device', challengeId=challenge['challengeId'])
+        self.assertEqual(status, 200)
+        queue = self.call('GET', '/admin/api/v3/recovery')[1]['items']
+        self.assertEqual(queue[0]['id'], recovery['id'])
+        self.assertEqual(self.call('POST', f"/admin/api/v3/recovery/{recovery['id']}/approve", {})[0], 200)
+        self.assertEqual(self.call('POST', f'/admin/api/v3/bindings/{binding_id}/release', {'expectedRevision': 0})[0], 409)
+        self.assertEqual(self.call('POST', f'/admin/api/v3/bindings/{binding_id}/release', {'expectedRevision': 1})[0], 200)
+        self.assertEqual(self.call('GET', '/admin/api/summary')[1]['v3ActiveBindings'], 0)
 
     def test_license_and_device_actions_affect_client_authorization(self):
         status, issued, _ = self.call('POST', '/admin/api/licenses', {'days': 30, 'maxDevices': 2, 'label': 'test customer'})
@@ -109,11 +149,55 @@ class AdminManagementTests(unittest.TestCase):
         self.assertEqual((row['locked'], row['lock_reason']), (1, 'test lock'))
         self.assertNotIn('public_key', row)
         self.assertEqual(self.call('POST', f'/admin/api/devices/{device}/unlock', {})[0], 200)
-        self.assertEqual(self.call('POST', f'/admin/api/devices/{device}/release', {})[0], 200)
+        self.assertEqual(self.call('POST', f'/admin/api/devices/{device}/release', {'licenseId': identity, 'bindingToken': row['bindingToken']})[0], 200)
         assert_rejected('DEVICE_NOT_BOUND')
         self.assertEqual(self.call('GET', '/admin/api/summary')[1]['devices'], 0)
         actions = {row['action'] for row in self.call('GET', '/admin/api/audit')[1]['items']}
         self.assertTrue({'issue', 'revoke-license', 'restore-license', 'extend-license', 'lock-device', 'unlock-device', 'release-device'} <= actions)
+
+    def test_release_rejects_missing_and_stale_other_customer_binding(self):
+        first, second = self.store.issue(), self.store.issue()
+        device = hashlib.sha256(b'legacy-collision').hexdigest()
+        key_a, key_b = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+        activate, refresh = '/v1/license/activate', '/v1/license/refresh'
+        self.store.request(activate, self.proof(activate, device, key_a, code=first['code'], label='first'))
+        row = self.call('GET', '/admin/api/devices')[1]['items'][0]
+        stale = {'licenseId': row['license_id'], 'bindingToken': row['bindingToken']}
+        route = f'/admin/api/devices/{device}/release'
+        self.assertEqual(self.call('POST', route, {})[0], 400)
+        self.assertEqual(self.call('POST', route, {'licenseId': first['licenseId']})[0], 400)
+        self.store.request(refresh, self.proof(refresh, device, key_a))
+        self.assertEqual(self.call('POST', route, stale)[0], 200)
+        self.store.request(activate, self.proof(activate, device, key_b, code=second['code'], label='second'))
+        status, error, _ = self.call('POST', route, stale)
+        self.assertEqual((status, error['error']), (409, 'DEVICE_BINDING_CHANGED'))
+        self.store.request(refresh, self.proof(refresh, device, key_b))
+        current = next(row for row in self.call('GET', '/admin/api/devices')[1]['items'] if row['license_id'] == second['licenseId'])
+        self.assertEqual(self.call('POST', route, {'licenseId': current['license_id'], 'bindingToken': current['bindingToken']})[0], 200)
+
+    def test_release_rejects_same_key_same_second_reactivation(self):
+        issued = self.store.issue()
+        device, key = hashlib.sha256(b'same-key-rebind').hexdigest(), Ed25519PrivateKey.generate()
+        activate, refresh = '/v1/license/activate', '/v1/license/refresh'
+        now = int(time.time())
+        self.store.clock = lambda: now
+        self.store.request(activate, self.proof(activate, device, key, code=issued['code'], label='same'))
+        initial = self.call('GET', '/admin/api/devices')[1]['items'][0]
+        route = f'/admin/api/devices/{device}/release'
+        stale = {'licenseId': initial['license_id'], 'bindingToken': initial['bindingToken']}
+        self.store.request(refresh, self.proof(refresh, device, key))
+        self.assertEqual(self.call('GET', '/admin/api/devices')[1]['items'][0]['bindingToken'], initial['bindingToken'])
+        self.assertEqual(self.call('POST', route, stale)[0], 200)
+        self.store.request(activate, self.proof(activate, device, key, code=issued['code'], label='same'))
+        current = self.call('GET', '/admin/api/devices')[1]['items'][0]
+        self.assertEqual(current['bound_at'], initial['bound_at'])
+        self.assertNotEqual(current['bindingToken'], initial['bindingToken'])
+        self.assertEqual(self.call('POST', route, stale)[0], 409)
+        self.store.request(refresh, self.proof(refresh, device, key))
+        # Even repeated activation without a release gets a new binding revision.
+        self.store.request(activate, self.proof(activate, device, key, code=issued['code'], label='same'))
+        self.assertNotEqual(self.call('GET', '/admin/api/devices')[1]['items'][0]['bindingToken'], current['bindingToken'])
+        self.assertEqual(self.call('POST', route, {'licenseId': current['license_id'], 'bindingToken': current['bindingToken']})[0], 409)
 
     def test_release_upload_publish_download_and_linked_withdrawal(self):
         installer = b'MZ' + b'test-installer' * 1000

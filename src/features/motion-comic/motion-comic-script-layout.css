@@ -1,4 +1,8 @@
 /* Script-only layout: keep the production shell and generation contracts intact. */
+.comic-script-workspace .comic-script-issues { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--warn); overflow-wrap: anywhere; max-height: min(240px, 32vh); }
+.comic-script-issues__list { max-height: 120px; overflow-y: auto; }
+.comic-script-issues__list p { margin: 6px 0; }
+.comic-script-workspace .comic-script-issues > small { display: block; margin-block: 4px; color: var(--shell-muted); }
 /* Review inspector additions: no workspace or production-shell overrides. */
 .motion-comic-script-review .comic-script-reference-section,
 .motion-comic-script-review .comic-script-inspector-checks { padding: 12px; border-bottom: 1px solid var(--shell-border); }

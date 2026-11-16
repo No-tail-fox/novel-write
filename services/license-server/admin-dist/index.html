@@ -42,8 +42,11 @@
             <button type="button" data-view="announcements" aria-pressed="true">公告</button>
             <button type="button" data-view="releases" aria-pressed="false">版本更新</button>
             <button type="button" data-view="licenses" aria-pressed="false">授权码</button>
-            <button type="button" data-view="devices" aria-pressed="false">设备</button>
+            <button type="button" data-view="devices" aria-pressed="false">v1/v2 设备</button>
             <button type="button" data-view="audit" aria-pressed="false">操作记录</button>
+            <button type="button" data-view="v3-recovery" aria-pressed="false">恢复申请</button>
+            <button type="button" data-view="v3-devices" aria-pressed="false">v3 设备</button>
+            <button type="button" data-view="v3-bindings" aria-pressed="false">v3 绑定</button>
           </nav>
           <div id="summary-strip" class="summary-strip" aria-label="服务概况"></div>
           <div class="page-heading">
@@ -147,6 +150,20 @@
             <div class="panel-heading"><h2>管理操作记录</h2><form class="search-form" data-kind="audit"><input name="q" aria-label="搜索操作记录" placeholder="操作、目标 ID 或备注" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
             <div class="table-scroll"><table><thead><tr><th>时间</th><th>操作</th><th>目标</th><th>详情</th></tr></thead><tbody id="audit-rows"></tbody></table></div>
             <div id="audit-pager" class="pager"></div>
+          </section>
+          <section id="view-v3-recovery" class="module-view list-panel" hidden>
+            <div class="panel-heading"><h2>v3 凭据恢复申请</h2><p class="muted">待管理员审批后，旧凭据失效，绑定修订号加一</p></div>
+            <div class="table-scroll"><table><thead><tr><th>申请设备</th><th>当前设备记录</th><th>申请时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="v3-recovery-rows"></tbody></table></div>
+          </section>
+          <section id="view-v3-devices" class="module-view list-panel" hidden>
+            <div class="panel-heading"><h2>v3 设备记录</h2><form class="search-form" data-kind="v3-devices"><input name="q" aria-label="搜索 v3 设备" placeholder="设备名或记录 ID" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
+            <div class="table-scroll"><table><thead><tr><th>设备</th><th>绑定状态</th><th>最近更新</th><th>状态</th><th>操作</th></tr></thead><tbody id="v3-devices-rows"></tbody></table></div>
+            <div id="v3-devices-pager" class="pager"></div>
+          </section>
+          <section id="view-v3-bindings" class="module-view list-panel" hidden>
+            <div class="panel-heading"><h2>v3 绑定记录</h2><form class="search-form" data-kind="v3-bindings"><input name="q" aria-label="搜索 v3 绑定" placeholder="设备名、客户或绑定 ID" maxlength="200"><button class="button button-secondary">搜索</button></form></div>
+            <div class="table-scroll"><table><thead><tr><th>设备</th><th>授权</th><th>修订号 / 最近验证</th><th>状态</th><th>操作</th></tr></thead><tbody id="v3-bindings-rows"></tbody></table></div>
+            <div id="v3-bindings-pager" class="pager"></div>
           </section>
           <footer class="page-footer">生产环境 · 更新与公告签名下发 · 设备状态以最近一次授权验证为准</footer>
         </div>

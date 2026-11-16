@@ -64,16 +64,18 @@ export function ProjectModelsDialog({ task, config, api, onUpdated, onClose, edi
   </Dialog>;
 }
 
-export function ProjectModelBar({ task, config, api, onUpdated, disabled, compact = false, inline = false }: {
+export function ProjectModelBar({ task, config, api, onUpdated, disabled, compact = false, inline = false, confirmLlmChange }: {
   task?: ModelProject; config: AppConfig; api: StoryDreamApi; onUpdated: (result: AppMutationResult) => void; disabled?: boolean;
   /** Header placement: one button; the model summary moves to its tooltip. */
   compact?: boolean;
   /** Header placement: three direct selects that save on change (no dialog). */
   inline?: boolean;
+  /** Optional gate: return false to abort an inline LLM change after the caller showed its own confirmation. */
+  confirmLlmChange?: (nextProfileId: string) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   if (!task) return null;
-  if (inline) return <ProjectModelInline key={task.id} task={task} config={config} api={api} onUpdated={onUpdated} disabled={disabled} />;
+  if (inline) return <ProjectModelInline key={task.id} task={task} config={config} api={api} onUpdated={onUpdated} disabled={disabled} confirmLlmChange={confirmLlmChange} />;
   const models = task.projectModels;
   const language = config.llmProfiles.find(profile => profile.id === models?.llmProfileId);
   const image = config.imageProfiles.find(profile => profile.id === models?.imageProfileId);
@@ -88,8 +90,9 @@ export function ProjectModelBar({ task, config, api, onUpdated, disabled, compac
 
 /** Direct per-project model choice. Each change is validated and saved immediately; it only
  * applies to tasks submitted afterwards. Comic defaults remain editable during background work. */
-function ProjectModelInline({ task, config, api, onUpdated, disabled }: {
+function ProjectModelInline({ task, config, api, onUpdated, disabled, confirmLlmChange }: {
   task: ModelProject; config: AppConfig; api: StoryDreamApi; onUpdated: (result: AppMutationResult) => void; disabled?: boolean;
+  confirmLlmChange?: (nextProfileId: string) => Promise<boolean>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -103,6 +106,8 @@ function ProjectModelInline({ task, config, api, onUpdated, disabled }: {
   const videos = [{ value: '', label: '不使用' }, ...missing(value.videoProviderId ?? '', config.video.providers.map(profile => ({ value: profile.id!, label: profile.name || profile.model })))];
   async function change(next: ProjectModels, label: string) {
     if (locked || busy) return;
+    // Ask before persisting an LLM change so the caller can explain downstream effects.
+    if (confirmLlmChange && next.llmProfileId !== value.llmProfileId && !(await confirmLlmChange(next.llmProfileId))) return;
     setError(''); setSaved(''); setBusy(true);
     try { validateProjectModels(config, next); onUpdated(await api.setProjectModels(task.id, next)); setSaved(`${label}已切换，仅影响之后提交的任务`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }

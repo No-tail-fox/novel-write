@@ -4,8 +4,9 @@ import { classifyProviderFailure } from '../src/shared/provider-failure';
 import { motionComicScriptProposeSchema, type MotionComicScriptProposeInput } from '../src/shared/motion-comic-script-proposal';
 import type { ConfiguredJsonLlm } from '../src/shared/llm-provider';
 import { generateMotionComicPlan, generateMotionComicScript } from '../src/shared/motion-comic-planner';
+import { motionComicRuntimeChanged } from '../src/shared/motion-comic-script-batch';
 import type { MotionComicScriptStore } from '../src/shared/motion-comic-script-store';
-import type { MotionComicScriptTask, MotionComicScriptCandidate, MotionComicScriptRevisionInput } from '../src/shared/motion-comic-script-batch';
+import type { MotionComicScriptTask, MotionComicScriptCandidate, MotionComicScriptRevisionInput, MotionComicScriptStoryboardInput } from '../src/shared/motion-comic-script-batch';
 
 export interface MotionComicScriptRuntime {
   provider: string;
@@ -17,7 +18,7 @@ export interface MotionComicScriptRuntime {
 export class MotionComicScriptBatchService {
   private readonly workers = new Map<string, { controller: AbortController; completion: Promise<void>; taskId?: string; wake: boolean }>();
   private stopping = false;
-  private readonly storyboardWorkers = new Map<string, { controller: AbortController; completion: Promise<void> }>();
+  private readonly storyboardWorkers = new Map<string, { projectId: string; controller: AbortController; completion: Promise<void> }>();
   private readonly proposalWorkers = new Set<{ controller: AbortController; completion: Promise<void> }>();
   get busy(): boolean { return this.workers.size > 0 || this.storyboardWorkers.size > 0 || this.proposalWorkers.size > 0; }
 
@@ -121,24 +122,34 @@ export class MotionComicScriptBatchService {
     await Promise.all([...this.workers.values(), ...this.storyboardWorkers.values(), ...this.proposalWorkers].map((worker) => worker.completion));
   }
 
-  async startStoryboard(input: MotionComicScriptRevisionInput) {
+  async startStoryboard(input: MotionComicScriptStoryboardInput) {
+    // Store methods validate with the strict revision schema; the service-only
+    // `allowModelChange` flag must be stripped before any store call.
+    const revision = { id: input.id, taskId: input.taskId, outputRevision: input.outputRevision, expectedUpdatedAt: input.expectedUpdatedAt };
     if (this.stopping) throw new Error('MOTION_COMIC_STOPPING: 应用正在退出。');
-    if (this.storyboardWorkers.has(input.id)) throw new Error('MOTION_COMIC_STORYBOARD_BUSY: 本项目已有分镜任务。');
+    const workerKey = JSON.stringify([input.id, input.taskId]);
+    if (this.storyboardWorkers.has(workerKey)) throw new Error('MOTION_COMIC_STORYBOARD_BUSY: 本集分镜正在后台生成。');
     let complete!: () => void;
-    const worker = { controller: new AbortController(), completion: new Promise<void>((resolve) => { complete = resolve; }) };
-    this.storyboardWorkers.set(input.id, worker);
+    const worker = { projectId: input.id, controller: new AbortController(), completion: new Promise<void>((resolve) => { complete = resolve; }) };
+    this.storyboardWorkers.set(workerKey, worker);
     try {
-      const approved = await this.store.approvedRevision(input);
+      const approved = await this.store.approvedRevision(revision);
       worker.controller.signal.throwIfAborted();
-      const snapshot = await this.store.beginStoryboard(input);
+      const snapshot = await this.store.beginStoryboard(revision);
       worker.controller.signal.throwIfAborted();
-      if (approved.storyboard) { this.storyboardWorkers.delete(input.id); complete(); return snapshot; }
+      if (approved.storyboard) { this.storyboardWorkers.delete(workerKey); complete(); return snapshot; }
       void (async () => {
         try {
           const runtime = await this.runtime(input.id);
           worker.controller.signal.throwIfAborted();
-          const { document, task, approval } = await this.store.approvedRevision(input, true);
-          if (runtime.provider !== task.provider || runtime.model !== task.model) throw new Error('生成模型或渠道已变化，请恢复已批准剧本使用的配置后重试。');
+          const { document, task, approval } = await this.store.approvedRevision(revision, true);
+          if (motionComicRuntimeChanged(task, runtime)) {
+            // One confirmation is enough: a runtime the user already accepted is reused without asking again.
+            const accepted = task.storyboardProvider && task.storyboardModel
+              && task.storyboardProvider === runtime.provider && task.storyboardModel === runtime.model;
+            if (!accepted && !input.allowModelChange) throw new Error(`生成模型或渠道已变化，请恢复已批准剧本使用的配置后重试。批准时：${task.provider} / ${task.model}；当前：${runtime.provider} / ${runtime.model}`);
+            if (!accepted) await this.store.acceptStoryboardRuntime(revision, runtime);
+          }
           const source = document.sourceDocument!.episodes.find((item) => item.id === task.sourceEpisodeId)!;
           const candidate = (await this.store.snapshot(input.id)).candidates.find((item) => item.taskId === task.id)!;
           worker.controller.signal.throwIfAborted();
@@ -146,20 +157,26 @@ export class MotionComicScriptBatchService {
             sourceText: source.sourceText, instructions: approval.instructions, targetDurationSec: approval.targetDurationSec }, document, runtime.llm,
           { model: runtime.model, signal: worker.controller.signal, resume: { script: approval.script, adjustments: candidate.adjustments, repaired: false } });
           worker.controller.signal.throwIfAborted();
-          await this.store.saveStoryboard(input, { taskId: task.id, outputRevision: approval.outputRevision, plan: result.plan, warnings: result.warnings });
+          await this.store.saveStoryboard(revision, { taskId: task.id, outputRevision: approval.outputRevision, plan: result.plan, warnings: result.warnings });
         } catch (error) {
-          await this.store.failStoryboard(input, error instanceof Error ? error.message : String(error));
+          await this.store.failStoryboard(revision, error instanceof Error ? error.message : String(error));
         }
-      })().catch(this.onError).finally(() => { this.storyboardWorkers.delete(input.id); complete(); });
+      })().catch(this.onError).finally(() => { this.storyboardWorkers.delete(workerKey); complete(); });
       return snapshot;
     } catch (error) {
-      try { await this.store.failStoryboard(input, error instanceof Error ? error.message : String(error)); }
-      finally { this.storyboardWorkers.delete(input.id); complete(); }
+      try { await this.store.failStoryboard(revision, error instanceof Error ? error.message : String(error)); }
+      finally { this.storyboardWorkers.delete(workerKey); complete(); }
       throw error;
     }
   }
 
-  async storyboardIdle(projectId: string): Promise<void> { await this.storyboardWorkers.get(projectId)?.completion; }
+  async storyboardIdle(projectId: string): Promise<void> {
+    for (;;) {
+      const workers = [...this.storyboardWorkers.values()].filter(worker => worker.projectId === projectId);
+      if (!workers.length) return;
+      await Promise.all(workers.map(worker => worker.completion));
+    }
+  }
 
   private async run(projectId: string, worker: { controller: AbortController; taskId?: string; wake: boolean }): Promise<void> {
     while (!this.stopping) {
@@ -174,7 +191,7 @@ export class MotionComicScriptBatchService {
         if (current?.status !== 'running' || current.attempt !== task.attempt) continue;
         worker.controller.signal.throwIfAborted();
         const runtime = await this.runtime(projectId);
-        if (runtime.provider !== task.provider || runtime.model !== task.model) throw new Error('生成模型或渠道已变化，请按当前配置重新提交；不会静默切换模型。');
+        if (motionComicRuntimeChanged(task, runtime)) throw new Error(`生成模型或渠道已变化，请按当前配置重新提交；不会静默切换模型。提交时：${task.provider} / ${task.model}；当前：${runtime.provider} / ${runtime.model}`);
         const document = await this.store.readProject(projectId);
         const source = document.sourceDocument?.episodes.find((item) => item.id === task.sourceEpisodeId);
         if (!source) throw new Error('源分集已删除。');

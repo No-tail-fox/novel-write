@@ -165,6 +165,10 @@ class LicenseStore:
                   PRIMARY KEY (license_id, device_id));
                 CREATE UNIQUE INDEX IF NOT EXISTS active_device ON devices(device_id) WHERE released=0;
                 CREATE TABLE IF NOT EXISTS blocked_devices (device_id TEXT PRIMARY KEY, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS device_identity_aliases (
+                  legacy_device_id TEXT NOT NULL, key_hash TEXT NOT NULL, device_id TEXT NOT NULL,
+                  created_at INTEGER NOT NULL, PRIMARY KEY (legacy_device_id, key_hash),
+                  UNIQUE (device_id, key_hash));
                 CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS releases (sequence INTEGER PRIMARY KEY AUTOINCREMENT, version TEXT UNIQUE NOT NULL,
@@ -176,7 +180,52 @@ class LicenseStore:
                   title TEXT NOT NULL, body TEXT NOT NULL, version TEXT, created_at INTEGER NOT NULL,
                   withdrawn INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, started_at INTEGER NOT NULL, count INTEGER NOT NULL);
+                -- v3 tables: independent device records, credentials, bindings, evidence, recovery.
+                CREATE TABLE IF NOT EXISTS device_records (
+                  id TEXT PRIMARY KEY, label TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'active',
+                  lock_reason TEXT NOT NULL DEFAULT '', credential_epoch INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS device_credentials (
+                  id TEXT PRIMARY KEY, device_id TEXT NOT NULL REFERENCES device_records(id),
+                  algorithm TEXT NOT NULL DEFAULT 'ed25519', public_key TEXT NOT NULL,
+                  key_hash TEXT NOT NULL UNIQUE, trust_level TEXT NOT NULL DEFAULT 'software',
+                  status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, revoked_at INTEGER);
+                CREATE UNIQUE INDEX IF NOT EXISTS active_credential_key ON device_credentials(key_hash) WHERE status='active';
+                CREATE TABLE IF NOT EXISTS license_bindings (
+                  id TEXT PRIMARY KEY, license_id TEXT NOT NULL REFERENCES licenses(id),
+                  device_id TEXT NOT NULL REFERENCES device_records(id),
+                  state TEXT NOT NULL DEFAULT 'active', revision INTEGER NOT NULL DEFAULT 0,
+                  bound_at INTEGER NOT NULL, released_at INTEGER, last_seen INTEGER NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS active_binding_device ON license_bindings(device_id) WHERE state='active';
+                CREATE TABLE IF NOT EXISTS device_evidence (
+                  device_id TEXT NOT NULL REFERENCES device_records(id), type TEXT NOT NULL,
+                  source TEXT NOT NULL DEFAULT '', digest_version INTEGER NOT NULL DEFAULT 1,
+                  value_digest TEXT NOT NULL, quality TEXT NOT NULL DEFAULT 'unknown',
+                  first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, PRIMARY KEY (device_id, type));
+                CREATE TABLE IF NOT EXISTS recovery_requests (
+                  id TEXT PRIMARY KEY, target_binding_id TEXT NOT NULL REFERENCES license_bindings(id),
+                  target_revision INTEGER NOT NULL, proposed_key_hash TEXT NOT NULL,
+                  proposed_public_key TEXT NOT NULL, proposed_label TEXT NOT NULL,
+                  state TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL,
+                  expires_at INTEGER NOT NULL, approved_by TEXT NOT NULL DEFAULT '', completed_at INTEGER);
+                CREATE TABLE IF NOT EXISTS auth_challenges (
+                  id TEXT PRIMARY KEY, purpose TEXT NOT NULL, subject_hash TEXT NOT NULL,
+                  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER);
+                CREATE TABLE IF NOT EXISTS legacy_binding_map (
+                  protocol TEXT NOT NULL, legacy_device_id TEXT NOT NULL,
+                  legacy_key_hash TEXT NOT NULL, legacy_license_id TEXT NOT NULL,
+                  device_id TEXT REFERENCES device_records(id),
+                  binding_id TEXT REFERENCES license_bindings(id),
+                  PRIMARY KEY (protocol, legacy_device_id, legacy_key_hash));
             ''')
+        # Upgrade existing databases transactionally; the opaque token is a binding revision,
+        # not an authorization credential. Old admin selections must never match a later bind.
+        with self.transaction() as db:
+            if 'binding_token' not in {row['name'] for row in db.execute('PRAGMA table_info(devices)')}:
+                db.execute("ALTER TABLE devices ADD COLUMN binding_token TEXT NOT NULL DEFAULT ''")
+            for row in db.execute("SELECT license_id,device_id FROM devices WHERE binding_token=''").fetchall():
+                db.execute('UPDATE devices SET binding_token=? WHERE license_id=? AND device_id=?',
+                           (secrets.token_hex(32), row['license_id'], row['device_id']))
 
     def connect(self):
         db = sqlite3.connect(self.directory / 'license.sqlite3', timeout=15, isolation_level=None)
@@ -242,6 +291,10 @@ class LicenseStore:
             device_id, nonce = payload['deviceId'], payload['nonce']
             if not re.fullmatch(r'[a-f0-9]{64}', device_id) or not re.fullmatch(r'[a-f0-9-]{36}', nonce):
                 raise ValueError()
+            if path.startswith('/v2/license/') or 'legacyDeviceId' in payload:
+                legacy_id = payload.get('legacyDeviceId')
+                if not isinstance(legacy_id, str) or not re.fullmatch(r'[a-f0-9]{64}', legacy_id) or legacy_id == device_id:
+                    raise ValueError()
             if not isinstance(payload['timestamp'], int) or abs(self.clock() - payload['timestamp']) > 300:
                 raise Rejected('CLOCK_SKEW', 400)
             key = serialization.load_pem_public_key(payload['publicKey'].encode('ascii'))
@@ -254,8 +307,53 @@ class LicenseStore:
             raise Rejected('INVALID_DEVICE_PROOF', 400) from None
         return payload, key
 
+    def prepare_device_identity(self, db, payload, digest, now, version_two):
+        device_id = payload['deviceId']
+        legacy_id = payload.get('legacyDeviceId') if version_two else None
+        if (db.execute('SELECT 1 FROM legacy_binding_map WHERE legacy_key_hash=? AND legacy_device_id IN (?,?)',
+                       (digest, device_id, legacy_id)).fetchone()
+                or db.execute('SELECT 1 FROM device_credentials WHERE key_hash=?', (digest,)).fetchone()):
+            raise Rejected('DEVICE_IDENTITY_MIGRATED', 409)
+        # Retired proofs cannot reclaim a seat, even after the destination is released.
+        retired = db.execute('SELECT 1 FROM device_identity_aliases WHERE legacy_device_id=? AND key_hash=?',
+                             (device_id, digest)).fetchone()
+        current = db.execute('SELECT * FROM device_identity_aliases WHERE device_id=? AND key_hash=?',
+                             (device_id, digest)).fetchone()
+        if retired or current and (not version_two or current['legacy_device_id'] != legacy_id):
+            raise Rejected('DEVICE_IDENTITY_MIGRATED', 409)
+        if db.execute('SELECT 1 FROM blocked_devices WHERE device_id=? OR device_id=?',
+                      (device_id, legacy_id)).fetchone():
+            raise Rejected('DEVICE_LOCKED')
+        if not version_two:
+            return
+        alias = db.execute('SELECT * FROM device_identity_aliases WHERE legacy_device_id=? AND key_hash=?',
+                           (legacy_id, digest)).fetchone()
+        if alias:
+            if alias['device_id'] != device_id:
+                raise Rejected('DEVICE_IDENTITY_MIGRATED', 409)
+            # A committed migration retry uses the current binding. Never resurrect its source.
+            return
+        source = db.execute('SELECT * FROM devices WHERE device_id=? AND key_hash=? AND released=0',
+                            (legacy_id, digest)).fetchone()
+        if source:
+            if db.execute('SELECT 1 FROM devices WHERE device_id=? AND released=0', (device_id,)).fetchone():
+                raise Rejected('DEVICE_ALREADY_BOUND', 409)
+            self.assert_license(db.execute('SELECT * FROM licenses WHERE id=?', (source['license_id'],)).fetchone(), now)
+            db.execute('UPDATE devices SET released=1 WHERE license_id=? AND device_id=?',
+                       (source['license_id'], legacy_id))
+            db.execute('INSERT OR REPLACE INTO devices (license_id,device_id,key_hash,public_key,label,bound_at,last_seen,released,binding_token) VALUES(?,?,?,?,?,?,?,0,?)',
+                       (source['license_id'], device_id, digest, source['public_key'], source['label'], source['bound_at'], source['last_seen'], secrets.token_hex(32)))
+            self.audit(db, 'migrate-device', device_id, json.dumps({'legacyDeviceId': legacy_id, 'licenseId': source['license_id']}))
+        # Also pin fresh v2 enrollments. A different key sharing the legacy ID is independent.
+        # This insert rolls back with any subsequent activation/refresh/release rejection.
+        db.execute('INSERT INTO device_identity_aliases VALUES(?,?,?,?)', (legacy_id, digest, device_id, now))
+
     def request(self, path, envelope):
+        if not re.fullmatch(r'/v[12]/license/(activate|refresh|release)', path):
+            raise Rejected('NOT_FOUND', 404)
         payload, key = self.authenticate(path, envelope)
+        version_two = path.startswith('/v2/')
+        path = path.replace('/v2/', '/v1/', 1)
         now, device_id, digest = int(self.clock()), payload['deviceId'], key_hash(key)
         with self.transaction() as db:
             db.execute('DELETE FROM nonces WHERE expires_at < ?', (now,))
@@ -263,8 +361,7 @@ class LicenseStore:
                 db.execute('INSERT INTO nonces VALUES(?,?)', (payload['nonce'], now + 600))
             except sqlite3.IntegrityError:
                 raise Rejected('REQUEST_REPLAYED', 409) from None
-            if db.execute('SELECT 1 FROM blocked_devices WHERE device_id=?', (device_id,)).fetchone():
-                raise Rejected('DEVICE_LOCKED')
+            self.prepare_device_identity(db, payload, digest, now, version_two)
             if path == '/v1/license/activate':
                 code, label = payload.get('code', ''), payload.get('label', '')
                 if not isinstance(code, str) or not re.fullmatch(r'SD-(?:[A-Fa-f0-9]{8}-){3}[A-Fa-f0-9]{8}', code.strip(), re.IGNORECASE):
@@ -276,15 +373,15 @@ class LicenseStore:
                 existing = db.execute('SELECT * FROM devices WHERE device_id=? AND released=0', (device_id,)).fetchone()
                 if existing and (existing['license_id'] != license_row['id'] or existing['key_hash'] != digest):
                     raise Rejected('DEVICE_ALREADY_BOUND', 409)
-                count = db.execute('SELECT count(*) FROM devices WHERE license_id=? AND released=0', (license_row['id'],)).fetchone()[0]
+                count = self._seat_count(db, license_row['id'])
                 if not existing and count >= license_row['max_devices']:
                     raise Rejected('DEVICE_LIMIT_REACHED', 409)
                 if not license_row['started_at']:
                     db.execute('UPDATE licenses SET started_at=?,expires_at=? WHERE id=?',
                                (now, now + license_row['days'] * 86400, license_row['id']))
                     license_row = db.execute('SELECT * FROM licenses WHERE id=?', (license_row['id'],)).fetchone()
-                db.execute('INSERT OR REPLACE INTO devices VALUES(?,?,?,?,?,?,?,0)',
-                           (license_row['id'], device_id, digest, public_pem(key), label, existing['bound_at'] if existing else now, now))
+                db.execute('INSERT OR REPLACE INTO devices (license_id,device_id,key_hash,public_key,label,bound_at,last_seen,released,binding_token) VALUES(?,?,?,?,?,?,?,0,?)',
+                           (license_row['id'], device_id, digest, public_pem(key), label, existing['bound_at'] if existing else now, now, secrets.token_hex(32)))
                 self.audit(db, 'activate', device_id, license_row['id'])
             else:
                 device = db.execute('SELECT * FROM devices WHERE device_id=? AND released=0 AND key_hash=?', (device_id, digest)).fetchone()
@@ -316,6 +413,427 @@ class LicenseStore:
             raise Rejected('LICENSE_REVOKED')
         if row['expires_at'] is not None and row['expires_at'] <= now:
             raise Rejected('LICENSE_EXPIRED')
+
+    def _seat_count(self, db, license_id):
+        return (db.execute('SELECT count(*) FROM devices WHERE license_id=? AND released=0', (license_id,)).fetchone()[0]
+                + db.execute("SELECT count(*) FROM license_bindings WHERE license_id=? AND state='active'", (license_id,)).fetchone()[0])
+
+    def _consume_nonce(self, db, nonce, now):
+        db.execute('DELETE FROM nonces WHERE expires_at < ?', (now,))
+        try:
+            db.execute('INSERT INTO nonces VALUES(?,?)', (nonce, now + 600))
+        except sqlite3.IntegrityError:
+            raise Rejected('REQUEST_REPLAYED', 409) from None
+
+    def _challenge_subject(self, db, payload, digest, purpose):
+        code = payload.get('code', '')
+        if not isinstance(code, str) or not re.fullmatch(r'SD-(?:[A-Fa-f0-9]{8}-){3}[A-Fa-f0-9]{8}', code.strip(), re.IGNORECASE):
+            raise Rejected('INVALID_ACTIVATION_CODE', 400)
+        code_digest = self.digest(code)
+        context = [purpose, digest, code_digest]
+        if purpose == 'recovery':
+            targets = db.execute("SELECT lb.id,lb.revision FROM license_bindings lb JOIN licenses l ON l.id=lb.license_id WHERE l.code_hash=? AND lb.state='active'", (code_digest,)).fetchall()
+            if len(targets) > 1:
+                raise Rejected('MULTIPLE_BINDINGS_REQUIRE_ADMIN', 409)
+            context += [(targets[0]['id'], targets[0]['revision']) if targets else None]
+        return hashlib.sha256(json.dumps(context, separators=(',', ':')).encode()).hexdigest()
+
+    def _consume_challenge(self, db, payload, digest, purpose, now):
+        subject = self._challenge_subject(db, payload, digest, purpose)
+        challenge = db.execute('SELECT * FROM auth_challenges WHERE id=? AND purpose=? AND subject_hash=? AND consumed_at IS NULL',
+                               (payload.get('challengeId', ''), purpose, subject)).fetchone()
+        if not challenge or challenge['expires_at'] <= now:
+            raise Rejected('CHALLENGE_INVALID', 400)
+        db.execute('UPDATE auth_challenges SET consumed_at=? WHERE id=?', (now, challenge['id']))
+
+    # ── v3 authentication ─────────────────────────────────────────────────────
+
+    def authenticate_v3(self, path, envelope):
+        try:
+            serialized = envelope['payload']
+            if not isinstance(serialized, str) or len(serialized) > 8192:
+                raise ValueError()
+            payload = json.loads(serialized)
+            device_record_id = payload.get('deviceRecordId')
+            credential_id = payload.get('credentialId')
+            nonce = payload['nonce']
+            if ((device_record_id is not None and (not isinstance(device_record_id, str) or not re.fullmatch(r'[a-f0-9-]{36}', device_record_id)))
+                    or (credential_id is not None and (not isinstance(credential_id, str) or not re.fullmatch(r'[a-f0-9-]{36}', credential_id)))
+                    or not re.fullmatch(r'[a-f0-9-]{36}', nonce)):
+                raise ValueError()
+            if not isinstance(payload['timestamp'], int) or abs(self.clock() - payload['timestamp']) > 300:
+                raise Rejected('CLOCK_SKEW', 400)
+            key = serialization.load_pem_public_key(payload['publicKey'].encode('ascii'))
+            if not isinstance(key, Ed25519PublicKey):
+                raise ValueError()
+            key.verify(base64.b64decode(envelope['signature'], validate=True), (path + '\n' + serialized).encode('utf-8'))
+        except Rejected:
+            raise
+        except Exception:
+            raise Rejected('INVALID_DEVICE_PROOF', 400) from None
+        return payload, key
+
+    def request_v3(self, path, envelope):
+        if not re.fullmatch(r'/v3/license/(challenge|activate|refresh|release|recover)', path):
+            raise Rejected('NOT_FOUND', 404)
+        now = int(self.clock())
+
+        # Challenge endpoint: no existing device record required.
+        if path == '/v3/license/challenge':
+            # Lightweight auth: just verify signature over payload + path.
+            try:
+                serialized = envelope['payload']
+                if not isinstance(serialized, str) or len(serialized) > 4096:
+                    raise ValueError()
+                payload = json.loads(serialized)
+                purpose = payload.get('purpose', '')
+                public_key_pem = payload.get('publicKey', '')
+                nonce = payload.get('nonce', '')
+                if purpose not in ('activate', 'recovery'):
+                    raise Rejected('INVALID_REQUEST', 400)
+                if not isinstance(public_key_pem, str) or len(public_key_pem) > 4096:
+                    raise ValueError()
+                if not re.fullmatch(r'[a-f0-9-]{36}', nonce):
+                    raise ValueError()
+                if not isinstance(payload.get('timestamp'), int) or abs(self.clock() - payload['timestamp']) > 300:
+                    raise Rejected('CLOCK_SKEW', 400)
+                key = serialization.load_pem_public_key(public_key_pem.encode('ascii'))
+                if not isinstance(key, Ed25519PublicKey):
+                    raise ValueError()
+                key.verify(base64.b64decode(envelope['signature'], validate=True), (path + '\n' + serialized).encode('utf-8'))
+            except Rejected:
+                raise
+            except Exception:
+                raise Rejected('INVALID_DEVICE_PROOF', 400) from None
+            digest = key_hash(key)
+            expires = now + 300
+            challenge_id = str(uuid.uuid4())
+            with self.transaction() as db:
+                self._consume_nonce(db, nonce, now)
+                subject = self._challenge_subject(db, payload, digest, purpose)
+                db.execute('DELETE FROM auth_challenges WHERE expires_at < ?', (now,))
+                db.execute('INSERT INTO auth_challenges(id,purpose,subject_hash,created_at,expires_at) VALUES(?,?,?,?,?)',
+                           (challenge_id, purpose, subject, now, expires))
+            return {'challengeId': challenge_id, 'expiresAt': expires}
+
+        # Initial activation and recovery prove key ownership without assigned IDs.
+        payload, key = self.authenticate_v3(path, envelope)
+        digest = key_hash(key)
+        device_record_id = payload.get('deviceRecordId')
+        credential_id = payload.get('credentialId')
+
+        with self.transaction() as db:
+            self._consume_nonce(db, payload['nonce'], now)
+
+            if path == '/v3/license/activate':
+                return self._activate_v3(db, payload, key, digest, device_record_id, credential_id, now)
+            elif path == '/v3/license/recover':
+                return self._recover_v3(db, payload, key, digest, now)
+
+            # Refresh and release require a live device record and credential.
+            device = db.execute('SELECT * FROM device_records WHERE id=?', (device_record_id,)).fetchone()
+            if not device:
+                raise Rejected('DEVICE_NOT_FOUND', 404)
+            if device['state'] == 'locked':
+                raise Rejected('DEVICE_LOCKED')
+            cred = db.execute('SELECT * FROM device_credentials WHERE id=? AND device_id=? AND status=?',
+                              (credential_id, device_record_id, 'active')).fetchone()
+            if not cred or cred['key_hash'] != digest:
+                raise Rejected('CREDENTIAL_NOT_FOUND')
+
+            binding = db.execute("SELECT * FROM license_bindings WHERE device_id=? AND state='active'", (device_record_id,)).fetchone()
+            if not binding:
+                raise Rejected('DEVICE_NOT_BOUND')
+            if (payload.get('bindingId') != binding['id'] or payload.get('licenseId') != binding['license_id']
+                    or type(payload.get('bindingRevision')) is not int or payload['bindingRevision'] != binding['revision']
+                    or type(payload.get('credentialEpoch')) is not int or payload['credentialEpoch'] != device['credential_epoch']):
+                raise Rejected('BINDING_CHANGED', 409)
+            if path == '/v3/license/refresh':
+                return self._refresh_v3(db, device, cred, now)
+            elif path == '/v3/license/release':
+                return self._release_v3(db, device, now)
+
+    def _activate_v3(self, db, payload, key, digest, device_record_id, credential_id, now):
+        code = payload.get('code', '')
+        code = code.strip() if isinstance(code, str) else code
+        label = payload.get('label', '')
+        if not isinstance(code, str) or not re.fullmatch(r'SD-(?:[A-Fa-f0-9]{8}-){3}[A-Fa-f0-9]{8}', code, re.IGNORECASE):
+            raise Rejected('INVALID_ACTIVATION_CODE', 400)
+        if not isinstance(label, str) or not 1 <= len(label) <= 120:
+            raise Rejected('INVALID_DEVICE_LABEL', 400)
+        license_row = db.execute('SELECT * FROM licenses WHERE code_hash=?', (self.digest(code),)).fetchone()
+        self.assert_license(license_row, now)
+
+        self._consume_challenge(db, payload, digest, 'activate', now)
+        historical = db.execute('SELECT * FROM device_credentials WHERE key_hash=?', (digest,)).fetchone()
+        if historical and historical['status'] != 'active':
+            raise Rejected('CREDENTIAL_REVOKED', 409)
+
+        if db.execute("SELECT 1 FROM recovery_requests WHERE proposed_key_hash=? AND state='pending' AND expires_at>?", (digest, now)).fetchone():
+            raise Rejected('RECOVERY_PENDING', 409)
+
+        # Look up by key_hash first: same key already has a device record (restart/upgrade).
+        existing_cred = db.execute('SELECT * FROM device_credentials WHERE key_hash=? AND status=?',
+                                   (digest, 'active')).fetchone()
+        if existing_cred:
+            dev = db.execute('SELECT * FROM device_records WHERE id=?', (existing_cred['device_id'],)).fetchone()
+            if dev['state'] == 'locked':
+                raise Rejected('DEVICE_LOCKED')
+            binding = db.execute('SELECT * FROM license_bindings WHERE device_id=? AND state=?',
+                                 (dev['id'], 'active')).fetchone()
+            if binding and binding['license_id'] != license_row['id']:
+                raise Rejected('DEVICE_ALREADY_BOUND', 409)
+            if binding:
+                db.execute('UPDATE license_bindings SET last_seen=? WHERE id=?', (now, binding['id']))
+                db.execute('UPDATE device_records SET label=?, updated_at=? WHERE id=?', (label, now, dev['id']))
+                return self._issue_lease_v3(db, dev['id'], existing_cred['id'], binding['id'], license_row, now)
+            # Same key, no active binding → fall through to new binding below.
+            device_record_id = dev['id']
+            credential_id = existing_cred['id']
+            is_new_device = False
+        else:
+            # A client cannot choose or enroll into another server device record.
+            device_record_id, credential_id = str(uuid.uuid4()), str(uuid.uuid4())
+            # Known legacy locks remain authoritative even when its old seat was released.
+            known_ids = {row['device_id'] for row in db.execute('SELECT device_id FROM devices WHERE key_hash=?', (digest,))}
+            for alias in db.execute('SELECT legacy_device_id,device_id FROM device_identity_aliases WHERE key_hash=?', (digest,)):
+                known_ids.update((alias['legacy_device_id'], alias['device_id']))
+            if any(db.execute('SELECT 1 FROM blocked_devices WHERE device_id=?', (identity,)).fetchone() for identity in known_ids):
+                raise Rejected('DEVICE_LOCKED')
+            sources = db.execute('SELECT * FROM devices WHERE key_hash=? AND released=0', (digest,)).fetchall()
+            if sources:
+                source = sources[0]
+                if len(sources) != 1 or source['license_id'] != license_row['id']:
+                    raise Rejected('DEVICE_ALREADY_BOUND', 409)
+                ids = [source['device_id']]
+                for alias in db.execute('SELECT legacy_device_id,device_id FROM device_identity_aliases WHERE key_hash=?', (digest,)):
+                    ids.extend([alias['legacy_device_id'], alias['device_id']])
+                if any(db.execute('SELECT 1 FROM blocked_devices WHERE device_id=?', (identity,)).fetchone() for identity in ids):
+                    raise Rejected('DEVICE_LOCKED')
+            db.execute('INSERT INTO device_records(id,label,state,credential_epoch,created_at,updated_at) VALUES(?,?,?,0,?,?)',
+                       (device_record_id, label, 'active', now, now))
+            db.execute('INSERT INTO device_credentials(id,device_id,algorithm,public_key,key_hash,trust_level,status,created_at) VALUES(?,?,?,?,?,?,?,?)',
+                       (credential_id, device_record_id, 'ed25519', public_pem(key), digest, 'software', 'active', now))
+            self.audit(db, 'register-v3', device_record_id, '')
+            if sources:
+                binding_id = str(uuid.uuid4())
+                db.execute("INSERT INTO license_bindings(id,license_id,device_id,state,revision,bound_at,last_seen) VALUES(?,?,?,'active',0,?,?)",
+                           (binding_id, license_row['id'], device_record_id, source['bound_at'], now))
+                db.execute('UPDATE devices SET released=1 WHERE license_id=? AND device_id=?', (source['license_id'], source['device_id']))
+                for identity in set(ids):
+                    db.execute('INSERT INTO legacy_binding_map VALUES(?,?,?,?,?,?)',
+                               ('v1/v2', identity, digest, source['license_id'], device_record_id, binding_id))
+                self.audit(db, 'migrate-device-v3', device_record_id, license_row['id'])
+                return self._issue_lease_v3(db, device_record_id, credential_id, binding_id, license_row, now)
+
+        count = self._seat_count(db, license_row['id'])
+        if count >= license_row['max_devices']:
+            raise Rejected('DEVICE_LIMIT_REACHED', 409)
+        if not license_row['started_at']:
+            db.execute('UPDATE licenses SET started_at=?,expires_at=? WHERE id=?',
+                       (now, now + license_row['days'] * 86400, license_row['id']))
+            license_row = db.execute('SELECT * FROM licenses WHERE id=?', (license_row['id'],)).fetchone()
+        db.execute('UPDATE device_records SET label=?, updated_at=? WHERE id=?', (label, now, device_record_id))
+        binding_id = str(uuid.uuid4())
+        db.execute('INSERT INTO license_bindings(id,license_id,device_id,state,revision,bound_at,last_seen) VALUES(?,?,?,?,0,?,?)',
+                   (binding_id, license_row['id'], device_record_id, 'active', now, now))
+        self.audit(db, 'activate-v3', device_record_id, license_row['id'])
+        return self._issue_lease_v3(db, device_record_id, credential_id, binding_id, license_row, now)
+
+    def _refresh_v3(self, db, device, cred, now):
+        binding = db.execute('SELECT * FROM license_bindings WHERE device_id=? AND state=?',
+                             (device['id'], 'active')).fetchone()
+        if not binding:
+            raise Rejected('DEVICE_NOT_BOUND')
+        license_row = db.execute('SELECT * FROM licenses WHERE id=?', (binding['license_id'],)).fetchone()
+        self.assert_license(license_row, now)
+        db.execute('UPDATE license_bindings SET last_seen=? WHERE id=?', (now, binding['id']))
+        return self._issue_lease_v3(db, device['id'], cred['id'], binding['id'], license_row, now)
+
+    def _release_v3(self, db, device, now):
+        binding = db.execute('SELECT * FROM license_bindings WHERE device_id=? AND state=?',
+                             (device['id'], 'active')).fetchone()
+        if not binding:
+            raise Rejected('DEVICE_NOT_BOUND')
+        db.execute('UPDATE license_bindings SET state=?,released_at=?,revision=revision+1 WHERE id=?', ('released', now, binding['id']))
+        self.audit(db, 'release-v3', device['id'], binding['license_id'])
+        return {'released': True}
+
+    def _recover_v3(self, db, payload, key, digest, now):
+        challenge_id = payload.get('challengeId', '')
+        code = payload.get('code', '')
+        code = code.strip() if isinstance(code, str) else code
+        label = payload.get('label', '')
+        if not re.fullmatch(r'[a-f0-9-]{36}', challenge_id):
+            raise Rejected('INVALID_REQUEST', 400)
+        if not isinstance(code, str) or not re.fullmatch(r'SD-(?:[A-Fa-f0-9]{8}-){3}[A-Fa-f0-9]{8}', code, re.IGNORECASE):
+            raise Rejected('INVALID_ACTIVATION_CODE', 400)
+        if not isinstance(label, str) or not 1 <= len(label) <= 120:
+            raise Rejected('INVALID_DEVICE_LABEL', 400)
+        self._consume_challenge(db, payload, digest, 'recovery', now)
+        if db.execute('SELECT 1 FROM devices WHERE key_hash=? AND released=0', (digest,)).fetchone():
+            raise Rejected('CREDENTIAL_ALREADY_ACTIVE', 409)
+        existing_key = db.execute('SELECT status FROM device_credentials WHERE key_hash=?', (digest,)).fetchone()
+        if existing_key:
+            raise Rejected('CREDENTIAL_ALREADY_ACTIVE' if existing_key['status'] == 'active' else 'CREDENTIAL_REVOKED', 409)
+        license_row = db.execute('SELECT * FROM licenses WHERE code_hash=?', (self.digest(code),)).fetchone()
+        self.assert_license(license_row, now)
+        bindings = db.execute('SELECT * FROM license_bindings WHERE license_id=? AND state=?',
+                              (license_row['id'], 'active')).fetchall()
+        if not bindings:
+            raise Rejected('NO_BINDING_TO_RECOVER', 404)
+        if len(bindings) > 1:
+            raise Rejected('MULTIPLE_BINDINGS_REQUIRE_ADMIN', 409)
+        target = bindings[0]
+        db.execute("UPDATE recovery_requests SET state='expired' WHERE state='pending' AND expires_at<=?", (now,))
+        existing = db.execute("SELECT 1 FROM recovery_requests WHERE (target_binding_id=? OR proposed_key_hash=?) AND state='pending'",
+                              (target['id'], digest)).fetchone()
+        if existing:
+            raise Rejected('RECOVERY_PENDING')
+        request_id = str(uuid.uuid4())
+        expires = now + 7 * 86400
+        db.execute('INSERT INTO recovery_requests(id,target_binding_id,target_revision,proposed_key_hash,proposed_public_key,proposed_label,state,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?)',
+                   (request_id, target['id'], target['revision'], digest, public_pem(key), label, 'pending', now, expires))
+        self.audit(db, 'request-recovery', target['device_id'], json.dumps({'requestId': request_id, 'licenseId': license_row['id']}))
+        return {'id': request_id, 'licenseId': license_row['id'], 'deviceRecordId': target['device_id'],
+                'deviceLabel': label, 'state': 'pending', 'createdAt': now, 'expiresAt': expires}
+
+    def _issue_lease_v3(self, db, device_record_id, credential_id, binding_id, license_row, now):
+        binding = db.execute('SELECT * FROM license_bindings WHERE id=?', (binding_id,)).fetchone()
+        active_bindings = db.execute('SELECT lb.device_id,lb.last_seen,dr.label FROM license_bindings lb JOIN device_records dr ON dr.id=lb.device_id WHERE lb.license_id=? AND lb.state=?',
+                                     (license_row['id'], 'active')).fetchall()
+        devices = [{'deviceRecordId': row['device_id'], 'label': row['label'], 'lastSeen': row['last_seen']} for row in active_bindings]
+        cred = db.execute('SELECT key_hash FROM device_credentials WHERE id=?', (credential_id,)).fetchone()
+        device = db.execute('SELECT credential_epoch FROM device_records WHERE id=?', (device_record_id,)).fetchone()
+        lease = {'schemaVersion': 3, 'kind': 'lease', 'status': 'active', 'licenseId': license_row['id'],
+                 'deviceRecordId': device_record_id, 'credentialId': credential_id,
+                 'bindingId': binding_id, 'bindingRevision': binding['revision'],
+                 'keyHash': cred['key_hash'], 'credentialEpoch': device['credential_epoch'], 'issuedAt': now,
+                 'validUntil': min(now + 600, license_row['expires_at']), 'expiresAt': license_row['expires_at'],
+                 'maxDevices': license_row['max_devices'], 'devices': devices}
+        if self.offline_grace:
+            lease['offlineGraceUntil'] = min(now + self.offline_grace, license_row['expires_at'])
+        return self.signed(lease)
+
+    # ── v3 admin operations ───────────────────────────────────────────────────
+
+    def admin_approve_recovery(self, request_id):
+        if not re.fullmatch(r'[a-f0-9-]{36}', request_id):
+            raise Rejected('INVALID_REQUEST', 400)
+        now = int(self.clock())
+        with self.transaction() as db:
+            rec = db.execute('SELECT * FROM recovery_requests WHERE id=?', (request_id,)).fetchone()
+            if not rec:
+                raise Rejected('RECOVERY_NOT_FOUND', 404)
+            if rec['state'] != 'pending':
+                raise Rejected('RECOVERY_ALREADY_PROCESSED', 409)
+            if rec['expires_at'] <= now:
+                raise Rejected('RECOVERY_EXPIRED')
+            binding = db.execute('SELECT * FROM license_bindings WHERE id=?', (rec['target_binding_id'],)).fetchone()
+            if not binding or binding['revision'] != rec['target_revision']:
+                raise Rejected('BINDING_CHANGED', 409)
+            if binding['state'] != 'active':
+                raise Rejected('BINDING_NOT_ACTIVE', 409)
+            device = db.execute('SELECT * FROM device_records WHERE id=?', (binding['device_id'],)).fetchone()
+            if device['state'] == 'locked':
+                raise Rejected('DEVICE_LOCKED')
+            self.assert_license(db.execute('SELECT * FROM licenses WHERE id=?', (binding['license_id'],)).fetchone(), now)
+            if db.execute('SELECT 1 FROM devices WHERE key_hash=? AND released=0', (rec['proposed_key_hash'],)).fetchone():
+                raise Rejected('CREDENTIAL_ALREADY_ACTIVE', 409)
+            existing_key = db.execute('SELECT status FROM device_credentials WHERE key_hash=?', (rec['proposed_key_hash'],)).fetchone()
+            if existing_key:
+                raise Rejected('CREDENTIAL_ALREADY_ACTIVE' if existing_key['status'] == 'active' else 'CREDENTIAL_REVOKED', 409)
+            # Revoke all active credentials, install new one.
+            for cred in db.execute('SELECT id FROM device_credentials WHERE device_id=? AND status=?',
+                                   (device['id'], 'active')).fetchall():
+                db.execute('UPDATE device_credentials SET status=?,revoked_at=? WHERE id=?', ('revoked', now, cred['id']))
+            new_cred_id = str(uuid.uuid4())
+            db.execute('INSERT INTO device_credentials(id,device_id,algorithm,public_key,key_hash,trust_level,status,created_at) VALUES(?,?,?,?,?,?,?,?)',
+                       (new_cred_id, device['id'], 'ed25519', rec['proposed_public_key'], rec['proposed_key_hash'], 'software', 'active', now))
+            db.execute('UPDATE device_records SET credential_epoch=credential_epoch+1,label=?,updated_at=? WHERE id=?',
+                       (rec['proposed_label'], now, device['id']))
+            db.execute('UPDATE license_bindings SET revision=revision+1,last_seen=? WHERE id=?', (now, binding['id']))
+            db.execute('UPDATE recovery_requests SET state=?,completed_at=?,approved_by=? WHERE id=?',
+                       ('approved', now, 'admin', request_id))
+            self.audit(db, 'approve-recovery', device['id'], json.dumps({'requestId': request_id, 'newCredentialId': new_cred_id}))
+        return {'approved': True, 'newCredentialId': new_cred_id}
+
+    def admin_reject_recovery(self, request_id, reason=''):
+        if not re.fullmatch(r'[a-f0-9-]{36}', request_id) or not isinstance(reason, str) or len(reason) > 500:
+            raise Rejected('INVALID_REQUEST', 400)
+        now = int(self.clock())
+        with self.transaction() as db:
+            rec = db.execute('SELECT * FROM recovery_requests WHERE id=?', (request_id,)).fetchone()
+            if not rec or rec['state'] != 'pending':
+                raise Rejected('RECOVERY_NOT_FOUND', 404)
+            db.execute('UPDATE recovery_requests SET state=? WHERE id=?', ('rejected', request_id))
+            self.audit(db, 'reject-recovery', rec['target_binding_id'], json.dumps({'requestId': request_id, 'reason': reason}))
+        return {'rejected': True}
+
+    def admin_release_binding_v3(self, binding_id, expected_revision):
+        """Precise admin release: binding ID + expected revision for optimistic concurrency."""
+        if not re.fullmatch(r'[a-f0-9-]{36}', binding_id) or not isinstance(expected_revision, int):
+            raise Rejected('INVALID_REQUEST', 400)
+        now = int(self.clock())
+        with self.transaction() as db:
+            binding = db.execute('SELECT * FROM license_bindings WHERE id=?', (binding_id,)).fetchone()
+            if not binding:
+                raise Rejected('BINDING_NOT_FOUND', 404)
+            if binding['state'] != 'active':
+                raise Rejected('BINDING_NOT_ACTIVE', 409)
+            if binding['revision'] != expected_revision:
+                raise Rejected('BINDING_REVISION_MISMATCH', 409)
+            db.execute('UPDATE license_bindings SET state=?,released_at=?,revision=revision+1 WHERE id=?',
+                       ('released', now, binding_id))
+            self.audit(db, 'admin-release-binding-v3', binding_id, json.dumps({'licenseId': binding['license_id'], 'deviceId': binding['device_id'], 'revision': expected_revision}))
+        return {'released': True}
+
+    def admin_lock_device_v3(self, device_record_id, reason=''):
+        if not re.fullmatch(r'[a-f0-9-]{36}', device_record_id) or not isinstance(reason, str) or len(reason) > 500:
+            raise Rejected('INVALID_REQUEST', 400)
+        now = int(self.clock())
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM device_records WHERE id=?', (device_record_id,)).fetchone():
+                raise Rejected('DEVICE_NOT_FOUND', 404)
+            db.execute('UPDATE device_records SET state=?,lock_reason=?,updated_at=? WHERE id=?',
+                       ('locked', reason, now, device_record_id))
+            self.audit(db, 'lock-device-v3', device_record_id, reason)
+        return {'locked': True}
+
+    def admin_unlock_device_v3(self, device_record_id):
+        if not re.fullmatch(r'[a-f0-9-]{36}', device_record_id):
+            raise Rejected('INVALID_REQUEST', 400)
+        now = int(self.clock())
+        with self.transaction() as db:
+            if not db.execute('SELECT 1 FROM device_records WHERE id=?', (device_record_id,)).fetchone():
+                raise Rejected('DEVICE_NOT_FOUND', 404)
+            db.execute('UPDATE device_records SET state=?,lock_reason=?,updated_at=? WHERE id=?',
+                       ('active', '', now, device_record_id))
+            self.audit(db, 'unlock-device-v3', device_record_id, '')
+        return {'unlocked': True}
+
+    def admin_recovery_list(self):
+        with closing(self.connect()) as db:
+            rows = db.execute(
+                'SELECT rr.id,rr.state,rr.created_at,rr.expires_at,rr.proposed_label,'
+                'lb.license_id,lb.device_id AS device_record_id,dr.label AS device_label '
+                'FROM recovery_requests rr '
+                'JOIN license_bindings lb ON lb.id=rr.target_binding_id '
+                'JOIN device_records dr ON dr.id=lb.device_id '
+                'WHERE rr.state=? ORDER BY rr.created_at DESC',
+                ('pending',)).fetchall()
+        return [dict(row) for row in rows]
+
+    def release_binding(self, device_id, license_id, binding_token):
+        if (not isinstance(license_id, str) or not re.fullmatch(r'[a-f0-9-]{36}', license_id)
+                or not isinstance(binding_token, str) or not re.fullmatch(r'[a-f0-9]{64}', binding_token)):
+            raise Rejected('INVALID_REQUEST', 400)
+        with self.transaction() as db:
+            changed = db.execute('UPDATE devices SET released=1 WHERE device_id=? AND license_id=? AND binding_token=? AND released=0',
+                                 (device_id, license_id, binding_token)).rowcount
+            if changed != 1:
+                raise Rejected('DEVICE_BINDING_CHANGED', 409)
+            self.audit(db, 'release-device', device_id, json.dumps({'licenseId': license_id, 'bindingToken': binding_token}))
 
     def operate(self, action, target, reason=''):
         with self.transaction() as db:
@@ -471,14 +989,47 @@ class LicenseStore:
                     'devices': db.execute('SELECT count(*) FROM devices WHERE released=0').fetchone()[0],
                     'blockedDevices': db.execute('SELECT count(*) FROM blocked_devices').fetchone()[0],
                     'announcements': db.execute('SELECT count(*) FROM announcements WHERE withdrawn=0').fetchone()[0],
-                    'latestRelease': dict(latest) if latest else None, 'serverTime': int(self.clock())}
+                    'latestRelease': dict(latest) if latest else None, 'serverTime': int(self.clock()),
+                    'v3DeviceRecords': db.execute('SELECT count(*) FROM device_records').fetchone()[0],
+                    'v3ActiveBindings': db.execute("SELECT count(*) FROM license_bindings WHERE state='active'").fetchone()[0],
+                    'v3PendingRecovery': db.execute("SELECT count(*) FROM recovery_requests WHERE state='pending'").fetchone()[0]}
+
+    def admin_list_v3(self, kind, query='', page=1):
+        if type(page) is not int or not 1 <= page <= 100000 or len(query) > 200:
+            raise Rejected('INVALID_REQUEST', 400)
+        specs = {
+            'devices': (
+                "device_records dr",
+                "dr.id,dr.label,dr.state,dr.lock_reason,dr.credential_epoch,dr.created_at,dr.updated_at,"
+                "(SELECT count(*) FROM license_bindings lb WHERE lb.device_id=dr.id AND lb.state='active') AS active_bindings,"
+                "(SELECT lc.id FROM device_credentials lc WHERE lc.device_id=dr.id AND lc.status='active' LIMIT 1) AS credential_id",
+                "dr.id LIKE ? OR dr.label LIKE ?",
+                "dr.updated_at DESC,dr.rowid DESC",
+            ),
+            'bindings': (
+                "license_bindings lb JOIN device_records dr ON dr.id=lb.device_id JOIN licenses lic ON lic.id=lb.license_id",
+                "lb.id,lb.license_id,lb.device_id,lb.state,lb.revision,lb.bound_at,lb.last_seen,lb.released_at,"
+                "dr.label AS device_label,lic.label AS license_label,lic.tail",
+                "lb.id LIKE ? OR dr.label LIKE ? OR lic.label LIKE ?",
+                "lb.last_seen DESC,lb.rowid DESC",
+            ),
+        }
+        if kind not in specs:
+            raise Rejected('NOT_FOUND', 404)
+        table, columns, where, order = specs[kind]
+        arguments = [f'%{query}%'] * where.count('?')
+        with closing(self.connect()) as db:
+            total = db.execute(f'SELECT count(*) FROM {table} WHERE {where}', arguments).fetchone()[0]
+            rows = db.execute(f'SELECT {columns} FROM {table} WHERE {where} ORDER BY {order} LIMIT 50 OFFSET ?',
+                              [*arguments, (page - 1) * 50]).fetchall()
+        return {'items': [dict(row) for row in rows], 'total': total, 'page': page, 'pageSize': 50}
 
     def admin_list(self, kind, query='', page=1):
         if type(page) is not int or not 1 <= page <= 100000 or len(query) > 200:
             raise Rejected('INVALID_REQUEST', 400)
         specs = {
-            'licenses': ("licenses l", "l.id,l.tail,l.label,l.days,l.max_devices,l.created_at,l.started_at,l.expires_at,l.revoked,(SELECT count(*) FROM devices d WHERE d.license_id=l.id AND d.released=0) AS seats", "l.id LIKE ? OR l.label LIKE ? OR l.tail LIKE ?", 'l.created_at DESC,l.rowid DESC'),
-            'devices': ("devices d JOIN licenses l ON l.id=d.license_id LEFT JOIN blocked_devices b ON b.device_id=d.device_id", "d.license_id,d.device_id,d.label,d.bound_at,d.last_seen,d.released,l.label AS license_label,l.tail,CASE WHEN b.device_id IS NULL THEN 0 ELSE 1 END AS locked,b.reason AS lock_reason", "d.device_id LIKE ? OR d.label LIKE ? OR l.label LIKE ?", 'd.last_seen DESC,d.rowid DESC'),
+            'licenses': ("licenses l", "l.id,l.tail,l.label,l.days,l.max_devices,l.created_at,l.started_at,l.expires_at,l.revoked,((SELECT count(*) FROM devices d WHERE d.license_id=l.id AND d.released=0)+(SELECT count(*) FROM license_bindings lb WHERE lb.license_id=l.id AND lb.state='active')) AS seats", "l.id LIKE ? OR l.label LIKE ? OR l.tail LIKE ?", 'l.created_at DESC,l.rowid DESC'),
+            'devices': ("devices d JOIN licenses l ON l.id=d.license_id LEFT JOIN blocked_devices b ON b.device_id=d.device_id", "d.license_id,d.device_id,d.label,d.bound_at,d.last_seen,d.released,d.binding_token AS bindingToken,l.label AS license_label,l.tail,CASE WHEN b.device_id IS NULL THEN 0 ELSE 1 END AS locked,b.reason AS lock_reason", "d.device_id LIKE ? OR d.label LIKE ? OR l.label LIKE ?", 'd.last_seen DESC,d.rowid DESC'),
             'releases': ('releases', 'version,manifest,withdrawn', 'version LIKE ?', 'sequence DESC'),
             'audit': ('audit', 'id,at,action,target,detail', 'action LIKE ? OR target LIKE ? OR detail LIKE ?', 'id DESC'),
         }
@@ -689,6 +1240,16 @@ def handler_for(store):
                 if not self.require_admin():
                     return
                 return self.respond({'announcements': store.admin_announcements()})
+            if path == '/admin/api/v3/recovery':
+                if not self.require_admin():
+                    return
+                return self.respond({'items': store.admin_recovery_list()})
+            if path in ('/admin/api/v3/devices', '/admin/api/v3/bindings'):
+                if not self.require_admin():
+                    return
+                kind = path.rsplit('/', 1)[1]
+                query = parse_qs(urlparse(self.path).query)
+                return self.respond(store.admin_list_v3(kind, query.get('q', [''])[0], int(query.get('page', ['1'])[0])))
             if path == '/admin/':
                 return self.serve_admin_file('index.html')
             if re.fullmatch(r'/admin/[A-Za-z0-9._-]+', path):
@@ -787,6 +1348,9 @@ def handler_for(store):
             match = re.fullmatch(r'/admin/api/devices/([a-f0-9]{64})/(lock|unlock|release)', path)
             if match:
                 body = self.read_json(4096)
+                if match[2] == 'release':
+                    store.release_binding(match[1], body.get('licenseId'), body.get('bindingToken'))
+                    return self.respond({'ok': True})
                 reason = body.get('reason', '')
                 if not isinstance(reason, str) or len(reason) > 500:
                     raise Rejected('INVALID_REQUEST', 400)
@@ -839,6 +1403,34 @@ def handler_for(store):
             if match:
                 store.withdraw_announcement(match[1])
                 return self.respond({'withdrawn': True})
+            # v3 admin: device records (lock/unlock by UUID)
+            match = re.fullmatch(r'/admin/api/v3/devices/([a-f0-9-]{36})/(lock|unlock)', path)
+            if match:
+                body = self.read_json(4096)
+                if match[2] == 'lock':
+                    reason = body.get('reason', '')
+                    if not isinstance(reason, str) or len(reason) > 500:
+                        raise Rejected('INVALID_REQUEST', 400)
+                    return self.respond(store.admin_lock_device_v3(match[1], reason))
+                else:
+                    return self.respond(store.admin_unlock_device_v3(match[1]))
+            # v3 admin: precise binding release (bindingId + expectedRevision)
+            match = re.fullmatch(r'/admin/api/v3/bindings/([a-f0-9-]{36})/release', path)
+            if match:
+                body = self.read_json(4096)
+                expected_revision = body.get('expectedRevision')
+                if not isinstance(expected_revision, int):
+                    raise Rejected('INVALID_REQUEST', 400)
+                return self.respond(store.admin_release_binding_v3(match[1], expected_revision))
+            # v3 admin: recovery request approve/reject
+            match = re.fullmatch(r'/admin/api/v3/recovery/([a-f0-9-]{36})/(approve|reject)', path)
+            if match:
+                body = self.read_json(4096)
+                if match[2] == 'approve':
+                    return self.respond(store.admin_approve_recovery(match[1]))
+                else:
+                    reason = body.get('reason', '')
+                    return self.respond(store.admin_reject_recovery(match[1], reason))
             raise Rejected('NOT_FOUND', 404)
 
         def do_POST(self):
@@ -847,7 +1439,10 @@ def handler_for(store):
                 admin_path = urlparse(self.path).path
                 if admin_path.startswith('/admin/api/'):
                     return self.admin_post(admin_path)
-                if self.path not in ('/v1/license/activate', '/v1/license/refresh', '/v1/license/release'):
+                if re.fullmatch(r'/v3/license/(challenge|activate|refresh|release|recover)', self.path):
+                    store.rate_limit(self.client_address[0], self.path)
+                    return self.respond(store.request_v3(self.path, self.read_json(16384)))
+                if not re.fullmatch(r'/v[12]/license/(activate|refresh|release)', self.path):
                     raise Rejected('NOT_FOUND', 404)
                 store.rate_limit(self.client_address[0], self.path)
                 self.respond(store.request(self.path, self.read_json(16384)))

@@ -56,7 +56,7 @@ import { voxProductionStartSchema, voxProductionControlSchema } from './vox-prod
 import { motionComicCreateInputSchema, motionComicSaveInputSchema } from './motion-comic';
 import { motionComicEpisodePlanInputSchema } from './motion-comic-episode-planning';
 import { motionComicApplyPlanInputSchema, motionComicPlanInputSchema } from './motion-comic-planning';
-import { motionComicScriptEnqueueSchema, motionComicScriptControlSchema, motionComicScriptEditSchema, motionComicScriptApproveSchema, motionComicScriptRevisionSchema, motionComicScriptApplyStoryboardSchema } from './motion-comic-script-batch';
+import { motionComicScriptEnqueueSchema, motionComicScriptControlSchema, motionComicScriptEditSchema, motionComicScriptApproveSchema, motionComicScriptRevisionSchema, motionComicScriptStoryboardSchema, motionComicScriptApplyStoryboardSchema } from './motion-comic-script-batch';
 import { motionComicScriptProposeSchema, motionComicScriptAdoptSchema, motionComicScriptRevertSchema } from './motion-comic-script-proposal';
 import { directorGenerateShotVideoRequestSchema } from './director-render';
 import { MAX_DIRECTOR_BATCH_SHOTS, MAX_DIRECTOR_BATCH_NODES, MAX_DIRECTOR_BATCH_DEPENDENCIES } from './director-batch-persistence';
@@ -1119,7 +1119,7 @@ export const ipcInputSchemas = {
   'motion-comic:scripts-adopt': motionComicScriptAdoptSchema,
   'motion-comic:scripts-revert': motionComicScriptRevertSchema,
   'motion-comic:scripts-approve': motionComicScriptApproveSchema,
-  'motion-comic:scripts-storyboard': motionComicScriptRevisionSchema,
+  'motion-comic:scripts-storyboard': motionComicScriptStoryboardSchema,
   'motion-comic:scripts-apply-storyboard': motionComicScriptApplyStoryboardSchema,
   'director:render': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
   'director:cancel-render': idSchema,

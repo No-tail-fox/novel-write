@@ -106,7 +106,7 @@ import type { EditorialCollageCreateInput, EditorialCollageSaveInput } from './e
 import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comic';
 import type { MotionComicEpisodePlanInput, MotionComicEpisodePlanResult } from './motion-comic-episode-planning';
 import type { MotionComicApplyPlanInput, MotionComicPlanInput, MotionComicPlanResponse } from './motion-comic-planning';
-import type { MotionComicScriptSnapshot, MotionComicScriptEnqueueInput, MotionComicScriptControlInput, MotionComicScriptEditInput, MotionComicScriptApproveInput, MotionComicScriptRevisionInput, MotionComicScriptApplyStoryboardInput } from './motion-comic-script-batch';
+import type { MotionComicScriptSnapshot, MotionComicScriptEnqueueInput, MotionComicScriptControlInput, MotionComicScriptEditInput, MotionComicScriptApproveInput, MotionComicScriptRevisionInput, MotionComicScriptStoryboardInput, MotionComicScriptApplyStoryboardInput } from './motion-comic-script-batch';
 import type { MotionComicScriptProposeInput, MotionComicScriptAdoptInput, MotionComicScriptRevertInput } from './motion-comic-script-proposal';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
 import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from './director-render';
@@ -538,7 +538,7 @@ export type StoryDreamApi = {
   adoptMotionComicScriptChange: (input: MotionComicScriptAdoptInput) => Promise<MotionComicScriptSnapshot>;
   revertMotionComicScriptChange: (input: MotionComicScriptRevertInput) => Promise<MotionComicScriptSnapshot>;
   approveMotionComicScripts: (input: MotionComicScriptApproveInput) => Promise<MotionComicScriptSnapshot>;
-  storyboardMotionComicScript: (input: MotionComicScriptRevisionInput) => Promise<MotionComicScriptSnapshot>;
+  storyboardMotionComicScript: (input: MotionComicScriptStoryboardInput) => Promise<MotionComicScriptSnapshot>;
   applyMotionComicScriptStoryboard: (input: MotionComicScriptApplyStoryboardInput) => Promise<AppMutationResult | null>;
   renderDirectorProject: (input: DirectorRenderRequest) => Promise<{ result: DirectorRenderResult; mutation: AppMutationResult | null }>;
   recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest) => Promise<DirectorSubtitleRecheckResult>;

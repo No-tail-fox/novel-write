@@ -9,6 +9,8 @@ import type { ApplyMutationResult, RendererAppState as AppState } from '../../ap
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { mergeMotionComicSavedDocument } from '../../shared/motion-comic-document-sync';
+import { motionComicRuntimeProvider } from '../../shared/motion-comic-script-batch';
+import type { MotionComicScriptSnapshot } from '../../shared/motion-comic-script-batch';
 import { createProductionHistoryReservations, productionHistoryUsage, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../../shared/production-history';
 import type { ShellView } from '../../shared/types';
 import type { SettingsSection } from '../settings/SettingsPage';
@@ -41,7 +43,7 @@ import { AppError } from '../../shared/app-error';
 import { alignDirectorSubtitleCueFromTimestampFile, updateDirectorSubtitleCue, estimateDirectorSubtitleCue } from '../../shared/director-subtitles';
 import { addDirectorSubtitleCue, removeDirectorSubtitleCue, setDirectorSubtitleCues } from '../../shared/director-subtitle-structure';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { Button, IconButton, Pane, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, Dialog, IconButton, Pane, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
 import { AsyncActionFeedback } from '../../components/AsyncActionFeedback';
 import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion, type DirectorVideoResult } from '../director-desk/DirectorDeskWorkspace';
@@ -181,6 +183,8 @@ export function MotionComicPage({
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const taskSnapshot = useMotionComicTaskSnapshot(api, document?.id, tasksOpen || overviewOpen);
+  /** Pending LLM switch: resolved after the user acknowledges its effect on approved scripts. */
+  const [llmSwitchPrompt, setLlmSwitchPrompt] = useState<{ nextProfileId: string; resolve: (accepted: boolean) => void; affected: string[] } | null>(null);
   const [selectedSourceEpisodeId, setSelectedSourceEpisodeId] = useState('');
   const [sceneSourcePreviewId, setSceneSourcePreviewId] = useState('');
   const [planOpen, setPlanOpen] = useState(false);
@@ -2074,9 +2078,27 @@ export function MotionComicPage({
   const taskDrawer = <MotionComicTaskDrawer open={tasksOpen} onOpenChange={setTasksOpen} items={taskView.items} loading={taskSnapshot.loading} error={taskSnapshot.error} projectTitle={document.title} resolveUrl={path => api.getTaskMediaUrl(document.id, path)} onNavigate={navigateTask} />;
   const modelLocked = rendering || taskView.items.some(item => ['running', 'queued', 'paused', 'cancelling', 'unknown'].includes(item.status));
   const taskButton = <Button density="compact" variant="subtle" icon={<Layers3 size={14} />} aria-label={`后台任务${taskView.counts.total ? `，${taskView.counts.total} 条` : ''}`} onClick={() => setTasksOpen(true)}>后台任务{taskView.counts.total ? <span className="comic-task-count">{taskView.counts.total}</span> : null}</Button>;
+  /**
+   * Switching the project LLM only affects work submitted afterwards, but an approved script
+   * whose storyboard has not been generated yet will be produced by the new runtime. Say so
+   * at the moment of the switch instead of blocking the storyboard button later.
+   */
+  async function confirmLlmChange(nextProfileId: string): Promise<boolean> {
+    if (!document?.id) return true;
+    let snapshot: MotionComicScriptSnapshot | undefined = taskSnapshot.scripts;
+    if (!snapshot) { try { snapshot = await api.getMotionComicScripts(document.id); } catch { return true; } }
+    const affected = snapshot.tasks
+      .filter(task => task.status === 'approved' && task.storyboardStatus !== 'ready')
+      .map(task => {
+        const episode = document.sourceDocument?.episodes.find(item => item.id === task.sourceEpisodeId);
+        return episode ? `第 ${episode.number} 集 · ${episode.title}` : task.sourceEpisodeId;
+      });
+    if (!affected.length) return true;
+    return new Promise<boolean>(resolve => setLlmSwitchPrompt({ nextProfileId, resolve, affected }));
+  }
   /** Single project header: models + tasks live beside save, not in an extra row. */
-  const headerActions = <><ProjectModelBar inline task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={modelLocked} />{taskButton}{taskDrawer}</>;
-  const projectControls = <div className="comic-project-controls"><ProjectModelBar inline task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={modelLocked} />{taskButton}{taskDrawer}</div>;
+  const headerActions = <><ProjectModelBar inline task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={modelLocked} confirmLlmChange={confirmLlmChange} />{taskButton}{taskDrawer}</>;
+  const projectControls = <div className="comic-project-controls"><ProjectModelBar inline task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={modelLocked} confirmLlmChange={confirmLlmChange} />{taskButton}{taskDrawer}</div>;
 
   const selectedCharacter = assetSection === 'characters' ? document.characters.find((item) => item.id === selectedProjectAssetId) : undefined;
   /** One canonical look selection per character; falls back to the first look. */
@@ -2566,6 +2588,12 @@ export function MotionComicPage({
       onEditScript={() => { planRequestRef.current += 1; setPlanResult(null); planningAction.clearFeedback(); }}
       onCreateBlankEpisode={createBlankEpisodeFromPlan}
     />
+    <Dialog open={llmSwitchPrompt !== null} title="切换模型会影响待生成分镜" onOpenChange={(open) => { if (!open) { llmSwitchPrompt?.resolve(false); setLlmSwitchPrompt(null); } }}
+      actions={<><Button onClick={() => { llmSwitchPrompt?.resolve(false); setLlmSwitchPrompt(null); }}>取消切换</Button><Button variant="primary" onClick={() => { llmSwitchPrompt?.resolve(true); setLlmSwitchPrompt(null); }}>继续切换</Button></>}>
+      <p>以下已批准剧本尚未生成分镜，切换后将由新模型生成：</p>
+      <ul className="comic-llm-switch-list">{llmSwitchPrompt?.affected.map(item => <li key={item}>{item}</li>)}</ul>
+      <p>已生成的剧本、分镜和素材不受影响；之后提交的任务统一使用新模型。</p>
+    </Dialog>
     <div data-motion-comic-workbench="true">
       <MotionComicProductionWorkspace
         navigationMemory={workflowNavigationMemory}
@@ -2590,6 +2618,7 @@ export function MotionComicPage({
           api={api}
           document={document}
           model={modelConfig.llm.model}
+          runtimeIdentity={{ provider: motionComicRuntimeProvider(modelConfig.llm), model: modelConfig.llm.model }}
           selectedSourceEpisodeId={selectedSourceEpisode?.id ?? ''}
           plannedSourceEpisodeIds={plannedSourceEpisodeIds}
           onSelectSourceEpisode={setSelectedSourceEpisodeId}

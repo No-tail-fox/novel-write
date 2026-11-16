@@ -11,7 +11,6 @@ import {
 } from './motion-comic-consistency';
 import type { MotionComicReferenceJob } from './MotionComicReferenceEditor';
 import './MotionComicReferenceEditor.css';
-import './MotionComicReferenceFocus.css';
 
 export interface MotionComicReferenceCard {
   /** Stable server-verified SHA-256; the card identity used for every role guess. */

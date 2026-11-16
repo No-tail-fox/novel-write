@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { LicenseService } from '../electron/license-service';
+import { windowsMachineIdentity } from '../electron/license-machine-identity';
 import { compareVersions, LicenseRemoteError, LicenseTransport, verifyEnvelope, verifyRelease, type LicensePublicConfig } from '../electron/license-security';
 import { UpdateService } from '../electron/update-service';
 import { resetGenerationAuthorization, setGenerationAuthorization } from '../src/shared/generation-authorization';
@@ -54,11 +55,11 @@ describe('real TLS licensing and signed updates', () => {
     const issued = command('issue', '--days', '1');
     expect((await license.activate(issued.code)).status).toBe('active');
     await expect(license.requireActive()).resolves.toBeUndefined();
-    operate('lock-device', license.status().deviceId);
+    execFileSync(python, ['-c', 'import sys; from server import LicenseStore; LicenseStore(sys.argv[1]).admin_lock_device_v3(sys.argv[2])', join(directory, 'server'), license.status().deviceId], { cwd, windowsHide: true });
     await expect(license.refresh()).rejects.toThrow();
     expect(license.status().status).toBe('locked');
     await expect(license.requireActive()).rejects.toMatchObject({ code: 'LICENSE_REQUIRED' });
-    operate('unlock-device', license.status().deviceId);
+    execFileSync(python, ['-c', 'import sys; from server import LicenseStore; LicenseStore(sys.argv[1]).admin_unlock_device_v3(sys.argv[2])', join(directory, 'server'), license.status().deviceId], { cwd, windowsHide: true });
     await license.refresh();
     operate('revoke-license', issued.licenseId);
     await expect(license.refresh()).rejects.toThrow();
@@ -67,6 +68,78 @@ describe('real TLS licensing and signed updates', () => {
     await license.refresh();
     await license.release();
     await expect(license.requireActive()).rejects.toThrow();
+  }, REAL_PROCESS_TIMEOUT_MS);
+  it.each([1, 2])('migrates a v%s seat by retained key and isolates identical hardware', async (protocol) => {
+    const identity = windowsMachineIdentity('11111111-2222-3333-4444-555555555555', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    const firstCode = command('issue', '--days', '1');
+    const secondCode = command('issue', '--days', '2');
+    const encryption = { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() };
+    const base = { config, packaged: true, encryption, machineIdentity: async () => identity };
+    const keys = generateKeyPairSync('ed25519');
+    const publicKey = keys.publicKey.export({ format: 'pem', type: 'spki' }).toString();
+    const deviceId = protocol === 1 ? identity.legacyDeviceId! : identity.deviceId;
+    const legacyFields = { deviceId, ...(protocol === 2 ? { legacyDeviceId: identity.legacyDeviceId } : {}) };
+    const transport = new LicenseTransport(config);
+    const oldRequest = async (operation: string, extra = {}) => {
+      const path = `/v${protocol}/license/${operation}`;
+      const payload = JSON.stringify({ ...legacyFields, ...extra, publicKey, timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID() });
+      return transport.json<{ payload: string; signature: string }>(path, { payload, signature: sign(null, Buffer.from(`${path}
+${payload}`), keys.privateKey).toString('base64') });
+    };
+    const oldEnvelope = await oldRequest('activate', { code: firstCode.code, label: 'Legacy fixture' });
+    const oldLease = verifyEnvelope(oldEnvelope, config.signingPublicKey) as { expiresAt: number };
+    const vaultPath = join(directory, `migration-${protocol}`);
+    await writeFile(vaultPath, JSON.stringify({ version: 1, ...legacyFields, privateKey: keys.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), lastClock: 0, releaseSequence: 17, releaseHash: 'a'.repeat(64) }));
+    const first = new LicenseService({ ...base, vaultPath });
+    const second = new LicenseService({ ...base, vaultPath: join(directory, `same-hardware-${protocol}`) });
+    try {
+      await first.initialize();
+      expect(first.status().status).toBe('active');
+      await first.activate(firstCode.code);
+      const firstId = first.status().deviceId;
+      expect(firstId).not.toBe(deviceId);
+      expect(first.status().expiresAt).toBe(new Date(oldLease.expiresAt * 1000).toISOString());
+      const saved = JSON.parse(await readFile(vaultPath, 'utf8'));
+      expect(saved).toMatchObject({ version: 3, releaseSequence: 17, releaseHash: 'a'.repeat(64), privateKey: keys.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString() });
+      await second.initialize();
+      await second.activate(secondCode.code);
+      expect(second.status().deviceId).not.toBe(firstId);
+      await expect(oldRequest('refresh')).rejects.toMatchObject({ code: 'DEVICE_IDENTITY_MIGRATED' });
+      await expect(oldRequest('release')).rejects.toMatchObject({ code: 'DEVICE_IDENTITY_MIGRATED' });
+      await first.release();
+      expect((await second.refresh()).status).toBe('active');
+      await first.activate(firstCode.code);
+      expect(first.status()).toMatchObject({ deviceId: firstId, expiresAt: new Date(oldLease.expiresAt * 1000).toISOString() });
+    } finally { first.close(); second.close(); }
+  }, REAL_PROCESS_TIMEOUT_MS);
+  it.each([1, 2])('resumes approved recovery with %s seats over TLS and retires the old key', async maxDevices => {
+    const issued = command('issue', '--days', '1', '--max-devices', String(maxDevices));
+    const encryption = { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() };
+    const base = { config, packaged: true, encryption, machineId: async () => 'a'.repeat(64) };
+    const original = new LicenseService({ ...base, vaultPath: join(directory, `recovery-original-${maxDevices}`) });
+    const vaultPath = join(directory, `recovery-proposed-${maxDevices}`);
+    const proposed = new LicenseService({ ...base, vaultPath });
+    const restarted = new LicenseService({ ...base, vaultPath });
+    try {
+      await original.initialize();
+      const originalStatus = await original.activate(issued.code);
+      await proposed.initialize();
+      const before = JSON.parse(await readFile(vaultPath, 'utf8'));
+      const pending = await proposed.requestRecovery(issued.code);
+      await expect(proposed.resumeRecovery(issued.code)).rejects.toThrow();
+      proposed.close();
+      execFileSync(python, ['-c', 'import sys; from server import LicenseStore; LicenseStore(sys.argv[1]).admin_approve_recovery(sys.argv[2])', join(directory, 'server'), pending.id], { cwd, windowsHide: true });
+      await restarted.initialize();
+      expect(restarted.pendingRecovery()).toMatchObject({ id: pending.id });
+      expect((await restarted.resumeRecovery(issued.code))).toMatchObject({ status: 'active', deviceId: originalStatus.deviceId, expiresAt: originalStatus.expiresAt });
+      const committed = JSON.parse(await readFile(vaultPath, 'utf8'));
+      expect(committed).toMatchObject({ version: 3, privateKey: before.privateKey, bindingRevision: 1, credentialEpoch: 1 });
+      expect(committed.pendingRecovery).toBeUndefined();
+      await expect(original.refresh()).rejects.toThrow();
+      expect((await restarted.refresh()).status).toBe('active');
+      await restarted.release();
+      await expect(original.activate(issued.code)).rejects.toThrow();
+    } finally { original.close(); proposed.close(); restarted.close(); }
   }, REAL_PROCESS_TIMEOUT_MS);
   it('checks signed manifests, resumes downloads, and rejects altered installer bytes', async () => {
     const source = join(directory, 'fixture.exe');
@@ -195,6 +268,7 @@ it('expires an offline lease, notifies the shell, and requires online verificati
   const options = { config, vaultPath: join(directory, 'vault'), packaged: true,
     machineId: async () => createHash('sha256').update('expiry-machine').digest('hex'), onChange: notify,
     encryption: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() } };
+  await writeFile(options.vaultPath, JSON.stringify({ version: 1, deviceId: await options.machineId(), privateKey: generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), lastClock: 0, releaseSequence: 0, releaseHash: '' }));
   const transport = vi.spyOn(LicenseTransport.prototype, 'json').mockImplementation(async (_path, request) => {
     const device = JSON.parse(request!.payload);
     const now = Math.floor(Date.now() / 1000);
@@ -238,6 +312,7 @@ describe('offline grace on a persisted lease', () => {
     const options = { config, vaultPath: join(directory, 'vault'), packaged: true,
       machineId: async () => createHash('sha256').update('grace-machine').digest('hex'),
       encryption: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() } };
+    await writeFile(options.vaultPath, JSON.stringify({ version: 1, deviceId: await options.machineId(), privateKey: generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(), lastClock: 0, releaseSequence: 0, releaseHash: '' }));
     const transport = vi.spyOn(LicenseTransport.prototype, 'json').mockImplementation(async (_path, request) => {
       const device = JSON.parse(request!.payload);
       const now = Math.floor(Date.now() / 1000);

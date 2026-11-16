@@ -2,7 +2,7 @@ import { createHash, createPublicKey, verify } from 'node:crypto';
 import { request } from 'node:https';
 import { z } from 'zod';
 import { AppError } from '../src/shared/app-error';
-import type { AnnouncementManifest, DifferentialManifest, LicenseLease, ReleaseManifest, SignedEnvelope } from '../src/shared/licensing';
+import type { AnnouncementManifest, DifferentialManifest, LicenseLease, LicenseLeaseV3, ReleaseManifest, SignedEnvelope } from '../src/shared/licensing';
 
 export const licenseConfigSchema = z.object({
   schemaVersion: z.literal(1),
@@ -69,20 +69,50 @@ export function verifyEnvelope(value: unknown, publicKey: string): unknown {
   return JSON.parse(envelope.payload);
 }
 
-export const MAX_OFFLINE_GRACE_SECONDS = 7 * 86400;
-
-// stored=true re-validates a lease restored from disk: the short validUntil has normally passed, so it is only
-// accepted while the server-signed offlineGraceUntil is still in the future. Leases without that field never qualify.
-export function verifyLease(envelope: SignedEnvelope, config: LicensePublicConfig, deviceId: string, publicKey: string, now: number, stored = false): LicenseLease {
+export function verifyLease(envelope: SignedEnvelope, config: LicensePublicConfig, deviceId: string, publicKey: string, now: number, offline = false): LicenseLease {
   const lease = leaseSchema.parse(verifyEnvelope(envelope, config.signingPublicKey));
   const keyHash = createHash('sha256').update(createPublicKey(publicKey).export({ format: 'der', type: 'spki' })).digest('hex');
-  const grace = lease.offlineGraceUntil;
-  const live = stored ? grace !== undefined && grace > now : lease.validUntil > now;
-  if (lease.deviceId !== deviceId || lease.keyHash !== keyHash || lease.issuedAt > now + 60 || !live ||
-      grace !== undefined && (grace < lease.validUntil || grace > lease.expiresAt || grace > lease.issuedAt + MAX_OFFLINE_GRACE_SECONDS) ||
-      lease.validUntil > lease.issuedAt + 600 || lease.validUntil > lease.expiresAt || lease.issuedAt >= lease.validUntil ||
+  if (lease.deviceId !== deviceId || lease.keyHash !== keyHash || lease.issuedAt > now + 60 ||
+      lease.issuedAt >= lease.validUntil || lease.validUntil > lease.issuedAt + 600 || lease.validUntil > lease.expiresAt ||
+       (lease.offlineGraceUntil !== undefined && (lease.offlineGraceUntil < lease.validUntil || lease.offlineGraceUntil > lease.issuedAt + 7 * 86400 || lease.offlineGraceUntil > lease.expiresAt)) ||
       !lease.devices.some((device) => device.deviceId === deviceId)) {
     throw new AppError('LICENSE_LEASE_INVALID', '设备授权已失效，请联网验证。');
+  }
+  // Offline extension exists only when explicitly signed and bounded.
+  if (!offline && lease.validUntil <= now) {
+    throw new AppError('LICENSE_LEASE_EXPIRED', '设备授权已过期，请联网验证。');
+  }
+  if (offline) {
+    const grace = lease.offlineGraceUntil ?? lease.validUntil;
+    if (grace <= now) throw new AppError('LICENSE_LEASE_EXPIRED', '离线宽限已结束，请联网验证。');
+  }
+  return lease;
+}
+
+const leaseSchemaV3 = z.object({
+  schemaVersion: z.literal(3), kind: z.literal('lease'), status: z.literal('active'),
+  licenseId: z.string().uuid(), deviceRecordId: z.string().uuid(), credentialId: z.string().uuid(),
+  bindingId: z.string().uuid(), bindingRevision: time, credentialEpoch: time,
+  keyHash: hash, issuedAt: time, validUntil: time, expiresAt: time,
+  offlineGraceUntil: time.optional(), maxDevices: z.number().int().min(1).max(100),
+  devices: z.array(z.object({ deviceRecordId: z.string().uuid(), label: z.string().max(120), lastSeen: time })).max(100),
+}).strict();
+
+export function verifyLeaseV3(envelope: SignedEnvelope, config: LicensePublicConfig, credentialId: string | null, publicKey: string, now: number, offline = false): LicenseLeaseV3 {
+  const lease = leaseSchemaV3.parse(verifyEnvelope(envelope, config.signingPublicKey));
+  const keyHash = createHash('sha256').update(createPublicKey(publicKey).export({ format: 'der', type: 'spki' })).digest('hex');
+  if ((credentialId !== null && lease.credentialId !== credentialId) || lease.keyHash !== keyHash || lease.issuedAt > now + 60 ||
+      lease.issuedAt >= lease.validUntil || lease.validUntil > lease.issuedAt + 600 || lease.validUntil > lease.expiresAt ||
+       (lease.offlineGraceUntil !== undefined && (lease.offlineGraceUntil < lease.validUntil || lease.offlineGraceUntil > lease.issuedAt + 7 * 86400 || lease.offlineGraceUntil > lease.expiresAt)) ||
+      !lease.devices.some((device) => device.deviceRecordId === lease.deviceRecordId)) {
+    throw new AppError('LICENSE_LEASE_INVALID', '设备授权已失效，请联网验证。');
+  }
+  if (!offline && lease.validUntil <= now) {
+    throw new AppError('LICENSE_LEASE_EXPIRED', '设备授权已过期，请联网验证。');
+  }
+  if (offline) {
+    const grace = lease.offlineGraceUntil ?? lease.validUntil;
+    if (grace <= now) throw new AppError('LICENSE_LEASE_EXPIRED', '离线宽限已结束，请联网验证。');
   }
   return lease;
 }
@@ -128,7 +158,7 @@ export class LicenseTransport {
   }
 
   open(path: string, body?: Buffer, offset?: number, end?: number) {
-    if (!path.startsWith('/v1/') || path.includes('..') || path.includes('?') || path.includes('#')) throw new Error('INVALID_LICENSE_PATH');
+    if (!/^\/v(?:1\/[A-Za-z0-9/_-]+(?:\.[A-Za-z0-9_-]+)*|[23]\/license\/[a-z-]+)$/.test(path) || path.includes('..')) throw new Error('INVALID_LICENSE_PATH');
     if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 0) ||
         end !== undefined && (offset === undefined || !Number.isSafeInteger(end) || end < offset || body)) throw new Error('INVALID_DOWNLOAD_RANGE');
     return new Promise<import('node:http').IncomingMessage>((resolve, reject) => {

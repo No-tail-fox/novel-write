@@ -3,6 +3,23 @@ import type { MotionComicScriptOriginal, MotionComicScriptProposal } from './mot
 import { motionComicScriptDraftSchema, motionComicPlanAdjustmentSchema, motionComicPlanningIssueSchema, motionComicPlanDraftSchema } from './motion-comic-planning';
 
 export const MOTION_COMIC_SCRIPT_PROMPT_VERSION = 'novel-script-batch-v1';
+
+/**
+ * Single source of truth for the runtime identity recorded on a script task.
+ * Both the main-process runtime resolver and the renderer's change detection
+ * must use this so a channel edit cannot slip past the renderer's check.
+ */
+export function motionComicRuntimeProvider(llm: { provider: string; baseUrl: string }): string {
+  return `${llm.provider}:${llm.baseUrl}`;
+}
+/** True when the approved/recorded task identity no longer matches the current runtime. */
+export function motionComicRuntimeChanged(
+  task: { provider: string; model: string },
+  current: { provider: string; model: string },
+): boolean {
+  return task.provider !== current.provider || task.model !== current.model;
+}
+
 const id = z.string().trim().min(1).max(256);
 const timestamp = z.string().datetime();
 export const motionComicScriptStatusSchema = z.enum(['queued', 'running', 'script-ready', 'review', 'approved', 'failed', 'cancelled', 'stale']);
@@ -18,6 +35,8 @@ export const motionComicScriptTaskSchema = z.object({
   checkpoint: z.enum(['source', 'script', 'validate']).optional(),
   storyboardStatus: z.enum(['running', 'ready', 'failed']).optional(),
   storyboardError: z.string().max(8_000).optional(),
+  /** Runtime the user explicitly confirmed for this episode's storyboard after the script identity changed. */
+  storyboardProvider: id.optional(), storyboardModel: id.optional(),
   error: z.string().max(8_000).optional(), createdAt: timestamp, updatedAt: timestamp,
 }).strict();
 export type MotionComicScriptTask = z.infer<typeof motionComicScriptTaskSchema>;
@@ -64,9 +83,10 @@ export type MotionComicScriptControlInput = z.infer<typeof motionComicScriptCont
 export const motionComicScriptRevisionSchema = z.object({
   id, taskId: id, outputRevision: z.number().int().positive(), expectedUpdatedAt: timestamp,
 }).strict();
-export const motionComicScriptStoryboardSchema = motionComicScriptRevisionSchema;
+export const motionComicScriptStoryboardSchema = motionComicScriptRevisionSchema.extend({ allowModelChange: z.boolean().optional() });
 export const motionComicScriptApplyStoryboardSchema = motionComicScriptRevisionSchema.extend({ reviewedAdjustments: z.boolean() });
 export type MotionComicScriptRevisionInput = z.infer<typeof motionComicScriptRevisionSchema>;
+export type MotionComicScriptStoryboardInput = z.infer<typeof motionComicScriptStoryboardSchema>;
 export type MotionComicScriptApplyStoryboardInput = z.infer<typeof motionComicScriptApplyStoryboardSchema>;
 export const motionComicScriptEditSchema = motionComicScriptRevisionSchema.extend({ script: motionComicScriptDraftSchema });
 export type MotionComicScriptEditInput = z.infer<typeof motionComicScriptEditSchema>;

@@ -66,6 +66,30 @@ function script(): MotionComicScriptDraft {
 }
 
 describe('explicit narration and structural heading constraints', () => {
+  it.each(['第2章', '第2章。', 'Chapter 2'])('normalizes model-only standalone title %s before validation without an extra model call', async (heading) => {
+    const draft = script();
+    draft.scenes[0].beats.unshift({ key: 'chapter-title', sourceUnitIds: ['S1'], kind: 'narration', text: `${heading.replace(/。$/u, '')}。` });
+    draft.scenes[0].beats[1].sourceUnitIds = ['S2'];
+    draft.scenes[0].beats[2].sourceUnitIds = ['S3'];
+    const run = vi.fn().mockResolvedValue({ json: draft });
+    const result = await generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText: `${heading}\n${sourceText}` }, document(), { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test' });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(result.script.scenes[0].beats[0]).toEqual({ ...draft.scenes[0].beats[0], kind: 'action' });
+    expect(result.script.scenes[0].beats[2].kind).toBe('narration');
+    expect(result.adjustments.some(item => item.path.endsWith('beats[0].kind'))).toBe(true);
+    expect(draft.scenes[0].beats[0].kind).toBe('narration');
+  });
+  it('does not confuse chapter number prefixes or silently repair authoritative manual titles', async () => {
+    const draft = script();
+    draft.scenes[0].beats[0].kind = 'narration';
+    draft.scenes[0].beats[0].text = '第20章。';
+    const units = splitMotionComicSource('第2章。\n她推开木门。');
+    expect(validateMotionComicScriptDraft(draft, units).some(issue => issue.code === 'STRUCTURAL_TITLE_NARRATED')).toBe(false);
+    draft.scenes[0].beats[0].text = '第2章。';
+    const run = vi.fn();
+    await expect(generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText: '第2章。\n她推开木门。', scriptDraft: draft }, document(), { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test' })).rejects.toThrow('章节或分集标题不得成为旁白');
+    expect(run).not.toHaveBeenCalled();
+  });
   it('rejects forbidden narration after both initial generation and repair', async () => {
     const run = vi.fn().mockResolvedValue({ json: script() });
     await expect(generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText, instructions: '只保留原文对白，不引入其他人物或旁白。' }, document(), { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test' })).rejects.toThrow('明确禁止旁白');

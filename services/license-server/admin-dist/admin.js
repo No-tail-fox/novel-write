@@ -25,9 +25,9 @@
   let blockmapUploadId = null;
   let uploading = false;
   let serverNow = Date.now() / 1000;
-  const lists = Object.fromEntries(['licenses', 'devices', 'releases', 'audit'].map((kind) => [kind, { page: 1, q: '' }]));
-  const viewNames = { announcements: ['公告', '问题公告与版本更新公告'], releases: ['版本更新', 'Windows x64 · 签名发布'], licenses: ['授权码', '客户授权与设备名额'], devices: ['设备', '绑定记录与机器访问权限'], audit: ['操作记录', '授权、设备和发布操作'] };
-  const errors = { RELEASE_MUST_INCREASE: '版本号必须高于所有已发布版本。', INVALID_RELEASE: '请检查版本号、最低版本和更新说明。', INVALID_VERSION: '版本号应为三段数字，例如 1.0.4。', INVALID_WINDOWS_INSTALLER: '文件不是有效的 Windows 安装包。', INVALID_INSTALLER_UPLOAD: '安装包大小须在 2 字节至 4 GB 之间。', INVALID_BLOCKMAP: '差分索引无效或与安装包不匹配，请选择同一次打包生成的 .exe.blockmap 文件。', UPLOAD_BUSY: '另一个安装包正在处理，请稍后重试。', UPLOAD_NOT_FOUND: '暂存安装包已失效，请重新选择文件。', INSUFFICIENT_DISK_SPACE: '服务器空间不足，无法安全完成发布。', INVALID_LICENSE_PARAMETERS: '请检查授权天数和设备名额。', RATE_LIMITED: '操作过于频繁，请稍后重试。', SERVER_UNAVAILABLE: '服务器暂时不可用，请稍后重试。' };
+  const lists = Object.fromEntries(['licenses', 'devices', 'releases', 'audit', 'v3-recovery', 'v3-devices', 'v3-bindings'].map((kind) => [kind, { page: 1, q: '' }]));
+  const viewNames = { announcements: ['公告', '问题公告与版本更新公告'], releases: ['版本更新', 'Windows x64 · 签名发布'], licenses: ['授权码', '客户授权与设备名额'], devices: ['v1/v2 设备', '旧版硬件哈希绑定记录'], audit: ['操作记录', '授权、设备和发布操作'], 'v3-recovery': ['恢复申请', 'v3 设备凭据恢复审批队列'], 'v3-devices': ['v3 设备记录', '服务器分配的设备身份'], 'v3-bindings': ['v3 绑定', '设备 × 授权绑定与修订号'] };
+  const errors = { DEVICE_BINDING_CHANGED: '设备绑定已变化，本次未解绑。请刷新设备列表，核对客户与授权后重试。', INVALID_REQUEST: '请求信息不完整，请刷新管理页面后重试。', RELEASE_MUST_INCREASE: '版本号必须高于所有已发布版本。', INVALID_RELEASE: '请检查版本号、最低版本和更新说明。', INVALID_VERSION: '版本号应为三段数字，例如 1.0.4。', INVALID_WINDOWS_INSTALLER: '文件不是有效的 Windows 安装包。', INVALID_INSTALLER_UPLOAD: '安装包大小须在 2 字节至 4 GB 之间。', INVALID_BLOCKMAP: '差分索引无效或与安装包不匹配，请选择同一次打包生成的 .exe.blockmap 文件。', UPLOAD_BUSY: '另一个安装包正在处理，请稍后重试。', UPLOAD_NOT_FOUND: '暂存安装包已失效，请重新选择文件。', INSUFFICIENT_DISK_SPACE: '服务器空间不足，无法安全完成发布。', INVALID_LICENSE_PARAMETERS: '请检查授权天数和设备名额。', RATE_LIMITED: '操作过于频繁，请稍后重试。', SERVER_UNAVAILABLE: '服务器暂时不可用，请稍后重试。', BINDING_REVISION_MISMATCH: '绑定修订号已变化，请刷新列表后重试。', BINDING_NOT_FOUND: '绑定记录不存在，请刷新列表。', BINDING_NOT_ACTIVE: '绑定已释放，无法重复操作。', RECOVERY_EXPIRED: '恢复申请已过期。', RECOVERY_NOT_FOUND: '恢复申请不存在或已处理。', RECOVERY_ALREADY_PROCESSED: '恢复申请已处理，请刷新列表。', BINDING_CHANGED: '绑定已变化，请刷新列表后重试。', CREDENTIAL_NOT_FOUND: '凭据不匹配。', CHALLENGE_INVALID: '挑战已失效，请重新发起请求。', DEVICE_NOT_FOUND: '设备记录不存在。', CLOCK_SKEW: '本机时间与服务器不一致。' };
 
   async function request(path, options = {}) {
     const response = await fetch(path, {
@@ -251,7 +251,16 @@
 
   async function loadList(kind) {
     const state = lists[kind];
-    const result = await request(`/admin/api/${kind}?${new URLSearchParams({ q: state.q, page: state.page })}`);
+    const isV3List = kind.startsWith('v3-');
+    const apiKind = isV3List ? kind.replace('v3-', '') : kind;
+    const apiBase = isV3List ? '/admin/api/v3/' : '/admin/api/';
+    let result;
+    if (kind === 'v3-recovery') {
+      result = await request('/admin/api/v3/recovery');
+      result = { items: result.items, total: result.items.length, pageSize: result.items.length || 1 };
+    } else {
+      result = await request(`${apiBase}${apiKind}?${new URLSearchParams({ q: state.q, page: state.page })}`);
+    }
     const target = document.querySelector(`#${kind}-rows`);
     target.replaceChildren();
     for (const item of result.items) {
@@ -279,15 +288,46 @@
           if (reason.length > 500) throw new Error('锁定原因不能超过 500 字。');
           await mutation(`/admin/api/devices/${item.device_id}/${item.locked ? 'unlock' : 'lock'}`, `确认${item.locked ? '解锁' : '锁定'}设备「${item.label || item.device_id}」？将在下次授权验证时生效。`, { reason });
         }, !item.locked));
-        if (!item.released) actions.append(actionButton('解绑', () => mutation(`/admin/api/devices/${item.device_id}/release`, '确认解绑这台设备并释放名额？未被锁定的设备仍可使用有效授权码重新激活。', {}), true));
+        if (!item.released) actions.append(actionButton('解绑', () => mutation(`/admin/api/devices/${item.device_id}/release`, `确认解绑客户「${item.license_label || '未命名客户'}」（授权尾号 ${item.tail}）的设备「${item.label || item.device_id}」？仅释放当前所选绑定的名额；如两台机器编号相同，请先处理设备身份冲突。`, { licenseId: item.license_id, bindingToken: item.bindingToken }), true));
         row.append(actions);
       } else if (kind === 'releases') {
         row.append(detailCell(item.version, `最低版本 ${item.minimumVersion}`), detailCell(`${(item.size / 1024 ** 2).toFixed(1)} MB`, `SHA-256 ${item.sha256}`), makeCell('', formatDate(item.issuedAt)), stateCell(item.withdrawn ? '已撤回' : '已发布', !item.withdrawn));
         if (!item.withdrawn) actions.append(actionButton('撤回', () => mutation(`/admin/api/releases/${item.version}/withdraw`, `确认撤回 ${item.version}？安装包下载与更新公告将同时停止；不会回退到旧版本。`), true));
         row.append(actions);
         row.title = item.notes || '';
+      } else if (kind === 'v3-recovery') {
+        const stateLabel = { pending: '待审批', approved: '已批准', rejected: '已拒绝', completed: '已完成', expired: '已过期' }[item.state] || item.state;
+        const isActive = item.state === 'pending';
+        row.append(detailCell(item.proposed_label || '未命名', `申请 ID: ${item.id}`), detailCell(item.device_label || '—', `设备记录 ${item.device_record_id}`), makeCell('', formatDate(item.created_at)), stateCell(stateLabel, isActive));
+        if (isActive) {
+          actions.append(actionButton('批准', () => mutation(`/admin/api/v3/recovery/${item.id}/approve`, `确认批准设备「${item.proposed_label}」的凭据恢复申请？旧凭据将不能再联网续租，绑定修订号加一；已经签发的离线租约仍可使用至其到期。`)));
+          actions.append(actionButton('拒绝', async () => {
+            const reason = window.prompt('拒绝原因（最多 500 字，可留空）', '');
+            if (reason == null) return;
+            if (reason.length > 500) throw new Error('原因不能超过 500 字。');
+            await mutation(`/admin/api/v3/recovery/${item.id}/reject`, `确认拒绝此恢复申请？`, { reason });
+          }, true));
+        }
+        row.append(actions);
+      } else if (kind === 'v3-devices') {
+        const stateLabel = item.state === 'locked' ? '已锁定' : '正常';
+        row.append(detailCell(item.label || '未命名设备', item.id), makeCell('', item.active_bindings > 0 ? `已绑定 (${item.active_bindings})` : '未绑定'), makeCell('', formatDate(item.updated_at)), stateCell(stateLabel, item.state !== 'locked'));
+        actions.append(actionButton(item.state === 'locked' ? '解锁' : '锁定', async () => {
+          const reason = item.state === 'locked' ? '' : window.prompt('锁定原因（最多 500 字）', '');
+          if (reason == null) return;
+          if (reason.length > 500) throw new Error('锁定原因不能超过 500 字。');
+          await mutation(`/admin/api/v3/devices/${item.id}/${item.state === 'locked' ? 'unlock' : 'lock'}`, `确认${item.state === 'locked' ? '解锁' : '锁定'} v3 设备「${item.label || item.id}」？`, { reason });
+        }, item.state !== 'locked'));
+        row.append(actions);
+      } else if (kind === 'v3-bindings') {
+        const stateLabel = { active: '已绑定', released: '已解绑' }[item.state] || item.state;
+        row.append(detailCell(item.device_label || '未命名', `设备 ${item.device_id}`), detailCell(item.license_label || '未命名客户', `尾号 ${item.tail}`), makeCell('', `修订号 ${item.revision} · ${formatDate(item.last_seen)}`), stateCell(stateLabel, item.state === 'active'));
+        if (item.state === 'active') {
+          actions.append(actionButton('精确解绑', () => mutation(`/admin/api/v3/bindings/${item.id}/release`, `确认解绑「${item.device_label || item.device_id}」与授权「${item.license_label || item.tail}」的绑定（修订号 ${item.revision}）？`, { expectedRevision: item.revision }), true));
+        }
+        row.append(actions);
       } else {
-        const names = { issue: '签发授权', 'revoke-license': '停用授权', 'restore-license': '恢复授权', 'extend-license': '延长授权（天）', 'lock-device': '锁定设备', 'unlock-device': '解锁设备', 'release-device': '解绑设备', publish: '发布版本', withdraw: '撤回版本', announce: '发布公告', 'withdraw-announcement': '撤回公告' };
+        const names = { issue: '签发授权', 'revoke-license': '停用授权', 'restore-license': '恢复授权', 'extend-license': '延长授权（天）', 'lock-device': '锁定设备', 'unlock-device': '解锁设备', 'release-device': '解绑设备', 'migrate-device': '迁移设备身份', 'activate-v3': 'v3 激活', 'release-v3': 'v3 解绑', 'register-v3': 'v3 注册设备', 'request-recovery': '申请凭据恢复', 'approve-recovery': '批准凭据恢复', 'reject-recovery': '拒绝凭据恢复', 'admin-release-binding-v3': 'v3 管理解绑', 'lock-device-v3': 'v3 锁定设备', 'unlock-device-v3': 'v3 解锁设备', publish: '发布版本', withdraw: '撤回版本', announce: '发布公告', 'withdraw-announcement': '撤回公告' };
         row.append(makeCell('', formatDate(item.at)), makeCell('', names[item.action] || item.action), detailCell(item.target), detailCell(item.detail || '—'));
       }
       target.append(row);
@@ -299,6 +339,7 @@
       row.append(cell);
       target.append(row);
     }
+    if (kind === 'v3-recovery') return; // recovery list has no pagination
     const pager = document.querySelector(`#${kind}-pager`);
     const pages = Math.max(1, Math.ceil(result.total / result.pageSize));
     const previous = actionButton('上一页', async () => { state.page -= 1; await loadList(kind); });
@@ -316,7 +357,16 @@
       serverNow = result.serverTime;
       const strip = document.querySelector('#summary-strip');
       strip.replaceChildren();
-      for (const [name, value] of [['授权码', result.licenses], ['绑定设备', result.devices], ['已锁定', result.blockedDevices], ['最新版本', result.latestRelease ? `${result.latestRelease.version}${result.latestRelease.withdrawn ? '（已撤回）' : ''}` : '未发布']]) {
+      const v3Pending = result.v3PendingRecovery ?? 0;
+      for (const [name, value] of [
+        ['授权码', result.licenses],
+        ['v1/v2 绑定设备', result.devices],
+        ['已锁定', result.blockedDevices],
+        ['v3 设备记录', result.v3DeviceRecords ?? 0],
+        ['v3 活跃绑定', result.v3ActiveBindings ?? 0],
+        [`v3 恢复申请${v3Pending > 0 ? ` ⚠ ${v3Pending}` : ''}`, v3Pending],
+        ['最新版本', result.latestRelease ? `${result.latestRelease.version}${result.latestRelease.withdrawn ? '（已撤回）' : ''}` : '未发布'],
+      ]) {
         const metric = document.createElement('div');
         const caption = document.createElement('span');
         const number = document.createElement('strong');

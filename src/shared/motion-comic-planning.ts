@@ -245,10 +245,31 @@ export function motionComicNarrationForbidden(instructions = ''): boolean {
   return /(?:不要|禁止|不加|不添加|不引入|不使用|不得|不需要|不新增|无)[^。；;\n]{0,16}(?:旁白|画外音)|(?:旁白|画外音)\s*[:：]?\s*(?:无|不要|禁止)|\b(?:no|without)\s+(?:voice[- ]?over|narration)\b/iu.test(instructions);
 }
 
+function structuralTitleText(value: string): string {
+  return value.trim().replace(/[。.!！?？]+$/u, '').trim();
+}
+
+function motionComicStructuralTitles(sourceUnits: readonly MotionComicSourceUnit[]): string[] {
+  return sourceUnits.map(unit => structuralTitleText(unit.text)).filter(value => /^(?:第[零〇一二三四五六七八九十百千\d]+[集章节幕回]|(?:episode|chapter)\s+\d+)\s*[^。！？!?\n]{0,60}$/iu.test(value));
+}
+
+export function isMotionComicStandaloneTitle(text: string, sourceUnits: readonly MotionComicSourceUnit[]): boolean {
+  return motionComicStructuralTitles(sourceUnits).includes(structuralTitleText(text));
+}
+
+/** Preserve content and evidence; only a source-proven standalone heading is non-spoken. */
+export function repairMotionComicTitleNarration(script: MotionComicScriptDraft, sourceUnits: readonly MotionComicSourceUnit[]): MotionComicScriptDraft {
+  const next = structuredClone(script);
+  for (const scene of next.scenes) for (const beat of scene.beats) {
+    if (beat.kind === 'narration' && isMotionComicStandaloneTitle(beat.text, sourceUnits)) beat.kind = 'action';
+  }
+  return next;
+}
+
 export function validateMotionComicScriptDraft(script: MotionComicScriptDraft, sourceUnits: MotionComicSourceUnit[], document?: MotionComicPipelineData, instructions = ''): MotionComicPlanningIssue[] {
   const issues: MotionComicPlanningIssue[] = [];
   const noNarration = motionComicNarrationForbidden(instructions);
-  const titles = sourceUnits.filter(unit => /^(?:第[零〇一二三四五六七八九十百千\d]+[集章节幕回]|(?:episode|chapter)\s+\d+)\s*[^。！？!?\n]{0,60}$/iu.test(unit.text.trim())).map(unit => unit.text.trim());
+  const titles = motionComicStructuralTitles(sourceUnits);
   const units = new Set(sourceUnits.map((unit) => unit.id));
   const unitOrder = new Map(sourceUnits.map((unit, index) => [unit.id, index] as const));
   const covered = new Set<string>();
@@ -299,7 +320,7 @@ export function validateMotionComicScriptDraft(script: MotionComicScriptDraft, s
     scene.beats.forEach((beat, bi) => {
       const path = `script.scenes[${si}].beats[${bi}]`;
       if (beat.kind === 'narration' && noNarration) issues.push({ path, code: 'NARRATION_FORBIDDEN', message: '本次改编明确禁止旁白/画外音；请将环境和动作保留为 action，章节标题仅作结构元数据，不得朗读。' });
-      if (beat.kind === 'narration' && titles.some(title => beat.text.trim().startsWith(title))) issues.push({ path, code: 'STRUCTURAL_TITLE_NARRATED', message: '章节或分集标题不得成为旁白；标题仅作结构元数据，原文覆盖可保留在 action 节拍。' });
+      if (beat.kind === 'narration' && titles.some(title => { const text = beat.text.trim(); return structuralTitleText(text) === title || (text.startsWith(title) && /^[\s。.!！?？:：、，,；;]/u.test(text.slice(title.length))); })) issues.push({ path, code: 'STRUCTURAL_TITLE_NARRATED', message: '章节或分集标题不得成为旁白；标题仅作结构元数据，原文覆盖可保留在 action 节拍。' });
       if (beat.kind === 'dialogue' && !beat.characterKey) issues.push({ path, code: 'DIALOGUE_SPEAKER_MISSING', message: '对白必须指定说话角色；仅确认是旁白时使用 narration，不得把未知说话人的对白直接改成旁白。' });
       if (beat.characterKey && !characterKeys.has(beat.characterKey)) issues.push({ path: `${path}.characterKey`, code: 'CHARACTER_REFERENCE_INVALID', message: `角色引用不存在：${beat.characterKey}` });
       duplicates(beat.sourceUnitIds, `${path}.sourceUnitIds`, issues, '原文引用');

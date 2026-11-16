@@ -9,6 +9,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Thread
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -110,6 +111,218 @@ class LicensingTests(unittest.TestCase):
         device_id = next(value for value in results if value != 'DEVICE_LIMIT_REACHED')
         self.store.operate('release-device', device_id)
         self.activate(str(uuid.uuid4()), Ed25519PrivateKey.generate())
+
+    def v2_request(self, action, device, legacy, key, **extra):
+        path = '/v2/license/' + action
+        return self.store.request(path, self.proof(path, device, key,
+                                  legacyDeviceId=hashlib.sha256(legacy.encode()).hexdigest(), **extra))
+
+    def identity_rows(self):
+        db = self.store.connect()
+        try:
+            return ([dict(row) for row in db.execute('SELECT * FROM devices')],
+                    [dict(row) for row in db.execute('SELECT * FROM device_identity_aliases')],
+                    [dict(row) for row in db.execute('SELECT * FROM licenses')])
+        finally:
+            db.close()
+
+    def test_v2_migration_preserves_seat_term_and_retries(self):
+        old, new = str(uuid.uuid4()), str(uuid.uuid4())
+        key = Ed25519PrivateKey.generate()
+        before = json.loads(self.activate(old, key)['payload'])
+        original = self.identity_rows()
+        self.now += 60
+        after = json.loads(self.v2_request('refresh', new, old, key)['payload'])
+        self.assertEqual(after['licenseId'], before['licenseId'])
+        self.assertEqual(after['expiresAt'], before['expiresAt'])
+        self.assertEqual(len(after['devices']), 1)
+        self.assertNotEqual(after['deviceId'], before['deviceId'])
+        rows, aliases, licenses = self.identity_rows()
+        source = next(row for row in original[0] if row['device_id'] == before['deviceId'])
+        target = next(row for row in rows if row['device_id'] == after['deviceId'])
+        self.assertEqual(target['bound_at'], source['bound_at'])
+        self.assertEqual(licenses, original[2])
+        self.assertEqual(sum(row['released'] == 0 and row['license_id'] == before['licenseId'] for row in rows), 1)
+        self.assertEqual(json.loads(self.v2_request('refresh', new, old, key)['payload'])['deviceId'], after['deviceId'])
+        self.assertEqual(self.identity_rows()[1], aliases)
+        self.rejected('DEVICE_IDENTITY_MIGRATED', lambda: self.v2_request('refresh', str(uuid.uuid4()), old, key))
+        for action in ('activate', 'refresh', 'release'):
+            path = '/v1/license/' + action
+            self.rejected('DEVICE_IDENTITY_MIGRATED', lambda: self.store.request(path, self.proof(path, old, key, code=self.license['code'], label='old')))
+            self.rejected('DEVICE_IDENTITY_MIGRATED', lambda: self.store.request(path, self.proof(path, new, key, code=self.license['code'], label='new')))
+        self.v2_request('release', new, old, key)
+        self.rejected('DEVICE_NOT_BOUND', lambda: self.v2_request('refresh', new, old, key))
+        self.rejected('DEVICE_NOT_BOUND', lambda: self.v2_request('release', new, old, key))
+        # Explicit reactivation remains valid, but only at the already pinned destination.
+        self.v2_request('activate', new, old, key, code=self.license['code'], label='new')
+
+    def test_v2_colliding_legacy_ids_with_distinct_keys_are_isolated(self):
+        old, first, second = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        key_a, key_b = Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
+        original = json.loads(self.activate(old, key_a)['payload'])
+        other = self.store.issue(days=2, max_devices=1)
+        self.rejected('DEVICE_NOT_BOUND', lambda: self.v2_request('refresh', second, old, key_b))
+        fresh = json.loads(self.v2_request('activate', second, old, key_b, code=other['code'], label='B')['payload'])
+        self.assertEqual(fresh['licenseId'], other['licenseId'])
+        self.assertEqual(json.loads(self.store.request('/v1/license/refresh', self.proof('/v1/license/refresh', old, key_a))['payload'])['licenseId'], original['licenseId'])
+        migrated = json.loads(self.v2_request('activate', first, old, key_a, code=self.license['code'], label='A')['payload'])
+        self.store.operate('release-device', migrated['deviceId'])
+        self.assertEqual(json.loads(self.v2_request('refresh', second, old, key_b)['payload'])['licenseId'], other['licenseId'])
+        self.rejected('DEVICE_NOT_BOUND', lambda: self.v2_request('refresh', first, old, key_a))
+
+    def test_v2_locks_and_destination_conflicts_fail_without_migration(self):
+        old, new = str(uuid.uuid4()), str(uuid.uuid4())
+        key = Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        before = self.identity_rows()
+        for value in (old, new):
+            identity = hashlib.sha256(value.encode()).hexdigest()
+            self.store.operate('lock-device', identity)
+            self.rejected('DEVICE_LOCKED', lambda: self.v2_request('refresh', new, old, key))
+            self.assertEqual(self.identity_rows(), before)
+            self.store.operate('unlock-device', identity)
+        occupied_license = self.store.issue()
+        path = '/v1/license/activate'
+        self.store.request(path, self.proof(path, new, Ed25519PrivateKey.generate(), code=occupied_license['code'], label='occupied'))
+        occupied = self.identity_rows()
+        self.rejected('DEVICE_ALREADY_BOUND', lambda: self.v2_request('refresh', new, old, key))
+        self.assertEqual(self.identity_rows(), occupied)
+
+    def test_v2_failed_activation_and_invalid_license_roll_back_migration(self):
+        old, new = str(uuid.uuid4()), str(uuid.uuid4())
+        key = Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        other = self.store.issue()
+        before = self.identity_rows()
+        self.rejected('DEVICE_ALREADY_BOUND', lambda: self.v2_request('activate', new, old, key, code=other['code'], label='wrong license'))
+        self.assertEqual(self.identity_rows(), before)
+        self.store.operate('revoke-license', self.license['licenseId'])
+        revoked = self.identity_rows()
+        self.rejected('LICENSE_REVOKED', lambda: self.v2_request('refresh', new, old, key))
+        self.assertEqual(self.identity_rows(), revoked)
+        self.store.operate('restore-license', self.license['licenseId'])
+        self.now += 86401
+        expired = self.identity_rows()
+        self.rejected('LICENSE_EXPIRED', lambda: self.v2_request('refresh', new, old, key))
+        self.assertEqual(self.identity_rows(), expired)
+
+    def test_v2_validates_legacy_identity_and_original_signed_path(self):
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        path = '/v2/license/refresh'
+        for extra in ({}, {'legacyDeviceId': None}, {'legacyDeviceId': 'x' * 64},
+                      {'legacyDeviceId': hashlib.sha256(new.encode()).hexdigest()}):
+            self.rejected('INVALID_DEVICE_PROOF', lambda: self.store.request(path, self.proof(path, new, key, **extra)))
+        legacy = hashlib.sha256(old.encode()).hexdigest()
+        self.rejected('INVALID_DEVICE_PROOF', lambda: self.store.request(path, self.proof('/v1/license/refresh', new, key, legacyDeviceId=legacy)))
+        self.rejected('INVALID_DEVICE_PROOF', lambda: self.store.request('/v1/license/refresh', self.proof('/v1/license/refresh', old, key, legacyDeviceId='invalid')))
+
+    def test_v2_http_route_migration_and_replay(self):
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        _, connection = self.start_admin_server()
+        path = '/v2/license/refresh'
+        body = json.dumps(self.proof(path, new, key, legacyDeviceId=hashlib.sha256(old.encode()).hexdigest()))
+        connection.request('POST', path, body, {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(json.loads(response.read())['payload'])['deviceId'], hashlib.sha256(new.encode()).hexdigest())
+        connection.request('POST', path, body, {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        self.assertEqual(response.status, 409)
+        self.assertEqual(json.loads(response.read())['error'], 'REQUEST_REPLAYED')
+
+    def test_v2_release_can_migrate_but_never_revive_a_released_source(self):
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        self.assertEqual(self.v2_request('release', new, old, key), {'released': True})
+        self.rejected('DEVICE_NOT_BOUND', lambda: self.v2_request('refresh', new, old, key))
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        self.store.operate('release-device', hashlib.sha256(old.encode()).hexdigest())
+        before = self.identity_rows()
+        self.rejected('DEVICE_NOT_BOUND', lambda: self.v2_request('refresh', new, old, key))
+        self.assertEqual(self.identity_rows(), before)
+
+    def test_v2_migrated_binding_still_checks_legacy_locks_and_alias(self):
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        self.v2_request('refresh', new, old, key)
+        self.rejected('DEVICE_IDENTITY_MIGRATED', lambda: self.v2_request('refresh', new, str(uuid.uuid4()), key))
+        self.store.operate('lock-device', hashlib.sha256(old.encode()).hexdigest())
+        self.rejected('DEVICE_LOCKED', lambda: self.v2_request('refresh', new, old, key))
+
+    def test_v2_signing_failure_rolls_back_identity_and_seat_changes(self):
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        before = self.identity_rows()
+        with patch.object(self.store, 'signed', side_effect=RuntimeError('signing unavailable')):
+            with self.assertRaisesRegex(RuntimeError, 'signing unavailable'):
+                self.v2_request('refresh', new, old, key)
+        self.assertEqual(self.identity_rows(), before)
+        self.v2_request('refresh', new, old, key)
+
+    def test_v2_concurrent_migration_and_activation_keep_one_seat(self):
+        old, new, key = str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate()
+        self.activate(old, key)
+        def attempt(index):
+            try:
+                if index % 2 == 0:
+                    return json.loads(self.v2_request('refresh', new, old, key)['payload'])['deviceId']
+                return json.loads(self.v2_request('activate', str(uuid.uuid4()), str(uuid.uuid4()), Ed25519PrivateKey.generate(),
+                                                 code=self.license['code'], label='competing device')['payload'])['deviceId']
+            except Rejected as error:
+                return error.code
+        with ThreadPoolExecutor(max_workers=8) as workers:
+            results = list(workers.map(attempt, range(8)))
+        self.assertEqual(results.count('DEVICE_LIMIT_REACHED'), 4)
+        self.assertEqual(results.count(hashlib.sha256(new.encode()).hexdigest()), 4)
+        rows, _, _ = self.identity_rows()
+        self.assertEqual(sum(row['released'] == 0 and row['license_id'] == self.license['licenseId'] for row in rows), 1)
+
+    def test_v2_fresh_enrollment_pins_alias_and_collisions_do_not_bypass_seats(self):
+        old, first, second = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+        key = Ed25519PrivateKey.generate()
+        self.v2_request('activate', first, old, key, code=self.license['code'], label='first')
+        self.rejected('DEVICE_IDENTITY_MIGRATED', lambda: self.v2_request('activate', second, old, key, code=self.license['code'], label='second'))
+        self.rejected('DEVICE_LIMIT_REACHED', lambda: self.v2_request('activate', second, old, Ed25519PrivateKey.generate(), code=self.license['code'], label='second'))
+        self.store.operate('lock-device', hashlib.sha256(first.encode()).hexdigest())
+        self.rejected('DEVICE_LOCKED', lambda: self.v2_request('refresh', first, old, key))
+        self.store.operate('unlock-device', hashlib.sha256(first.encode()).hexdigest())
+        self.store.operate('lock-device', hashlib.sha256(old.encode()).hexdigest())
+        self.rejected('DEVICE_LOCKED', lambda: self.v2_request('activate', second, old, Ed25519PrivateKey.generate(), code=self.license['code'], label='second'))
+
+    def test_binding_token_schema_upgrade_preserves_existing_authorization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'data'
+            initialize(root, '127.0.0.1', 8443)
+            store = LicenseStore(root, lambda: self.now)
+            issued = store.issue()
+            device, key = str(uuid.uuid4()), Ed25519PrivateKey.generate()
+            path = '/v1/license/activate'
+            store.request(path, self.proof(path, device, key, code=issued['code'], label='existing'))
+            with store.transaction() as db:
+                db.executescript('''
+                    DROP INDEX active_device;
+                    ALTER TABLE devices RENAME TO devices_with_token;
+                    CREATE TABLE devices (
+                      license_id TEXT NOT NULL REFERENCES licenses(id), device_id TEXT NOT NULL,
+                      key_hash TEXT NOT NULL, public_key TEXT NOT NULL, label TEXT NOT NULL,
+                      bound_at INTEGER NOT NULL, last_seen INTEGER NOT NULL, released INTEGER NOT NULL DEFAULT 0,
+                      PRIMARY KEY (license_id, device_id));
+                    INSERT INTO devices (license_id,device_id,key_hash,public_key,label,bound_at,last_seen,released)
+                      SELECT license_id,device_id,key_hash,public_key,label,bound_at,last_seen,released FROM devices_with_token;
+                    DROP TABLE devices_with_token;
+                    CREATE UNIQUE INDEX active_device ON devices(device_id) WHERE released=0;
+                ''')
+            upgraded = LicenseStore(root, lambda: self.now)
+            with upgraded.transaction() as db:
+                token = db.execute('SELECT binding_token FROM devices').fetchone()[0]
+            self.assertRegex(token, r'^[a-f0-9]{64}$')
+            reopened = LicenseStore(root, lambda: self.now)
+            with reopened.transaction() as db:
+                self.assertEqual(db.execute('SELECT binding_token FROM devices').fetchone()[0], token)
+            refresh = '/v1/license/refresh'
+            self.assertEqual(json.loads(reopened.request(refresh, self.proof(refresh, device, key))['payload'])['licenseId'], issued['licenseId'])
 
     def test_tampering_and_clock(self):
         path, device, key = '/v1/license/activate', str(uuid.uuid4()), Ed25519PrivateKey.generate()

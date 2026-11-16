@@ -16,6 +16,43 @@ export interface LicenseLease {
   devices: Array<{ deviceId: string; label: string; lastSeen: number }>;
 }
 
+/** v3 lease: server assigns all identity fields; hardware values are advisory only. */
+export interface LicenseLeaseV3 {
+  schemaVersion: 3;
+  kind: 'lease';
+  status: 'active';
+  licenseId: string;
+  /** Server-assigned device record UUID — not derived from hardware. */
+  deviceRecordId: string;
+  /** Server-assigned credential UUID for the active public key. */
+  credentialId: string;
+  /** Server credential generation; increments when recovery revokes the old key. */
+  credentialEpoch: number;
+  /** Server-assigned binding UUID for this device × license slot. */
+  bindingId: string;
+  /** Incremented on rebind / recovery; used by admin for optimistic concurrency. */
+  bindingRevision: number;
+  keyHash: string;
+  issuedAt: number;
+  validUntil: number;
+  expiresAt: number;
+  offlineGraceUntil?: number;
+  maxDevices: number;
+  devices: Array<{ deviceRecordId: string; label: string; lastSeen: number }>;
+}
+
+export type AnyLicenseLease = LicenseLease | LicenseLeaseV3;
+
+export interface RecoveryRequest {
+  id: string;
+  licenseId: string;
+  deviceRecordId: string;
+  deviceLabel: string;
+  state: 'pending' | 'approved' | 'rejected' | 'completed' | 'expired';
+  createdAt: number;
+  expiresAt: number;
+}
+
 export interface LicenseStatus {
   configured: boolean;
   status: 'unconfigured' | 'inactive' | 'active' | 'offline' | 'locked' | 'expired' | 'error';

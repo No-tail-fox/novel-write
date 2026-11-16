@@ -28,7 +28,9 @@ storydream-license restore-license LICENSE_UUID
 storydream-license audit
 ```
 
-将 `DEVICE_SHA256` 换成软件显示的设备编号或 `devices` 中的 `device_id`；将 `LICENSE_UUID` 换成 `licenses` 中的 `id`。锁定针对机器，撤销针对整个授权。换机前执行 `release-device` 释放旧机器名额，用户也可以在软件中解绑本机。
+将 `DEVICE_SHA256` 换成软件显示的设备编号或 `devices` 中的 `device_id`；将 `LICENSE_UUID` 换成 `licenses` 中的 `id`。锁定针对机器，撤销针对整个授权。确认编号对应唯一一台机器后，换机前可执行 `release-device` 释放旧机器名额，用户也可以在软件中解绑本机。
+
+**两位客户设备编号相同时，不要按旧编号反复解绑或锁定。** 旧版只使用 MachineGuid，系统镜像可能导致冲突；解绑会影响当前占用该编号的客户。应先按[重复设备编号恢复说明](DEVICE-IDENTITY-RECOVERY.zh-CN.md)核对身份，再配套升级服务端与客户端。源码中的新后台会核对具体授权与绑定令牌，旧页面不能释放已变化的绑定；该修复仍需部署后才在线上生效。
 
 联网时每 120 秒验证一次，用户手动“验证授权”可立即获取最新状态。断网只允许使用剩余联网凭证，最长 10 分钟；重新启动软件必须联网验证。锁定、撤销或到期会阻止后续生成；已提交任务可能继续完成，本地作品、编辑、渲染、导出和结果取回仍可使用。
 

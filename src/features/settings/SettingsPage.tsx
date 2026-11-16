@@ -10,7 +10,7 @@ import type { AppConfig, ConfigTestTarget, ImaKnowledgeResult, ProviderModel, Pr
 import type { StoryDreamApi } from "../../shared/storydream-api";
 import type { JianyingDraftPathDetection } from "../../shared/jianying-paths";
 import { addUploadedBgm, resolveDefaultBgmId, validBgmItems } from "../tasks/task-formatters";
-import type { SecretChanges, SecretId } from "../../shared/config-secrets";
+import { normalizePastedSecret, type SecretChanges, type SecretId } from "../../shared/config-secrets";
 import { changeRuntimeTheme, type RuntimeThemeStateSynchronizer } from "./theme-controller";
 import { configTargetStatus } from "../../shared/config-utils";
 import { formatRelayProbeResult } from '../../shared/relay-capability-probe-format';
@@ -167,7 +167,8 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
     setSecretChanges((current) => {
       const next = { ...current };
       if (value === '') delete next[id];
-      else next[id] = value;
+      // Credentials are sent as `Authorization: Bearer <key>`; a pasted "Bearer " prefix yields 401 from relays.
+      else next[id] = value === null ? null : normalizePastedSecret(value);
       return next;
     });
   }

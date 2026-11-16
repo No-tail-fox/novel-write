@@ -7,7 +7,14 @@ import { LlmTextStream } from './llm-text-stream';
 import { LLM_RESPONSE_MAX_BYTES } from './llm-response-limits';
 import { classifyProviderFailure, parseRetryAfterMs, shouldRetryProviderFailure, type ProviderFailureKind } from './provider-failure';
 import { normalizeFallbackModels } from './model-capabilities';
+import { normalizePastedSecret } from './config-secrets';
 import type { NetworkFetchOptions } from './network-policy';
+
+/** Strip a pasted "Bearer " prefix / surrounding whitespace from a stored credential. */
+function normalizeConfigKey(config: LlmConfig): LlmConfig {
+  const apiKey = normalizePastedSecret(config.apiKey ?? '');
+  return apiKey === config.apiKey ? config : { ...config, apiKey };
+}
 
 export type LlmRole = 'system' | 'user' | 'assistant';
 
@@ -209,17 +216,19 @@ export function observeLlmFallbacks(llm: ConfiguredJsonLlm, observer: (event: Ll
 }
 
 export function createConfiguredJsonLlm(config: LlmConfig): ConfiguredJsonLlm {
-  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: withModelFallback(config, createResponsesJsonLlm) };
-  return isAnthropicLlmConfig(config)
-    ? { protocol: 'anthropic', run: withModelFallback(config, createAnthropicMessagesJsonLlm) }
-    : { protocol: 'openai', run: withModelFallback(config, createOpenAiCompatibleJsonLlm) };
+  const normalized = normalizeConfigKey(config);
+  if (resolveLlmProtocol(normalized) === 'responses') return { protocol: 'responses', run: withModelFallback(normalized, createResponsesJsonLlm) };
+  return isAnthropicLlmConfig(normalized)
+    ? { protocol: 'anthropic', run: withModelFallback(normalized, createAnthropicMessagesJsonLlm) }
+    : { protocol: 'openai', run: withModelFallback(normalized, createOpenAiCompatibleJsonLlm) };
 }
 
 export function createConfiguredTextLlm(config: LlmConfig): ConfiguredTextLlm {
-  if (resolveLlmProtocol(config) === 'responses') return { protocol: 'responses', run: withModelFallback(config, createResponsesTextLlm) };
-  return isAnthropicLlmConfig(config)
-    ? { protocol: 'anthropic', run: withModelFallback(config, createAnthropicMessagesTextLlm) }
-    : { protocol: 'openai', run: withModelFallback(config, createOpenAiCompatibleTextLlm) };
+  const normalized = normalizeConfigKey(config);
+  if (resolveLlmProtocol(normalized) === 'responses') return { protocol: 'responses', run: withModelFallback(normalized, createResponsesTextLlm) };
+  return isAnthropicLlmConfig(normalized)
+    ? { protocol: 'anthropic', run: withModelFallback(normalized, createAnthropicMessagesTextLlm) }
+    : { protocol: 'openai', run: withModelFallback(normalized, createOpenAiCompatibleTextLlm) };
 }
 
 export function createOpenAiCompatibleJsonLlm(config: LlmConfig): OpenAiCompatibleJsonLlm {
@@ -847,7 +856,9 @@ async function testOpenAiProtocolLlm(config: LlmConfig, protocol: 'openai' | 're
     requestId: null,
   };
 
-  if (!config.apiKey.trim()) {
+  const bearerPrefixedKey = /^bearer\s+/iu.test(config.apiKey.trim());
+  const apiKey = bearerPrefixedKey ? config.apiKey.trim().replace(/^bearer\s+/iu, '').trim() : config.apiKey;
+  if (!apiKey.trim()) {
     return { ...baseResult, status: 'fail', detail: 'API key is missing; fill it before testing the model.' };
   }
   if (!model) {
@@ -862,7 +873,7 @@ async function testOpenAiProtocolLlm(config: LlmConfig, protocol: 'openai' | 're
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(buildModelTestBody(config, protocol)),
       },
@@ -872,11 +883,12 @@ async function testOpenAiProtocolLlm(config: LlmConfig, protocol: 'openai' | 're
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
     if (!response.ok) {
+      const bearerHint = bearerPrefixedKey ? '（检测到密钥带有 Bearer 前缀，测试时已自动剥离；请检查密钥框内不要重复粘贴 Bearer）' : '';
       return {
         ...baseResult,
         latencyMs,
         status: 'fail',
-        detail: `Model test failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}`,
+        detail: `Model test failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}${bearerHint}`,
       };
     }
 
@@ -911,8 +923,9 @@ async function testOpenAiProtocolLlm(config: LlmConfig, protocol: 'openai' | 're
 }
 
 export async function testConfiguredLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
-  if (resolveLlmProtocol(config) === 'responses') return testResponsesLlm(config, fetchImpl);
-  return isAnthropicLlmConfig(config) ? testAnthropicMessagesLlm(config, fetchImpl) : testOpenAiCompatibleLlm(config, fetchImpl);
+  const normalized = normalizeConfigKey(config);
+  if (resolveLlmProtocol(normalized) === 'responses') return testResponsesLlm(normalized, fetchImpl);
+  return isAnthropicLlmConfig(normalized) ? testAnthropicMessagesLlm(normalized, fetchImpl) : testOpenAiCompatibleLlm(normalized, fetchImpl);
 }
 
 export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typeof fetch = fetch): Promise<LlmModelTestResult> {
@@ -927,7 +940,9 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
     requestId: null,
   };
 
-  if (!config.apiKey.trim()) {
+  const bearerPrefixedKey = /^bearer\s+/iu.test(config.apiKey.trim());
+  const apiKey = bearerPrefixedKey ? config.apiKey.trim().replace(/^bearer\s+/iu, '').trim() : config.apiKey;
+  if (!apiKey.trim()) {
     return { ...baseResult, status: 'fail', detail: 'API key is missing; fill it before testing the model.' };
   }
   if (!model) {
@@ -942,7 +957,7 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': config.apiKey,
+          'x-api-key': apiKey,
           'anthropic-version': ANTHROPIC_VERSION,
         },
         body: JSON.stringify(buildModelTestBody(config, 'anthropic')),
@@ -953,11 +968,12 @@ export async function testAnthropicMessagesLlm(config: LlmConfig, fetchImpl: typ
     const latencyMs = Date.now() - startedAt;
     const bodyText = await readTextBounded(response, LLM_RESPONSE_MAX_BYTES);
     if (!response.ok) {
+      const bearerHint = bearerPrefixedKey ? '（检测到密钥带有 Bearer 前缀，测试时已自动剥离；请检查密钥框内不要重复粘贴 Bearer）' : '';
       return {
         ...baseResult,
         latencyMs,
         status: 'fail',
-        detail: `Model test failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}`,
+        detail: `Model test failed with HTTP ${response.status}: ${bodyText.slice(0, 300)}${bearerHint}`,
       };
     }
 
@@ -998,7 +1014,8 @@ export async function listOpenAiCompatibleModels(
     models: [] as ProviderModel[],
   };
 
-  if (!request.apiKey.trim()) {
+  const apiKey = normalizePastedSecret(request.apiKey);
+  if (!apiKey.trim()) {
     return { ...baseResult, status: 'fail', detail: 'API key is missing; fill it before fetching models.' };
   }
 
@@ -1009,7 +1026,7 @@ export async function listOpenAiCompatibleModels(
       {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${request.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
       },
       15000,

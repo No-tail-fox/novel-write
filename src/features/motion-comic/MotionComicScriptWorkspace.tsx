@@ -3,7 +3,7 @@ import { BookOpenCheck, CheckCircle2, Film, Loader2, Pause, Play, RefreshCw, Sav
 import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { MotionComicPipelineData, MotionComicSourceEpisode } from '../../shared/motion-comic';
 import { motionComicPlanRecoverySchema, motionComicSourceEpisodeIdForEpisode, type MotionComicPlanRecovery, type MotionComicScriptDraft } from '../../shared/motion-comic-planning';
-import { motionComicScriptStatusLabel, type MotionComicScriptSnapshot, type MotionComicScriptTask, type MotionComicScriptCandidate, type MotionComicScriptStoryboard, type MotionComicScriptApproval } from '../../shared/motion-comic-script-batch';
+import { motionComicScriptStatusLabel, motionComicRuntimeChanged, type MotionComicScriptSnapshot, type MotionComicScriptTask, type MotionComicScriptCandidate, type MotionComicScriptStoryboard, type MotionComicScriptApproval } from '../../shared/motion-comic-script-batch';
 import { motionComicScriptAssetSummary } from '../../shared/motion-comic-script-assets';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
 import { formatAppErrorMessage, normalizeAppError } from '../../shared/app-error';
@@ -13,12 +13,15 @@ import { ScriptAwaitingCard, ScriptSourceCard, ScriptStatusChip, scriptStatusTon
 import { MotionComicScriptProposal, scriptProposalRevertReason, type ScriptProposalRequest } from './MotionComicScriptProposal';
 import type { MotionComicScriptOriginal, MotionComicScriptProposal as ScriptProposal } from '../../shared/motion-comic-script-proposal';
 import { changeScriptEditHistory, createScriptEditHistory, type ScriptHistoryAction } from './motion-comic-script-history';
+import { repairScriptTitleNarration, scriptDraftIssues, scriptIssueLocation } from './motion-comic-script-validation';
 import './motion-comic-script-layout.css';
 
 interface Props {
   api: StoryDreamApi;
   document: MotionComicPipelineData;
   model: string;
+  /** Same identity pair the main process records on each task; never infer it from `model` alone. */
+  runtimeIdentity: { provider: string; model: string };
   selectedSourceEpisodeId: string;
   plannedSourceEpisodeIds: ReadonlySet<string>;
   onSelectSourceEpisode: (id: string) => void;
@@ -31,7 +34,7 @@ interface Props {
 }
 
 /** Saved-source workflow follows Toonflow/Jellyfish: queue scripts, review, approve, then storyboard. */
-export function MotionComicScriptWorkspace({ api, document, model, selectedSourceEpisodeId, plannedSourceEpisodeIds, onSelectSourceEpisode, onOpenEpisode, onDraftGuardChange, withSavedProject, onApplyStoryboard, onApproveScripts, onOpenProjectAssets }: Props) {
+export function MotionComicScriptWorkspace({ api, document, model, runtimeIdentity, selectedSourceEpisodeId, plannedSourceEpisodeIds, onSelectSourceEpisode, onOpenEpisode, onDraftGuardChange, withSavedProject, onApplyStoryboard, onApproveScripts, onOpenProjectAssets }: Props) {
   const [snapshot, setSnapshot] = useState<MotionComicScriptSnapshot | null>(null);
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
@@ -62,7 +65,7 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
   const generated = selected && document.episodes.find((item) => motionComicSourceEpisodeIdForEpisode(document, item) === selected.id);
   const activeTasks = [...latest.values()];
   const ready = activeTasks.filter((item) => ['script-ready', 'review'].includes(item.status));
-  const reviewed = ready.filter((item) => { const entry = snapshot?.candidates.find((entry) => entry.taskId === item.id); return reviewedVersions[item.id] === item.outputRevision && entry && !entry.issues.length && !motionComicScriptAssetSummary(document, entry.script).unresolved; });
+  const reviewed = ready.filter((item) => { const entry = snapshot?.candidates.find((entry) => entry.taskId === item.id); const source = sourceEpisodes.find(source => source.id === item.sourceEpisodeId); return reviewedVersions[item.id] === item.outputRevision && entry && source && !scriptDraftIssues(entry.script, source.sourceText, document, item.instructions).length && !motionComicScriptAssetSummary(document, entry.script).unresolved; });
   const queued = activeTasks.filter((item) => item.status === 'queued').length;
   const running = activeTasks.filter((item) => item.status === 'running').length;
   const approved = activeTasks.filter((item) => item.status === 'approved').length;
@@ -115,6 +118,12 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
     void run(() => api.controlMotionComicScripts({ id: document.id, action, ...(action === 'cancel' ? { taskId: task?.id } : {}) }),
       action === 'pause' ? '当前集完成后暂停后续任务。' : action === 'resume' ? '已恢复后台队列。' : '当前任务已取消，未批准任何结果。').catch(() => {});
   }
+  function regenerateSelected() {
+    if (!selected || draftGuard.current?.() === false) return;
+    setInstructions(task?.instructions ?? '');
+    setDuration(task?.targetDurationSec ? String(task.targetDurationSec) : '');
+    setStartScope('selected');
+  }
   async function enqueue() {
     if (!startScope) return;
     const scope = startScope;
@@ -159,7 +168,7 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
           <div className="comic-script-episode-row"><header className="comic-script-detail__heading"><div><span className="comic-script-detail__title"><strong>第 {selected.number} 集 · {selected.title}</strong><ScriptStatusChip status={task?.status} paused={Boolean(snapshot?.paused)} label={plannedSourceEpisodeIds.has(selected.id) ? '分镜已应用' : undefined} /></span><small title={task ? `${task.model} · ${new Date(task.updatedAt).toLocaleString('zh-CN')}` : undefined}>{task ? `版本 r${task.outputRevision} · 原文 ${selected.sourceText.length.toLocaleString('zh-CN')} 字` : `原文 ${selected.sourceText.length.toLocaleString('zh-CN')} 字 · 尚无后台任务`}</small></div>
             <Toolbar aria-label="当前集任务操作">
               {task && ['queued', 'running'].includes(task.status) ? <Button icon={<Square size={13} />} disabled={busy} onClick={() => control('cancel')}>取消本集</Button> : null}
-              {!plannedSourceEpisodeIds.has(selected.id) && (!task || ['failed', 'cancelled', 'stale'].includes(task.status)) ? <Button icon={<RefreshCw size={13} />} disabled={busy} onClick={() => setStartScope('selected')}>{task ? '重新提交本集' : '生成本集剧本'}</Button> : null}
+              {!plannedSourceEpisodeIds.has(selected.id) && (!task || ['failed', 'cancelled', 'stale'].includes(task.status)) ? <Button icon={<RefreshCw size={13} />} disabled={busy} onClick={regenerateSelected}>{task ? '重新提交本集' : '生成本集剧本'}</Button> : null}
               {generated ? <Button icon={<Film size={13} />} onClick={() => { if (draftGuard.current?.() !== false) onOpenEpisode(generated.id); }}>编辑分幕与场次</Button> : null}
             </Toolbar>
           </header>
@@ -186,6 +195,7 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
             }} />
             : task && candidate ? <ScriptEditor key={task.id} resolveReferenceUrl={path => api.getTaskMediaUrl(document.id, path)} task={task} candidate={candidate} approval={approval} project={document} source={selected} busy={busy} locked={!['script-ready', 'review'].includes(task.status) && !(task.status === 'approved' && !approval?.assetsConfirmedAt)} reviewed={reviewedVersions[task.id] === candidate.outputRevision}
                 original={snapshot?.originals?.find(item => item.taskId === task.id)} proposals={snapshot?.proposals?.filter(item => item.taskId === task.id) ?? []}
+                onRegenerate={regenerateSelected}
                 proposalLocked={plannedSourceEpisodeIds.has(selected.id) || Boolean(approval?.assetsConfirmedAt)}
                 onPropose={(input) => run(() => withSavedProject(current => api.proposeMotionComicScriptChange({ id: current.id, expectedUpdatedAt: current.updatedAt, taskId: task.id, outputRevision: candidate.outputRevision, ...input })), '局部候选请求已提交，不会自动采用。')}
                 onRefreshProposals={() => run(() => api.getMotionComicScripts(document.id), '已读取服务器提案状态。')}
@@ -196,7 +206,10 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
                 onReviewed={(value) => setReviewedVersions((current) => ({ ...current, [task.id]: value ? candidate.outputRevision : 0 }))}
                 onSave={async (script, revision) => run(() => withSavedProject((current) => api.editMotionComicScript({ id: current.id, expectedUpdatedAt: current.updatedAt, taskId: task.id, outputRevision: revision, script })), '修改已保存并校验；下游受影响剧本将标记过期。')}
                 onApprove={() => approveTasks([{ taskId: task.id, outputRevision: candidate.outputRevision }])}
-                onStoryboard={() => run(() => withSavedProject((current) => api.storyboardMotionComicScript({ id: current.id, expectedUpdatedAt: current.updatedAt, taskId: task.id, outputRevision: candidate.outputRevision })), '分镜任务已启动；剧本不会重新生成，也不会调用媒体服务。')}
+                onStoryboard={() => {
+                  // The switch itself already carried the confirmation; never ask again here.
+                  return run(() => withSavedProject((current) => api.storyboardMotionComicScript({ id: current.id, expectedUpdatedAt: current.updatedAt, taskId: task.id, outputRevision: candidate.outputRevision, ...(motionComicRuntimeChanged(task, runtimeIdentity) ? { allowModelChange: true } : {}) })), '分镜任务已启动；剧本不会重新生成，也不会调用媒体服务。');
+                }}
                 canStoryboard={task.status === 'approved' && Boolean(approval?.assetsConfirmedAt) && !storyboard && task.storyboardStatus !== 'running' && !plannedSourceEpisodeIds.has(selected.id)} />
               : <div className="comic-script-draft-grid">
                 <ScriptSourceCard source={selected} />
@@ -205,8 +218,8 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
         </> : <p>请先导入并保存源分集。</p>}
       </section>
     </div>
-    <Dialog open={startScope !== null} title="提交后台剧本任务" onOpenChange={(open) => { if (!open && !busy) setStartScope(null); }} actions={<><Button disabled={busy} onClick={() => setStartScope(null)}>取消</Button><Button variant="primary" disabled={busy || durationInvalid} onClick={() => void enqueue().catch(() => {})}>{busy ? '正在提交' : '开始后台生成'}</Button></>}>
-      <div className="comic-script-start"><p>{startScope === 'selected' ? `第 ${selected?.number} 集` : startScope === 'failed' ? '所有失败集' : '所有未完成集'} · 文本模型：{model || '未配置'}</p><TextField label="目标集长（秒，可留空）" type="number" min={5} max={1800} value={duration} validationMessage={durationInvalid ? '请输入 5 到 1800 秒。' : undefined} onChange={(_, data) => setDuration(data.value)} /><TextAreaField label="改编要求" value={instructions} rows={4} maxLength={4000} resize="vertical" onChange={(_, data) => setInstructions(data.value)} /><small>只生成剧本并逐集保存。不会自动批准、生成分镜、图片、视频或配音。</small>{error ? <p role="alert">{error}</p> : null}</div>
+    <Dialog open={startScope !== null} title={startScope === 'selected' && candidate ? '重新生成本集剧本' : '提交后台剧本任务'} onOpenChange={(open) => { if (!open && !busy) setStartScope(null); }} actions={<><Button disabled={busy} onClick={() => setStartScope(null)}>取消</Button><Button variant="primary" disabled={busy || durationInvalid} onClick={() => void enqueue().catch(() => {})}>{busy ? '正在提交' : '开始后台生成'}</Button></>}>
+      <div className="comic-script-start">{startScope === 'selected' && candidate ? <p>将按原文重新生成本集剧本。旧稿保留为历史记录，新结果需要重新审阅和批准。请先保存需要保留的本地修改。</p> : null}<p>{startScope === 'selected' ? `仅当前章：第 ${selected?.number} 集 · ${selected?.title}` : startScope === 'failed' ? '所有失败集' : '所有未完成集'} · 文本模型：{model || '未配置'}</p><TextField label="目标集长（秒，可留空）" type="number" min={5} max={1800} value={duration} validationMessage={durationInvalid ? '请输入 5 到 1800 秒。' : undefined} onChange={(_, data) => setDuration(data.value)} /><TextAreaField label="改编要求" value={instructions} rows={4} maxLength={4000} resize="vertical" onChange={(_, data) => setInstructions(data.value)} /><small>只生成剧本并逐集保存。不会自动批准、生成分镜、图片、视频或配音。</small>{error ? <p role="alert">{error}</p> : null}</div>
     </Dialog>
     <Dialog open={approveOpen} title="批准已审阅剧本" onOpenChange={(open) => { if (!busy) setApproveOpen(open); }} actions={<><Button disabled={busy} onClick={() => setApproveOpen(false)}>取消</Button><Button variant="primary" disabled={busy || !bulkReviewed || !reviewed.length} onClick={() => void approveTasks(reviewed.map((item) => ({ taskId: item.id, outputRevision: item.outputRevision }))).catch(() => {})}>批准 {reviewed.length} 集</Button></>}>
       <p>仅批准在编辑区逐集勾选的当前版本，不包含未审核或校验失败的剧本。</p><p>{reviewed.map((item) => `第 ${sourceEpisodes.find((source) => source.id === item.sourceEpisodeId)?.number} 集 r${item.outputRevision}`).join('、')}</p><CheckboxField label="确认以上版本已逐集审阅；批准后仍需单独生成分镜" checked={bulkReviewed} onChange={(_, data) => setBulkReviewed(data.checked === true)} />{error ? <p role="alert">{error}</p> : null}
@@ -214,7 +227,8 @@ export function MotionComicScriptWorkspace({ api, document, model, selectedSourc
   </div>;
 }
 
-function ScriptEditor({ resolveReferenceUrl, task, candidate, approval, original, proposals, proposalLocked, onPropose, onAdopt, onRevert, onRefreshProposals, project, onOpenProjectAssets, source, locked, busy, reviewed, onReviewed, onSave, onApprove, onStoryboard, canStoryboard, onDraftGuardChange }: {
+function ScriptEditor({ onRegenerate, resolveReferenceUrl, task, candidate, approval, original, proposals, proposalLocked, onPropose, onAdopt, onRevert, onRefreshProposals, project, onOpenProjectAssets, source, locked, busy, reviewed, onReviewed, onSave, onApprove, onStoryboard, canStoryboard, onDraftGuardChange }: {
+  onRegenerate: () => void;
   resolveReferenceUrl: (path: string) => Promise<string>;
   task: MotionComicScriptTask; candidate: MotionComicScriptCandidate; source: MotionComicSourceEpisode; locked: boolean; busy: boolean; reviewed: boolean;
   approval?: MotionComicScriptApproval; project: MotionComicPipelineData; onOpenProjectAssets: () => void;
@@ -243,9 +257,13 @@ function ScriptEditor({ resolveReferenceUrl, task, candidate, approval, original
   const editingLocked = locked || busy || saving || conflict;
   const invalidText = draft.scenes.some((scene) => scene.beats.some((beat) => !beat.text.trim()));
   const unresolvedAssets = motionComicScriptAssetSummary(project, draft).unresolved;
+  const issues = scriptDraftIssues(draft, source.sourceText, project, task.instructions);
+  const titleRepair = repairScriptTitleNarration(draft, source.sourceText);
+  const canRepairTitle = JSON.stringify(titleRepair) !== JSON.stringify(draft);
+  const undoReason = conflict ? '服务器版本已变化，请先载入当前版本。' : locked ? '当前版本只读。' : busy || saving ? '正在处理请求，请稍后。' : !history.past.length ? '暂无可撤销的本地修改；编辑剧情后即可撤销。' : '';
   const recovery: MotionComicPlanRecovery = { token: task.id, projectId: task.projectId, sourceText: source.sourceText, instructions: task.instructions,
     title: draft.title, scenes: draft.scenes.length, script: task.status === 'approved' && approval?.assetsConfirmedAt ? approval.script : draft, createdAt: candidate.createdAt, phase: 'script-review', adjustments: candidate.adjustments,
-    needsValidation: changed || conflict || candidate.issues.length > 0 };
+    needsValidation: changed || conflict || issues.length > 0 };
   const localDraft = useWorkspaceDraft({ id: `comic-script-${task.projectId}-${task.id}`, label: `第 ${source.number} 集剧本草稿`, enabled: changed, busy: saving,
     value: { scriptJson: JSON.stringify(draft), revision: baseRevision }, restore: (saved) => {
       try {
@@ -314,15 +332,15 @@ function ScriptEditor({ resolveReferenceUrl, task, candidate, approval, original
   return <div className="comic-script-editor">
     {localError ? <p role="alert" className="motion-comic-plan-error">{localError}</p> : null}
     {conflict ? <div role="alert" className="motion-comic-plan-error">服务器版本已变化，当前本地草稿仍保留，不会自动覆盖。<Button disabled={saving || busy} onClick={discardConflict}>载入当前版本并放弃本地改动</Button></div> : null}
-    {candidate.issues.length ? <details open className="comic-script-issues"><summary>校验问题 ({candidate.issues.length})</summary>{candidate.issues.map((issue, index) => <p key={index}>{issue.path}：{issue.message}</p>)}</details> : null}
+    {issues.length ? <details open className="comic-script-issues" aria-label="当前剧本校验问题"><summary>当前剧本有 {issues.length} 项校验问题，修复后才能批准</summary><div className="comic-script-issues__list">{issues.map((issue, index) => <p key={index}><strong>{scriptIssueLocation(issue.path)}</strong>：{issue.message}</p>)}</div><small>可编辑对应剧情后保存校验，或点击“重新生成剧本”重新改编本集。</small>{!editingLocked && canRepairTitle ? <Button onClick={() => change(titleRepair)}>修复章节标题旁白</Button> : null}{canRepairTitle ? <small>仅将独立章节标题改为不朗读的动作类型，保留文字和原文依据；修改后需保存校验。</small> : null}</details> : null}
     {!locked ? <Toolbar aria-label="本地改稿历史">
-      <Button disabled={editingLocked || !history.past.length} onClick={() => applyHistory({ type: 'undo' })}>撤销本地修改</Button>
-      <Button disabled={editingLocked || !history.future.length} onClick={() => applyHistory({ type: 'redo' })}>重做</Button>
-      <details className="comic-script-history-help"><summary>本地历史说明</summary><small>仅限本次编辑 · 保存或重新载入后清空 · 不回退服务器版本</small></details>
+      <Button title={undoReason || '撤销上一步尚未保存的本地编辑'} disabled={editingLocked || !history.past.length} onClick={() => applyHistory({ type: 'undo' })}>撤销本地修改</Button>
+      <Button icon={<RefreshCw size={14} />} disabled={editingLocked || changed || proposalLocked} title={changed ? '请先保存本地修改，再重新生成。' : '按原文重新生成本集剧本'} onClick={onRegenerate}>重新生成剧本</Button>
+      <small role="status">{changed ? '有未保存修改，请先保存后重新生成。' : undoReason || '可撤销本次尚未保存的编辑；保存后清空本地历史。'}</small>
     </Toolbar> : null}
     <MotionComicScriptReview resolveReferenceUrl={resolveReferenceUrl} originalScript={original?.script} originalRevision={original?.outputRevision} proposalPanel={<MotionComicScriptProposal scopeId={`${project.id}:${task.id}`} onRefresh={async () => (await onRefreshProposals()).proposals?.filter(item => item.taskId === task.id) ?? []} script={candidate.script} revision={candidate.outputRevision} proposals={proposals} disabledReason={proposalDisabledReason} onPropose={async input => { if (!proposalDisabledReason) await onPropose(input); }} onAdopt={adoptProposal} onRevert={revertProposal} />} savedScript={candidate.script} savedRevision={candidate.outputRevision} recovery={recovery} project={project} onOpenProjectAssets={onOpenProjectAssets} episodeNumber={source.number} locked={locked || busy || saving || conflict} reviewed={reviewed} onReviewed={onReviewed} onChange={locked ? undefined : change} statusLabel={task.status === 'approved' && !approval?.assetsConfirmedAt ? '待确认项目资产' : motionComicScriptStatusLabel[task.status]} approvalLabel="我已核对当前版本的剧情、对白、人物地点道具及修改记录，加入待批准列表" workflowNote={approval?.assetsConfirmedAt ? '本集资产身份已确认；分镜待单独生成。' : '批准时确认项目资产身份，分镜待单独生成。'} />
     <Toolbar aria-label="剧本审核操作"><small>{changed ? '本地草稿 · 尚未提交校验' : `已保存 r${candidate.outputRevision}`}</small>
-      {!locked ? <><Button icon={<Save size={14} />} disabled={busy || saving || !changed || invalidText || conflict} onClick={() => void save()}>保存修改并校验</Button><Button variant="primary" icon={<CheckCircle2 size={14} />} disabled={busy || saving || changed || conflict || !reviewed || unresolvedAssets > 0 || candidate.issues.length > 0} onClick={() => void onApprove().catch(() => {})}>批准本集剧本</Button></> : null}
+      {!locked ? <><Button icon={<Save size={14} />} disabled={busy || saving || !changed || invalidText || conflict} onClick={() => void save()}>保存修改并校验</Button><Button variant="primary" icon={<CheckCircle2 size={14} />} disabled={busy || saving || changed || conflict || !reviewed || unresolvedAssets > 0 || issues.length > 0} onClick={() => void onApprove().catch(() => {})}>批准本集剧本</Button></> : null}
       {canStoryboard ? <Button variant="primary" icon={<Film size={14} />} disabled={busy || changed || conflict} onClick={() => void onStoryboard().catch(() => {})}>仅生成本集分镜</Button> : task.storyboardStatus === 'running' ? <span role="status">分镜后台生成中</span> : null}
     </Toolbar>
   </div>;

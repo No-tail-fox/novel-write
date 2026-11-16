@@ -225,6 +225,12 @@ export function stripConfigSecrets(config: AppConfig): AppConfig {
   return stripped;
 }
 
+/** Normalize a pasted credential: trim whitespace and strip a redundant "Bearer " prefix. */
+export function normalizePastedSecret(value: string): string {
+  const trimmed = value.trim();
+  return /^bearer\s+/iu.test(trimmed) ? trimmed.replace(/^bearer\s+/iu, '').trim() : trimmed;
+}
+
 export function applyConfigSecrets(config: AppConfig, secrets: ConfigSecrets): AppConfig {
   for (const [id, value] of Object.entries(secrets)) {
     if (!isSecretId(id) || typeof value !== 'string') {
@@ -233,7 +239,7 @@ export function applyConfigSecrets(config: AppConfig, secrets: ConfigSecrets): A
   }
   const applied = cloneConfig(config);
   for (const slot of secretSlots(applied)) {
-    if (Object.prototype.hasOwnProperty.call(secrets, slot.id)) slot.write(secrets[slot.id] ?? '');
+    if (Object.prototype.hasOwnProperty.call(secrets, slot.id)) slot.write(normalizePastedSecret(secrets[slot.id] ?? ''));
   }
   return applied;
 }

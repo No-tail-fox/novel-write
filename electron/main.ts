@@ -32,6 +32,7 @@ import { generateMotionComicEpisodePlan } from '../src/shared/motion-comic-episo
 import { applyMotionComicPlan as applyGeneratedMotionComicPlan, isUntouchedMotionComicStarter, type MotionComicApplyPlanInput, type MotionComicPlanInput } from '../src/shared/motion-comic-planning';
 import { MotionComicPlanningService } from './motion-comic-planning-service';
 import { MotionComicScriptBatchService } from './motion-comic-script-batch-service';
+import { motionComicRuntimeProvider } from '../src/shared/motion-comic-script-batch';
 import { VoxProductionService, voxInputHash } from './vox-production-service';
 import { createVoxProductionReceipt, voxReceiptBeforeHash, voxReceiptContentHash } from './vox-production-receipt';
 import { createVoxProductionRuntime } from './vox-production-runtime';
@@ -425,7 +426,7 @@ async function initializeDatabase(): Promise<FileDatabase> {
       await requireDesktopGeneration();
       const runtime = await getProjectRuntimeConfig(projectId);
       const llmConfig = options?.disableFallback ? { ...runtime.llm, fallbackModels: [] } : runtime.llm;
-      return { provider: `${runtime.llm.provider}:${runtime.llm.baseUrl}`, model: runtime.llm.model, llm: createConfiguredJsonLlm(llmConfig) };
+      return { provider: motionComicRuntimeProvider(runtime.llm), model: runtime.llm.model, llm: createConfiguredJsonLlm(llmConfig) };
     });
     await scriptService.restore();
     if (isShuttingDown) throw new Error('DATABASE_INITIALIZATION_CANCELLED: Application shutdown started during job recovery.');
@@ -4167,7 +4168,7 @@ trustedHandle('motion-comic:scripts-enqueue', async (_event, input) => {
   const database = await getDb();
   const runtime = await getProjectRuntimeConfig(input.id);
   const snapshot = await database.motionComicScripts.enqueue(input, {
-    provider: `${runtime.llm.provider}:${runtime.llm.baseUrl}`, model: runtime.llm.model,
+    provider: motionComicRuntimeProvider(runtime.llm), model: runtime.llm.model,
   });
   motionComicScriptService!.start(input.id);
   return snapshot;
