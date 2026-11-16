@@ -7,19 +7,19 @@ describe('two-step short video workbench with a separate creation entry', () => 
 
     expect(page).toContain("import '../../styles/features/new-task.css';");
     expect(page).toContain("type NewTaskStage = 'material' | 'creative' | 'output';");
-    expect(page).toContain("const [activeStage, setActiveStage] = useState<NewTaskStage>('material');");
+    expect(page).toContain("const [activeStage, setActiveStage] = useState<NewTaskStage>(initialChoosingType ? 'material' : 'creative');");
     expect(page).toContain('data-new-task-workbench');
     expect(page).toContain('data-new-task-stage={activeStage}');
     expect(page).not.toContain("{ id: 'material', label: '制作类型'");
-    expect(page).toContain('const [choosingType, setChoosingType] = useState(true)');
+    expect(page).toContain('const [choosingType, setChoosingType] = useState(initialChoosingType)');
     expect(page).toContain('data-new-task-choosing-type');
     expect(page).toContain("{ id: 'creative', label: '内容'");
     expect(page).toContain("{ id: 'output', label: '制作设置'");
     expect(page).toContain('className="new-task-type-step"');
     expect(page).toContain('label="新建短片步骤"');
-    expect(page).toContain('value={activeStage}');
-    expect(page).toContain('value: stage.id');
-    expect(page).toContain('onChange={(value) => setActiveStage(value as NewTaskStage)}');
+    expect(page).toContain('new-task-create-steps creation-page-steps');
+    expect(page).toContain('aria-current=');
+    expect(page).toContain('onClick={() => setActiveStage(stage.id)}');
     expect(page).toContain('data-new-task-summary');
     expect(page).toContain('处理模式');
     expect(page).toContain('目标长度');

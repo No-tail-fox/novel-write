@@ -27,7 +27,11 @@ describe('final film gate wiring contract', () => {
   it('main.ts passes the Lemo film expectation and project folder to finalizeLemoUpstreamFilm; the duration hard gate stays', async () => {
     const main = await readFile(resolve(__dirname, '..', 'electron', 'main.ts'), 'utf8');
     const call = main.slice(main.indexOf('const mux = await finalizeLemoUpstreamFilm(result.outputPath'), main.indexOf("console.warn('[lemo-mux]'"));
-    expect(call).toContain('qualityGate: { expected: { durationMs: result.durationMs, width: result.width, height: result.height, audioExpected: true }, lemoProjectDir: document.upstreamFilm.directory }');
+    expect(call).toContain('audioExpected: document.productionRun?.settings.narration !== false || Boolean(document.productionRun?.settings.music)');
+    expect(main).toContain('summarizeFinalFilmGate(mux.qualityGate)');
+    const qa = await readFile(resolve(__dirname, '..', 'scripts', 'qa-lemo-upstream-production.ts'), 'utf8');
+    expect(qa).toContain('finalizeLemoUpstreamFilm(result.outputPath');
+    expect(qa).toContain('qualityGate: { expected:');
     const renderer = await readFile(resolve(__dirname, '..', 'electron', 'lemo-upstream-renderer.ts'), 'utf8');
     expect(renderer).toContain('LEMO_EXPORT_DURATION_MISMATCH');
   });
@@ -117,6 +121,9 @@ describe.skipIf(!available)('final film gate runner with the bundled imageio ffm
         '-filter_complex', '[1:a]volume=-20dB[a]', '-map', '0:v', '-map', '[a]', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', ...COLOR, '-c:a', 'aac', quiet]);
       const quietReport = await runFinalFilmGate({ route: 'template', filmPath: quiet, expected, ffmpegPath: ffmpeg });
       expect(status(quietReport, 'loudness')).toBe('fail');
+      const silentDesign = await runFinalFilmGate({ route: 'lemo', filmPath: quiet, expected: { ...expected, audioExpected: false }, ffmpegPath: ffmpeg });
+      expect(status(silentDesign, 'audio')).toBe('pass');
+      expect(status(silentDesign, 'loudness')).toBe('skip');
       const authored = await runFinalFilmGate({ route: 'template', filmPath: quiet, expected: { ...expected, loudnessTarget: false }, ffmpegPath: ffmpeg });
       expect(status(authored, 'loudness')).toBe('skip');
       expect(authored.measurements?.loudness).toBeNull();

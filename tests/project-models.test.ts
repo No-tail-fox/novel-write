@@ -114,6 +114,24 @@ describe('project-owned model selection', () => {
     } finally { await db.close(); }
   });
 
+  it('changes comic defaults during background work without changing task or script state', async () => {
+    const db = await FileDatabase.open(await databaseFile());
+    try {
+      await db.upsertConfig(configs());
+      const task = await db.createMotionComicTask({ title: '可切换模型', premise: '测试。', projectModels: modelsA });
+      await db.updateTask(task.id, { status: 'running' });
+      const release = db.beginProjectActivity(task.id, '生成剧本');
+      try {
+        const before = await db.getTaskDetail(task.id);
+        await db.setProjectModels(task.id, modelsB);
+        const after = await db.getTaskDetail(task.id);
+        expect(after?.projectModels).toEqual(modelsB);
+        expect(after?.status).toBe('running');
+        expect(after?.pipelineData).toEqual(before?.pipelineData);
+      } finally { release(); }
+    } finally { await db.close(); }
+  });
+
   it('persists standalone image attribution in summaries and retries the original profile after defaults change', async () => {
     const db = await FileDatabase.open(await databaseFile());
     try {

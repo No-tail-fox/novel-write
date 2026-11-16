@@ -8,12 +8,12 @@
 
 | 月份 | 目录记录 | 正文层面阅读 | 本月对我们的主要启发 | 逐篇记录 |
 |---|---:|---:|---|---|
-| 3 月 | 42 | 7 | 视频定制可作为服务；YouTube 同时存在成功与失去变现资格的案例 | [3—4 月清单与重点正文](/I:/opc/docs/research/2026-09-15-monetization/march-april.md) |
-| 4 月 | 33 | 8 | 教学导入视频是新细分；完整商品还包含 PPT、教案与逐字稿 | [3—4 月清单与重点正文](/I:/opc/docs/research/2026-09-15-monetization/march-april.md) |
-| 5 月 | 21 | 9 | 图书生意依赖读者需求和商品；企业服务需要既有行业知识 | [5—6 月清单与重点正文](/I:/opc/docs/research/2026-09-15-monetization/may-june.md) |
-| 6 月 | 15 | 11 | 图书生产流程与我们接近；ToB 视频应先确认样片再批量 | [5—6 月清单与重点正文](/I:/opc/docs/research/2026-09-15-monetization/may-june.md) |
-| 7 月 | 25 | 25 | 商家素材库、可编辑草稿、图书视频、客户培训最可复用 | [7 月逐篇判断](/I:/opc/docs/research/2026-09-15-monetization/july.md) |
-| 8 月 | 22 | 21 | 图书有小规模成交样本；剧情带货作者自己也提示当期投入产出恶化 | [8 月逐篇判断](/I:/opc/docs/research/2026-09-15-monetization/august.md) |
+| 3 月 | 42 | 7 | 视频定制可作为服务；YouTube 同时存在成功与失去变现资格的案例 | [3—4 月清单与重点正文](/I:/项目/story-dream/docs/research/2026-09-15-monetization/march-april.md) |
+| 4 月 | 33 | 8 | 教学导入视频是新细分；完整商品还包含 PPT、教案与逐字稿 | [3—4 月清单与重点正文](/I:/项目/story-dream/docs/research/2026-09-15-monetization/march-april.md) |
+| 5 月 | 21 | 9 | 图书生意依赖读者需求和商品；企业服务需要既有行业知识 | [5—6 月清单与重点正文](/I:/项目/story-dream/docs/research/2026-09-15-monetization/may-june.md) |
+| 6 月 | 15 | 11 | 图书生产流程与我们接近；ToB 视频应先确认样片再批量 | [5—6 月清单与重点正文](/I:/项目/story-dream/docs/research/2026-09-15-monetization/may-june.md) |
+| 7 月 | 25 | 25 | 商家素材库、可编辑草稿、图书视频、客户培训最可复用 | [7 月逐篇判断](/I:/项目/story-dream/docs/research/2026-09-15-monetization/july.md) |
+| 8 月 | 22 | 21 | 图书有小规模成交样本；剧情带货作者自己也提示当期投入产出恶化 | [8 月逐篇判断](/I:/项目/story-dream/docs/research/2026-09-15-monetization/august.md) |
 | 合计 | **158** | **81** | 计数单位为目录条目，未去重 | |
 
 判断依据是“谁付钱、买到什么、软件能承担哪段、仍需补什么”。这里的“能做”表示适合进入真实样片和业务验证，尚不表示已稳定交付。
@@ -32,7 +32,7 @@
 | 暂缓 | 教师 PPT 商城、公众号图文矩阵、自动报告/小程序、通用 SaaS | 各自需要独立的可交付产品 | 只复用部分文案、生图与开发经验 | 正式图文/文章生产未接通，原生 PPTX、订单、自动交付和计费也未形成现有闭环 |
 | 不作当前主线 | 无货源/跨境自营电商、旅游、洗护、美业系统、卡券导航等 | 主要商品或服务在软件之外 | 最多辅助宣传素材 | 供应链、行业服务、门店、获客或交易系统才是核心；不因标题收益高而扩功能 |
 
-现有能力的核查详情见[软件能力与限制](/I:/opc/docs/research/2026-09-15-monetization/software-capabilities.md)。有四个边界会直接影响选项目：图书选品来自当当公开书目和评论，不代表实际可带商品与佣金；图文/文章目前是独立原型；可编辑 PPTX 尚不是 StoryDream 已核实的生产能力；生成和渲染代码存在，但近期部分验证使用模拟调用，剪映草稿还需在真实编辑器中打开、播放并导出验收。本次没有新生成付费样片。
+现有能力的核查详情见[软件能力与限制](/I:/项目/story-dream/docs/research/2026-09-15-monetization/software-capabilities.md)。有四个边界会直接影响选项目：图书选品来自当当公开书目和评论，不代表实际可带商品与佣金；图文/文章目前是独立原型；可编辑 PPTX 尚不是 StoryDream 已核实的生产能力；生成和渲染代码存在，但近期部分验证使用模拟调用，剪映草稿还需在真实编辑器中打开、播放并导出验收。本次没有新生成付费样片。
 
 **图书视频可以用最少的业务改造开展验证。** 5—8 月出现了从长期经营到初学起步的多种样本：[5 月三年图书经营复盘](https://xw5oofizcas.feishu.cn/wiki/Ya7pwc1GjiMevJk9ZeWcxLjDnWe)、[6 月 23 天佣金复盘](https://my.feishu.cn/wiki/T2Y9wcI2DiyRcNkxcbPcmzD7nHf)、[7 月自动化制作](https://my.feishu.cn/wiki/JVNmwJd18iSIK8kmUUKclk4cnpf)、[8 月首周案例](https://my.feishu.cn/wiki/RkuUwnVZViBKmMkZoiWc5fnWn8f)。它们共同支持的做法是：选定读者需求，核实书和商品，人工确认内容，再制作与复盘。
 

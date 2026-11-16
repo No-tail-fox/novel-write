@@ -1,4 +1,4 @@
-import { Clapperboard, Code2, Images, LayoutTemplate, Music, WandSparkles } from 'lucide-react';
+import { ArrowUpRight, Clapperboard, Code2, Images, LayoutTemplate, Music, WandSparkles } from 'lucide-react';
 import type { ShellView } from '../../shared/types';
 import { Button } from '../../ui';
 
@@ -20,7 +20,7 @@ export function taskCreationTarget(type: TaskCreationType): ShellView {
   if (type === 'motion-comic') return 'motion-comic';
   if (type === 'html-video') return 'html-video';
   if (type === 'music-mv') return 'music-mv';
-  return 'new-task';
+  return 'short-video';
 }
 
 export function TaskCreationTypePicker({
@@ -45,7 +45,6 @@ export function TaskCreationTypePicker({
               density="compact"
               aria-pressed={type.id === activeType}
               data-task-creation-type={type.id}
-              icon={<Icon size={16} />}
               onClick={() => {
                 if (onSelect) {
                   onSelect(type.id);
@@ -54,7 +53,8 @@ export function TaskCreationTypePicker({
                 navigate(taskCreationTarget(type.id));
               }}
             >
-              <span><strong>{type.label}</strong><small>{type.description}</small></span>
+              <img className="creation-type-art" src={`./creation-types/${type.id}.webp`} width={512} height={341} alt="" />
+              <span className="creation-type-copy"><span className="creation-type-title"><Icon size={17} aria-hidden="true" /><strong>{type.label}</strong><ArrowUpRight size={16} aria-hidden="true" /></span><small>{type.description}</small></span>
             </Button>
           );
         })}

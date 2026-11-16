@@ -117,10 +117,10 @@ export type MotionComicApplyPlanInput = z.infer<typeof motionComicApplyPlanInput
 export interface MotionComicPlanningIssue {
   path: string;
   message: string;
-  code?: 'DIALOGUE_SPEAKER_MISSING' | 'CHARACTER_REFERENCE_INVALID';
+  code?: 'DIALOGUE_SPEAKER_MISSING' | 'CHARACTER_REFERENCE_INVALID' | 'NARRATION_FORBIDDEN' | 'STRUCTURAL_TITLE_NARRATED';
 }
 export const motionComicPlanningIssueSchema = z.object({
-  path: key, message: text(2_000), code: z.enum(['DIALOGUE_SPEAKER_MISSING', 'CHARACTER_REFERENCE_INVALID']).optional(),
+  path: key, message: text(2_000), code: z.enum(['DIALOGUE_SPEAKER_MISSING', 'CHARACTER_REFERENCE_INVALID', 'NARRATION_FORBIDDEN', 'STRUCTURAL_TITLE_NARRATED']).optional(),
 }).strict();
 export const motionComicScriptFailureSchema = z.object({
   token: z.string().uuid(), projectId: key, sourceText: text(MOTION_COMIC_PLAN_MAX_SOURCE_LENGTH),
@@ -240,8 +240,15 @@ function duplicates(values: string[], path: string, issues: MotionComicPlanningI
   values.forEach((value) => { if (seen.has(value)) issues.push({ path, message: `${label}重复：${value}` }); seen.add(value); });
 }
 
-export function validateMotionComicScriptDraft(script: MotionComicScriptDraft, sourceUnits: MotionComicSourceUnit[], document?: MotionComicPipelineData): MotionComicPlanningIssue[] {
+/** Explicit user constraints are checked after normalization, repair, resume and manual edits. */
+export function motionComicNarrationForbidden(instructions = ''): boolean {
+  return /(?:不要|禁止|不加|不添加|不引入|不使用|不得|不需要|不新增|无)[^。；;\n]{0,16}(?:旁白|画外音)|(?:旁白|画外音)\s*[:：]?\s*(?:无|不要|禁止)|\b(?:no|without)\s+(?:voice[- ]?over|narration)\b/iu.test(instructions);
+}
+
+export function validateMotionComicScriptDraft(script: MotionComicScriptDraft, sourceUnits: MotionComicSourceUnit[], document?: MotionComicPipelineData, instructions = ''): MotionComicPlanningIssue[] {
   const issues: MotionComicPlanningIssue[] = [];
+  const noNarration = motionComicNarrationForbidden(instructions);
+  const titles = sourceUnits.filter(unit => /^(?:第[零〇一二三四五六七八九十百千\d]+[集章节幕回]|(?:episode|chapter)\s+\d+)\s*[^。！？!?\n]{0,60}$/iu.test(unit.text.trim())).map(unit => unit.text.trim());
   const units = new Set(sourceUnits.map((unit) => unit.id));
   const unitOrder = new Map(sourceUnits.map((unit, index) => [unit.id, index] as const));
   const covered = new Set<string>();
@@ -291,6 +298,8 @@ export function validateMotionComicScriptDraft(script: MotionComicScriptDraft, s
     if (!locationKeys.has(scene.locationKey)) issues.push({ path: `script.scenes[${si}].locationKey`, message: `场景引用不存在：${scene.locationKey}` });
     scene.beats.forEach((beat, bi) => {
       const path = `script.scenes[${si}].beats[${bi}]`;
+      if (beat.kind === 'narration' && noNarration) issues.push({ path, code: 'NARRATION_FORBIDDEN', message: '本次改编明确禁止旁白/画外音；请将环境和动作保留为 action，章节标题仅作结构元数据，不得朗读。' });
+      if (beat.kind === 'narration' && titles.some(title => beat.text.trim().startsWith(title))) issues.push({ path, code: 'STRUCTURAL_TITLE_NARRATED', message: '章节或分集标题不得成为旁白；标题仅作结构元数据，原文覆盖可保留在 action 节拍。' });
       if (beat.kind === 'dialogue' && !beat.characterKey) issues.push({ path, code: 'DIALOGUE_SPEAKER_MISSING', message: '对白必须指定说话角色；仅确认是旁白时使用 narration，不得把未知说话人的对白直接改成旁白。' });
       if (beat.characterKey && !characterKeys.has(beat.characterKey)) issues.push({ path: `${path}.characterKey`, code: 'CHARACTER_REFERENCE_INVALID', message: `角色引用不存在：${beat.characterKey}` });
       duplicates(beat.sourceUnitIds, `${path}.sourceUnitIds`, issues, '原文引用');
@@ -525,7 +534,7 @@ export function applyMotionComicPlan(
       evidence.shotClaims.push({ shotId: id, beatIds: sourceBeatIds });
       timelineClips.push({ id: `clip-${id}`, shotId: id, startMs: timelineOffset, durationMs, assetVersionIds: [], subtitleCueIds: cueIds, source: 'ai-video' });
       timelineOffset += durationMs;
-      return { id, episodeId, sceneId, index: shotIndex + 1, title: item.title, durationMs, prompt: item.prompt, motionPrompt: item.motionPrompt, framing: item.framing, characterLookIds: item.characterLookKeys.map((k) => lookIds.get(k)!), sceneAssetId: locationIds.get(scene.locationKey)!, propAssetIds: item.propKeys.map((k) => propIds.get(k)!), renderStrategy: 'remote-video', videoProduction: {version:1,referenceMode:'frames',audioMode:'post-mix'}, dialogueCueIds: cueIds, continuity: item.continuity, sourceBeatIds };
+      return { id, episodeId, sceneId, index: shotIndex + 1, title: item.title, durationMs, prompt: item.prompt, motionPrompt: item.motionPrompt, framing: item.framing, characterLookIds: item.characterLookKeys.map((k) => lookIds.get(k)!), sceneAssetId: locationIds.get(scene.locationKey)!, propAssetIds: item.propKeys.map((k) => propIds.get(k)!), renderStrategy: 'remote-video', videoProduction: {version:1,referenceMode:'references',audioMode:'post-mix'}, dialogueCueIds: cueIds, continuity: item.continuity, sourceBeatIds };
     });
     return {
       id: sceneId,

@@ -11,6 +11,8 @@ export default tseslint.config(
       'vendor/**', '.artifacts/**', '.worktrees/**', '.tmp/**', '.tmp-*/**', '.codex-*/**', 'tmp/**',
       'output/**', 'outputs/**', 'projects/**', 'free-api-router/**', 'services/**/node_modules/**',
       '**/*.min.js', 'public/**', 'resources/**',
+      // Browser QA output bundles include third-party runtime code, not maintained sources.
+      'tests/qa-history-export-output/**',
     ],
   },
   {

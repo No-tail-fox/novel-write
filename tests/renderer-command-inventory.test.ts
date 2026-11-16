@@ -6,6 +6,7 @@ import { SHELL_VIEWS } from '../src/shared/types';
 import { readRendererSources } from './helpers/renderer-source';
 
 const queryOnlyMethods = new Set([
+  'sha256File', // Read-only file digest used to identify imported references; never mutates files.
   'getPixelleCatalog', // Local read-only template metadata; never starts generation.
   'getVoxAnimationRuntime', 'readVoxAnimationAsset', 'listVoxTemplates',
   'getLicenseStatus', 'getUpdateStatus', 'getMotionComicScripts',
@@ -17,6 +18,8 @@ const queryOnlyMethods = new Set([
   'getPromptTemplateDetail', 'listDraftTemplates', 'getDraftTemplateDetail', 'listMinimaxCloneVoices',
   'listBookSelections', 'discoverBooks', 'listPersonAssets', 'listPersonAssetImages', 'getPersonAssetUsage', 'restorePersonAsset', 'getHtmlVideoMediaUrl', 'getTaskMediaUrl',
   'getFinalFilmGate', // E-5: read-only quality-gate.json view, loaded with the final film; never re-runs the gate.
+  'getVoxAgentActivity', // Read-only Lemo Agent journal summary for the process view; never dispatches a request.
+  'getVoxPiActivity', // Read-only PI activity polling for the process view; never dispatches a request.
   'getHtmlVideoCompositionSource', 'lintHtmlVideoCompositionSource',
   'listLibraryAssets', 'getLibraryAsset',
   'getViralAnalysisResult', 'getTaskArtifacts', 'readAssetDataUrl', 'getJianyingEffectCatalog', 'listSceneVideoLibrary', 'onAppDelta',
@@ -118,6 +121,55 @@ describe('renderer command inventory', () => {
     expect(candidates[0].text).toContain('disabled:cancelling');
     expect(candidates[0].text).toContain('disabled={busy}');
   });
+  it('resolves only referenced same-source const child labels and retains exact control evidence', () => {
+    const source = `
+      const unrelatedLabel = '删除视频';
+      const conditionLabel = '条件说明';
+      const idleLabel = '生成视频';
+      function VideoButton() {
+        const videoPrimaryLabel = conditionLabel ? '生成中…' : idleLabel;
+        return <Button onClick={generateVideo} disabled={videoBusy}>{videoPrimaryLabel}</Button>;
+      }
+      function OtherButton() {
+        const videoPrimaryLabel = '其他操作';
+        return <Button onClick={otherAction} disabled={otherBusy}>{videoPrimaryLabel}</Button>;
+      }
+      const cyclicLabel = cyclicAlias;
+      const cyclicAlias = cyclicLabel;
+      const cycleButton = <Button onClick={cycleAction} disabled={cycleBusy}>{cyclicLabel}</Button>;
+    `;
+    const path = 'const-child-labels.tsx';
+    const visible = visibleJsxText(source, path);
+    expect(visible).toEqual(['生成中…', '生成视频', '其他操作']);
+    expect(visible).not.toContain('删除视频');
+    expect(visible).not.toContain('条件说明');
+    const controls = jsxCommandControls(source, path, ['generateVideo'], '生成视频');
+    expect(controls).toHaveLength(1);
+    expect(controls[0]).toContain('<Button onClick={generateVideo} disabled={videoBusy}>{videoPrimaryLabel}</Button>');
+    expect(controls[0]).toContain('disabled={videoBusy}');
+    expect(jsxCommandControls(source, path, ['generateVideo'], '删除视频')).toEqual([]);
+    expect(jsxCommandControls(source, path, ['generateVideo'], '其他操作')).toEqual([]);
+    expect(jsxCommandControls(source, path, ['otherAction'], '生成视频')).toEqual([]);
+    expect(jsxCommandControls(source, path, ['cycleAction'], '生成视频')).toEqual([]);
+  });
+  it('distinguishes duplicate handler and label controls by their own disabled evidence', () => {
+    const source = `
+      const videoPrimaryLabel = busy ? '生成中…' : '生成视频';
+      const decoyLabel = 'disabled={missingLock}';
+      const controls = <>
+        <Button onClick={generateVideo} disabled={primaryLock}>{videoPrimaryLabel}{decoyLabel}</Button>
+        <Button onClick={generateVideo} disabled={secondaryLock}>{videoPrimaryLabel}</Button>
+      </>;
+    `;
+    const path = 'duplicate-disabled-controls.tsx';
+    expect(jsxCommandControls(source, path, ['generateVideo'], '生成视频')).toHaveLength(2);
+    for (const disabled of ['disabled={primaryLock}', 'disabled={secondaryLock}']) {
+      const matches = jsxCommandControls(source, path, ['generateVideo'], '生成视频', disabled);
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toContain(disabled);
+    }
+    expect(jsxCommandControls(source, path, ['generateVideo'], '生成视频', 'disabled={missingLock}')).toEqual([]);
+  });
   it('keeps the StoryDreamApi type and real preload method sets identical', async () => {
     const [apiSource, preloadSource, viralSource] = await Promise.all([
       readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8'),
@@ -213,7 +265,7 @@ describe('renderer command inventory', () => {
         for (const field of ['binding', 'control', 'disabled', 'loading', 'error', 'test'] as const) {
           expect(owner[field].trim().length, `${method}.${owner.handler}.${field}`).toBeGreaterThan(0);
         }
-        const controls = jsxCommandControls(controlSource, owner.controlSource, [owner.binding], owner.control);
+        const controls = jsxCommandControls(controlSource, owner.controlSource, [owner.binding], owner.control, owner.disabled);
         expect.soft(controls, `${method} exact JSX control in ${owner.controlSource}: ${owner.binding} / ${owner.control}`).toHaveLength(1);
         const control = controls[0] ?? '';
         expect.soft(control.includes(owner.disabled), `${method} disabled evidence must belong to ${owner.control}: ${owner.disabled}`).toBe(true);
@@ -257,7 +309,7 @@ describe('renderer command inventory', () => {
       .toEqual(actualOwners.get('savePromptTemplate'));
     for (const owner of owners) {
       const source = sources.requiredFile(owner.source);
-      const controls = jsxCommandControls(sources.requiredFile(owner.controlSource), owner.controlSource, [owner.binding], owner.control);
+      const controls = jsxCommandControls(sources.requiredFile(owner.controlSource), owner.controlSource, [owner.binding], owner.control, owner.disabled);
       expect(controls, owner.binding).toHaveLength(1);
       expect(controls[0]).toContain(owner.disabled);
       expect(namedFunctionSource(source, owner.source, owner.handler)).toMatch(/api\.savePromptTemplate\s*\(/u);
@@ -388,7 +440,11 @@ function visibleJsxText(source: string, path: string): string[] {
         values.push(node.initializer.expression.getText(sourceFile));
       }
     } else if (ts.isJsxExpression(node) && node.expression) {
-      collectExpressionText(node.expression, values);
+      if (ts.isIdentifier(node.expression) && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))) {
+        values.push(...constChildExpressionText(node.expression));
+      } else {
+        collectExpressionText(node.expression, values);
+      }
     } else if (ts.isPropertyAssignment(node)
       && node.name.getText(sourceFile) === 'label'
       && ts.isStringLiteral(node.initializer)) {
@@ -398,6 +454,40 @@ function visibleJsxText(source: string, path: string): string[] {
   }
   visit(sourceFile);
   return values;
+}
+
+// Resolve only lexical const references reached from a JSX child, never a file-wide
+// string pool. Conditions are runtime decisions; only their possible labels count.
+function constChildExpressionText(expression: ts.Expression, resolving = new Set<ts.VariableDeclaration>()): string[] {
+  const node = unwrapExpression(expression);
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isConditionalExpression(node)) {
+    return [...constChildExpressionText(node.whenTrue, resolving), ...constChildExpressionText(node.whenFalse, resolving)];
+  }
+  if (!ts.isIdentifier(node)) return [];
+  for (let scope: ts.Node | undefined = node.parent; scope; scope = scope.parent) {
+    if (ts.isFunctionLike(scope) && scope.parameters.some(parameter => bindingContainsName(parameter.name, node.text))) return [];
+    if (!ts.isBlock(scope) && !ts.isSourceFile(scope)) continue;
+    for (const statement of scope.statements) {
+      if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === node.text) return [];
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations) {
+        if (!bindingContainsName(declaration.name, node.text)) continue;
+        if (!(statement.declarationList.flags & ts.NodeFlags.Const)
+          || !ts.isIdentifier(declaration.name) || !declaration.initializer || resolving.has(declaration)) return [];
+        const next = new Set(resolving);
+        next.add(declaration);
+        return constChildExpressionText(declaration.initializer, next);
+      }
+    }
+  }
+  return [];
+}
+
+function bindingContainsName(name: ts.BindingName, value: string): boolean {
+  return ts.isIdentifier(name)
+    ? name.text === value
+    : name.elements.some(element => ts.isBindingElement(element) && bindingContainsName(element.name, value));
 }
 
 function collectExpressionText(expression: ts.Expression, values: string[]): void {
@@ -524,16 +614,17 @@ function namedFunctionIdentities(sourceFile: ts.SourceFile): ReadonlyMap<number,
   return identities;
 }
 
-const jsxCommandControlCandidatesCache = new Map<string, ReadonlyArray<{ eventBindings: string; text: string }>>();
+const jsxCommandControlCandidatesCache = new Map<string, ReadonlyArray<{ eventBindings: string; text: string; rawText: string }>>();
 
-function jsxCommandControls(source: string, path: string, bindings: string[], control?: string): string[] {
+function jsxCommandControls(source: string, path: string, bindings: string[], control?: string, disabled?: string): string[] {
   let candidates = jsxCommandControlCandidatesCache.get(path);
   if (!candidates) {
     candidates = indexJsxCommandControlCandidates(source, path);
     jsxCommandControlCandidatesCache.set(path, candidates);
   }
   return candidates
-    .filter(({ eventBindings, text }) => bindings.some((binding) => eventBindings.includes(binding)) && (!control || text.includes(control)))
+    .filter(({ eventBindings, text, rawText }) => bindings.some((binding) => eventBindings.includes(binding))
+      && (!control || text.includes(control)) && (!disabled || rawText.includes(disabled)))
     .map(({ text }) => text);
 }
 
@@ -563,9 +654,9 @@ function menuOptionObjects(expression: ts.Expression): ts.ObjectLiteralExpressio
   return [];
 }
 
-function indexJsxCommandControlCandidates(source: string, path: string): ReadonlyArray<{ eventBindings: string; text: string }> {
+function indexJsxCommandControlCandidates(source: string, path: string): ReadonlyArray<{ eventBindings: string; text: string; rawText: string }> {
   const sourceFile = parsedSourceFile(source, path);
-  const controls: Array<{ eventBindings: string; text: string }> = [];
+  const controls: Array<{ eventBindings: string; text: string; rawText: string }> = [];
   function visit(node: ts.Node): void {
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
       const opening = ts.isJsxElement(node) ? node.openingElement : node;
@@ -574,8 +665,18 @@ function indexJsxCommandControlCandidates(source: string, path: string): Readonl
         .filter((attribute) => /^on[A-Z]/u.test(attribute.name.getText(sourceFile)))
         .map((attribute) => attribute.getText(sourceFile))
         .join(' ');
-      const text = node.getText(sourceFile);
-      if (eventBindings) controls.push({ eventBindings, text });
+      const childLabels: string[] = [];
+      const collectChildLabels = (child: ts.Node): void => {
+        if (ts.isJsxExpression(child) && child.expression && ts.isIdentifier(child.expression)
+          && (ts.isJsxElement(child.parent) || ts.isJsxFragment(child.parent))) {
+          childLabels.push(...constChildExpressionText(child.expression));
+        }
+        ts.forEachChild(child, collectChildLabels);
+      };
+      if (eventBindings) collectChildLabels(node);
+      const rawText = node.getText(sourceFile);
+      const text = [rawText, ...childLabels].join('\n');
+      if (eventBindings) controls.push({ eventBindings, text, rawText });
       // Project-owned Menu routes actions through option objects, not JSX onClick.
       // Keep each option separate, with its real trigger's disabled state.
       if (opening.tagName.getText(sourceFile) === 'Menu') {
@@ -586,7 +687,10 @@ function indexJsxCommandControlCandidates(source: string, path: string): Readonl
         if (expression && ts.isArrayLiteralExpression(expression)) {
           for (const option of menuOptionObjects(expression)) {
             const onSelect = option.properties.filter(ts.isPropertyAssignment).find(property => property.name.getText(sourceFile) === 'onSelect');
-            if (onSelect) controls.push({ eventBindings: onSelect.getText(sourceFile), text: option.getText(sourceFile) + ' ' + (trigger?.getText(sourceFile) ?? '') });
+            if (onSelect) {
+              const rawText = option.getText(sourceFile) + ' ' + (trigger?.getText(sourceFile) ?? '');
+              controls.push({ eventBindings: onSelect.getText(sourceFile), text: rawText, rawText });
+            }
           }
         }
       }

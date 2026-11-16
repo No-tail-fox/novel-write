@@ -51,6 +51,8 @@ export interface ProductionNarrationAlignmentScene {
   audioAssetVersionIds: readonly string[];
   /** Effective measured duration for each source occurrence, after trims. */
   audioDurationsMs?: readonly (number | undefined)[];
+  /** Mixed video audio has no measured speech boundaries; container duration is not speech timing. */
+  speechTimingUnavailable?: boolean;
   /** Muted narration can be compared for pace without claiming audible truncation. */
   checkSceneOverflow?: boolean;
 }
@@ -90,6 +92,13 @@ export function measureProductionNarrationAlignment(
     const plannedCharactersPerSecond = count > 0 ? count / (plannedDurationMs / 1000) : undefined;
     const sourceIds = scene.audioAssetVersionIds.filter(Boolean);
     const ids = [...new Set(sourceIds)];
+    if (scene.speechTimingUnavailable) {
+      return {
+        shotId: scene.id, plannedDurationMs, graphemeCount: count, plannedCharactersPerSecond,
+        status: 'unavailable', audioAssetVersionIds: ids,
+        detail: '原生音画缺少语音时间戳，视频容器时长不能代表对白时长；请人工核对台词、口型与字幕时序。',
+      };
+    }
     const actualDurationMs = sourceIds.reduce((sum, id, index) => {
       const duration = scene.audioDurationsMs?.[index] ?? assets.get(id)?.durationMs;
       return sum + (positiveFinite(duration) ? duration : 0);

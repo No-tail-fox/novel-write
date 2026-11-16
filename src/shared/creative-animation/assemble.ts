@@ -1,7 +1,7 @@
 import { rebuildEditorialTimeline, type EditorialCollagePipelineData as Document, type EditorialCollageShot } from '../editorial-collage';
 import { createEditorialCuePlan } from '../editorial-cue-plan';
 import { createVoxAnimation, voxPropsSchema, voxTemplate } from '../vox-animation';
-import type { VoxProductionSettings } from '../vox-production';
+import { voxShotLocked, type VoxProductionSettings } from '../vox-production';
 import { voxDataPresentation } from '../vox-data-chart';
 import { resolveCreativeStyle, LEMO_REVISION } from './styles';
 import { CREATIVE_RENDER_REVISION, creativeLayout, creativeRenderSpec } from './render-spec';
@@ -61,7 +61,7 @@ export function assembleCreativeShot(d: Document, shot: EditorialCollageShot, se
           if (!hasCoordinates) props.dataPresentation = voxDataPresentation(
             settings.data.map(row => row.label), cues,
             d.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? 0,
-            d.beats.flatMap(b => b.shots).find(s => !settings.lockedShotIds.includes(s.id))?.id === shot.id,
+            d.beats.flatMap(b => b.shots).find(s => !voxShotLocked(settings, s))?.id === shot.id,
           );
         } else if (settings.presetId === 'archival-story') {
           templateId = 'paper-polaroids';
@@ -87,7 +87,7 @@ export function assembleCreativeShot(d: Document, shot: EditorialCollageShot, se
         }
         animation.template = { id: templateId, props: voxPropsSchema.parse(props) };
 
-  animation.creativeStyle = { styleId: style.slug, rendererRevision: CREATIVE_RENDER_REVISION, upstreamRevision: LEMO_REVISION, source, composition: settings.presetId === 'data-map' ? 'data' : 'scene' };
+  animation.creativeStyle = { styleId: style.slug, rendererRevision: CREATIVE_RENDER_REVISION, upstreamRevision: LEMO_REVISION, source, composition: settings.presetId === 'data-map' ? 'data' : imageIds.length ? 'scene' : 'template' };
   if (source === 'local' && shot.animation && !shot.animation.native) { animation.code = shot.animation.code; animation.authoring = shot.animation.authoring; }
   const [rw, rh] = d.ratio.split(':').map(Number);
   const layout = creativeLayout(creativeRenderSpec(style.slug), rw, rh);
@@ -113,6 +113,6 @@ export function applyCreativeStyleToDocument(d: Document, settings: VoxProductio
   if (d.productionRun?.status === 'running') throw new Error('请先暂停自动制作，再应用镜头风格。');
   if (d.productionRun?.nodes.some(node => node.status === 'unknown')) throw new Error('请先在制作进度中核对待确认的云端结果，再应用风格。');
   return rebuildEditorialTimeline({ ...d, ...(d.productionRun ? { productionRun: { ...d.productionRun, status: 'cancelled' as const, message: '已应用本地风格。制作记录已保留；完整更新素材请重新开始自动制作。' } } : {}), stage: 'assets', productionSettings: settings, beats: d.beats.map(beat => ({ ...beat, shots: beat.shots.map(shot =>
-    settings.lockedShotIds.includes(shot.id) || (shot.animation && !shot.animation.authoring && (shot.animation.mode === 'code' || shot.animation.code.source.trim()))
+    voxShotLocked(settings, shot) || (shot.animation && !shot.animation.authoring && (shot.animation.mode === 'code' || shot.animation.code.source.trim()))
       ? shot : assembleCreativeShot(d, shot, settings, 'local')) })) });
 }

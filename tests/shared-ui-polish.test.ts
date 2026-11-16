@@ -12,7 +12,7 @@ describe('shared page visual contract', () => {
         .toEqual(new Set(group.items.map((item) => item.view)));
     }
     expect(secondaryNavigationItems(primaryNavGroups[0]).map((item) => item.view))
-      .toEqual(['editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv']);
+      .toEqual(['short-video', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv']);
     expect(secondaryNavigationItems(primaryNavGroups.at(-1)!)).toEqual([]);
     const assetGroup = primaryNavGroups.find((group) => group.id === 'assets')!;
     expect(secondaryNavigationItems(assetGroup).map(({ view, label }) => [view, label])).toEqual([

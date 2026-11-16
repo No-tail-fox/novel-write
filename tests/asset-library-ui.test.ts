@@ -10,13 +10,14 @@ describe('asset library workflow contracts', () => {
     expect(page).toContain('导入图片');
     expect(page).toContain('onDiscard:');
   });
-  it('validates fresh chooser content and imports a separate pinned comic reference', async () => {
+  it('validates fresh chooser content and imports a separate comic reference pending explicit role selection', async () => {
     const [picker, comic] = await Promise.all([source('src/features/asset-library/LibraryPicker.tsx'), source('src/features/motion-comic/MotionComicPage.tsx')]);
     expect(picker).toContain('await api.getLibraryAsset(selected.id)');
     expect(picker).toContain('asset.deletedAt || asset.kind !== kind');
-    expect(comic).toContain('selection?.imagePath || await api.selectLocalImage()');
+    expect(comic).toContain('selection ? [selection.imagePath] : await api.selectLocalReferenceImages()');
     expect(comic).toContain('await api.addImageLabRecord(');
     expect(comic).toContain('librarySource: { id: selection.libraryId, revision: selection.revision }');
-    expect(comic).toContain('attachMotionComicReference(latest, target, asset)');
+    expect(comic).toContain('attachMotionComicReference(latest, target, asset, { setFixed: false })');
+    expect(comic).toContain('setPendingReferenceImports(');
   });
 });

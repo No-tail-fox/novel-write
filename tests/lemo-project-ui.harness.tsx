@@ -24,9 +24,7 @@ function App() {
   const [surface,setSurface] = useState<'settings'|'progress'|'workspace'|'closed'>('workspace');
   const [busy,setBusy] = useState(false);
   const [unknown,setUnknown] = useState(false);
-  const [incremental,setIncremental] = useState(false);
   const [upstream,setUpstream] = useState(false);
-  const [staged,setStaged] = useState(false);
   const [theme,setTheme] = useState<'dark'|'light'>('dark');
   const [revision,setRevision] = useState(0);
   const [longRun,setLongRun] = useState(false);
@@ -34,21 +32,12 @@ function App() {
   const [mixed,setMixed] = useState(false);
   const [advanced,setAdvanced] = useState(false);
   const settings = document.productionSettings!;
-  const nodes = buildVoxProductionNodes(document,settings,LEMO_NATIVE_ENGINE,upstream?3:2,staged?1:undefined);
-  for (const node of nodes) {
-    if ((staged?['plan','film-plan-materials']:['plan','film-materials','timing','film-code']).includes(node.kind)) {node.status='completed';node.attempt=1;}
-  }
-  let target = nodes.find(n=>n.kind===(upstream?'film-edit':staged?'film-plan-scene':'film-scene'))!;
-  if (incremental) {
-    const parent = target;
-    const first = { ...parent, id: parent.id + ':edit:1', kind: 'film-edit' as const, editSession: parent.id, editRound: 1, status: 'completed' as const, attempt: 1, requestId: 'saved-batch-1' };
-    const second = { ...first, id: parent.id + ':edit:2', editRound: 2, dependencies: [first.id] };
-    nodes.splice(nodes.indexOf(parent), 0, first, second);
-    parent.dependencies = [second.id]; target = second;
-  }
+  const nodes = buildVoxProductionNodes(document,settings,LEMO_NATIVE_ENGINE,3);
+  for (const node of nodes) { if (node.kind === 'timing') { node.status = 'completed'; node.attempt = 1; } }
+  let target = nodes.find(node => node.kind === 'film-edit')!;
   if (advanced) target=nodes[nodes.length-1];
   target.status=unknown?'unknown':'failed';target.requestId='saved-provider-request';target.attempt=1;
-  target.error=staged&&!unknown?'LEMO_PLAN_INVALID: 本段未完整覆盖原始镜头，已保存前序大纲与素材清单。':unknown?'LLM_STREAM_INTERRUPTED: 已保留当前批次的回复，云端结果待核对。':incremental?'LEMO_EDIT_TRUNCATED: 本批回复达到输出上限，上一批源码保持可用。':'LEMO_FILE_TRUNCATED: 模型达到输出上限，已保存不完整源码。';
+  target.error=unknown?'LLM_STREAM_INTERRUPTED: 已保留当前轮的回复，云端结果待核对。':'LEMO_AGENT_BUDGET: 已达到本次创作轮数上限。';
   if (longRun) {
     const history: VoxProductionRun['nodes'] = Array.from({length:40},(_,i)=>({...target,id:'history-'+i,status:'completed' as const,error:undefined}));
     if (mixed) { history[1]={...history[1],status:'failed'}; history[2]={...history[2],status:'unknown'}; }
@@ -56,9 +45,9 @@ function App() {
   }
   if (runState==='running') {target.status='running';target.error=undefined;}
   if (runState==='completed') for (const node of nodes) {node.status='completed';node.error=undefined;}
-  const run:VoxProductionRun={version:1,id:'fixture-run',engine:LEMO_NATIVE_ENGINE,authoringVersion:upstream?3:2,...(staged?{planningVersion:1 as const}:{}),status:runState,settings,nodes,sourceHash:'fixture',runtimeIdentity:'fixture',createdAt:document.createdAt,updatedAt:document.updatedAt,message:target.error};
+  const run:VoxProductionRun={version:1,id:'fixture-run',engine:LEMO_NATIVE_ENGINE,authoringVersion:3,status:runState,settings,nodes,sourceHash:'fixture',runtimeIdentity:'fixture',createdAt:document.createdAt,updatedAt:document.updatedAt,message:target.error};
   const record = async (action:string,value?:unknown)=>{Object.assign(window,{lastLemoAction:{action,value}})};
-  Object.assign(window,{lemoQA:{holdExport:()=>{holdExport.current=true;},finishExport:()=>{holdExport.current=false;pendingExport.current?.();pendingExport.current=undefined;},targetId:target.id,advance:()=>setAdvanced(true),close:()=>setSurface('closed'),show(view:'settings'|'progress'|'workspace',options:{busy?:boolean;unknown?:boolean;incremental?:boolean;staged?:boolean;upstream?:boolean;theme?:'dark'|'light';longRun?:boolean;runState?:'failed'|'running'|'completed';mixed?:boolean}={}){setAdvanced(false);setLongRun(Boolean(options.longRun));setRunState(options.runState??'failed');setMixed(Boolean(options.mixed));setBusy(Boolean(options.busy));setUnknown(Boolean(options.unknown));setIncremental(Boolean(options.incremental));setStaged(Boolean(options.staged));setUpstream(Boolean(options.upstream));setTheme(options.theme??'dark');setSurface(view);setRevision(v=>v+1);return revision+1;}}});
+  Object.assign(window,{lemoQA:{holdExport:()=>{holdExport.current=true;},finishExport:()=>{holdExport.current=false;pendingExport.current?.();pendingExport.current=undefined;},targetId:target.id,advance:()=>setAdvanced(true),close:()=>setSurface('closed'),show(view:'settings'|'progress'|'workspace',options:{busy?:boolean;unknown?:boolean;upstream?:boolean;theme?:'dark'|'light';longRun?:boolean;runState?:'failed'|'running'|'completed';mixed?:boolean}={}){setAdvanced(false);setLongRun(Boolean(options.longRun));setRunState(options.runState??'failed');setMixed(Boolean(options.mixed));setBusy(Boolean(options.busy));setUnknown(Boolean(options.unknown));setUpstream(Boolean(options.upstream));setTheme(options.theme??'dark');setSurface(view);setRevision(v=>v+1);return revision+1;}}});
   // Keep the opener mounted beneath dialogs, as in the real authoring workspace.
   return <StoryDreamProvider theme={theme}>
     <main className="app-shell" data-shell-view="editorial-collage" data-runtime="electron" data-lemo-qa-revision={revision}>

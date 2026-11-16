@@ -54,6 +54,233 @@ async function approveFirst(db: FileDatabase, id: string) {
   return { id, taskId: task.id, outputRevision: 1, expectedUpdatedAt: (await db.motionComicScripts.readProject(id)).updatedAt };
 }
 
+async function proposalFixture(db: FileDatabase, id: string) {
+  await enqueue(db, id);
+  const task = (await db.motionComicScripts.claim(id))!;
+  await db.motionComicScripts.finish(task, { script: batchScript(), issues: [], adjustments: [] });
+  return { id, taskId: task.id, outputRevision: 1, expectedUpdatedAt: (await db.motionComicScripts.readProject(id)).updatedAt,
+    sceneKey: 'scene', beatKey: 'beat', instruction: '细化接信动作', requestId: 'request-1' };
+}
+
+describe('isolated local script proposals', () => {
+  it('deduplicates concurrent requests and atomically adopts just one same-baseline proposal', async () => fixture(async (db, id) => {
+    const input = await proposalFixture(db, id);
+    const before = await db.motionComicScripts.snapshot(id);
+    const entered = deferred<void>(); const answer = deferred<{ json: { text: string } }>();
+    const run = vi.fn().mockImplementation(() => { entered.resolve(); return answer.promise; });
+    const service = new MotionComicScriptBatchService(db.motionComicScripts, async () => ({ ...config, llm: { protocol: 'openai', run } as unknown as ConfiguredJsonLlm }));
+    const first = service.proposeChange(input); await entered.promise;
+    expect((await service.proposeChange(input)).proposals![0].status).toBe('running');
+    expect(run).toHaveBeenCalledTimes(1);
+    answer.resolve({ json: { text: '阿青伸手，接住雨夜送来的一封信。' } });
+    const generated = await first;
+    expect(generated.candidates).toEqual(before.candidates);
+    expect(generated.tasks).toEqual(before.tasks);
+    expect(generated.approvals).toEqual(before.approvals);
+    expect(generated.originals![0].script).toEqual(batchScript());
+    await expect(service.proposeChange({ ...input, instruction: 'different' })).rejects.toThrow('REQUEST_CONFLICT');
+    const second = await service.proposeChange({ ...input, requestId: 'request-2' });
+    const results = await Promise.allSettled(second.proposals!.map(p => db.motionComicScripts.adoptProposal({ id, taskId: input.taskId, outputRevision: 1, expectedUpdatedAt: input.expectedUpdatedAt, proposalId: p.id })));
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    const final = await db.motionComicScripts.snapshot(id);
+    expect(final.tasks[0].outputRevision).toBe(2); expect(final.tasks[0].status).toBe('review');
+    expect(final.approvals).toEqual([]); expect(final.proposals!.map(p => p.status).sort()).toEqual(['applied', 'stale']);
+    expect(final.originals).toEqual(before.originals);
+    await service.stop();
+  }));
+  it('retains late results as stale after human edits and never overwrites current', async () => fixture(async (db, id) => {
+    const input = await proposalFixture(db, id);
+    const pending = await db.motionComicScripts.beginProposal(input, config);
+    const script = batchScript(); script.scenes[0].beats[0].text = '人工保存的新稿。';
+    await db.motionComicScripts.edit({ id, taskId: input.taskId, outputRevision: 1, expectedUpdatedAt: input.expectedUpdatedAt, script });
+    const result = await db.motionComicScripts.finishProposal(id, pending.proposal.id, '迟到的模型结果。');
+    expect(result.proposals![0]).toMatchObject({ status: 'stale', proposedText: '迟到的模型结果。' });
+    expect(result.candidates[0].script).toEqual(script);
+    await expect(db.motionComicScripts.adoptProposal({ id, taskId: input.taskId, outputRevision: 2, expectedUpdatedAt: input.expectedUpdatedAt, proposalId: pending.proposal.id })).rejects.toThrow('STALE');
+    expect(result.originals![0].script).toEqual(batchScript());
+  }));
+  it('persists failures, rejects out-of-scope output and never retries the same request', async () => fixture(async (db, id) => {
+    const input = await proposalFixture(db, id);
+    const run = vi.fn().mockResolvedValue({ json: { text: '新文本', kind: 'dialogue' } });
+    const service = new MotionComicScriptBatchService(db.motionComicScripts, async () => ({ ...config, llm: { protocol: 'openai', run } as unknown as ConfiguredJsonLlm }));
+    expect((await service.proposeChange(input)).proposals![0].status).toBe('failed');
+    await service.proposeChange(input); expect(run).toHaveBeenCalledTimes(1);
+    expect((await db.motionComicScripts.snapshot(id)).candidates[0].outputRevision).toBe(1);
+    await service.stop();
+  }));
+  it('marks interrupted proposal failed on reopen and preserves original insert-once', async () => fixture(async (db, id, file) => {
+    const input = await proposalFixture(db, id);
+    await db.motionComicScripts.beginProposal(input, config);
+    await db.close();
+    const reopened = await FileDatabase.open(file);
+    try {
+      const snapshot = await reopened.motionComicScripts.snapshot(id);
+      expect(snapshot.proposals![0].status).toBe('failed');
+      expect((await reopened.motionComicScripts.beginProposal(input, config)).claimed).toBe(false);
+      expect(snapshot.originals![0].script).toEqual(batchScript());
+    } finally { await reopened.close(); }
+  }));
+  it('marks late proposals stale after project input changes', async () => fixture(async (db, id) => {
+    const input = await proposalFixture(db, id);
+    const pending = await db.motionComicScripts.beginProposal(input, config);
+    const document = await db.motionComicScripts.readProject(id);
+    document.sourceDocument!.episodes[0].sourceText += '新的剧情。';
+    await db.saveMotionComicTask({ id, expectedUpdatedAt: document.updatedAt, document });
+    const result = await db.motionComicScripts.finishProposal(id, pending.proposal.id, '模型返回的局部文本。');
+    expect(result.proposals![0].status).toBe('stale');
+    expect(result.candidates[0].script).toEqual(batchScript());
+  }));
+  it('retains failed validation and rolls back invalid adoption without consuming proposal', async () => fixture(async (db, id) => {
+    const input = await proposalFixture(db, id);
+    const p = await db.motionComicScripts.beginProposal(input, config);
+    await db.motionComicScripts.finishProposal(id, p.proposal.id, '阿青伸手接信。');
+    const sql = (db as unknown as { db: import('sql.js').Database }).db;
+    const before = await db.motionComicScripts.snapshot(id);
+    const corrupted = { ...before.proposals![0], originalText: '并非原文' };
+    sql.run('UPDATE motion_comic_script_proposals SET data = ? WHERE id = ?', [JSON.stringify(corrupted), p.proposal.id]);
+    await expect(db.motionComicScripts.adoptProposal({ id, taskId: input.taskId, outputRevision: 1, expectedUpdatedAt: input.expectedUpdatedAt, proposalId: p.proposal.id })).rejects.toThrow('TARGET_CHANGED');
+    expect((await db.motionComicScripts.snapshot(id)).candidates).toEqual(before.candidates);
+    expect((await db.motionComicScripts.snapshot(id)).proposals![0].status).toBe('ready');
+  }));
+  it('does not backfill legacy human current as original on migration', async () => fixture(async (db, id, file) => {
+    const input = await proposalFixture(db, id);
+    const script = batchScript(); script.scenes[0].beats[0].text = '历史人工稿。';
+    await db.motionComicScripts.edit({ id, taskId: input.taskId, outputRevision: 1, expectedUpdatedAt: input.expectedUpdatedAt, script });
+    const sql = (db as unknown as { db: import('sql.js').Database }).db;
+    sql.run('DELETE FROM motion_comic_script_originals');
+    await db.motionComicScripts.control(id, 'pause');
+    await db.close();
+    const reopened = await FileDatabase.open(file);
+    try {
+      const snapshot = await reopened.motionComicScripts.snapshot(id);
+      expect(snapshot.originals).toEqual([]);
+      expect(snapshot.candidates[0].origin).toBe('human'); expect(snapshot.candidates[0].script).toEqual(script);
+    } finally { await reopened.close(); }
+  }));
+  it('blocks proposals after asset confirmation', async () => fixture(async (db, id) => {
+    const input = await proposalFixture(db, id);
+    await db.motionComicScripts.approve({ id, expectedUpdatedAt: input.expectedUpdatedAt, revisions: [{ taskId: input.taskId, outputRevision: 1 }] });
+    await expect(db.motionComicScripts.beginProposal({ ...input, expectedUpdatedAt: (await db.motionComicScripts.readProject(id)).updatedAt }, config)).rejects.toThrow();
+    expect((await db.motionComicScripts.snapshot(id)).proposals).toEqual([]);
+  }));
+});
+
+async function appliedProposalFixture(db: FileDatabase, id: string) {
+  const input = await proposalFixture(db, id);
+  const { proposal } = await db.motionComicScripts.beginProposal(input, config);
+  await db.motionComicScripts.finishProposal(id, proposal.id, '阿青伸手接住来信。');
+  const adopted = await db.motionComicScripts.adoptProposal({ id, taskId: input.taskId, outputRevision: 1, expectedUpdatedAt: input.expectedUpdatedAt, proposalId: proposal.id });
+  return { input: { id, taskId: input.taskId, outputRevision: 2, expectedUpdatedAt: input.expectedUpdatedAt, proposalId: proposal.id }, adopted };
+}
+
+describe('safe local proposal reversion', () => {
+  it('restores only original target text as r+1, retains history and never rewrites immutable original', async () => fixture(async (db, id) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    expect(adopted.proposals![0].appliedScriptHash).toMatch(/^[a-f0-9]{64}$/);
+    const result = await db.motionComicScripts.revertProposal(input);
+    expect(result.candidates[0]).toMatchObject({ outputRevision: 3, origin: 'human', script: batchScript() });
+    expect(result.tasks[0]).toMatchObject({ outputRevision: 3, status: 'review' });
+    expect(result.proposals![0]).toEqual({ ...adopted.proposals![0], status: 'reverted', revertedRevision: 3 });
+    expect(result.originals).toEqual(adopted.originals);
+    expect(result.originals![0].outputRevision).toBe(1);
+    await expect(db.motionComicScripts.revertProposal(input)).rejects.toThrow('STALE');
+    await expect(db.motionComicScripts.revertProposal({ ...input, outputRevision: 3 })).rejects.toThrow('NOT_APPLIED');
+    expect(await db.motionComicScripts.snapshot(id)).toEqual(result);
+  }));
+  it('serializes duplicate concurrent reverts into a single new revision', async () => fixture(async (db, id) => {
+    const { input } = await appliedProposalFixture(db, id);
+    const results = await Promise.allSettled([db.motionComicScripts.revertProposal(input), db.motionComicScripts.revertProposal(input)]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await db.motionComicScripts.snapshot(id)).candidates[0].outputRevision).toBe(3);
+  }));
+  it('rejects stale revision, mismatched task, unknown proposal and project CAS without writes', async () => fixture(async (db, id) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    for (const patch of [{ outputRevision: 1 }, { taskId: 'another-task' }, { proposalId: 'unknown' }, { expectedUpdatedAt: '2000-01-01T00:00:00.000Z' }]) {
+      await expect(db.motionComicScripts.revertProposal({ ...input, ...patch })).rejects.toThrow();
+      expect(await db.motionComicScripts.snapshot(id)).toEqual(adopted);
+    }
+  }));
+  it('rejects human edits even when the adopted target remains unchanged', async () => fixture(async (db, id) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    const script = structuredClone(adopted.candidates[0].script); script.title = '人工改标题';
+    const edited = await db.motionComicScripts.edit({ id, taskId: input.taskId, outputRevision: 2, expectedUpdatedAt: input.expectedUpdatedAt, script });
+    await expect(db.motionComicScripts.revertProposal({ ...input, outputRevision: 3 })).rejects.toThrow('STALE');
+    expect(await db.motionComicScripts.snapshot(id)).toEqual(edited);
+  }));
+  it('checks full adopted hash, not only revision and target text', async () => fixture(async (db, id) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    const candidate = structuredClone(adopted.candidates[0]); candidate.script.title = '同版本人工修改';
+    const sql = (db as unknown as { db: import('sql.js').Database }).db;
+    sql.run('UPDATE motion_comic_script_candidates SET data = ? WHERE task_id = ?', [JSON.stringify(candidate), input.taskId]);
+    await expect(db.motionComicScripts.revertProposal(input)).rejects.toThrow('STALE');
+    expect((await db.motionComicScripts.snapshot(id)).candidates[0]).toEqual(candidate);
+  }));
+  it('rejects legacy missing hash, fingerprint mismatch and invalid restored text without consuming history', async () => fixture(async (db, id) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    for (const [patch, error] of [[{ appliedScriptHash: undefined }, 'REVERT_UNAVAILABLE'], [{ inputFingerprint: 'changed' }, 'STALE'], [{ originalText: '字'.repeat(2001) }, '2000']] as const) {
+      const proposal = { ...adopted.proposals![0], ...patch };
+      (db as unknown as { db: import('sql.js').Database }).db.run('UPDATE motion_comic_script_proposals SET data = ? WHERE id = ?', [JSON.stringify(proposal), input.proposalId]);
+      await expect(db.motionComicScripts.revertProposal(input)).rejects.toThrow(error);
+      const snapshot = await db.motionComicScripts.snapshot(id);
+      expect(snapshot.candidates).toEqual(adopted.candidates);
+      expect(snapshot.proposals![0].status).toBe('applied');
+    }
+  }));
+  it('rejects asset-confirmed scripts', async () => fixture(async (db, id) => {
+    const { input } = await appliedProposalFixture(db, id);
+    await db.motionComicScripts.approve({ id, expectedUpdatedAt: input.expectedUpdatedAt, revisions: [{ taskId: input.taskId, outputRevision: 2 }] });
+    const locked = await db.motionComicScripts.snapshot(id);
+    await expect(db.motionComicScripts.revertProposal({ ...input, expectedUpdatedAt: (await db.motionComicScripts.readProject(id)).updatedAt })).rejects.toThrow();
+    expect(await db.motionComicScripts.snapshot(id)).toEqual(locked);
+  }));
+  it('rejects changed dependency fingerprint with a fresh project timestamp', async () => fixture(async (db, id) => {
+    const { input } = await appliedProposalFixture(db, id);
+    const document = await db.motionComicScripts.readProject(id);
+    document.sourceDocument!.episodes[0].sourceText += '追加剧情。';
+    await db.saveMotionComicTask({ id, expectedUpdatedAt: document.updatedAt, document });
+    await expect(db.motionComicScripts.revertProposal({ ...input, expectedUpdatedAt: (await db.motionComicScripts.readProject(id)).updatedAt })).rejects.toThrow('STALE');
+    expect((await db.motionComicScripts.snapshot(id)).candidates[0].outputRevision).toBe(2);
+  }));
+  it('invalidates same-base pending proposals and downstream scripts', async () => fixture(async (db, id) => {
+    const { input } = await appliedProposalFixture(db, id);
+    const pending = await db.motionComicScripts.beginProposal({ id, taskId: input.taskId, outputRevision: 2, expectedUpdatedAt: input.expectedUpdatedAt, sceneKey: 'scene', beatKey: 'beat', instruction: '继续修改', requestId: 'after-adopt' }, config);
+    const downstream = (await db.motionComicScripts.claim(id))!;
+    await db.motionComicScripts.finish(downstream, { script: batchScript(), issues: [], adjustments: [] });
+    const result = await db.motionComicScripts.revertProposal(input);
+    expect(result.proposals!.find(p => p.id === pending.proposal.id)?.status).toBe('stale');
+    expect(result.tasks.find(t => t.id === downstream.id)?.status).toBe('stale');
+    expect(result.originals).toHaveLength(2);
+  }));
+  it('marks a legacy approval stale when reverting', async () => fixture(async (db, id) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    const task = adopted.tasks[0];
+    const approval = { sourceEpisodeId: task.sourceEpisodeId, taskId: task.id, outputRevision: 2, inputFingerprint: task.inputFingerprint, script: adopted.candidates[0].script, model: task.model, instructions: task.instructions, approvedAt: input.expectedUpdatedAt, stale: false };
+    const sql = (db as unknown as { db: import('sql.js').Database }).db;
+    sql.run('INSERT INTO motion_comic_script_approvals(project_id, source_episode_id, data) VALUES (?, ?, ?)', [id, task.sourceEpisodeId, JSON.stringify(approval)]);
+    sql.run('UPDATE motion_comic_script_tasks SET data = ? WHERE id = ?', [JSON.stringify({ ...task, status: 'approved' }), task.id]);
+    const result = await db.motionComicScripts.revertProposal(input);
+    expect(result.approvals[0].stale).toBe(true);
+    expect(result.tasks[0].status).toBe('review');
+    expect(result.storyboards).toEqual([]);
+  }));
+  it('persists adopted hash across reopen and reverted history across another reopen', async () => fixture(async (db, id, file) => {
+    const { input, adopted } = await appliedProposalFixture(db, id);
+    await db.close();
+    const reopened = await FileDatabase.open(file);
+    let result;
+    try {
+      expect((await reopened.motionComicScripts.snapshot(id)).proposals).toEqual(adopted.proposals);
+      result = await reopened.motionComicScripts.revertProposal(input);
+    } finally { await reopened.close(); }
+    const again = await FileDatabase.open(file);
+    try {
+      expect(await again.motionComicScripts.snapshot(id)).toEqual(result);
+      await expect(again.motionComicScripts.revertProposal({ ...input, outputRevision: 3 })).rejects.toThrow('NOT_APPLIED');
+      expect((await again.motionComicScripts.snapshot(id)).candidates[0].outputRevision).toBe(3);
+    } finally { await again.close(); }
+  }));
+});
+
 describe('durable novel script workflow', () => {
   it('rejects illegal state transitions', () => { expect(() => assertMotionComicScriptTransition('queued', 'approved')).toThrow('TRANSITION'); });
   it('deduplicates, executes in source order, keeps scripts separate from shots, and cascades stale revisions', async () => fixture(async (db, id) => {
@@ -270,6 +497,35 @@ describe('durable novel script workflow', () => {
       expect((await db.motionComicScripts.snapshot(id)).tasks[0].status).toBe('cancelled');
       expect((await db.motionComicScripts.snapshot(id)).candidates).toEqual([]);
     } finally { gate.resolve(); await service.stop(); }
+  }));
+  it('cancels an in-flight model call, ignores its late result and resumes remaining episodes', async () => fixture(async (db, id) => {
+    await enqueue(db, id);
+    const entered = deferred<void>();
+    const response = deferred<{ json: MotionComicScriptDraft }>();
+    let signal: AbortSignal | undefined;
+    const run = vi.fn().mockImplementationOnce((request) => {
+      signal = request.signal;
+      entered.resolve();
+      return response.promise;
+    }).mockResolvedValue({ json: batchScript() });
+    const service = new MotionComicScriptBatchService(db.motionComicScripts, async () => ({ ...config, llm: { protocol: 'openai', run } as unknown as ConfiguredJsonLlm }));
+    try {
+      service.start(id); await entered.promise;
+      const first = (await db.motionComicScripts.snapshot(id)).tasks[0];
+      await service.control(id, 'pause');
+      await service.control(id, 'cancel', first.id);
+      expect(signal?.aborted).toBe(true);
+      response.resolve({ json: batchScript() });
+      await service.idle(id);
+      const paused = await db.motionComicScripts.snapshot(id);
+      expect(paused.tasks.map(task => task.status)).toEqual(['cancelled', 'queued', 'queued']);
+      expect(paused.candidates).toEqual([]);
+      await service.control(id, 'resume'); await service.idle(id);
+      const resumed = await db.motionComicScripts.snapshot(id);
+      expect(resumed.tasks.map(task => task.status)).toEqual(['cancelled', 'script-ready', 'script-ready']);
+      expect(resumed.candidates).toHaveLength(2);
+      expect(run).toHaveBeenCalledTimes(3);
+    } finally { response.resolve({ json: batchScript() }); await service.stop(); }
   }));
   it('ignores completions from earlier attempts after recovery', async () => fixture(async (db, id) => {
     await enqueue(db, id);

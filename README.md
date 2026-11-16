@@ -25,6 +25,12 @@ Design documents live in `docs/design/`; the current work list is `docs/design/2
   `--verify` checks the SHA-256 inventory in `storydream-upstream.json`; the Electron build refuses to ship a missing or modified tree.
 - **Bundled Python runtime:** `vendor/python` (CPython with faster-whisper, PyAV, onnxruntime …) and Playwright browsers in `vendor/python/playwright-browsers`, used for media composition, capture and transcription. Also a local install, not in Git.
 
+## Local workspace
+
+The active checkout on this machine is `I:\项目\story-dream` (moved from the mixed `I:\opc` workspace on 2026-11-16). Open this directory for future StoryDream work. Source code remains at the repository root, linked development checkouts are under `.worktrees/`, and collected machine-local release/QA archives are under `.local-archive/external/` (excluded from Git).
+
+Unrelated OPC and Pingdingshan materials remain in the previous directory. Historical reports may retain their original absolute paths; use the migration path map in `.local-archive/migration-2026-11-16/` when consulting them.
+
 ## Commands
 
 Double-click `启动 StoryDream.bat` for one-click startup (delegates to `start-storydream.ps1`).

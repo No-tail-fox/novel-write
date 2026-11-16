@@ -39,7 +39,7 @@ describe('director desk render strategy UI', () => {
     }
     expect(workspace).toContain('请先生成或选择一张可读取的首帧图片。');
     expect(workspace).toContain('请先在系统设置中配置并启用视频生成服务。');
-    expect(workspace).toContain("const action = retry ? onRetryVideo ?? onGenerateVideo : onGenerateVideo");
+    expect(workspace).toContain("const action = recovering ? onResumeVideo : retry ? onRetryVideo ?? onGenerateVideo : onGenerateVideo");
     expect(workspace).toContain('src={selectedShot.videoUrl}');
     expect(workspace).not.toContain('src={previewCity} aria-label={`${selectedShot.title} AI 动态海报预览`}');
   });

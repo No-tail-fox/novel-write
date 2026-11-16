@@ -518,7 +518,10 @@ const RUNTIME_SOURCE = String.raw`(function (w, cfg) {
           return undefined;
         });
       }
-      if (timeline && typeof timeline.seek === 'function') { timeline.seek(time, false); return Promise.resolve(); }
+      if (timeline && typeof timeline.seek === 'function') {
+        var seekResult = timeline.seek(time, false);
+        return Promise.resolve(seekResult === timeline ? undefined : seekResult);
+      }
       return Promise.reject(new Error('SCENE_RUNTIME_SEEK_UNAVAILABLE: no __hf.seek, __player.renderSeek or __tl.seek'));
     }
     if (adapter === 'lemo') {

@@ -37,6 +37,10 @@ export async function renderDirectorVideo(input: {
   sceneStarts?: ReadonlyMap<string, number>;
   /** Two-pass loudness normalisation to the shared final-film target; on unless explicitly `false` (Music MVs preserve the song's authored gain). */
   normalizeAudio?: boolean;
+  /** Whether the project expects audible narration, dialogue, or music in the final artifact. */
+  audioExpected?: boolean;
+  /** Audio mixing/output clock; legacy exports default to 44100. */
+  audioSampleRate?: 44100 | 48000;
   signal?: AbortSignal;
   /** Explicit built runtime for isolated verification or embedding. */
   animationRuntimePath?: string;
@@ -216,6 +220,7 @@ export async function renderDirectorVideo(input: {
     totalDurationS,
     // Final films are loudness-normalised (−14 LUFS / TP −1) unless a caller explicitly opts out (Music MVs keep the song's gain).
     normalizeAudio: resolveNormalizeAudio(input.normalizeAudio),
+    audioSampleRate: input.audioSampleRate,
     // Per-scene incoming dissolves are visual-only. The compositor concatenates
     // narration on the original scene clock; ordinary A/V crossfades are disabled.
     transition: { type: 'cut', duration: 0 },
@@ -246,7 +251,7 @@ export async function renderDirectorVideo(input: {
   // Lemo v3 films are re-muxed by the caller and re-checked there (finalizeLemoUpstreamFilm qualityGate).
   if (input.finalFilmGate !== false) {
     await runFinalFilmGateSafely({ route: 'template', filmPath: artifactOutputPath, signal: input.signal,
-      expected: { durationMs: Math.round(totalDurationS * 1000), fps, width: canvas.width, height: canvas.height, audioExpected: true, loudnessTarget: resolveNormalizeAudio(input.normalizeAudio) } });
+      expected: { durationMs: Math.round(totalDurationS * 1000), fps, width: canvas.width, height: canvas.height, audioExpected: input.audioExpected ?? true, loudnessTarget: resolveNormalizeAudio(input.normalizeAudio) } });
   }
   return {
     outputPath: artifactOutputPath,

@@ -1,0 +1,169 @@
+/* Approved production composition: shot tasks / inspector / preview and candidates.
+   The shot column gets room for a 48px frame, a full title and one metadata line;
+   the inspector keeps its editable width and the preview takes what remains. */
+/* Shot strip sits under the preview: inspector spans the left column, preview on top right, shot strip below it. */
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-desk-grid { grid-template-columns: minmax(320px, 360px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) clamp(148px, 24vh, 210px); gap: 16px; padding: 0 16px 16px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane { grid-column: 2; grid-row: 2; padding: 10px 12px; border: 1px solid var(--shell-border); border-radius: 8px; overflow: hidden; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-inspector-pane { grid-column: 1; grid-row: 1 / span 2; border: 1px solid var(--shell-border); border-radius: 8px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-center-pane { grid-column: 2; grid-row: 1; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; container-type: size; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-list { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 240px); grid-template-rows: minmax(0, 1fr); gap: 8px; min-height: 0; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; scrollbar-width: thin; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-list .director-shot-row.sd-button { height: 100%; border: 1px solid var(--shell-border); border-radius: 8px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-search { max-width: 320px; }
+/* Shot status bar: counts + batch actions share one row so the horizontal shot strip keeps its height. */
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane { display: flex; flex-direction: column; gap: 6px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-pane-heading--section { flex: 0 0 auto; margin-top: 0; padding-top: 0; border-top: 0; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-status-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-status-bar .sd-segmented { flex: 0 0 auto; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-status-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: 0 0 auto; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-list { flex: 1 1 0; }
+/* The one-row shot strip has no room for the episode switcher; episodes are managed from the project overview. */
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-episodes-heading,
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-episode-row { display: none; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-project-summary,
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-footer { display: none; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-preview-toolbar { flex-shrink: 0; height: auto; min-height: 52px; padding: 8px 0; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-preview-surface:not(:fullscreen) { flex: 0 0 auto; width: 100%; margin: 0; border: 1px solid var(--shell-border); border-radius: 8px; overflow: hidden; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-preview-surface:not(:fullscreen) .director-media-preview { flex: 0 0 auto; width: min(100%, calc(clamp(180px, 100cqh - 104px, 560px) * var(--director-preview-ratio))); max-height: none; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-primary-stack { grid-template-columns: minmax(0, 1fr); }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-inspector-pane > .sd-tabs .fui-Tab__icon { display: none; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-inspector-pane > .sd-tabs [role='tab'] { padding-inline: 4px; font-size: 12px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-inspector-hint { line-height: 1.6; overflow-wrap: anywhere; }
+.motion-comic-video-versions { min-width: 0; padding: 20px 0 8px; color: var(--shell-text); }
+.motion-comic-video-versions__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.motion-comic-video-versions__heading strong { font-size: 17px; }
+.motion-comic-video-versions p { font-size: 12px; line-height: 1.6; color: var(--shell-muted); overflow-wrap: anywhere; }
+.motion-comic-video-versions__preview { width: 100%; max-height: 360px; margin-block: 12px; background: var(--shell-bg); border: 1px solid var(--shell-border); border-radius: 8px; }
+.motion-comic-video-versions__list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 12px; }
+.motion-comic-video-versions__list li { min-width: 0; padding: 14px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface); overflow-wrap: anywhere; }
+.motion-comic-video-versions__list li[data-current='true'] { border-color: var(--shell-accent); }
+.motion-comic-video-versions__list strong { font-size: 13px; }
+.motion-comic-video-versions__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 901px) and (max-width: 1180px) {
+  .motion-comic-production:not([data-stage='export']) .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-desk-grid { grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 160px; gap: 8px; padding: 8px; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane { display: flex; position: static; width: auto; box-shadow: none; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-row .sd-button__content { grid-template-columns: 18px 36px minmax(0, 1fr); gap: 5px; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-thumbnail { width: 36px; height: 30px; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-mini-status { display: none; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-preview-toolbar { flex-wrap: wrap; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-media-preview { max-height: none; }
+}
+@media (max-width: 900px) {
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-desk-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; padding: 12px; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-center-pane { grid-column: 1; grid-row: 1; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane { grid-column: 1; grid-row: 2; min-height: 160px; }
+  .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-inspector-pane { grid-column: 1; grid-row: 3; }
+}
+/* Hierarchy pass (plate 09): section title, one collapsible policy note that shares a row with
+   the generate action, and an empty state that reads as a placeholder tile. The blocking reason
+   is stated once, in the shot panel, so it is not repeated as a chip beside every action: the
+   preview column keeps it only as the action's tooltip. */
+.motion-comic-video-versions { display: grid; gap: 10px; align-content: start; }
+.motion-comic-video-versions__heading strong { font-size: 19px; font-weight: 650; }
+.motion-comic-video-versions__heading span { color: var(--shell-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.motion-comic-video-versions p { margin: 0; }
+.motion-comic-video-versions__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 32px; }
+.motion-comic-video-versions__row .motion-comic-video-versions__policy { margin-right: auto; }
+.motion-comic-video-versions p.motion-comic-video-versions__blocked { display: none; }
+.motion-comic-video-versions p.motion-comic-video-versions__empty { display: grid; place-items: center; min-height: 112px; border: 1px dashed var(--shell-border); border-radius: 8px; color: var(--shell-muted); font-size: 13px; }
+.motion-comic-video-versions__list:empty { display: none; }
+.motion-comic-video-versions__list li { display: grid; gap: 8px; background: var(--shell-surface-raised); }
+.motion-comic-video-versions__list li[data-current='true'] { box-shadow: inset 3px 0 var(--shell-accent); }
+
+/* One scroll owner keeps settings, expanded generation options and task history reachable
+   at every window height; footer growth must not collapse the editable settings. */
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-inspector-pane { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-gutter: stable; scroll-padding-block: 12px; }
+.director-desk[data-motion-comic-production-layout] .director-inspector-pane > * { flex-shrink: 0; }
+.director-desk[data-motion-comic-production-layout] .director-inspector-scroll { flex: 0 0 auto; overflow: visible; scrollbar-gutter: auto; gap: 20px; padding: 20px; container-type: inline-size; }
+.director-desk[data-motion-comic-production-layout] .director-generation-queue { flex: 0 0 auto; }
+.director-desk[data-motion-comic-production-layout] .director-generation-queue > .director-queue-panel { overflow: visible; }
+.director-desk[data-motion-comic-production-layout] .director-inspector-pane :is(button, input, select, textarea) { scroll-margin-block: 12px; }
+.director-desk[data-motion-comic-production-layout] .director-inspector-heading { padding: 16px 20px; }
+.director-desk[data-motion-comic-production-layout] .director-action-footer { padding: 12px 20px 16px; gap: 12px; }
+.director-desk[data-motion-comic-production-layout] .director-secondary-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.director-desk[data-motion-comic-production-layout] .director-inspector-hint { margin: 0; font-size: 12px; color: var(--shell-muted); }
+/* Readiness as compact readouts at the top of 画面: label plus one short value per row,
+   instead of a paragraph that pushed the prompt and the primary action off-screen. */
+.director-generate-status { display: grid; gap: 2px; margin-bottom: 4px; padding: 8px 10px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface); }
+.director-generate-status > span { display: grid; grid-template-columns: 6px auto minmax(0, 1fr); align-items: baseline; gap: 8px; min-width: 0; padding: 2px 0; font-size: 12px; }
+.director-generate-status > span::before { content: ''; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.director-generate-status > span.is-ok { color: var(--ok); }
+.director-generate-status > span.is-warn { color: var(--reel-amber); }
+/* Primary video action sits beside the readiness card so the reason and the fix share one row. */
+.director-generate-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; min-width: 0; }
+.director-generate-head .director-generate-status { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
+.director-generate-head__action.sd-button { flex: 0 0 auto; max-width: 45%; white-space: nowrap; }
+/* In a narrow inspector the status card keeps the full width and the action drops below it. */
+@container (max-width: 340px) {
+  .director-generate-head { flex-direction: column; align-items: stretch; }
+  .director-generate-head .director-generate-status { flex: 0 0 auto; }
+  .director-generate-head__action.sd-button { max-width: none; width: 100%; justify-content: center; }
+}
+.director-generate-status strong { color: var(--shell-text); font-weight: 500; white-space: nowrap; }
+.director-generate-status small { min-width: 0; color: var(--shell-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A blocked generation states its reason once, inline with the fix command, instead of
+   repeating the same sentence in the preview, the action hint and the candidate panel. */
+.director-generate-blocked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; border-radius: 6px; color: var(--reel-amber); background: color-mix(in srgb, var(--reel-amber) 10%, transparent); font-size: 12px; line-height: 1.5; }
+.director-generate-blocked > svg { flex: 0 0 auto; }
+.director-generate-blocked > span { flex: 1 1 12ch; min-width: 0; overflow-wrap: anywhere; }
+.director-generate-blocked > .sd-button { flex: 0 0 auto; }
+.director-desk[data-motion-comic-production-layout] .motion-comic-video-readiness { gap: 20px; font-size: 13px; }
+.motion-comic-video-readiness__provider { display: grid; gap: 6px; padding-block: 0 16px; border-bottom: 1px solid var(--shell-border); }
+.motion-comic-video-readiness__provider strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.motion-comic-video-readiness__advanced-body { display: grid; gap: 16px; padding-top: 16px; }
+.motion-comic-video-readiness__advanced > summary { font-size: 13px; color: var(--shell-muted); }
+.motion-comic-video-versions__policy { font-size: 12px; color: var(--shell-muted); }
+.motion-comic-video-versions__policy > summary { cursor: pointer; width: fit-content; padding-block: 4px; }
+.motion-comic-video-versions__policy p { padding-top: 8px; max-width: 72ch; }
+.motion-comic-video-versions__policy[open] { flex-basis: 100%; }
+.motion-comic-video-versions:has(.motion-comic-video-versions__list:empty) { gap: 12px; }
+/* Shot strip: one toolbar row (episode + filters + structure + search) above a full-width shot list. */
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(150px, 220px); grid-template-rows: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane > .director-pane-heading:not(.director-pane-heading--section) { display: none; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-pane-heading--section { gap: 8px; min-width: 0; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-shot-list { grid-column: 1 / -1; grid-row: 2; min-height: 0; }
+.director-shot-episode { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--shell-accent-strong); font-size: 12px; font-weight: 600; }
+/* Toolbar row: cells share one baseline; the search label is visually hidden (the placeholder names the field). */
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-shot-status-bar,
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-shot-search { padding: 0; margin: 0; min-width: 0; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-shot-search .fui-Field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-shot-search .sd-input { min-height: 28px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-structure-disclosure { position: relative; border-bottom: 0; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-structure-disclosure > summary { padding: 4px 0; white-space: nowrap; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-left-pane .director-structure-disclosure[open] > .director-structure-controls { position: absolute; z-index: 4; right: 0; bottom: 100%; min-width: 220px; margin: 0 0 4px; padding: 10px 12px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface-raised); box-shadow: var(--shadow); }
+/* Project header shares the bottom status row instead of owning a 56px row of its own. */
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] { grid-template-rows: minmax(0, 1fr) 44px; }
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-desk-grid { grid-row: 1; }
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-status-footer { grid-row: 2; grid-column: 1; align-items: center; }
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-status-footer > span:nth-child(2) { display: none; }
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-desk-header { grid-row: 2; grid-column: 1; justify-self: end; position: relative; top: auto; z-index: 2; min-width: 0; max-width: 100%; height: 44px; padding-inline: 12px; border: 0; background: transparent; }
+
+
+/* First/last frame panel: slots accept dragged frames, strip lists reusable images. */
+.comic-frame-panel { display: grid; gap: 10px; min-width: 0; }
+.comic-frame-panel__slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.comic-frame-slot { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.comic-frame-slot img, .comic-frame-slot__empty { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; border: 1px dashed var(--shell-border); background: var(--shell-surface); }
+.comic-frame-slot__empty { display: grid; place-items: center; padding: 6px; box-sizing: border-box; text-align: center; font-size: 12px; color: var(--shell-muted); }
+.comic-frame-slot[data-over="true"] img, .comic-frame-slot[data-over="true"] .comic-frame-slot__empty { border-color: var(--shell-accent); background: var(--shell-selected); }
+.comic-frame-slot figcaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
+.comic-frame-panel__previous { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.comic-frame-panel__previous img { width: 56px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; border: 1px solid var(--shell-border); cursor: grab; }
+.comic-frame-strip { list-style: none; margin: 0; padding: 0 0 6px; display: grid; grid-auto-flow: column; grid-auto-columns: 112px; gap: 8px; overflow-x: auto; scrollbar-width: thin; }
+.comic-frame-strip li { display: grid; gap: 4px; min-width: 0; }
+.comic-frame-strip img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; border: 1px solid var(--shell-border); cursor: grab; }
+.comic-frame-strip li > span { display: grid; gap: 2px; }
+.comic-frame-panel__hint { margin: 0; font-size: 12px; color: var(--shell-muted); }
+.comic-frame-panel__error { margin: 0; font-size: 12px; color: var(--danger); }
+
+/* Scene headers inside the shot strip: a compact label before the first shot of each scene. */
+.director-shot-scene { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--shell-muted); }
+.director-shot-scene strong { color: var(--shell-text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.director-shot-scene small { white-space: nowrap; font-size: 11px; }
+.director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout][data-motion-comic-production-layout] .director-shot-list .director-shot-scene { align-self: stretch; flex-direction: column; justify-content: center; align-items: flex-start; min-width: 72px; max-width: 120px; padding: 0 8px; border-left: 2px solid var(--shell-accent); }
+
+/* Concept layout: first -> last on one row, previous-shot action spans the full width. */
+.comic-frame-panel__slots { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
+.comic-frame-panel__arrow { color: var(--shell-muted); font-size: 16px; }
+.comic-frame-panel__previous { flex-direction: column; align-items: stretch; }
+.comic-frame-panel__previous img { display: none; }
+.comic-frame-panel__previous .sd-button { width: 100%; justify-content: center; }

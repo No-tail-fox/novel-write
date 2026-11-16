@@ -362,6 +362,11 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
     startedAt,
     lastHeartbeatAt: startedAt,
   });
+  // Persisting `running` is not observable to the renderer on its own: `updateTask` has no
+  // publisher, and the first `heartbeat(...)` below only runs after prep work (music/MV
+  // probing, artifact hydration) that can take a long time or throw. Publish the committed
+  // status right away so the UI never sits on a stale `pending` card with no run detection.
+  await options.onHeartbeat?.(task.id, activeStep ?? 0, 'task started');
 
   const emit = async (type: string, step: number | null, agent: string | null, detail: string, data?: unknown) => {
     const event = await db.addTaskEvent(task.id, {
@@ -430,7 +435,6 @@ async function runTaskWithPipelineStateLock(db: FileDatabase, task: Task, option
       resolvePixelleTask(task, { revision: options.pixelleTemplate.ref.revision, templates: [options.pixelleTemplate], paidRequests: 0 });
     }
     throwIfAborted(options.signal);
-    await heartbeat(activeStep ?? 0, 'task started');
     const musicMvAudioDurationMs = task.taskKind === 'music-mv'
       ? await probeMusicMvAudio(task, options, workDir)
       : undefined;

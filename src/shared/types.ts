@@ -4,6 +4,7 @@ export const SHELL_VIEWS = [
   'projects',
   'conversation-workbench',
   'new-task',
+  'short-video',
   'hot-board',
   'queue',
   'history',
@@ -60,6 +61,8 @@ export interface LlmConfig {
   model: string;
   proxyUrl: string;
   timeoutMs?: number;
+  /** User-supplied per-image input token ceiling from the provider's documentation. Unset keeps the conservative pixel bound. */
+  imageInputTokenLimit?: number;
   requestParamsJson?: string;
   /** G-1: same endpoint/key, tried in order after a definitive model refusal (model not found, no channel, overload). */
   fallbackModels?: string[];
@@ -1330,6 +1333,7 @@ export interface CursorRequest {
 
 export type HistoryFamily = 'task' | 'viral-analysis' | 'image-lab' | 'voice-lab';
 export type HistoryArchiveFilter = 'active' | 'archived';
+export type ProjectSort = 'newest' | 'oldest' | 'title';
 
 export type TaskHistoryStatusFilter =
   | { status?: TaskStatus; statuses?: never }
@@ -1341,6 +1345,7 @@ export type HistoryListRequest =
       filter: HistoryArchiveFilter;
       taskType?: 'story' | 'music-mv' | 'html-video' | 'editorial-collage' | 'template-animation' | 'motion-comic';
       favorite?: boolean;
+      sort?: ProjectSort;
       query?: string;
       cursor?: string | null;
       limit?: number;
@@ -1999,6 +2004,8 @@ export interface ResearchCopyComposeInput {
   projectId?: string;
   llmProfileId?: string;
   directorCopyAssist?: import('./director-copy-assist').DirectorCopyAssistRequestInput;
+  /** Explicit source preparation: one request, no automatic retries or fallback. */
+  codeVideoCondense?: { targetDurationSeconds: number };
   writingStyleId?: import('./editorial-writing-styles').EditorialWritingStyleId;
   channel?: PromptChannel;
   /** Stable content genre; omitted by older clients. */

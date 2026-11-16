@@ -1,7 +1,10 @@
+import { buildPiFilmNodes } from './pi-film-graph';
+import { codeVideoSourcePreflightErrors } from './code-video-source-plan';
 import { buildLemoUpstreamNodes } from './lemo-upstream-graph';
-import { buildLemoProjectNodes } from './lemo-production-graph';
+import { codeVideoPolicySchema } from './creative-animation/production-policy';
 import { LEMO_NATIVE_ENGINE } from './creative-animation/native-film';
 import { z } from 'zod';
+import { voxDataValueSchema } from './vox-animation';
 import type { EditorialCollagePipelineData, EditorialCollageShot } from './editorial-collage';
 import { creativeStyleSupportsMode, resolveCreativeStyle } from './creative-animation/styles';
 import { isDefinitiveImageProviderFailure } from './image-provider-error';
@@ -27,20 +30,24 @@ export type VoxProjectMusic = z.infer<typeof voxProjectMusicSchema>;
 export const voxProductionSettingsSchema = z.object({
   version: z.literal(1), presetId: z.enum(['paper-explainer', 'data-map', 'archival-story']), presetVersion: z.literal(1),
   narration: z.boolean().default(true),
+  /** Opt-in new code-video policy; absent on historical projects, never defaulted on load. */
+  codeVideo: codeVideoPolicySchema.optional(),
+  /** v4 gateway request budget; defaulted only when creating a v4 run. */
+  piMaxRequests: z.number().int().min(1).max(1000).optional(),
   generateImages: z.boolean().optional(),
   /** Lemo v3 only: let the agent request illustrations (off by default; never for evidence styles). */
   agentImages: z.object({ enabled: z.boolean(), maxImages: z.number().int().min(1).max(LEMO_AGENT_IMAGE_MAX).default(LEMO_AGENT_IMAGE_DEFAULT) }).strict().optional(),
   /** Lemo v3 only: per-run Agent turn limit (absent = LEMO_AGENT_MAX_TURNS, the historical 64). A budget, not an input. */
   agentMaxTurns: z.number().int().min(LEMO_AGENT_TURNS_MIN).max(LEMO_AGENT_TURNS_LIMIT).optional(),
-  /** Lemo v3 only: optional cumulative provider-reported token budget (input + output). */
+  /** Agent cumulative provider-reported token budget (input + output); v4 reserves before dispatch. */
   agentMaxTokens: z.number().int().min(LEMO_AGENT_TOKENS_MIN).max(LEMO_AGENT_TOKENS_LIMIT).optional(),
-  /** Lemo v3 only: optional cost budget (price-table currency, default CNY), estimated from the run's receipts. */
+  /** Agent cost budget (price-table currency, default CNY); v4 conservatively reserves each request. */
   agentMaxCost: z.number().finite().min(LEMO_AGENT_COST_MIN).max(LEMO_AGENT_COST_MAX).optional(),
   music: voxProjectMusicSchema.optional(),
   lockedShotIds: z.array(id).max(500).default([]),
   authoring: z.object({ mode: z.enum(['template', 'ai-code', 'existing-assets']), styleId: z.string().min(1).max(120), brief: z.string().max(2000).optional() }).strict().optional(),
   dataUnit: z.string().max(30).optional(),
-  data: z.array(z.object({ label: z.string().min(1).max(160), value: z.number().finite(), source: z.string().min(1).max(400),
+  data: z.array(z.object({ label: z.string().min(1).max(160), value: voxDataValueSchema, source: z.string().min(1).max(400),
     lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional(),
   }).strict()).max(24).default([]),
   archives: z.array(z.object({ assetVersionId: id, source: z.string().min(1).max(400), license: z.string().min(1).max(512), description: z.string().max(400).optional() }).strict()).max(100).default([]),
@@ -59,7 +66,7 @@ export function voxProductionEngine(settings: Pick<VoxProductionSettings, 'autho
 }
 export const voxReadableNarration = (text: string) => /[\p{L}\p{N}]/u.test(text);
 export const voxProductionNodeSchema = z.object({
-  id, kind: z.enum(['plan', 'image', 'cutout', 'voice', 'timing', 'animation', 'code', 'code-review', 'code-repair', 'code-finalize', 'film-plan-materials', 'film-plan-scene', 'film-plan-finalize', 'film-materials', 'film-material', 'film-edit', 'film-scene', 'film-director', 'film-sample', 'film-sample-repair', 'film-sample-finalize', 'film-code', 'film-review', 'film-repair', 'film-finalize', 'compile', 'render', 'verify']),
+  id, kind: z.enum(['agent-segment', 'audio-master', 'plan', 'image', 'cutout', 'voice', 'timing', 'animation', 'code', 'code-review', 'code-repair', 'code-finalize', 'film-plan-materials', 'film-plan-scene', 'film-plan-finalize', 'film-materials', 'film-material', 'film-edit', 'film-scene', 'film-director', 'film-sample', 'film-sample-repair', 'film-sample-finalize', 'film-code', 'film-review', 'film-repair', 'film-finalize', 'compile', 'render', 'verify']),
   shotId: id.optional(), layerId: id.optional(), fileId: id.optional(), editSession: id.optional(), editRound: z.number().int().min(1).max(16).optional(), materialId: id.optional(), dependencies: z.array(id).max(500),
   status: z.enum(['pending', 'running', 'completed', 'failed', 'unknown']),
   paid: z.boolean(), inputHash: z.string().max(128).optional(), attempt: z.number().int().nonnegative(),
@@ -104,7 +111,7 @@ export const voxProductionRunSchema = z.object({
   version: z.literal(1), id, status: z.enum(['running', 'paused', 'failed', 'completed', 'cancelled']),
   settings: voxProductionSettingsSchema,
   planningVersion: z.literal(1).optional(),
-  engine: z.literal(LEMO_NATIVE_ENGINE).optional(), filmId: id.optional(), authoringVersion: z.union([z.literal(2), z.literal(3)]).optional(),
+  engine: z.literal(LEMO_NATIVE_ENGINE).optional(), filmId: id.optional(), authoringVersion: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
   /** v3 runs created with the asset/image channels; older in-flight journals keep their original context. */
   assetChannel: z.literal(1).optional(),
   sourceHash: z.string().max(128), runtimeIdentity: z.string().max(8000),
@@ -116,31 +123,33 @@ export const voxProductionRunSchema = z.object({
 export type VoxProductionRun = z.infer<typeof voxProductionRunSchema>;
 export const voxProductionStartSchema = z.object({ id, expectedUpdatedAt: z.string().datetime(), settings: voxProductionSettingsSchema }).strict();
 export type VoxProductionStart = z.infer<typeof voxProductionStartSchema>;
-export const voxProductionControlSchema = z.object({ id, runId: id, action: z.enum(['pause', 'resume', 'cancel', 'recheck-code', 'reconcile', 'confirm-no-result', 'retry-unknown', 'skip-unknown-image']),
+export const voxProductionControlSchema = z.object({ id, runId: id, action: z.enum(['pause', 'resume', 'cancel', 'reconcile', 'confirm-no-result', 'retry-unknown', 'skip-unknown-image', 'confirm-human-review']),
   nodeId: id.optional(), evidence: z.string().trim().min(8).max(2000).optional(),
+  budget: z.object({ agentMaxTurns: z.number().int().min(LEMO_AGENT_TURNS_MIN).max(LEMO_AGENT_TURNS_LIMIT).optional(), agentMaxTokens: z.number().int().min(LEMO_AGENT_TOKENS_MIN).max(LEMO_AGENT_TOKENS_LIMIT).optional(), agentMaxCost: z.number().finite().min(LEMO_AGENT_COST_MIN).max(LEMO_AGENT_COST_MAX).optional(), piMaxRequests: z.number().int().min(1).max(1000).optional() }).strict().optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.action === 'confirm-no-result' && (!value.nodeId || !value.evidence)) ctx.addIssue({ code: 'custom', message: '请填写待核对步骤与服务商核对依据。' });
   if ((value.action === 'retry-unknown' || value.action === 'skip-unknown-image') && !value.nodeId) ctx.addIssue({ code: 'custom', message: '请选择要重试的步骤。' });
+  if (value.action === 'confirm-human-review' && (value.nodeId || value.evidence || value.budget)) ctx.addIssue({ code: 'custom', message: '人工验收确认不接受步骤、依据或预算参数。' });
 });
 /** An unknown Lemo v3 Agent turn whose only open question is one submitted illustration (L-2b). */
 export const isLemoImageUnknownNode = (run: Pick<VoxProductionRun, 'authoringVersion'>, node: VoxProductionNode) =>
   run.authoringVersion === 3 && node.kind === 'film-edit' && voxProductionNodeStatus(node) === 'unknown' && /LEMO_IMAGE_REQUEST_UNKNOWN/u.test(node.error ?? '');
 export type VoxProductionControl = z.infer<typeof voxProductionControlSchema>;
 /** L-4: adopt the latest saved Lemo Agent budget (turns / tokens / cost) on resume; nothing else in the run changes. */
-export function lemoAgentBudgetResume(run: VoxProductionRun, saved: Pick<VoxProductionSettings, 'agentMaxTurns' | 'agentMaxTokens' | 'agentMaxCost'> | undefined): VoxProductionRun {
-  if (!saved || (saved.agentMaxTurns === run.settings.agentMaxTurns && saved.agentMaxTokens === run.settings.agentMaxTokens && saved.agentMaxCost === run.settings.agentMaxCost)) return run;
-  const { agentMaxTurns: _turns, agentMaxTokens: _tokens, agentMaxCost: _cost, ...settings } = run.settings;
-  return { ...run, settings: { ...settings, ...(saved.agentMaxTurns !== undefined ? { agentMaxTurns: saved.agentMaxTurns } : {}), ...(saved.agentMaxTokens !== undefined ? { agentMaxTokens: saved.agentMaxTokens } : {}), ...(saved.agentMaxCost !== undefined ? { agentMaxCost: saved.agentMaxCost } : {}) } };
+export function lemoAgentBudgetResume(run: VoxProductionRun, saved: Pick<VoxProductionSettings, 'agentMaxTurns' | 'agentMaxTokens' | 'agentMaxCost' | 'piMaxRequests'> | undefined): VoxProductionRun {
+  if (!saved || (saved.agentMaxTurns === run.settings.agentMaxTurns && saved.agentMaxTokens === run.settings.agentMaxTokens && saved.agentMaxCost === run.settings.agentMaxCost && saved.piMaxRequests === run.settings.piMaxRequests)) return run;
+  const { agentMaxTurns: _turns, agentMaxTokens: _tokens, agentMaxCost: _cost, piMaxRequests: _requests, ...settings } = run.settings;
+  return { ...run, settings: { ...settings, ...(saved.agentMaxTurns !== undefined ? { agentMaxTurns: saved.agentMaxTurns } : {}), ...(saved.agentMaxTokens !== undefined ? { agentMaxTokens: saved.agentMaxTokens } : {}), ...(saved.agentMaxCost !== undefined ? { agentMaxCost: saved.agentMaxCost } : {}), ...(saved.piMaxRequests !== undefined ? { piMaxRequests: saved.piMaxRequests } : {}) } };
 }
 
 export function voxProductionSettings(presetId: VoxProductionSettings['presetId'] = 'paper-explainer'): VoxProductionSettings {
   return voxProductionSettingsSchema.parse({ version: 1, presetId, presetVersion: 1 });
 }
 export function voxProductionNeedsTextModel(nodes: readonly VoxProductionNode[]): boolean {
-  return nodes.some(node => ['plan', 'film-plan-materials', 'film-plan-scene', 'code', 'code-repair', 'film-edit', 'film-code', 'film-scene', 'film-director', 'film-sample-repair', 'film-repair'].includes(node.kind));
+  return nodes.some(node => ['agent-segment', 'plan', 'film-plan-materials', 'film-plan-scene', 'code', 'code-repair', 'film-edit', 'film-code', 'film-scene', 'film-director', 'film-sample-repair', 'film-repair'].includes(node.kind));
 }
 export function voxProductionInputErrors(document: EditorialCollagePipelineData, settings: VoxProductionSettings): string[] {
-  const errors: string[] = [];
+  const errors: string[] = settings.narration ? codeVideoSourcePreflightErrors(document, settings.codeVideo) : [];
   if (settings.authoring && !creativeStyleSupportsMode(resolveCreativeStyle(settings.authoring.styleId, settings.presetId), settings.authoring.mode === 'template' ? 'template' : 'ai-code')) errors.push(settings.authoring.mode === 'template' ? '所选风格不支持模板动画，请选择已适配风格或改用 Lemo 创意动画。' : '未找到所选风格，请重新选择。');
   if (!document.sourceText?.trim() || !document.beats.some(beat => beat.shots.length)) errors.push('请先填写文案并创建分镜。');
   if (settings.presetId === 'data-map' && settings.data.length < 2) errors.push('请补充至少两条有来源的真实数据；也可以切换纸拼贴讲解。');
@@ -158,35 +167,16 @@ export function voxProductionInputErrors(document: EditorialCollagePipelineData,
 }
 
 /** Separate versioned DAG: legacy director batch records retain their original schema. */
-export function buildVoxProductionNodes(document: EditorialCollagePipelineData, settings: VoxProductionSettings, engine: typeof LEMO_NATIVE_ENGINE | 'legacy' = voxProductionEngine(settings), authoringVersion = 1, planningVersion?: 1): VoxProductionNode[] {
-  if (engine === LEMO_NATIVE_ENGINE && authoringVersion === 3) return buildLemoUpstreamNodes(document, settings);
-  if (engine === LEMO_NATIVE_ENGINE && authoringVersion === 2) return buildLemoProjectNodes(document, settings, planningVersion);
+export function buildVoxProductionNodes(document: EditorialCollagePipelineData, settings: VoxProductionSettings, engine: typeof LEMO_NATIVE_ENGINE | 'legacy' = voxProductionEngine(settings), authoringVersion = 3): VoxProductionNode[] {
+  if (engine === LEMO_NATIVE_ENGINE) {
+    if (authoringVersion === 4) return buildPiFilmNodes(document, settings);
+    if (authoringVersion !== 3) throw new Error('LEMO_LEGACY_RUN_UNSUPPORTED: 旧版 Lemo 制作任务已停止支持，请新建制作任务。');
+    return buildLemoUpstreamNodes(document, settings);
+  }
   const nodes: VoxProductionNode[] = [];
   const add = (kind: VoxProductionNode['kind'], nodeId: string, dependencies: string[], shotId?: string, layerId?: string, paid = false) => {
     nodes.push({ id: nodeId, kind, dependencies, shotId, layerId, paid, status: 'pending', attempt: 0 }); return nodeId;
   };
-  if (engine === LEMO_NATIVE_ENGINE) {
-    const shots = document.beats.flatMap(beat => beat.shots);
-    const editable = shots.filter(shot => !voxShotLocked(settings, shot));
-    const plan = editable.length ? add('plan', 'plan', [], undefined, undefined, true) : undefined;
-    const timings: string[] = [];
-    for (const shot of editable) {
-      const narration = document.beats.flatMap(beat => beat.subtitleCues).filter(cue => shot.subtitleCueIds.includes(cue.id)).map(cue => cue.text).join(' ');
-      const continuation = shot.narrationSplit && shot.narrationSplit.sourceShotId !== shot.id;
-      const voice = settings.narration && !continuation && voxReadableNarration(narration) ? add('voice', `voice:${shot.id}`, [plan!], shot.id, undefined, true) : undefined;
-      timings.push(add('timing', `timing:${shot.id}`, voice ? [voice] : continuation ? ['timing:' + shot.narrationSplit!.sourceShotId] : [plan!], shot.id));
-    }
-    let ready: string | undefined;
-    if (editable.length) {
-      const code = add('film-code', 'film-code', timings, undefined, undefined, true);
-      const review = add('film-review', 'film-review', [code]);
-      const repair = add('film-repair', 'film-repair', [review], undefined, undefined, true);
-      ready = add('film-finalize', 'film-finalize', [repair]);
-    }
-    const compiled = shots.map(shot => add('compile', `compile:${shot.id}`, voxShotLocked(settings, shot) ? [] : [ready!], shot.id));
-    add('render', 'render', compiled); add('verify', 'verify', ['render']);
-    return nodes;
-  }
   const plan = add('plan', 'plan', [], undefined, undefined, true);
   const compiled: string[] = [];
   for (const shot of document.beats.flatMap(beat => beat.shots)) {

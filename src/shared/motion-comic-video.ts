@@ -9,6 +9,8 @@ import { selectVideoGenerationRoute } from './video-routing';
 import type { AppConfig } from './types';
 import type { VideoReferenceImage } from './video-lab';
 import type { VideoGenerationRequest } from './video-provider';
+import { assertCharacterTimbreReferencesSupported } from './character-timbre-reference';
+import { compileMotionComicReferenceMentions } from './motion-comic-reference-compiler';
 
 export interface MotionComicVideoFrameSet {
   first: ProductionAssetVersion;
@@ -19,7 +21,7 @@ export interface MotionComicVideoInputFingerprintSource {
   shotId: string;
   episodeId: string;
   renderStrategy: 'remote-video';
-  firstFrameAssetVersionId: string;
+  firstFrameAssetVersionId?: string;
   firstFrameSha256?: string;
   lastFrameAssetVersionId?: string;
   lastFrameSha256?: string;
@@ -50,6 +52,7 @@ export interface MotionComicVideoInputFingerprintSource {
         wardrobe: string;
         continuityNotes: string;
         fixedReference: MotionComicVideoReferenceFingerprint | null;
+        fixedReferences: MotionComicVideoReferenceFingerprint[];
       };
     }>;
     scene: {
@@ -59,6 +62,7 @@ export interface MotionComicVideoInputFingerprintSource {
       prompt: string;
       continuityNotes: string;
       fixedReference: MotionComicVideoReferenceFingerprint | null;
+      fixedReferences: MotionComicVideoReferenceFingerprint[];
     } | null;
     props: Array<{
       id: string;
@@ -66,6 +70,7 @@ export interface MotionComicVideoInputFingerprintSource {
       description: string;
       prompt: string;
       fixedReference: MotionComicVideoReferenceFingerprint | null;
+      fixedReferences: MotionComicVideoReferenceFingerprint[];
     }>;
   };
 }
@@ -88,28 +93,46 @@ export function motionComicVideoFrames(
   return { first, last };
 }
 
+/** References may omit frames, but an explicitly selected invalid frame must never be ignored. */
+export function motionComicVideoInputFrames(
+  document: MotionComicPipelineData,
+  shot: MotionComicShot,
+): { first?: ProductionAssetVersion; last?: ProductionAssetVersion } {
+  if (shot.videoProduction?.referenceMode !== 'references') return motionComicVideoFrames(document, shot);
+  if (shot.renderStrategy !== 'remote-video') {
+    throw new Error('DIRECTOR_VIDEO_STRATEGY_INVALID: 请先将镜头制作方式切换为远程视频。');
+  }
+  return {
+    first: shot.firstFrameAssetVersionId ? frameAsset(document, shot.firstFrameAssetVersionId, '首帧') : undefined,
+    last: shot.lastFrameAssetVersionId ? frameAsset(document, shot.lastFrameAssetVersionId, '尾帧') : undefined,
+  };
+}
+
 export function buildMotionComicShotVideoRequest(
   document: MotionComicPipelineData,
   shot: MotionComicShot,
 ): VideoGenerationRequest {
-  const frames = motionComicVideoFrames(document, shot);
+  const frames = motionComicVideoInputFrames(document, shot);
   const production = shot.videoProduction;
   const references = production?.referenceMode === 'references' ? motionComicVideoReferences(document, shot) : [];
   const audio = (production?.audioMode==='audio-driven' ? production.referenceAudioAssetVersionIds ?? [] : []).map(id => {
     const asset = document.assets.find(a => a.id === id && a.kind === 'audio' && a.localPath);
     if (!asset) throw new Error('DIRECTOR_VIDEO_AUDIO_REFERENCE_MISSING: 参考声音文件已失效，请重新选择。');
+    if (asset.assetId.startsWith('character-voice-sample:') || document.characters.some(character => character.voiceSampleAssetVersionId === asset.id)) {
+      throw new Error('DIRECTOR_VIDEO_VOICE_SAMPLE_UNSUPPORTED: 角色声音样本不能作为完整对白参考音频。');
+    }
     return asset.localPath!;
   });
   if (production?.audioMode === 'audio-driven' && (!audio.length || production.referenceMode !== 'references')) {
     throw new Error('DIRECTOR_VIDEO_AUDIO_REFERENCE_REQUIRED: 音频驱动需要多参考模式和已选择的完整对白音频。');
   }
   return {
-    prompt: motionComicVideoPrompt(document, shot),
+    prompt: motionComicVideoPrompt(document, shot, references),
     durationSec: shot.productionUnit?.generationDurationSec ?? Math.max(1, Math.ceil(shot.durationMs / 1_000)),
     ratio: document.ratio,
     generateAudio: production?.audioMode === 'native' || production?.audioMode === 'audio-driven',
     ...(production?.referenceMode === 'references' ? { referenceImages: references.map(({path,kind,description}) => ({path,kind,description})) }
-      : { firstFramePath: frames.first.localPath, ...(frames.last?.localPath ? { lastFramePath: frames.last.localPath } : {}) }),
+      : { firstFramePath: frames.first!.localPath, ...(frames.last?.localPath ? { lastFramePath: frames.last.localPath } : {}) }),
     ...(audio.length ? { referenceAudioPaths: audio } : {}),
   };
 }
@@ -121,8 +144,10 @@ export interface MotionComicSubmittedReference extends VideoReferenceImage {
 
 /** Ordered, confirmed versions only. Opening/ending references are explicitly soft constraints. */
 export function motionComicVideoReferences(document: MotionComicPipelineData, shot: MotionComicShot): MotionComicSubmittedReference[] {
-  const frames=motionComicVideoFrames(document,shot);
-  const result:MotionComicSubmittedReference[]=[{assetVersionId:frames.first.id,ownerId:shot.id,path:frames.first.localPath!,kind:'opening',description:'本镜开场构图参考（软约束）'}];
+  const frames=motionComicVideoInputFrames(document,shot);
+  const result:MotionComicSubmittedReference[]=frames.first
+    ? [{assetVersionId:frames.first.id,ownerId:shot.id,path:frames.first.localPath!,kind:'opening',description:'本镜开场构图参考（软约束）'}]
+    : [];
   for(const lookId of shot.characterLookIds) {
     const character=document.characters.find(c=>c.looks.some(l=>l.id===lookId));
     const look=character?.looks.find(l=>l.id===lookId);
@@ -132,6 +157,7 @@ export function motionComicVideoReferences(document: MotionComicPipelineData, sh
     result.push({assetVersionId:fixed.id,ownerId:look.id,path:fixed.localPath,kind:'character',description:`${character.name} / ${look.label}`});
   }
   const scene=document.sceneAssets.find(a=>a.id===shot.sceneAssetId);
+  if(shot.sceneAssetId && !scene)throw new Error(`DIRECTOR_VIDEO_REFERENCE_MISSING: 场景 ${shot.sceneAssetId} 不存在。`);
   if(scene) {
     const fixed=fixedReferenceFingerprint(document,scene.referenceAssetVersionIds);
     if(!fixed?.localPath)throw new Error(`DIRECTOR_VIDEO_REFERENCE_MISSING: 请先确认场景“${scene.label}”的固定参考。`);
@@ -143,6 +169,7 @@ export function motionComicVideoReferences(document: MotionComicPipelineData, sh
     result.push({assetVersionId:fixed.id,ownerId:prop.id,path:fixed.localPath,kind:'object',description:prop.label});
   }
   if(frames.last)result.push({assetVersionId:frames.last.id,ownerId:shot.id,path:frames.last.localPath!,kind:'ending',description:'本镜结尾构图参考（软约束）'});
+  if(!result.length)throw new Error('DIRECTOR_VIDEO_REFERENCE_REQUIRED: 多参考模式至少需要一张已确认的资产参考图或可用的开场、结尾参考图。');
   return result;
 }
 
@@ -169,7 +196,6 @@ export function selectMotionComicVideoRoute(config:AppConfig,document:MotionComi
  const compatible=config.video.providers.filter(provider=>{
   const limits=videoModelLimits(provider);
   return request.durationSec>=limits.minDuration&&request.durationSec<=limits.maxDuration
-   &&(!request.generateAudio || limits.family==='seedance' || limits.family==='generic')
    &&(request.referenceImages?.length??0)<=limits.images&&(request.referenceAudioPaths?.length??0)<=limits.audio
    &&(limits.family!=='h3'||(request.referenceImages?.length??0)+(request.referenceAudioPaths?.length??0)<=12);
  });
@@ -183,7 +209,7 @@ export function motionComicVideoInputFingerprintSource(
   providerId: string,
   model: string,
 ): MotionComicVideoInputFingerprintSource {
-  const frames = motionComicVideoFrames(document, shot);
+  const frames = motionComicVideoInputFrames(document, shot);
   const request = buildMotionComicShotVideoRequest(document, shot);
   const characters = shot.characterLookIds.flatMap((lookId) => {
     for (const character of document.characters) {
@@ -200,6 +226,7 @@ export function motionComicVideoInputFingerprintSource(
           wardrobe: look.wardrobe,
           continuityNotes: look.continuityNotes,
           fixedReference: fixedReferenceFingerprint(document, look.referenceAssetVersionIds),
+          fixedReferences: fixedReferenceFingerprints(document, look.referenceAssetVersionIds),
         },
       }];
     }
@@ -211,6 +238,9 @@ export function motionComicVideoInputFingerprintSource(
     ? (shot.videoProduction.referenceAudioAssetVersionIds ?? []).map((id) => {
       const asset = document.assets.find((candidate) => candidate.id === id && candidate.kind === 'audio' && candidate.localPath);
       if (!asset) throw new Error('DIRECTOR_VIDEO_AUDIO_REFERENCE_MISSING: 参考声音文件已失效，请重新选择。');
+    if (asset.assetId.startsWith('character-voice-sample:') || document.characters.some(character => character.voiceSampleAssetVersionId === asset.id)) {
+      throw new Error('DIRECTOR_VIDEO_VOICE_SAMPLE_UNSUPPORTED: 角色声音样本不能作为完整对白参考音频。');
+    }
       return { id, localPath: asset.localPath, sha256: asset.sha256 };
     })
     : [];
@@ -218,8 +248,7 @@ export function motionComicVideoInputFingerprintSource(
     shotId: shot.id,
     episodeId: shot.episodeId,
     renderStrategy: 'remote-video',
-    firstFrameAssetVersionId: frames.first.id,
-    firstFrameSha256: frames.first.sha256,
+    ...(frames.first ? { firstFrameAssetVersionId: frames.first.id, firstFrameSha256: frames.first.sha256 } : {}),
     ...(frames.last ? { lastFrameAssetVersionId: frames.last.id, lastFrameSha256: frames.last.sha256 } : {}),
     prompt: request.prompt,
     durationSec: request.durationSec,
@@ -248,6 +277,7 @@ export function motionComicVideoInputFingerprintSource(
         prompt: scene.prompt,
         continuityNotes: scene.continuityNotes,
         fixedReference: fixedReferenceFingerprint(document, scene.referenceAssetVersionIds),
+        fixedReferences: fixedReferenceFingerprints(document, scene.referenceAssetVersionIds),
       } : null,
       props: props.map((prop) => ({
         id: prop.id,
@@ -255,6 +285,7 @@ export function motionComicVideoInputFingerprintSource(
         description: prop.description,
         prompt: prop.prompt,
         fixedReference: fixedReferenceFingerprint(document, prop.referenceAssetVersionIds),
+        fixedReferences: fixedReferenceFingerprints(document, prop.referenceAssetVersionIds),
       })),
     },
   };
@@ -288,7 +319,11 @@ export function motionComicVideoJobInputsMatch(document: MotionComicPipelineData
   } catch { return false; }
 }
 
-export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: MotionComicShot): string {
+export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: MotionComicShot, references?: readonly MotionComicSubmittedReference[]): string {
+  assertCharacterTimbreReferencesSupported([shot.prompt, shot.motionPrompt], document.characters);
+  const compiled = compileMotionComicReferenceMentions({ document, shot,
+    references: references ?? (shot.videoProduction?.referenceMode === 'references' ? motionComicVideoReferences(document, shot) : []),
+    prompt: shot.prompt, motionPrompt: shot.motionPrompt });
   const episode = document.episodes.find((candidate) => candidate.id === shot.episodeId);
   if (!episode) throw new Error(`DIRECTOR_VIDEO_EPISODE_NOT_FOUND: ${shot.episodeId}`);
   const ordered = episode.scenes.flatMap((scene) => scene.shots);
@@ -306,9 +341,10 @@ export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: 
   const props = shot.propAssetIds.flatMap((id) => document.props.find((candidate) => candidate.id === id) ?? []);
   const continuity = shot.continuity;
   const sections = [
-    `镜头目标：${shot.prompt.trim()}`,
-    `动作与运镜：${shot.motionPrompt.trim()}`,
+    `镜头目标：${compiled.prompt.trim()}`,
+    `动作与运镜：${compiled.motionPrompt.trim()}`,
     `构图：${shot.framing.trim()}`,
+    `单一连续镜头，输出画幅 ${document.ratio}，整幅${Number(document.ratio.split(':')[0]) > Number(document.ratio.split(':')[1]) ? '横向' : Number(document.ratio.split(':')[0]) < Number(document.ratio.split(':')[1]) ? '竖向' : '正方形'}画面，无分格、拼贴、插图或画中画。主体人物从头到尾清晰完整地处于安全构图内，不要先给空地面或无主体画面；除非动作明确要求，不裁切头脸、手部或关键道具。运镜必须是平滑连续的物理摄像机运动，不要冻结画面，不要突然跳变焦距或切换机位。`,
     scene ? `场景连续性：${scene.label}；${compact(scene.description, 420)}；生成约束 ${compact(scene.prompt, 420)}；${compact(scene.continuityNotes, 420)}` : '',
     ...looks.map(({ character, look }) => `角色连续性：${character.name}（${look.label}）；身份 ${compact(character.identityPrompt, 360)}；外观 ${compact(look.appearancePrompt, 320)}；服装 ${compact(look.wardrobe, 280)}；${compact(look.continuityNotes, 360)}`),
     ...props.map((prop) => `道具连续性：${prop.label}；${compact(prop.description, 280)}；生成约束 ${compact(prop.prompt, 320)}`),
@@ -322,7 +358,9 @@ export function motionComicVideoPrompt(document: MotionComicPipelineData, shot: 
       ...(shot.videoProduction.audioMode === 'post-mix' ? [] : motionComicVideoDialogue(document,shot).map(c=>`[${c.startMs}–${c.endMs}ms] ${c.role==='narrative'?'VO':c.role==='monologue'?'OS':'对白'} ${c.speaker}：${c.text}（${c.emotion}）`)),
       ...(shot.videoProduction.referenceMode==='references'?['开场与结尾图片为构图参考，属于软约束；角色、场景、道具按提交顺序保持一致。']:[]),
     ] : []),
-    '保持首帧中的人物身份、脸型、发型、服装、场景结构和光线方向。动作连续自然，不切镜，不换人，不新增文字或水印。',
+    shot.videoProduction?.referenceMode === 'references' && !shot.firstFrameAssetVersionId
+      ? '保持提交参考图中的人物身份、脸型、发型、服装、场景结构和光线方向。动作连续自然，不切镜，不换人，不新增文字或水印。'
+      : '保持首帧中的人物身份、脸型、发型、服装、场景结构和光线方向。动作连续自然，不切镜，不换人，不新增文字或水印。',
   ].filter(Boolean);
   const prompt=sections.join('\n');
   if(shot.videoProduction && prompt.length>6800)throw new Error('DIRECTOR_VIDEO_DIALOGUE_TOO_LONG: 本镜提示词和完整对白超过 6800 字，请拆分制作单元。');
@@ -366,11 +404,21 @@ function fixedReferenceFingerprint(
   document: MotionComicPipelineData,
   referenceAssetVersionIds: readonly string[],
 ): MotionComicVideoReferenceFingerprint | null {
+  return fixedReferenceFingerprints(document, referenceAssetVersionIds)[0] ?? null;
+}
+
+/** Same role ordering as the reference editor, so pinning one more angle invalidates shots predictably. */
+function fixedReferenceFingerprints(
+  document: MotionComicPipelineData,
+  referenceAssetVersionIds: readonly string[],
+): MotionComicVideoReferenceFingerprint[] {
   const ids = new Set(referenceAssetVersionIds);
-  const references = document.assets.filter((asset) => ids.has(asset.id) && asset.kind === 'image' && asset.localPath?.trim());
-  const fixed = references.find((asset) => asset.selected === true && asset.pinned === true)
-    ?? [...references].reverse().find((asset) => asset.pinned === true);
-  return fixed ? { id: fixed.id, localPath: fixed.localPath, sha256: fixed.sha256 } : null;
+  const fixed = document.assets.filter((asset) => ids.has(asset.id) && asset.kind === 'image'
+    && asset.localPath?.trim() && asset.pinned === true);
+  const order = ['design', 'front', 'side', 'back', 'detail', 'outfit'];
+  return [...fixed]
+    .sort((left, right) => order.indexOf(left.referenceRole ?? 'design') - order.indexOf(right.referenceRole ?? 'design'))
+    .map((asset) => ({ id: asset.id, localPath: asset.localPath, sha256: asset.sha256 }));
 }
 
 const SHA256_CONSTANTS = [

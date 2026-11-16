@@ -184,10 +184,10 @@ export async function renderAudioTimeline(options: AudioTimelineRenderOptions): 
   const tempOutput = join(outDir, `.${basename(outputPath)}.${id}.tmp`);
   const scriptPaths: string[] = [];
 
-  const run = async (args: string[], step: string) => {
+  const run = async (args: string[], step: string, maxStdoutBytes = 64 * 1024) => {
     if (signal?.aborted) throw cancelled();
     try {
-      return await runBoundedProcess(ffmpeg, args, { cwd: outDir, timeoutMs, maxStdoutBytes: 64 * 1024, maxStderrBytes: MAX_STDERR_BYTES, signal });
+      return await runBoundedProcess(ffmpeg, args, { cwd: outDir, timeoutMs, maxStdoutBytes, maxStderrBytes: MAX_STDERR_BYTES, signal });
     } catch (error) {
       if (error instanceof BoundedProcessError) {
         if (error.code === 'PROCESS_ABORTED') throw cancelled();
@@ -197,13 +197,26 @@ export async function renderAudioTimeline(options: AudioTimelineRenderOptions): 
       throw fail(step === '响度测量' ? 'AUDIO_TIMELINE_MEASURE_FAILED' : 'AUDIO_TIMELINE_RENDER_FAILED', `${step}失败：${error instanceof Error ? error.message : String(error)}`);
     }
   };
+  let fileGraphOption: string | undefined;
+  const resolveFileGraphOption = async () => {
+    if (fileGraphOption) return fileGraphOption;
+    const version = await run(['-version'], '滤镜参数检测');
+    const major = /ffmpeg version\s+(\d+)\./u.exec(version.stdout)?.[1];
+    if (major) fileGraphOption = Number(major) >= 7 ? '-/filter_complex' : '-filter_complex_script';
+    else {
+      const help = await run(['-hide_banner', '-h', 'full'], '滤镜参数检测', MAX_STDERR_BYTES);
+      if (help.code !== 0) throw fail('AUDIO_TIMELINE_RENDER_FAILED', `无法检测 ffmpeg 滤镜文件参数：${tail(help.stderr)}`);
+      fileGraphOption = `${help.stdout}\n${help.stderr}`.includes('-filter_complex_script') ? '-filter_complex_script' : '-/filter_complex';
+    }
+    return fileGraphOption;
+  };
   /** 过长的 graph 走脚本文件，避开 Windows 32K 命令行上限。 */
   const graphArgs = async (graph: AudioTimelineGraph) => {
     if (graph.filterComplex.length <= INLINE_GRAPH_LIMIT) return ['-filter_complex', graph.filterComplex];
     const script = join(outDir, `.${basename(outputPath)}.${id}.${scriptPaths.length}.graph.txt`);
     await writeFile(script, graph.filterComplex, 'utf8');
     scriptPaths.push(script);
-    return ['-filter_complex_script', script];
+    return [await resolveFileGraphOption(), script];
   };
 
   try {

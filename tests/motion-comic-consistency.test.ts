@@ -9,6 +9,7 @@ import {
   imageLabRecordIdFromMutation,
   inspectMotionComicShotConsistency,
   motionComicConsistencySummary,
+  motionComicEpisodeMissingReferenceTargets,
   motionComicReferenceAssets,
   setMotionComicFixedReference,
 } from '../src/features/motion-comic/motion-comic-consistency';
@@ -48,6 +49,16 @@ function record(id: string, imagePath: string): ImageLabRecord {
 }
 
 describe('motion comic consistency references', () => {
+  it('requests one full-frame camera view for remote video keyframes', () => {
+    const document = project();
+    const shot = document.episodes[0].scenes[0].shots[0];
+    shot.renderStrategy = 'remote-video';
+    shot.layoutTemplate = '漫画分格 · 角色优先';
+    const prompt = buildMotionComicConsistencyPrompt(document, shot);
+    expect(prompt).toContain('Single cinematic shot filling the entire frame');
+    expect(prompt).toContain('Do not create a contact sheet');
+    expect(prompt).not.toContain('Layout: 漫画分格');
+  });
   it('keeps missing-file versions visible without treating them as usable fixed references', () => {
     const document = project();
     const look = document.characters[0].looks[0];
@@ -143,6 +154,20 @@ describe('motion comic consistency references', () => {
     expect(summary.readyTargetCount).toBe(2);
     expect(summary.ready).toBe(false);
     expect(summary.missingTargets.length).toBeGreaterThan(0);
+  });
+
+  it('lists only unfixed references actually used by the requested episode', () => {
+    const document = project();
+    const [episode] = document.episodes;
+    const shot = episode.scenes[0].shots[0];
+    const scene = document.sceneAssets.find((item) => item.id === shot.sceneAssetId)!;
+    shot.characterLookIds = [];
+    shot.propAssetIds = [];
+    episode.scenes.forEach((scene) => { scene.shots = scene.shots.filter((item) => item.id === shot.id); });
+    const targets = motionComicEpisodeMissingReferenceTargets(document, episode.id);
+    expect(targets).toContainEqual({ kind: 'scene', id: scene.id });
+    expect(targets).not.toContainEqual({ kind: 'look', id: document.characters[0].looks[0].id });
+    expect(motionComicEpisodeMissingReferenceTargets(document, 'missing-episode')).toEqual([]);
   });
 
   it('allows an establishing shot without characters while still requiring its scene reference', () => {

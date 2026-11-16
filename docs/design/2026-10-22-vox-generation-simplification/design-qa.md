@@ -55,8 +55,8 @@
 
 ### 来源与比较契约
 
-- Source visual truth：[第三张原图](I:/opc/docs/design/2026-10-22-vox-generation-simplification/concepts/process-outline/design.png)，绝对路径 `I:/opc/docs/design/2026-10-22-vox-generation-simplification/concepts/process-outline/design.png`，1536×1024。
-- 实现主证据：[实际 Electron 深色截图](I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/desktop-dark-final.png)，绝对路径 `I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/desktop-dark-final.png`，1536×1024。
+- Source visual truth：[第三张原图](I:/项目/story-dream/docs/design/2026-10-22-vox-generation-simplification/concepts/process-outline/design.png)，绝对路径 `I:/opc/docs/design/2026-10-22-vox-generation-simplification/concepts/process-outline/design.png`，1536×1024。
+- 实现主证据：[实际 Electron 深色截图](I:/项目/story-dream/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/desktop-dark-final.png)，绝对路径 `I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/desktop-dark-final.png`，1536×1024。
 - 实现环境：真实 React Vox 页及独立 Vox runtime，隔离 Electron，模拟 API/保存。不是浏览器静态稿，也不是完整应用导航或真实生成验收。
 - 同画布比较保持两张原图的 1536×1024，不拉伸、不裁掉全图。聚焦画布保留局部原像素，来源与实现框选区域分别记录于 `make-implementation-comparisons.py`；没有用像素差指标代替目视判断。
 - 补充状态：深浅主题，1040×720 紧凑窗口、860×720 窄窗口、真实 Electron 200% 缩放（CSS 768×512）、长标题、100 镜头、空项目、高级抽屉、嵌套模板目录和模拟忙碌/失败。
@@ -77,7 +77,7 @@
 | 嵌套模板 / 缩放 | `08-template-and-zoom.png` | 模板目录独立关闭，200% 下内容与抽屉仍可操作 |
 | 共享漫剧定向回归 | `09-comic-regression.png` | 原导演台、检查器及胶片条保留，没有注入 Vox 大纲与底栏 |
 
-可复跑脚本：[make-implementation-comparisons.py](I:/opc/docs/design/2026-10-22-vox-generation-simplification/make-implementation-comparisons.py)。另生成 `10-desktop-themes.png` 供查阅，与已单独检查的桌面深浅主题原图相同。
+可复跑脚本：[make-implementation-comparisons.py](I:/项目/story-dream/docs/design/2026-10-22-vox-generation-simplification/make-implementation-comparisons.py)。另生成 `10-desktop-themes.png` 供查阅，与已单独检查的桌面深浅主题原图相同。
 
 ### 五项必检面与接受的差异
 
@@ -98,10 +98,10 @@
 
 ### 行为、回归与结论
 
-- Vox 报告：[report.json](I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/report.json)，`status=passed`，78 项机器检查、24 张截图，页面异常及 console error 为 0，付费调用为 0。检查含重复 Tab/视口断言，不等于 78 个独立端到端场景。
-- 共享漫剧报告：[report.json](I:/opc/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/comic-regression/report.json)，生产 Electron、离线夹具，22 项检查、4 张截图，无页面异常、外网请求或新增 provider job。
+- Vox 报告：[report.json](I:/项目/story-dream/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/report.json)，`status=passed`，78 项机器检查、24 张截图，页面异常及 console error 为 0，付费调用为 0。检查含重复 Tab/视口断言，不等于 78 个独立端到端场景。
+- 共享漫剧报告：[report.json](I:/项目/story-dream/docs/design/2026-10-22-vox-generation-simplification/implementation-evidence/comic-regression/report.json)，生产 Electron、离线夹具，22 项检查、4 张截图，无页面异常、外网请求或新增 provider job。
 - 6 文件 / 55 项聚焦测试、renderer/Electron/scripts 三套类型检查及生产构建通过。1501 节点调度器曾在并行高负载运行中超时，未改超时值的独立重跑通过；没有将那次超时记作通过。
-- 两套旧基线未纳入：4 条既有产品流程源码字符串断言，以及期待旧 8 阶段的完整漫剧 QA。精确边界、命令与后续依赖见 [acceptance.md](I:/opc/docs/design/2026-10-22-vox-generation-simplification/acceptance.md)。
+- 两套旧基线未纳入：4 条既有产品流程源码字符串断言，以及期待旧 8 阶段的完整漫剧 QA。精确边界、命令与后续依赖见 [acceptance.md](I:/项目/story-dream/docs/design/2026-10-22-vox-generation-simplification/acceptance.md)。
 
 阶段 A 本轮没有遗留可执行的 P0 / P1 / P2 视觉差异。上述尺寸、画幅、内容与组件规范差异均为已记录的产品约束，不能据此声称像素复刻。未验完整自动链、真实新样片、高清长片内存、词级对齐/VLM，以及远程漫剧连续性、口型和完整上传下载恢复。
 

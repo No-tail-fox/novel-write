@@ -9,7 +9,7 @@ import {
 } from './process-runner';
 import { resolvePythonRuntimeInfo, type PythonRuntimeInfo } from './python-runtime';
 import type { ProductionVisualContinuityEvidence } from './production-visual-continuity';
-import { loudnormMeasureFilter, loudnormTargetFilter } from './loudness';
+import { AAC_ENCODE_LOUDNESS, loudnormMeasureFilter, loudnormTargetFilter } from './loudness';
 
 const defaultSidecarTimeoutMs = 60 * 60 * 1_000;
 const defaultSidecarStdoutBytes = 4 * 1024 * 1024;
@@ -104,6 +104,7 @@ export interface StoryboundEncodedRenderScene {
 }
 
 export interface StoryboundEncodeRenderSceneInput {
+  audio_sample_rate?: 44100 | 48000;
   mode: 'encode_render_scene';
   work_dir: string;
   scene: StoryboundFrameRenderScene;
@@ -111,6 +112,7 @@ export interface StoryboundEncodeRenderSceneInput {
 }
 
 export interface StoryboundComposeRenderInput {
+  audio_sample_rate?: 44100 | 48000;
   /** Internal render-segments-* scratch only, verified before any unlink. */
   consume_owned_segments?: boolean;
   mode: 'compose_render';
@@ -391,9 +393,9 @@ import wave
 
 SIDECAR_SUBPROCESS_TIMEOUT_SECONDS = 15 * 60
 SIDECAR_SUBPROCESS_MAX_OUTPUT_BYTES = 8 * 1024 * 1024
-# Shared final-film loudness (src/shared/loudness.ts): two-pass loudnorm to the same target as the Lemo mux.
-LOUDNORM_TARGET_FILTER = "${loudnormTargetFilter()}"
-LOUDNORM_MEASURE_FILTER = "${loudnormMeasureFilter()}"
+# Reserve AAC encoder headroom in both passes; decoded-film acceptance remains -14 LUFS / -1 dBTP.
+LOUDNORM_TARGET_FILTER = "${loudnormTargetFilter(AAC_ENCODE_LOUDNESS)}"
+LOUDNORM_MEASURE_FILTER = "${loudnormMeasureFilter(AAC_ENCODE_LOUDNESS)}"
 # Colour tags written by every re-encode, identical to the scene-segment encode so later passes never drop them.
 OUTPUT_COLOR_ARGS = ${pythonStringList(SIDECAR_OUTPUT_COLOR_ARGS)}
 # Frame-level primaries/transfer at the end of each composition video chain (ffmpeg 7.1 drops them from the args alone).
@@ -774,7 +776,7 @@ def visual_continuity_metrics(path, duration, points_ms, fps):
             # frame with its actual predecessor in the encoded stream.
             script.write(f"signalstats,blackframe=amount=0:threshold=32,select='{expression}',format=yuv420p,metadata=print")
         completed = run_bounded_subprocess(
-            [ffmpeg_exe(), "-hide_banner", "-nostats", "-v", "info", "-i", norm(path), "-map", "0:v:0", "-filter_script:v", script_path,
+            [ffmpeg_exe(), "-hide_banner", "-nostats", "-v", "info", "-i", norm(path), "-map", "0:v:0", file_filter_option(), script_path,
              "-frames:v", str(len(indices)), "-an", "-fps_mode", "vfr", "-f", "null", os.devnull],
             timeout_seconds=min(600, max(120, math.ceil(duration * 1.5))),
             max_stdout_bytes=2 * 1024 * 1024, max_stderr_bytes=8 * 1024 * 1024,
@@ -1318,6 +1320,25 @@ def transition_options(value):
     return transition_type, max(0.01, transition_duration)
 
 
+_ffmpeg_file_option_modern = None
+
+
+def file_filter_option(complex_graph=False):
+    global _ffmpeg_file_option_modern
+    if _ffmpeg_file_option_modern is None:
+        completed = run_bounded_subprocess([ffmpeg_exe(), "-version"], timeout_seconds=30)
+        match = re.search(r"ffmpeg version (?:n)?(\d+)", completed.stdout)
+        if match:
+            _ffmpeg_file_option_modern = int(match.group(1)) >= 7
+        else:
+            # Git/custom version labels have no stable major. Inspect options without encoding.
+            help_result = run_bounded_subprocess([ffmpeg_exe(), "-hide_banner", "-h", "full"], timeout_seconds=30)
+            _ffmpeg_file_option_modern = "-filter_complex_script" not in (help_result.stdout + help_result.stderr)
+    if _ffmpeg_file_option_modern:
+        return "-/filter_complex" if complex_graph else "-/filter:v"
+    return "-filter_complex_script" if complex_graph else "-filter_script:v"
+
+
 def run_composition_ffmpeg(args):
     # Keep large scene graphs and repeated absolute paths off Windows' command line.
     paths = [os.path.abspath(args[index + 1]) for index, value in enumerate(args[:-1]) if value == "-i"]
@@ -1345,10 +1366,18 @@ def run_composition_ffmpeg(args):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix=scratch_prefix("storybound-"), suffix=".filter", dir=os.path.dirname(rewritten[-1]), delete=False) as script:
             script_path = script.name
             script.write(rewritten[filter_index + 1])
-        rewritten[filter_index:filter_index + 2] = ["-filter_complex_script", script_path]
+        # FFmpeg 9 removed filter_complex_script; file-valued options work on 7+.
+        rewritten[filter_index:filter_index + 2] = [file_filter_option(complex_graph=True), script_path]
         run_ffmpeg(rewritten, cwd=cwd)
     finally:
         safe_unlink(script_path)
+
+
+def render_audio_sample_rate(payload):
+    rate = payload.get("audio_sample_rate", 44100)
+    if rate not in (44100, 48000):
+        raise ValueError("Audio sample rate must be 44100 or 48000")
+    return int(rate)
 
 
 def _bound_xfade_duration(durations, transition_duration):
@@ -1358,7 +1387,7 @@ def _bound_xfade_duration(durations, transition_duration):
     return float(transition_duration)
 
 
-def _compose_xfade_batch(segment_paths, output_path, transition_type, transition_duration, durations=None):
+def _compose_xfade_batch(segment_paths, output_path, transition_type, transition_duration, durations=None, audio_sample_rate=44100):
     if len(segment_paths) < 2:
         shutil.copy2(segment_paths[0], output_path)
         return
@@ -1369,7 +1398,7 @@ def _compose_xfade_batch(segment_paths, output_path, transition_type, transition
         inputs.extend(["-i", path])
         filters.append(f"[{index}:v]settb=AVTB,setsar=1[v{index}]")
         # Trim AAC padding to the scene clock and bound frames entering acrossfade.
-        filters.append(f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo,atrim=duration={durations[index]},asetpts=PTS-STARTPTS,asetnsamples=n=1024:p=0[a{index}]")
+        filters.append(f"[{index}:a]aformat=sample_rates={audio_sample_rate}:channel_layouts=stereo,atrim=duration={durations[index]},asetpts=PTS-STARTPTS,asetnsamples=n=1024:p=0[a{index}]")
     current_video = "[v0]"
     current_audio = "[a0]"
     elapsed = durations[0] if durations and durations[0] > 0 else transition_duration
@@ -1408,9 +1437,9 @@ def _compose_xfade_batch(segment_paths, output_path, transition_type, transition
     ])
 
 
-def _compose_xfade_recursive(segment_paths, output_path, transition_type, transition_duration, durations=None):
+def _compose_xfade_recursive(segment_paths, output_path, transition_type, transition_duration, durations=None, audio_sample_rate=44100):
     if len(segment_paths) <= 8:
-        _compose_xfade_batch(segment_paths, output_path, transition_type, transition_duration, durations)
+        _compose_xfade_batch(segment_paths, output_path, transition_type, transition_duration, durations, audio_sample_rate)
         return
     with tempfile.TemporaryDirectory(
         prefix=scratch_prefix("compose-xfade-groups-"),
@@ -1428,6 +1457,7 @@ def _compose_xfade_recursive(segment_paths, output_path, transition_type, transi
                 transition_type,
                 transition_duration,
                 group_durations,
+                audio_sample_rate,
             )
             grouped_paths.append(group_path)
             authored_group_durations = group_durations or [media_duration_s(path) for path in group_segments]
@@ -1446,16 +1476,17 @@ def _compose_xfade_recursive(segment_paths, output_path, transition_type, transi
             transition_type,
             transition_duration,
             grouped_durations,
+            audio_sample_rate,
         )
 
 
-def _compose_with_xfade(segment_paths, output_path, transition_type="fade", transition_duration=0.3, durations=None):
+def _compose_with_xfade(segment_paths, output_path, transition_type="fade", transition_duration=0.3, durations=None, audio_sample_rate=44100):
     if len(segment_paths) < 2:
         shutil.copy2(segment_paths[0], output_path)
         return
     durations = durations or [media_duration_s(path) for path in segment_paths]
     transition_duration = _bound_xfade_duration(durations, transition_duration)
-    _compose_xfade_recursive(segment_paths, output_path, transition_type, transition_duration, durations)
+    _compose_xfade_recursive(segment_paths, output_path, transition_type, transition_duration, durations, audio_sample_rate)
 
 
 def scene_video_frame_counts(durations, fps):
@@ -1472,7 +1503,7 @@ def scene_video_frame_counts(durations, fps):
     return counts
 
 
-def hard_cut_filter_graph(segment_paths, durations, fps=24, frame_counts=None):
+def hard_cut_filter_graph(segment_paths, durations, fps=24, frame_counts=None, audio_sample_rate=44100):
     inputs = []
     filters = []
     video_inputs = []
@@ -1484,7 +1515,7 @@ def hard_cut_filter_graph(segment_paths, durations, fps=24, frame_counts=None):
         frame_count = frame_counts[index]
         video_pad_duration = frame_count / max(0.001, float(fps))
         filters.append(f"[{index}:v]setpts=PTS-STARTPTS,fps={fps},tpad=stop_mode=clone:stop_duration={video_pad_duration},trim=end_frame={frame_count},setpts=N/({fps}*TB),settb=AVTB,setsar=1[v{index}]")
-        filters.append(f"[{index}:a]aformat=sample_rates=44100:channel_layouts=stereo,apad,atrim=duration={duration},asetpts=N/SR/TB[a{index}]")
+        filters.append(f"[{index}:a]aformat=sample_rates={audio_sample_rate}:channel_layouts=stereo,apad,atrim=duration={duration},asetpts=N/SR/TB[a{index}]")
         video_inputs.append(f"[v{index}]")
         audio_inputs.append(f"[a{index}]")
     # Keep AAC padding and fractional video frames off the authored audio clock.
@@ -1493,7 +1524,7 @@ def hard_cut_filter_graph(segment_paths, durations, fps=24, frame_counts=None):
     return inputs, filters
 
 
-def _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_counts):
+def _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_counts, audio_sample_rate=44100):
     # Video-only chunks keep fractional frames off the independent audio clock.
     # Float PCM is encoded to AAC once, after all chunk samples are concatenated.
     with tempfile.TemporaryDirectory(prefix=scratch_prefix("compose-groups-"), dir=os.path.dirname(os.path.abspath(output_path))) as directory:
@@ -1502,7 +1533,7 @@ def _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_c
         for start in range(0, len(segment_paths), 8):
             index = start // 8
             video_name, audio_name = f"video-{index}.mp4", f"audio-{index}.wav"
-            inputs, filters = hard_cut_filter_graph(segment_paths[start:start + 8], durations[start:start + 8], fps, frame_counts[start:start + 8])
+            inputs, filters = hard_cut_filter_graph(segment_paths[start:start + 8], durations[start:start + 8], fps, frame_counts[start:start + 8], audio_sample_rate)
             bounded_inputs = []
             for value in inputs:
                 if value == "-i":
@@ -1528,7 +1559,7 @@ def _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_c
         ])
 
 
-def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame_counts=None):
+def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame_counts=None, audio_sample_rate=44100):
     if len(segment_paths) < 2:
         shutil.copy2(segment_paths[0], output_path)
         return
@@ -1536,9 +1567,9 @@ def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame
     if len(frame_counts) != len(segment_paths):
         raise ValueError("Hard-cut frame-count allocation does not match scene count")
     if len(segment_paths) > 8:
-        _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_counts)
+        _compose_hard_cut_groups(segment_paths, output_path, durations, fps, frame_counts, audio_sample_rate)
         return
-    inputs, filters = hard_cut_filter_graph(segment_paths, durations, fps, frame_counts)
+    inputs, filters = hard_cut_filter_graph(segment_paths, durations, fps, frame_counts, audio_sample_rate)
     duration_args = ["-t", str(sum(durations))] if float(fps) < 10 else []
     run_composition_ffmpeg([
         *inputs,
@@ -1555,7 +1586,7 @@ def _compose_with_hard_cuts(segment_paths, output_path, durations, fps=24, frame
     ])
 
 
-def _compose_with_visual_transitions(segment_paths, output_path, durations, transitions, fps=24, frame_counts=None):
+def _compose_with_visual_transitions(segment_paths, output_path, durations, transitions, fps=24, frame_counts=None, audio_sample_rate=44100):
     """Dissolve an outgoing held frame over the incoming shot, on its own clock.
 
     The source clips never overlap in time: the incoming animation starts at t=0,
@@ -1596,7 +1627,7 @@ def _compose_with_visual_transitions(segment_paths, output_path, durations, tran
                 "-map", "[out]", "-map", "1:a:0", "-c:v", "libx264", "-pix_fmt", "yuv420p", *OUTPUT_COLOR_ARGS,
                 "-c:a", "copy", prepared[index],
             ])
-        _compose_with_hard_cuts(prepared, output_path, durations, fps, frame_counts)
+        _compose_with_hard_cuts(prepared, output_path, durations, fps, frame_counts, audio_sample_rate)
 
 
 def first_frame_pattern(frames_dir):
@@ -1614,13 +1645,13 @@ def first_frame_pattern(frames_dir):
     raise FileNotFoundError(f"No frames found in {frames_dir}")
 
 
-def scene_audio_input(scene, scene_duration, work_dir, index):
+def scene_audio_input(scene, scene_duration, work_dir, index, audio_sample_rate=44100):
     """Build a deterministic mixed WAV when a scene has multiple audio clips."""
     clips = [clip for clip in (scene.get("audio_clips") or []) if not clip.get("muted") and clip.get("sourceDurationMs") != 0]
     if not clips:
         if "audio_clips" in scene:
             silence_path = os.path.join(work_dir, f"scene-{index:02d}-mix.wav")
-            run_ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", str(scene_duration), "-c:a", "pcm_s16le", silence_path])
+            run_ffmpeg(["-f", "lavfi", "-i", f"anullsrc=r={audio_sample_rate}:cl=stereo", "-t", str(scene_duration), "-c:a", "pcm_s16le", silence_path])
             return silence_path
         audio_path = norm(scene.get("audio_path") or "")
         if not audio_path or not os.path.isfile(audio_path):
@@ -1639,7 +1670,7 @@ def scene_audio_input(scene, scene_duration, work_dir, index):
         if clip.get("sourceDurationMs") is not None:
             clip_duration = min(clip_duration, float(clip["sourceDurationMs"]) / 1000.0)
         clip_duration = max(0.001, min(clip_duration, max(0.001, scene_duration - max(0, float(clip.get("startMs") or 0) / 1000.0))))
-        start_samples = max(0, round(float(clip.get("startMs") or 0) * 44100 / 1000))
+        start_samples = max(0, round(float(clip.get("startMs") or 0) * audio_sample_rate / 1000))
         gain = float(clip.get("gainDb") or 0)
         gain = max(-60.0, min(24.0, gain))
         label = f"[a{clip_index}]"
@@ -1653,7 +1684,7 @@ def scene_audio_input(scene, scene_duration, work_dir, index):
             raise ValueError("Audio fade envelope is invalid")
         if offset > source_start + 0.000001:
             # Looping media restarts its source clock, not the project fade clock.
-            chain = f"[{clip_index}:a]aresample=44100,atrim=start={source_start}:duration={clip_duration},asetpts=N/SR/TB,volume={gain}dB"
+            chain = f"[{clip_index}:a]aresample={audio_sample_rate},atrim=start={source_start}:duration={clip_duration},asetpts=N/SR/TB,volume={gain}dB"
             envelope_gain = "1"
             if fade_in > 0: envelope_gain += f"*min(1,max(0,(t+{offset})/{min(fade_in, fade_duration)}))"
             if fade_out > 0: envelope_gain += f"*min(1,max(0,({fade_duration}-t-{offset})/{min(fade_out, fade_duration)}))"
@@ -1661,7 +1692,7 @@ def scene_audio_input(scene, scene_duration, work_dir, index):
             chain += f",aformat=channel_layouts=stereo,aeval=exprs='val(0)*{envelope_gain}|val(1)*{envelope_gain}':c=stereo"
         else:
             # Preserve sample-exact behavior for existing non-looping source trims.
-            chain = f"[{clip_index}:a]aresample=44100,atrim=start={max(0, source_start - offset)}:duration={offset + clip_duration},asetpts=N/SR/TB,volume={gain}dB"
+            chain = f"[{clip_index}:a]aresample={audio_sample_rate},atrim=start={max(0, source_start - offset)}:duration={offset + clip_duration},asetpts=N/SR/TB,volume={gain}dB"
             if fade_in > 0: chain += f",afade=t=in:st=0:d={min(fade_in, fade_duration)}"
             if fade_out > 0: chain += f",afade=t=out:st={max(0, fade_duration - fade_out)}:d={min(fade_out, fade_duration)}"
             if offset > 0: chain += f",atrim=start={offset}:duration={clip_duration},asetpts=N/SR/TB"
@@ -1671,7 +1702,7 @@ def scene_audio_input(scene, scene_duration, work_dir, index):
     # FFmpeg 7.1 can stall on amix=inputs=1 followed by padding/resampling.
     # A single audible track already is the mix; only combine multiple inputs.
     mixer = f"amix=inputs={len(labels)}:duration=longest:dropout_transition=0:normalize=0," if len(labels) > 1 else ""
-    filters.append("".join(labels) + mixer + f"apad=whole_dur={scene_duration},aformat=sample_rates=44100:channel_layouts=stereo[out]")
+    filters.append("".join(labels) + mixer + f"apad=whole_dur={scene_duration},aformat=sample_rates={audio_sample_rate}:channel_layouts=stereo[out]")
     run_ffmpeg([*inputs, "-filter_complex", ";".join(filters), "-map", "[out]", "-t", str(scene_duration), "-c:a", "pcm_s16le", mixed_path])
     return mixed_path
 
@@ -1726,11 +1757,11 @@ def write_streamed_frames(pipe, stop, frames_dir, video_frame_count):
         retry_frame_file_operation(lambda: os.unlink(frame), stop, f"Release frame {number}")
 
 
-def encode_render_scene(scene, work_dir, segment_path, index=0):
+def encode_render_scene(scene, work_dir, segment_path, index=0, audio_sample_rate=44100):
     streaming = bool(scene.get("stream_frames"))
     pattern = None if streaming else first_frame_pattern(scene["frames_dir"])
     scene_duration = render_scene_duration(scene)
-    audio_path = scene_audio_input(scene, scene_duration, work_dir, index)
+    audio_path = scene_audio_input(scene, scene_duration, work_dir, index, audio_sample_rate)
     fps = str(scene.get("fps") or 24)
     video_frame_count = max(1, int(scene.get("video_frame_count") or math.floor(scene_duration * float(fps) + 0.5)))
     input_writer = None
@@ -1756,7 +1787,7 @@ def encode_render_scene(scene, work_dir, segment_path, index=0):
         # Chromium infer a different gamut even after the range is corrected.
         # Accurate rounding avoids color drift in the JPEG -> BT.709 transform.
         "-vf", f"scale=in_range=auto:out_range=tv:out_color_matrix=bt709:flags=accurate_rnd+full_chroma_int,format=yuv420p,setparams=range=limited:colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1,tpad=stop_mode=clone:stop_duration={video_frame_count / float(fps)},trim=end_frame={video_frame_count},settb=expr=1/{fps},setpts=N",
-        "-af", f"apad,atrim=duration={scene_duration},asetpts=N/SR/TB",
+        "-af", f"aresample={audio_sample_rate},apad,atrim=duration={scene_duration},asetpts=N/SR/TB",
         "-pix_fmt", "yuv420p",
         "-color_range", "tv", "-colorspace", "bt709",
         "-color_primaries", "bt709", "-color_trc", "iec61966-2-1",
@@ -1776,7 +1807,7 @@ def generate_encode_render_scene(payload):
     work_dir = norm(payload["work_dir"])
     os.makedirs(work_dir, exist_ok=True)
     output_path = norm(payload["output_path"])
-    duration = encode_render_scene(payload["scene"], work_dir, output_path)
+    duration = encode_render_scene(payload["scene"], work_dir, output_path, audio_sample_rate=render_audio_sample_rate(payload))
     return {"success": True, "output_path": output_path, "duration": duration}
 
 
@@ -1821,6 +1852,7 @@ def normalize_composed_audio(source_path, output_path, target_duration=0):
 
 
 def generate_compose_render(payload):
+    audio_sample_rate = render_audio_sample_rate(payload)
     work_dir = norm(payload["work_dir"])
     os.makedirs(work_dir, exist_ok=True)
     segments = []
@@ -1861,7 +1893,7 @@ def generate_compose_render(payload):
             scene_duration = render_scene_duration(scene)
         else:
             segment_path = os.path.join(work_dir, f"seg_{index:02d}.mp4")
-            scene_duration = encode_render_scene(scene, work_dir, segment_path, index)
+            scene_duration = encode_render_scene(scene, work_dir, segment_path, index, audio_sample_rate)
         segments.append(segment_path)
         segment_durations.append(scene_duration)
         segment_frame_counts.append(int(scene["video_frame_count"]))
@@ -1884,7 +1916,7 @@ def generate_compose_render(payload):
             "-t",
             cover_duration,
             "-i",
-            "anullsrc=channel_layout=stereo:sample_rate=44100",
+            f"anullsrc=channel_layout=stereo:sample_rate={audio_sample_rate}",
             "-t",
             cover_duration,
             "-vf",
@@ -1908,13 +1940,13 @@ def generate_compose_render(payload):
     if len(segments) == 1:
         shutil.copy2(segments[0], source_path)
     elif any(transition for transition in visual_transitions):
-        _compose_with_visual_transitions(segments, source_path, segment_durations, visual_transitions, float(payload_scenes[0].get("fps") or 24), segment_frame_counts)
+        _compose_with_visual_transitions(segments, source_path, segment_durations, visual_transitions, float(payload_scenes[0].get("fps") or 24), segment_frame_counts, audio_sample_rate)
     else:
         transition_type, transition_duration = transition_options(payload.get("transition"))
         if transition_type in ("cut", "none"):
-            _compose_with_hard_cuts(segments, source_path, segment_durations, float(payload_scenes[0].get("fps") or 24), segment_frame_counts)
+            _compose_with_hard_cuts(segments, source_path, segment_durations, float(payload_scenes[0].get("fps") or 24), segment_frame_counts, audio_sample_rate)
         else:
-            _compose_with_xfade(segments, source_path, transition_type, transition_duration, segment_durations)
+            _compose_with_xfade(segments, source_path, transition_type, transition_duration, segment_durations, audio_sample_rate)
     for segment in owned_segments:
         os.unlink(segment)
     target_duration = float(payload.get("total_duration_s") or 0)
@@ -1924,6 +1956,7 @@ def generate_compose_render(payload):
             "-i", source_path,
             "-vf", f"tpad=stop_mode=clone:stop_duration={target_duration},{OUTPUT_COLOR_TAG_FILTER}",
             "-af", "apad",
+            "-ar", str(audio_sample_rate),
             "-t", str(target_duration),
             "-pix_fmt", "yuv420p",
             *OUTPUT_COLOR_ARGS,

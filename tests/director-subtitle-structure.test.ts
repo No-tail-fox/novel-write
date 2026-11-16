@@ -22,6 +22,19 @@ function reopen(document: DirectorSubtitleDocument) {
   return document.workflowKind === 'editorial-collage' ? parseEditorialCollagePipelineData(JSON.stringify(document)) : parseMotionComicPipelineData(JSON.stringify(document));
 }
 
+describe('comic inline dialogue edits', () => {
+  it('persists multiline dialogue with stable cue identities and timing', () => {
+    const document = fixture('comic');
+    const before = view(document);
+    const text = before.cues.map((_, index) => `修改对白 ${index + 1}`).join('\n');
+    const next = setDirectorShotNarration(document, before.shot.id, text);
+    const after = view(reopen(next));
+    expect(after.cues.map(cue => cue.text).join('\n')).toBe(text);
+    expect(after.cues.map(({ id, startMs, endMs }) => ({ id, startMs, endMs })))
+      .toEqual(before.cues.map(({ id, startMs, endMs }) => ({ id, startMs, endMs })));
+  });
+});
+
 describe('VOX explicit speech structure edits', () => {
   it('preserves existing speech when inline narration has not changed', () => {
     const document = fixture('vox');

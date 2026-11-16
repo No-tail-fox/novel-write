@@ -1,3 +1,4 @@
+import { motionComicVideoRecoveryInputSchema } from '../shared/motion-comic-video-recovery';
 import { selectImageLabProfileConfig } from '../shared/image-lab-profile';
 import { defaultProjectModels, projectRuntimeConfig, validateProjectModels } from '../shared/project-models';
 import { summarizeProjectCost } from '../shared/project-cost';
@@ -667,6 +668,15 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         if (request.taskType && taskType !== request.taskType) return false;
         return matchesFallbackQuery(request.query, [task.title, task.inputText, task.aiKeyword]);
       });
+      // Preview holds the complete result set; sort before constructing its single page.
+      if (request.sort) {
+        const compare = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+        const sort = request.sort;
+        const value = (task: Task) => sort === 'title' ? task.title
+          : request.filter === 'archived' ? task.archivedAt ?? '' : task.createdAt;
+        const direction = sort === 'newest' ? -1 : 1;
+        tasks.sort((left, right) => direction * (compare(value(left), value(right)) || compare(left.id, right.id)));
+      }
       return fallbackHistoryPage('task', tasks.map(task => taskToSummary(task.taskType === 'editorial-collage' && task.taskKind !== 'music-mv'
         ? { ...task, productionRoute: editorialProductionRouteFromPipelineData(task.pipelineData) } : task)));
     },
@@ -675,7 +685,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       const task = state.tasks.find(item => item.id === id);
       if (!task) throw new Error(`TASK_NOT_FOUND: ${id}`);
       if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只可查看。');
-      if (task.status === 'running' || task.status === 'paused' || readDirectorBatches().some(batch => batch.projectId === id && ['queued', 'running', 'paused', 'cancelling'].includes(batch.status))) throw new Error('PROJECT_MODELS_BUSY: 请等待项目生成任务结束后再修改模型。');
+      if (task.taskType !== MOTION_COMIC_TASK_TYPE && (task.status === 'running' || task.status === 'paused' || readDirectorBatches().some(batch => batch.projectId === id && ['queued', 'running', 'paused', 'cancelling'].includes(batch.status)))) throw new Error('PROJECT_MODELS_BUSY: 请等待项目生成任务结束后再修改模型。');
       const validated = validateProjectModels(state.config, models);
       return commitFallbackHistoryUpsert('task', { ...state, tasks: state.tasks.map(item => item.id === id
         ? { ...item, projectModels: validated, llmProfileId: validated.llmProfileId } : item) }, id);
@@ -992,6 +1002,7 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async deleteVoxTemplate() { throw new Error('个人动画模板需要桌面版'); },
     async cancelDirectorRender() {},
     async exportVoxAnimationShot() { throw new Error('动画视频导出需要桌面版'); },
+    async exportMotionComicRender() { throw new Error('历史成片另存需要桌面版'); },
     async composeResearchCopy() {
       throw new Error('浏览器预览无法调用真实 LLM 生成文案，请在 Electron 桌面端配置模型后使用。');
     },
@@ -1259,6 +1270,8 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async startVoxProduction() { throw new Error('自动制作由桌面端后台执行，请在 Electron 中使用。'); },
     async controlVoxProduction() { throw new Error('后台制作任务只能在桌面端控制。'); },
+    async getVoxAgentActivity() { return null; },
+    async getVoxPiActivity() { return null; },
     async createEditorialCollage(input) {
       const validated = editorialCollageCreateInputSchema.parse(input);
       const state = read();
@@ -1347,6 +1360,14 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
         tasks: state.tasks.map((item) => item.id === task.id ? updated : item),
       }, task.id);
     },
+    async resumeDirectorShotVideo(input: DirectorGenerateShotVideoRequest) {
+      validateDirectorGenerateShotVideoRequest(input);
+      throw new Error('DIRECTOR_VIDEO_DESKTOP_ONLY: 视频恢复需要 Electron 桌面端。');
+    },
+    async recoverMotionComicVideoSubmission(input) {
+      motionComicVideoRecoveryInputSchema.parse(input);
+      throw new Error('DIRECTOR_VIDEO_DESKTOP_ONLY: 视频提交人工核对需要 Electron 桌面端。');
+    },
     async generateDirectorShotVideo(input: DirectorGenerateShotVideoRequest) {
       validateDirectorGenerateShotVideoRequest(input);
       throw new Error('DIRECTOR_VIDEO_DESKTOP_ONLY: AI 动态海报需要 Electron 桌面端的本地媒体管线。');
@@ -1411,6 +1432,9 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
       };
       return commitFallbackHistoryUpsert('task', { ...state, tasks: [task, ...state.tasks] }, task.id);
     },
+    async importCharacterVoiceSample() {
+      throw new Error('CHARACTER_VOICE_SAMPLE_DESKTOP_ONLY: 请在桌面应用中导入角色声音样本。');
+    },
     async saveMotionComic(input) {
       const validated = motionComicSaveInputSchema.parse(input);
       const state = read();
@@ -1447,6 +1471,11 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async enqueueMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台剧本队列需要桌面端。'); },
     async controlMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台剧本队列需要桌面端。'); },
     async editMotionComicScript() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 剧本审核需要桌面端。'); },
+    async proposeMotionComicAssetExtraction() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 分类资产提取需要桌面端。'); },
+    async applyMotionComicAssetExtraction() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 分类资产确认需要桌面端。'); },
+    async proposeMotionComicScriptChange() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: AI 修改候选需要桌面端。'); },
+    async adoptMotionComicScriptChange() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 候选采用需要桌面端。'); },
+    async revertMotionComicScriptChange() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 撤销采用需要桌面端。'); },
     async approveMotionComicScripts() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 剧本批准需要桌面端。'); },
     async storyboardMotionComicScript() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 后台分镜需要桌面端。'); },
     async applyMotionComicScriptStoryboard() { throw new Error('MOTION_COMIC_SCRIPTS_DESKTOP_ONLY: 分镜审核需要桌面端。'); },
@@ -1496,6 +1525,8 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     async reviewDirectorArtifact() {
       throw new Error('DIRECTOR_REVIEW_DESKTOP_ONLY: 最终 MP4 核验与人工确认仅支持桌面端。');
     },
+    async submitMotionComicReferenceBatch() { throw new Error('REFERENCE_BATCH_DESKTOP_ONLY: 持久参考图批量生成需要桌面端。'); },
+    async controlMotionComicReferenceBatch() { throw new Error('REFERENCE_BATCH_DESKTOP_ONLY: 持久参考图批量生成需要桌面端。'); },
     async createDirectorBatch(input: CreateDirectorBatchInput) {
       const now = new Date().toISOString();
       const record: DirectorBatchRecord = { id: input.id ?? crypto.randomUUID(), workflowKind: input.workflowKind, projectId: input.projectId, episodeId: input.episodeId ?? null, status: input.status ?? 'draft', concurrency: Math.max(1, Math.min(4, Math.floor(input.concurrency))), pauseRequested: Boolean(input.pauseRequested), cancelRequested: Boolean(input.cancelRequested), recoveryRequired: Boolean(input.recoveryRequired), recoveryReason: input.recoveryReason ?? '', plan: { scope: input.plan.scope, capabilities: { ...input.plan.capabilities }, outputReady: input.plan.outputReady, renderFailed: input.plan.renderFailed, shots: [...input.plan.shots] }, nodes: input.nodes.map((node) => ({ ...node, dependencies: [...node.dependencies] })), createdAt: now, updatedAt: now };
@@ -1934,6 +1965,12 @@ export function makeFallbackApi(setState: (state: AppState) => void): StoryDream
     },
     async selectLocalImage(_purpose?: 'video-reference') {
       return null;
+    },
+    async selectLocalReferenceImages() {
+      return [];
+    },
+    async sha256File(_path: string) {
+      return '';
     },
     async getPixelleCatalog() { throw new Error('Pixelle 原模板运行器仅在桌面应用中可用'); },
     async selectLocalVideo() {

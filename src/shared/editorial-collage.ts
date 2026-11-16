@@ -1,5 +1,6 @@
 import { ASPECT_RATIOS } from './aspect-ratio';
 import { lemoUpstreamFilmSchema, type LemoUpstreamFilm } from './creative-animation/upstream-agent';
+import { piFilmStateSchema, type PiFilmState } from './creative-animation/pi-film';
 import { projectModelsSchema } from './project-models';
 import type { ProjectModels } from './types';
 import { lemoNativeFilmSchema, type LemoNativeFilm } from './creative-animation/native-film';
@@ -117,6 +118,8 @@ export interface EditorialCollageShot {
   videoAssetVersionId?: string;
   videoJobId?: string;
   voiceId?: string;
+  /** Supplier owning the selected voice, including custom and cloned voices. */
+  voiceProvider?: 'minimax' | 'volcengine';
   voiceLabel?: string;
   voiceSpeed?: number;
   voiceAssetVersionId?: string;
@@ -127,6 +130,12 @@ export interface EditorialCollageShot {
   subtitleStyle?: string;
   seed?: string;
   seedLocked?: boolean;
+}
+
+/** Older generated shots retain voice ownership on their selected audio asset. */
+export function editorialShotVoiceProvider(document: Pick<EditorialCollagePipelineData, 'assets'>, shot: Pick<EditorialCollageShot, 'voiceProvider' | 'voiceAssetVersionId'>): EditorialCollageShot['voiceProvider'] {
+  const provider = shot.voiceProvider ?? document.assets.find(asset => asset.id === shot.voiceAssetVersionId)?.provider;
+  return provider === 'minimax' || provider === 'volcengine' ? provider : undefined;
 }
 
 export interface EditorialCollageBeat {
@@ -157,6 +166,8 @@ export interface EditorialCollagePipelineData extends Omit<ProductionDocumentBas
   productionRun?: VoxProductionRun;
   creativeFilms?: LemoNativeFilm[];
   upstreamFilm?: LemoUpstreamFilm;
+  /** Pi v4 state is separate; never reinterpret a paid v3 journal as a Pi session. */
+  piFilm?: PiFilmState;
   writingStyleId?: EditorialWritingStyleId;
   writingRequirements?: string;
   stage: EditorialCollageStage;
@@ -330,6 +341,7 @@ const shotSchema = z.object({
   videoAssetVersionId: idSchema.optional(),
   videoJobId: idSchema.optional(),
   voiceId: z.string().max(512).optional(),
+  voiceProvider: z.enum(['minimax', 'volcengine']).optional(),
   voiceLabel: z.string().max(512).optional(),
   voiceSpeed: finiteNumber.min(0.5).max(2).optional(),
   voiceAssetVersionId: idSchema.optional(),
@@ -457,6 +469,7 @@ export const editorialCollagePipelineSchema = z.object({
   productionRun: voxProductionRunSchema.optional(),
   creativeFilms: z.array(lemoNativeFilmSchema).max(64).optional(),
   upstreamFilm: lemoUpstreamFilmSchema.optional(),
+  piFilm: piFilmStateSchema.optional(),
   writingStyleId: z.enum(EDITORIAL_WRITING_STYLE_IDS).optional(),
   writingRequirements: boundedText(8_000).optional(),
   ratio: z.enum(EDITORIAL_COLLAGE_RATIOS),

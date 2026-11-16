@@ -42,7 +42,7 @@ describe('motion comic episode planner UI contract', () => {
     expect(ipc).toContain("'motion-comic:plan-episodes': motionComicEpisodePlanInputSchema");
     expect(preload).toContain("invokeTrusted('motion-comic:plan-episodes', input)");
     const handlerStart = main.indexOf("trustedHandle('motion-comic:plan-episodes'");
-    const handlerEnd = main.indexOf("trustedHandle('motion-comic:save'", handlerStart);
+    const handlerEnd = main.indexOf('trustedHandle(', handlerStart + 1);
     const handler = main.slice(handlerStart, handlerEnd);
     expect(handler).toContain('generateMotionComicEpisodePlan');
     expect(handler).toContain('createConfiguredJsonLlm(runtimeConfig.llm)');

@@ -107,6 +107,10 @@ export interface MotionComicCharacterLook {
   appearancePrompt: string;
   wardrobe: string;
   continuityNotes: string;
+  /** Optional user-authored instruction for generating this look's reference candidates. */
+  referencePrompt?: string;
+  /** Optional generation inputs, independent of adopted output references. Empty means text-only. */
+  generationReferenceImagePaths?: string[];
   referenceAssetVersionIds: string[];
   pinned: boolean;
 }
@@ -122,6 +126,7 @@ export interface MotionComicCharacter {
   voiceProvider?: 'volcengine' | 'minimax';
   voiceId?: string;
   voiceSpeed?: number;
+  voiceSampleAssetVersionId?: string;
   looks: MotionComicCharacterLook[];
 }
 
@@ -248,6 +253,7 @@ export interface MotionComicDraftInput {
   title: string;
   premise: string;
   ratio?: MotionComicPipelineData['ratio'];
+  visualStyle?: string;
   now?: string;
 }
 
@@ -257,6 +263,7 @@ export interface MotionComicCreateInput {
   premise: string;
   episodeTitle?: string;
   ratio?: MotionComicPipelineData['ratio'];
+  visualStyle?: string;
   source?: Omit<MotionComicSourceDocument, 'importedAt' | 'episodes'> & {
     episodes: Array<Omit<MotionComicSourceEpisode, 'id' | 'number'>>;
   };
@@ -348,9 +355,11 @@ const assetVersionSchema = z.object({
   createdAt: timestampSchema,
   selected: z.boolean().optional(),
   pinned: z.boolean().optional(),
+  referenceRole: z.enum(['design', 'front', 'side', 'back', 'detail', 'outfit']).optional(),
   episodeId: idSchema.optional(),
   renderFingerprint: z.string().max(256).optional(),
   durationMs: nonNegativeNumber.positive().optional(),
+  outputValidation: z.object({ status: z.literal('rejected'), code: z.string().max(256), reason: boundedText(65_536), width: nonNegativeNumber, height: nonNegativeNumber, expectedRatio: z.string().max(32), expectedDurationMs: nonNegativeNumber }).strict().optional(),
 }).strict();
 
 const providerJobSchema = z.object({
@@ -368,6 +377,7 @@ const providerJobSchema = z.object({
   attempt: z.number().int().min(1).max(MAX_PRODUCTION_HISTORY_ITEMS),
   remoteTaskId: z.string().max(512).optional(),
   videoInputSnapshot: boundedText(262_144).optional(),
+  videoAdoption: z.enum(['candidate', 'automatic']).optional(),
   phase: z.enum(['prepared','submitted','downloaded','completed']).optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
@@ -573,6 +583,8 @@ const lookSchema = z.object({
   appearancePrompt: boundedText(65_536),
   wardrobe: boundedText(65_536),
   continuityNotes: boundedText(65_536),
+  referencePrompt: boundedText(65_536).optional(),
+  generationReferenceImagePaths: z.array(z.string().min(1).max(32_768)).max(20).optional(),
   referenceAssetVersionIds: z.array(idSchema).max(MAX_PRODUCTION_HISTORY_ITEMS),
   pinned: z.boolean(),
 }).strict();
@@ -588,6 +600,7 @@ const characterSchema = z.object({
   voiceProvider: z.enum(['volcengine', 'minimax']).optional(),
   voiceId: z.string().min(1).max(512).optional(),
   voiceSpeed: z.number().finite().min(0.5).max(2).optional(),
+  voiceSampleAssetVersionId: idSchema.optional(),
   looks: z.array(lookSchema).max(50),
 }).strict();
 
@@ -721,6 +734,7 @@ export const motionComicCreateInputSchema = z.object({
   premise: z.string().trim().min(1).max(MAX_TEXT),
   episodeTitle: z.string().trim().min(1).max(512).optional(),
   ratio: z.enum(MOTION_COMIC_RATIOS).optional(),
+  visualStyle: z.string().trim().max(4_000).optional(),
   source: sourceCreateSchema.optional(),
 }).strict();
 
@@ -750,7 +764,11 @@ export function createMotionComicDraft(input: MotionComicDraftInput): MotionComi
       tone: '悬念、克制、电影感',
       audience: '短视频剧情观众',
       worldRules: ['超自然规则必须可追踪，不能为反转临时改写。'],
-      visualRules: ['角色脸型、发型和关键配饰跨镜头保持一致。', '同一场景保持主光方向和色温连续。'],
+      visualRules: [
+        '角色脸型、发型和关键配饰跨镜头保持一致。',
+        '同一场景保持主光方向和色温连续。',
+        ...(input.visualStyle?.trim() ? [`视觉风格：${input.visualStyle.trim()}`] : []),
+      ],
       negativePrompt: 'identity drift, costume drift, extra fingers, inconsistent props, unreadable text',
       characterIds: [],
       sceneAssetIds: [],
@@ -1046,6 +1064,8 @@ export function createMotionComicStarterProject(
         sceneAssetId: sceneAssets[sceneIndex].id,
         propAssetIds: sceneIndex > 0 ? [props[0].id] : [],
         dialogueCueIds: cueIds,
+        renderStrategy: 'remote-video',
+        videoProduction: { version: 1, referenceMode: 'references', audioMode: 'post-mix' },
       };
       timelineClips.push({
         id: `clip-${shotId}`,
@@ -1283,7 +1303,8 @@ export function updateMotionComicShotDuration(
     const next: MotionComicEpisode = {
       ...episode, status: 'boarded',
       scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((candidate) => candidate.id === shotId
-        ? { ...candidate, durationMs, videoAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined }
+        // A manual duration edit invalidates the split interval and its model-specific padding.
+        ? { ...candidate, durationMs, productionUnit: undefined, videoAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined }
         : candidate) })),
       dialogueCues: episode.dialogueCues.map((cue) => {
         if (cue.shotId !== shotId) return cue;
@@ -1396,6 +1417,8 @@ export function appendMotionComicScene(
       sceneAssetId,
       propAssetIds: [],
       dialogueCueIds: [cueId],
+      renderStrategy: 'remote-video',
+      videoProduction: { version: 1, referenceMode: 'references', audioMode: 'post-mix' },
     }],
   };
   const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: 0, endMs: durationMs, text: '新的线索出现了。', emotion: '警觉' };
@@ -1484,6 +1507,19 @@ export function appendMotionComicShot(
   const template = scene.shots[0];
   if (!template) throw new Error('MOTION_COMIC_SCENE_EMPTY: Add a scene before adding a shot.');
   const shot: MotionComicShot = { ...template, id: shotId, index: shotIndex, title: input.title?.trim() || `镜头 ${shotIndex}`, durationMs, dialogueCueIds: [cueId], firstFrameAssetVersionId: undefined, lastFrameAssetVersionId: undefined, videoAssetVersionId: undefined, videoJobId: undefined, voiceAssetVersionId: undefined };
+  // New dialogue cannot inherit another shot's audio-driven input or split-unit identity.
+  delete shot.productionUnit;
+  delete shot.sourceBeatIds;
+  if (template.videoProduction) {
+    shot.videoProduction = {
+      version: 1,
+      referenceMode: template.videoProduction.referenceMode,
+      audioMode: template.videoProduction.audioMode === 'audio-driven' ? 'post-mix' : template.videoProduction.audioMode,
+    };
+  } else {
+    shot.renderStrategy = 'remote-video';
+    shot.videoProduction = { version: 1, referenceMode: 'references', audioMode: 'post-mix' };
+  }
   const cue: MotionComicDialogueCue = { id: cueId, shotId, characterId: document.characters[0]?.id, startMs: 0, endMs: durationMs, text: '镜头里的细节改变了判断。', emotion: '试探' };
   return {
     ...document,
@@ -1642,7 +1678,7 @@ export function validateMotionComicPipeline(
   ].filter((id): id is string => Boolean(id))))));
 
   if (!data.title.trim()) issues.push({ path: 'title', message: 'A project title is required.' });
-  if (!episodes.has(data.activeEpisodeId)) issues.push({ path: 'activeEpisodeId', message: 'The active episode must exist.' });
+  if (data.episodes.length > 0 && !episodes.has(data.activeEpisodeId)) issues.push({ path: 'activeEpisodeId', message: 'The active episode must exist.' });
   validateReferenceList(data.series.characterIds, characters, 'series.characterIds', issues);
   validateReferenceList(data.series.sceneAssetIds, sceneAssets, 'series.sceneAssetIds', issues);
   validateReferenceList(data.series.propAssetIds, props, 'series.propAssetIds', issues);
@@ -1655,6 +1691,9 @@ export function validateMotionComicPipeline(
   );
   const looks = new Map<string, MotionComicCharacterLook>();
   data.characters.forEach((character, characterIndex) => {
+    if (character.voiceSampleAssetVersionId && assets.get(character.voiceSampleAssetVersionId)?.kind !== 'audio') {
+      issues.push({ path: `characters[${characterIndex}].voiceSampleAssetVersionId`, message: 'Character voice sample must reference an existing audio asset.' });
+    }
     const lookIds = new Set<string>();
     character.looks.forEach((look, lookIndex) => {
       const path = `characters[${characterIndex}].looks[${lookIndex}]`;
@@ -2004,4 +2043,67 @@ export function invalidateMotionComicShotVideo(
     assets: nextAssets,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function assertMotionComicUsableFrame(document: MotionComicPipelineData, assetId: string, label: '首帧' | '尾帧'): void {
+  const asset = document.assets.find((candidate) => candidate.id === assetId);
+  if (!asset || asset.kind !== 'image' || !asset.localPath?.trim()) {
+    throw new Error(`MOTION_COMIC_FRAME_INVALID: 请选择当前项目中可读取的${label}图片。`);
+  }
+  if (asset.assetId.startsWith(MOTION_COMIC_REFERENCE_ASSET_PREFIX)) {
+    throw new Error(`MOTION_COMIC_FRAME_INVALID: ${label}不能使用系列一致性参考图。`);
+  }
+}
+
+function setMotionComicShotFrame(
+  document: MotionComicPipelineData,
+  shotId: string,
+  field: 'firstFrameAssetVersionId' | 'lastFrameAssetVersionId',
+  assetId: string | undefined,
+): MotionComicPipelineData {
+  const exists = document.episodes.some((episode) => episode.scenes.some((scene) => scene.shots.some((shot) => shot.id === shotId)));
+  if (!exists) throw new Error(`MOTION_COMIC_SHOT_MISSING: ${shotId}`);
+  if (assetId) assertMotionComicUsableFrame(document, assetId, field === 'firstFrameAssetVersionId' ? '首帧' : '尾帧');
+  const current = document.episodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots)).find((shot) => shot.id === shotId);
+  if (current?.[field] === assetId) return document;
+  const next: MotionComicPipelineData = {
+    ...document,
+    episodes: document.episodes.map((episode) => ({
+      ...episode,
+      scenes: episode.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => (shot.id === shotId ? { ...shot, [field]: assetId } : shot)),
+      })),
+    })),
+  };
+  return invalidateMotionComicShotVideo(next, shotId);
+}
+
+/** Pass undefined to clear the first frame. */
+export function setMotionComicShotFirstFrame(document: MotionComicPipelineData, shotId: string, assetId: string | undefined): MotionComicPipelineData {
+  return setMotionComicShotFrame(document, shotId, 'firstFrameAssetVersionId', assetId);
+}
+
+/** Pass undefined to clear the last frame (the video model then ends the shot freely). */
+export function setMotionComicShotLastFrame(document: MotionComicPipelineData, shotId: string, assetId: string | undefined): MotionComicPipelineData {
+  return setMotionComicShotFrame(document, shotId, 'lastFrameAssetVersionId', assetId);
+}
+
+/** Previous shot's last frame if it has one, otherwise its first frame; undefined for the first shot of an episode. */
+export function motionComicPreviousShotFrameId(document: MotionComicPipelineData, shotId: string): string | undefined {
+  for (const episode of document.episodes) {
+    const shots = episode.scenes.flatMap((scene) => scene.shots);
+    const index = shots.findIndex((shot) => shot.id === shotId);
+    if (index < 0) continue;
+    const previous = shots[index - 1];
+    return previous?.lastFrameAssetVersionId ?? previous?.firstFrameAssetVersionId;
+  }
+  return undefined;
+}
+
+/** Use the previous shot's closing image as this shot's first frame. */
+export function applyMotionComicPreviousFrameAsFirst(document: MotionComicPipelineData, shotId: string): MotionComicPipelineData {
+  const previousId = motionComicPreviousShotFrameId(document, shotId);
+  if (!previousId) throw new Error('MOTION_COMIC_PREVIOUS_FRAME_MISSING: 上一镜头还没有可用的画面。');
+  return setMotionComicShotFirstFrame(document, shotId, previousId);
 }

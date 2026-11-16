@@ -26,6 +26,10 @@ export function summarizeErrorMessage(message: string): string {
   if (/LEMO_AGENT_COST_LIMIT/u.test(normalized)) return 'Lemo Agent 已达费用预算，工程已保存；调高预算后可“重试失败步骤”续跑';
   if (/LEMO_EDIT_(?:INVALID|STALE|SIZE|EMPTY|NOOP|AMBIGUOUS)/iu.test(normalized)) return '本批修改未通过检查，上一批源码已保留';
   if (/LEMO_FILE_TRUNCATED/iu.test(normalized)) return '代码输出预算耗尽，已保留不完整源码';
+  if (/PI_RECONCILIATION_REQUIRED|PI_BUDGET_USAGE_UNREPORTED/u.test(normalized)) return '部分请求结果或用量未知，需先核对服务商记录再继续';
+  if (/PI_BUDGET_(?:REQUEST|TOKEN|COST)_LIMIT/u.test(normalized)) return '创作预算或请求次数已用完；提高相应上限后可继续续跑';
+  if (/PI_(?:INPUT_CONTEXT_LIMIT|OUTPUT_BOUND_REQUIRED|INPUT_BOUND_UNSUPPORTED)/u.test(normalized)) return '当前模型请求超过已知上下文或安全预算限制，尚未提交到服务商';
+  if (/PI_GATEWAY_ADMISSION_REJECTED/u.test(normalized)) return '本机网关未提交模型请求；请检查模型请求格式或应用日志';
   if (/PROVIDER_RESULT_UNKNOWN/u.test(normalized)) return '上次请求结果未知，请核对服务商记录后再重试';
   if (/IMAGE_RESULT_UNKNOWN/u.test(normalized)) return '生图网关超时断开，图片可能已生成并计费，未自动重发';
   // Network failures name the host and the system code, so the user knows which service dropped.

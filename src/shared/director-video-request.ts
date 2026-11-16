@@ -15,7 +15,7 @@ export function validateDirectorGenerateShotVideoRequest(input: unknown): Direct
 
   const record = input as Record<string, unknown>;
   const keys = Object.keys(record).sort();
-  if (keys.length !== 3 || keys[0] !== 'expectedUpdatedAt' || keys[1] !== 'id' || keys[2] !== 'shotId') {
+  if (keys.some((key) => !['id', 'shotId', 'expectedUpdatedAt', 'adoption'].includes(key))) {
     throw new Error('DIRECTOR_VIDEO_INVALID_INPUT: Request contains unsupported fields.');
   }
 
@@ -29,7 +29,11 @@ export function validateDirectorGenerateShotVideoRequest(input: unknown): Direct
     throw new Error('DIRECTOR_VIDEO_INVALID_INPUT: Revision token must be a valid timestamp.');
   }
 
-  return { id, shotId, expectedUpdatedAt };
+  const adoption = record.adoption;
+  if (adoption !== undefined && adoption !== 'candidate' && adoption !== 'automatic') {
+    throw new Error('DIRECTOR_VIDEO_INVALID_INPUT: Unsupported adoption mode.');
+  }
+  return { id, shotId, expectedUpdatedAt, ...(adoption !== undefined ? { adoption } : {}) };
 }
 
 function isBoundedNonEmptyString(value: unknown, maxLength: number): value is string {

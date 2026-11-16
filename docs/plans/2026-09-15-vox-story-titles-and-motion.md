@@ -32,10 +32,10 @@
 
 样片使用程序生成的独立透明素材与测试音，不是实际旁白成片。没有调用付费模型，没有改写真实用户项目或重新生成《撒日朗》。外部调用数为 0。
 
-- [五种动作样片](/I:/opc/.artifacts/vox-motion-variety-qa/run-LxOgL6/vox-five-motion-styles.mp4)
-- [导出报告](/I:/opc/.artifacts/vox-motion-variety-qa/run-LxOgL6/report.json)
-- [实际视频轨迹测量](/I:/opc/.artifacts/vox-motion-variety-qa/run-LxOgL6/pixel-measurements.json)
-- [五镜头分阶段抽帧](/I:/opc/.artifacts/vox-motion-variety-qa/run-LxOgL6/five-motion-contact-sheet.png)
-- [对比镜头标签与字幕间距](/I:/opc/.artifacts/vox-motion-variety-qa/run-LxOgL6/comparison-layout.json)
+- [五种动作样片](/I:/项目/story-dream/.artifacts/vox-motion-variety-qa/run-LxOgL6/vox-five-motion-styles.mp4)
+- [导出报告](/I:/项目/story-dream/.artifacts/vox-motion-variety-qa/run-LxOgL6/report.json)
+- [实际视频轨迹测量](/I:/项目/story-dream/.artifacts/vox-motion-variety-qa/run-LxOgL6/pixel-measurements.json)
+- [五镜头分阶段抽帧](/I:/项目/story-dream/.artifacts/vox-motion-variety-qa/run-LxOgL6/five-motion-contact-sheet.png)
+- [对比镜头标签与字幕间距](/I:/项目/story-dream/.artifacts/vox-motion-variety-qa/run-LxOgL6/comparison-layout.json)
 
-前期成熟方案来源与两条链路的实现背景见 [GitHub 调研](/I:/opc/docs/plans/2026-09-14-vox-motion-skill-research.md) 和 [双链路实施](/I:/opc/docs/plans/2026-09-14-vox-dual-route-implementation.md)。
+前期成熟方案来源与两条链路的实现背景见 [GitHub 调研](/I:/项目/story-dream/docs/plans/2026-09-14-vox-motion-skill-research.md) 和 [双链路实施](/I:/项目/story-dream/docs/plans/2026-09-14-vox-dual-route-implementation.md)。

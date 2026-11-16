@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { defaultLemoUpstreamRenderCacheDir } from './lemo-upstream-video';
 import { renderLemoUpstreamStills } from './lemo-upstream-stills';
 import { probeLemoPage, type LemoPageProbeReceipt } from './pi-lemo-page-probe';
 import type { LemoUpstreamRenderRuntime } from './lemo-upstream-video';
@@ -12,8 +13,10 @@ export interface PiFilmReviewOptions {
 }
 /** Host review uses the same staged library/browser as final export. This is technical evidence only. */
 export async function reviewPiFilm(options: PiFilmReviewOptions) {
-  const page = await probeLemoPage(options);
-  const stills = await renderLemoUpstreamStills({ ...options, captions: options.captionMode === 'film' ? 1 : 0, timeoutMs: 180_000 });
+  const cacheDir = defaultLemoUpstreamRenderCacheDir();
+  const page = await probeLemoPage({ ...options, scratchDir: cacheDir });
+  const stills = await renderLemoUpstreamStills({ ...options, captions: options.captionMode === 'film' ? 1 : 0,
+    scratchDir: cacheDir, timeoutMs: 180_000 });
   const hashes = await Promise.all(stills.frames.map(async frame => ({ ...frame, sha256: createHash('sha256').update(await readFile(frame.path)).digest('hex') })));
   const receipt = { version: 1, page, stills: { ...stills, frames: hashes }, technicalPassed: page.technicalPassed && stills.technicalPassed,
     readingPassed: false, aestheticReview: false };

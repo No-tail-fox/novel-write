@@ -111,6 +111,53 @@ const missingCleanup = {
 };
 
 describe('history governance storage', () => {
+  it('sorts projects globally with stable name cursors and keeps legacy creation/archive defaults', async () => {
+    const { db, file } = await createDatabase('storydream-project-sort-');
+    for (const title of ['Zebra', 'Alpha', 'Alpha', 'Beta']) {
+      await db.createTask({ title, inputText: 'sort-match', taskType: 'story' });
+    }
+    await db.createTask({ title: 'Excluded', inputText: 'other', taskType: 'story' });
+    await db.close();
+    await mutateDatabase(file, "UPDATE tasks SET status = 'completed', is_favorite = 1, created_at = '2026-01-01T00:00:00Z' WHERE input_text = 'sort-match'");
+    await mutateDatabase(file, "UPDATE tasks SET title = NULL WHERE title = 'Beta'");
+    const reopened = await FileDatabase.open(file);
+    try {
+      const filters = { query: 'sort-match', favorite: true, taskType: 'story' as const, limit: 1 };
+      const expected = await queryDatabase<{ id: string }>(file, "SELECT id FROM tasks WHERE input_text = 'sort-match' ORDER BY title ASC, id ASC");
+      for (const filter of ['active', 'archived'] as const) {
+        if (filter === 'archived') {
+          for (const record of expected) await reopened.archiveTask(record.id);
+        }
+        const ids: string[] = [];
+        let cursor: string | null = null;
+        do {
+          const page = await reopened.listTaskSummaries({ ...filters, filter, sort: 'title', cursor });
+          expect(page.totalCount).toBe(4);
+          expect(page.hasMore).toBe(Boolean(page.nextCursor));
+          ids.push(...page.items.map(item => item.id));
+          cursor = page.nextCursor;
+          if (cursor) {
+            await expect(reopened.listTaskSummaries({ ...filters, filter, sort: 'oldest', cursor })).rejects.toThrow('CURSOR_INVALID');
+          }
+        } while (cursor);
+        expect(ids).toEqual(expected.map(item => item.id));
+        const column = filter === 'archived' ? 'archived_at' : 'created_at';
+        const descending = await queryDatabase<{ id: string }>(file, `SELECT id FROM tasks WHERE input_text = 'sort-match' ORDER BY ${column} DESC, id DESC`);
+        const legacy = await reopened.listTaskSummaries({ ...filters, filter, limit: 100 });
+        expect(legacy.items.map(item => item.id)).toEqual(descending.map(item => item.id));
+        expect(await reopened.listTaskSummaries({ ...filters, filter, sort: 'newest', limit: 100 })).toEqual(legacy);
+        const oldest = await reopened.listTaskSummaries({ ...filters, filter, sort: 'oldest', limit: 100 });
+        expect(oldest.items.map(item => item.id)).toEqual(descending.map(item => item.id).reverse());
+        const first = await reopened.listTaskSummaries({ ...filters, filter });
+        expect(JSON.parse(Buffer.from(first.nextCursor!, 'base64url').toString())).not.toHaveProperty('order');
+        const second = await reopened.listTaskSummaries({ ...filters, filter, sort: 'newest', cursor: first.nextCursor });
+        expect(second.items[0].id).toBe(descending[1].id);
+      }
+    } finally {
+      await reopened.close();
+    }
+  });
+
   it('migrates every governed family with archive/key columns, stable indexes, and tombstones', async () => {
     const { db, file } = await createDatabase('storydream-history-schema-');
     await db.close();

@@ -1,0 +1,113 @@
+/* The page grid is `auto 1fr`. Project controls now live in the workspace header, so
+   pin the workbench to the flexible row whether or not a controls row precedes it. */
+.motion-comic-page > [data-motion-comic-workbench='true'] { grid-row: 2; }
+
+/* Production/preview: the project header already owns identity, save and new project.
+   The embedded desk header keeps only production status and pane/tool controls. */
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'][data-workspace-layout] > .director-desk-header { height: 40px; min-height: 40px; padding: 0 16px; border-bottom: 0; justify-content: flex-end; background: transparent; }
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'] > .director-desk-header > .director-brandline,
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'] > .director-desk-header .director-save-state,
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'] > .director-desk-header [aria-label='保存版本'],
+.motion-comic-production .director-desk[data-director-desk-mode='motion-comic'] > .director-desk-header [aria-label='新建 AI 漫剧项目'] { display: none; }
+
+/* Legacy row: only for stages whose own workspace header replaces the project header. */
+.comic-project-controls { display:flex; align-items:center; gap:12px; min-width:0; padding:8px 16px; border-bottom:1px solid var(--shell-border); flex:0 0 auto; }
+.comic-project-controls > .project-model-bar { flex:1; min-width:0; margin:0; border:0; padding:0; }
+.comic-project-controls > .project-model-inline { flex:1; }
+.comic-project-controls { background: var(--shell-surface); }
+.comic-project-controls > button { flex-shrink:0; }
+@media(max-width:1100px) { .comic-project-controls .project-model-bar > span { display:none; } }
+
+/* One project header (plate 04): identity | five domains | project actions. */
+.motion-comic-production > .motion-comic-production__header.is-unified {
+  display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; align-items: center; gap: 0 20px;
+  min-height: 56px; padding: 0 16px; background: var(--shell-surface); border-bottom: 1px solid var(--shell-border);
+}
+.motion-comic-production__header.is-unified .motion-comic-production__identity { min-width: 0; }
+.motion-comic-production__header.is-unified .motion-comic-production__identity > div { display: grid !important; gap: 2px; min-width: 0; }
+.motion-comic-production__header.is-unified .motion-comic-production__identity strong { font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.motion-comic-production__header.is-unified .motion-comic-production__identity small { color: var(--shell-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.motion-comic-production__header.is-unified > .motion-comic-production__sections { justify-self: center; min-height: 0; padding: 0; border: 0; background: none; }
+.motion-comic-production__header.is-unified > .motion-comic-production__sections .sd-tabs [role='tab'] { min-height: 56px; padding: 0 20px; font-size: 14px; font-weight: 600; }
+.motion-comic-production__header.is-unified > .sd-toolbar { justify-self: end; flex-wrap: nowrap; gap: 6px; min-width: 0; }
+/* Every header control keeps its intrinsic width: once the toolbar runs out of room the
+   labels must not be squeezed into one character per line. */
+.motion-comic-production__header.is-unified > .sd-toolbar > * { flex: 0 0 auto; }
+.motion-comic-production__header.is-unified .sd-button,
+.motion-comic-production__header.is-unified .sd-button__content,
+.motion-comic-production__header.is-unified .motion-comic-production__save-state,
+.motion-comic-production__header.is-unified .project-model-inline,
+.motion-comic-production__header.is-unified .project-model-inline__field,
+.motion-comic-production__header.is-unified .project-model-inline__field > .sd-field,
+.motion-comic-production__header.is-unified .project-model-inline__field > label { flex: 0 0 auto; white-space: nowrap; }
+.motion-comic-production__header.is-unified > .sd-toolbar .sd-button__content { white-space: nowrap; }
+.motion-comic-production__header.is-unified .motion-comic-production__identity strong { max-width: 12ch; }
+/* Secondary header affordances collapse to their icon before any label is clipped. */
+@media (max-width: 1600px) {
+  .motion-comic-production__header.is-unified [aria-label^='后台任务'] .sd-button__content { display: none; }
+}
+@media (max-width: 1570px) {
+  .motion-comic-production__header.is-unified .project-model-inline__field > label { display: none; }
+  .motion-comic-production__header.is-unified .project-model-inline__field .sd-select { width: 118px; min-width: 118px; }
+}
+@media (max-width: 1460px) {
+  .motion-comic-production__header.is-unified .motion-comic-production__save-state { display: none; }
+}
+/* Below the point where the model selects and the project actions cannot both fit on one
+   line, the selects move to their own row instead of squeezing the save command. */
+@media (max-width: 1330px) {
+  .motion-comic-production > .motion-comic-production__header.is-unified { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; padding-block: 6px; }
+  .motion-comic-production__header.is-unified > .sd-toolbar { flex-wrap: wrap; justify-content: flex-end; }
+}
+/* The project-model selects are the only elastic fields; they shrink and ellipsize first. */
+.motion-comic-production__header.is-unified .project-model-inline { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; gap: 8px 12px; }
+.motion-comic-production__header.is-unified .project-model-inline__field { flex: 0 1 auto; min-width: 0; }
+.motion-comic-production__header.is-unified .project-model-inline__field > .sd-field { min-width: 0; }
+.motion-comic-production__header.is-unified .project-model-inline__field .sd-select { width: 112px; min-width: 84px; flex: 0 1 auto; }
+.motion-comic-production__header.is-unified .motion-comic-production__save-state { min-width: 3em; }
+.motion-comic-production__header.is-unified .project-model-bar.is-compact { display: contents; }
+.comic-task-count { display: inline-grid; place-items: center; min-width: 20px; height: 18px; margin-inline-start: 6px; padding: 0 5px; border-radius: 9px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--shell-accent-contrast); background: var(--shell-accent); }
+
+/* Sub-steps read as a quiet secondary level under the domains. */
+.motion-comic-production:has(> .is-unified) > .motion-comic-production__stages { background: var(--shell-bg); border-bottom: 1px solid var(--shell-border); padding: 6px 16px; }
+.motion-comic-production[data-stage] > .motion-comic-production__stages[aria-label='剧本子流程'] { display: grid; grid-template-columns: repeat(3, minmax(0, 180px)); gap: 8px; padding: 6px 16px; }
+.motion-comic-production[data-stage] > .motion-comic-production__stages[aria-label='剧本子流程'] > button { width: 100%; min-height: 36px; padding-block: 6px; }
+.motion-comic-production[data-stage] > .motion-comic-production__stages[aria-label='剧本子流程'] .comic-stage-copy small { display: none; }
+.motion-comic-production[data-stage] > .motion-comic-production__stages[aria-label='剧本子流程'] .comic-stage-copy strong { font-size: 13px; }
+.motion-comic-production:is(.is-source, .is-episodes, .is-scenes) { gap: 0; }
+.motion-comic-production:is(.is-source, .is-episodes, .is-scenes) > .motion-comic-production__body { padding-block-start: 4px; }
+/* Next-step bar is one compact line: title and detail side by side, detail ellipsizes first. */
+.motion-comic-production > .motion-comic-production__next-step { padding: 4px 16px; min-height: 0; align-items: center; }
+.motion-comic-production > .motion-comic-production__next-step > span { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.motion-comic-production > .motion-comic-production__next-step strong { flex: 0 0 auto; white-space: nowrap; }
+.motion-comic-production > .motion-comic-production__next-step small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+
+/* Save feedback is a slim inline note, not a full-width banner. */
+.motion-comic-production > .motion-comic-production__notice { margin: 8px 16px 0; padding: 6px 12px; border: 0; border-inline-start: 3px solid currentColor; border-radius: 6px; font-size: 12px; }
+.motion-comic-production > .motion-comic-production__notice.is-success { background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.motion-comic-production > .motion-comic-production__notice.is-error { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+@media (max-width: 1520px) {
+  .motion-comic-production > .motion-comic-production__header.is-unified { grid-template-columns: minmax(0, 1fr) auto; }
+  .motion-comic-production__header.is-unified > .motion-comic-production__sections { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
+  .motion-comic-production__header.is-unified > .motion-comic-production__sections .sd-tabs [role='tab'] { min-height: 42px; padding: 0 16px; }
+}
+@media (max-width: 1180px) {
+  .motion-comic-production__header.is-unified .project-model-inline__field > span { display: none; }
+  .motion-comic-production__header.is-unified .project-model-inline__field > select { max-width: 104px; padding-inline-start: 8px; }
+}
+@media (max-width: 900px) {
+  .motion-comic-production__header.is-unified .motion-comic-production__save-state { display: none; }
+}
+
+/* All project stages share the unified header and its responsive rules above. */
+
+/* Background reference tasks stay available as a slim disclosure. Expanded
+   history scrolls locally so an active batch cannot consume the entire editor. */
+.motion-comic-production.is-storyboard .comic-reference-batch--episode { flex: 0 0 auto; margin: 4px 12px; padding: 2px 8px; gap: 0 8px; border-radius: var(--sd-radius); }
+.motion-comic-production.is-storyboard .comic-reference-batch--episode .comic-reference-batch__history summary { padding: 2px 0; line-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.motion-comic-production.is-storyboard .comic-reference-batch--episode .comic-reference-batch__history[open] { max-height: 160px; overflow-y: auto; scrollbar-width: thin; }
+.motion-comic-production.is-storyboard .comic-reference-batch--episode .comic-reference-batch__bar { flex-wrap: nowrap; }
+.motion-comic-production.is-storyboard .comic-reference-batch--episode .comic-reference-batch__bar .sd-button__content { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.motion-comic-production.is-storyboard .comic-reference-batch--episode .comic-reference-batch__live { padding-block: 2px; }
+

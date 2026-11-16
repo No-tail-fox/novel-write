@@ -9,7 +9,7 @@ import { resolveLemoUpstreamRenderRuntime } from '../electron/lemo-upstream-vide
 
 type Result = { passed: boolean; checks: Array<{ id: string; status: string; detail: string }> };
 const roots: string[] = [];
-afterAll(async () => { await Promise.all(roots.map(root => rm(root, { recursive: true, force: true }))); });
+afterAll(async () => { await Promise.all(roots.map(root => rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }))); });
 
 // Installed copies live under paths with spaces and non-ASCII user names (P-3).
 async function userLikeDir(prefix: string) {

@@ -11,14 +11,14 @@ function inventory(values: readonly string[], owner: string, consumer: string, t
 
 export const approvedEditorialInventories = {
   shellViews: inventory([
-    'projects', 'conversation-workbench', 'new-task', 'hot-board', 'queue', 'history', 'task-detail', 'editorial-collage',
+    'projects', 'conversation-workbench', 'new-task', 'short-video', 'hot-board', 'queue', 'history', 'task-detail', 'editorial-collage',
     'template-animation', 'motion-comic', 'html-video',
     'image-lab', 'voice-lab', 'video-lab', 'music-lab', 'music-mv',
     'book-selection', 'benchmark', 'person-assets', 'copy-studio', 'viral-analyzer', 'prompt-templates', 'draft-templates',
     'settings', 'account', 'activation',
   ], 'src/shared/types.ts', 'src/app/route-registry.ts', 'tests/route-registry.test.ts'),
   sidebarViews: inventory([
-    'projects', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv', 'person-assets',
+    'projects', 'short-video', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv', 'person-assets',
     'copy-studio', 'conversation-workbench',
     'image-lab', 'voice-lab', 'video-lab', 'music-lab',
     'hot-board', 'benchmark', 'book-selection', 'viral-analyzer', 'prompt-templates', 'draft-templates',

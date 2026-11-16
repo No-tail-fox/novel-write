@@ -47,23 +47,55 @@ export function MotionComicSourcePanel({ document, onContinue }: CommonPanelProp
         </div>
       </header>
       <div className="motion-comic-source-panel__layout">
-        <Pane tone="base" className="motion-comic-source-panel__document">
-          <TextAreaField label="原始文本" value={sourceText} rows={22} resize="vertical" readOnly hint="原稿在分集与规划阶段保持不变，已生成内容通过版本记录管理。" />
-        </Pane>
-        <aside className="motion-comic-source-panel__summary">
-          <section><strong>导入状态</strong><span className="is-ready"><CheckCircle2 size={15} />源文已保存</span></section>
+        <section className="motion-comic-source-panel__document" aria-label="原始文本">
+          <header className="motion-comic-source-reader__heading">
+            <div><strong>原始文本</strong><small>只读 · 原稿在分集与规划阶段保持不变，生成内容通过版本记录管理</small></div>
+            <span>{sourceText.length.toLocaleString('zh-CN')} 字</span>
+          </header>
+          <SourceReader key={document.id} text={sourceText} />
+        </section>
+        <aside className="motion-comic-source-panel__summary" aria-label="导入概况">
+          <section className="motion-comic-source-summary__status"><strong>导入概况</strong><span className="is-ready"><CheckCircle2 size={14} />源文已保存</span></section>
           <dl>
-            <div><dt>计划集数</dt><dd>{source?.episodes.length ?? document.episodes.length}</dd></div>
+            <div><dt>计划集数</dt><dd>{source?.episodes.length ?? document.episodes.length} 集</dd></div>
             <div><dt>分集方式</dt><dd>{splitLabel}</dd></div>
             {splitEvidence?.model ? <div><dt>分集模型</dt><dd>{splitEvidence.model}</dd></div> : null}
             <div><dt>成片画幅</dt><dd>{document.ratio}</dd></div>
-            <div><dt>导入时间</dt><dd>{source ? new Date(source.importedAt).toLocaleString('zh-CN') : '历史项目'}</dd></div>
+            <div><dt>导入时间</dt><dd>{source ? new Date(source.importedAt).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '历史项目'}</dd></div>
           </dl>
+          {source?.episodes.length ? <section className="motion-comic-source-summary__episodes" aria-label="分集预览">
+            <strong>分集预览</strong>
+            <ol>{source.episodes.slice(0, 6).map(episode => <li key={episode.id}><span>{String(episode.number).padStart(2, '0')}</span><em title={episode.title}>{episode.title}</em><small>{episode.sourceText.length.toLocaleString('zh-CN')} 字</small></li>)}</ol>
+            {source.episodes.length > 6 ? <small>还有 {source.episodes.length - 6} 集，在分集拆解中查看</small> : null}
+          </section> : null}
           <Button variant="primary" icon={<ArrowRight size={14} />} iconPosition="after" onClick={() => onContinue('episodes')}>进入分集拆解</Button>
         </aside>
       </div>
     </div>
   );
+}
+
+const SOURCE_READER_PAGE = 240;
+const SOURCE_RULER = /^[\s=＝\-—_*~·.。#]{6,}$/u;
+
+/** Read-only manuscript view. Text is shown verbatim; separator rulers render as thin
+ * dividers and very long sources load in pages so a 400k-character novel stays responsive. */
+function SourceReader({ text }: { text: string }) {
+  const [visible, setVisible] = useState(SOURCE_READER_PAGE);
+  const lines = text.split(/\r?\n/u);
+  const blocks: Array<{ kind: 'rule' } | { kind: 'text'; value: string }> = [];
+  for (const raw of lines) {
+    const value = raw.trim();
+    if (!value) continue;
+    if (SOURCE_RULER.test(value)) { if (blocks.at(-1)?.kind !== 'rule') blocks.push({ kind: 'rule' }); continue; }
+    blocks.push({ kind: 'text', value });
+  }
+  const shown = blocks.slice(0, visible);
+  return <div className="motion-comic-source-reader" tabIndex={0} aria-label="原始文本内容">
+    {shown.map((block, index) => block.kind === 'rule' ? <hr key={index} /> : <p key={index}>{block.value}</p>)}
+    {!blocks.length ? <p className="is-empty">暂无原始文本。</p> : null}
+    {blocks.length > visible ? <button type="button" className="motion-comic-source-reader__more" onClick={() => setVisible(count => count + SOURCE_READER_PAGE * 4)}>继续显示（已显示 {visible.toLocaleString('zh-CN')} / {blocks.length.toLocaleString('zh-CN')} 段）</button> : null}
+  </div>;
 }
 
 interface EpisodePanelProps extends CommonPanelProps {

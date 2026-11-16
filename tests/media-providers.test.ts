@@ -3,10 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createConfiguredImageGenerator, createConfiguredNarrationSynthesizer, generateConfiguredVoicePreview } from '@shared/media-providers';
+import { importManagedImageLabRecord } from '../electron/image-lab-import';
 import { buildOpenAiImageEditFormData } from '@shared/openai-image-edit';
 import { defaultConfig } from '@shared/config';
 import { normalizeAppConfig } from '@shared/config-utils';
 import type { AppConfig, ImagePrompt, StoryboardScene, Task } from '@shared/types';
+
+const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
 
 const scene: StoryboardScene = { id: 1, cap: 'A real scene', descPrompt: 'visual prompt', durationMs: 1200 };
 const prompt: ImagePrompt = {
@@ -31,6 +34,42 @@ afterEach(() => {
 });
 
 describe('configured media providers', () => {
+  it.each(['url', 'base64'] as const)('stores received WebP with its actual extension and supports managed import (%s)', async mode => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-image-format-'));
+    const bytes = Buffer.from('UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoBAAEAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=', 'base64');
+    const config: AppConfig = { ...defaultConfig, imageProvider: 'gpt_image', gptImage: { ...defaultConfig.gptImage, apiKey: 'test', baseUrl: 'https://image.example' } };
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => init.method === 'POST'
+      ? new Response(JSON.stringify({ data: [mode === 'url' ? { url: 'https://cdn.example/misnamed.png' } : { b64_json: bytes.toString('base64') }] }))
+      : new Response(bytes, { headers: { 'Content-Type': 'image/png' } })));
+    try {
+      const [asset] = await createConfiguredImageGenerator(config, dir)([scene], [prompt], task);
+      expect(asset.path).toMatch(/001\.webp$/u);
+      expect(await readFile(asset.path)).toEqual(bytes);
+      const persist = vi.fn(async value => ({ ...value, id: 'imported' }));
+      await importManagedImageLabRecord(dir, { prompt: 'received image', imagePath: asset.path, ratio: '1:1', style: 'reference', provider: 'local-import' }, persist);
+      expect(persist).toHaveBeenCalledWith(expect.objectContaining({ imagePath: expect.stringMatching(/imported\.webp$/u), status: 'generated' }));
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects non-image download bytes but retains the receipt for GET-only recovery', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-invalid-image-'));
+    const config: AppConfig = { ...defaultConfig, imageProvider: 'gpt_image', gptImage: { ...defaultConfig.gptImage, apiKey: 'test', baseUrl: 'https://image.example' } };
+    let recovered = false; const methods: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => {
+      methods.push(init.method ?? 'GET');
+      return init.method === 'POST' ? new Response(JSON.stringify({ data: [{ url: 'https://cdn.example/result.png' }] }))
+        : new Response(recovered ? pngBytes : Buffer.from('<html>gateway error</html>'));
+    }));
+    try {
+      await expect(createConfiguredImageGenerator(config, dir)([scene], [prompt], task)).rejects.toThrow('IMAGE_PROVIDER_RESULT_INVALID');
+      await expect(readFile(join(dir, 'provider-images/001.png'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(JSON.parse(await readFile(join(dir, 'provider-images/001.response.json'), 'utf8')).image.url).toBe('https://cdn.example/result.png');
+      recovered = true;
+      const [asset] = await createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task);
+      expect(await readFile(asset.path)).toEqual(pngBytes);
+      expect(methods).toEqual(['POST', 'GET', 'GET']);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
 
   it.each(['sync', 'edit', 'async'] as const)('recovers a pre-connection timeout in the real %s image path', async mode => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-connect-recovery-'));
@@ -42,13 +81,13 @@ describe('configured media providers', () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       if (fetchMock.mock.calls.length === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect timed out'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
       if (mode === 'async' && init?.method === 'POST') return new Response('{"id":"accepted-once"}');
-      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('recovered-image').toString('base64') }] }));
+      return new Response(JSON.stringify({ data: [{ b64_json: pngBytes.toString('base64') }] }));
     });
     vi.stubGlobal('fetch', fetchMock);
     try {
       await writeFile(reference, 'reference-image');
       const result = await createConfiguredImageGenerator(config, dir)([scene], [mode === 'edit' ? { ...prompt, referenceImagePaths: [reference] } : prompt], task);
-      expect(await readFile(result[0].path, 'utf8')).toBe('recovered-image');
+      expect(await readFile(result[0].path)).toEqual(pngBytes);
       expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual(mode === 'async' ? ['POST', 'POST', 'GET'] : ['POST', 'POST']);
       expect(fetchMock.mock.calls[0][1]?.body).toBe(fetchMock.mock.calls[1][1]?.body);
     } finally { await rm(dir, { recursive: true, force: true }); }
@@ -91,7 +130,7 @@ describe('configured media providers', () => {
       requests.push(init.method ?? 'GET');
       if (init.method === 'POST') return new Response(JSON.stringify({ data: [{ url: 'https://cdn.example/result.png' }], authorization: 'must-not-persist' }));
       if (disconnected) throw new Error('download network closed');
-      return new Response('saved-image');
+      return new Response(pngBytes);
     }));
     try {
       await expect(createConfiguredImageGenerator(config, dir)([scene], [prompt], task)).rejects.toThrow('download network closed');
@@ -100,7 +139,7 @@ describe('configured media providers', () => {
       expect(receipt).not.toContain('secret-test-key'); expect(receipt).not.toContain('must-not-persist');
       disconnected = false;
       const result = await createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task);
-      expect(await readFile(result[0].path, 'utf8')).toBe('saved-image');
+      expect(await readFile(result[0].path)).toEqual(pngBytes);
       expect(requests).toEqual(['POST', 'GET', 'GET']);
       await expect(createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [{ ...prompt, prompt: 'changed input' }], task)).rejects.toThrow('IMAGE_RECOVERY_MISMATCH');
       expect(requests).toEqual(['POST', 'GET', 'GET']);
@@ -109,7 +148,7 @@ describe('configured media providers', () => {
   it('never submits in recovery-only mode without a receipt and rejects changed reference bytes', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-image-reference-recovery-'));
     const config: AppConfig = { ...defaultConfig, imageProvider: 'custom', customImage: { ...defaultConfig.customImage, apiKey: 'test', baseUrl: 'https://image.example', model: 'test', asyncMode: false } };
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('image').toString('base64') }] })));
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: pngBytes.toString('base64') }] })));
     vi.stubGlobal('fetch', fetchMock);
     try {
       await expect(createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task)).rejects.toThrow('IMAGE_RECOVERY_UNAVAILABLE');
@@ -130,13 +169,13 @@ describe('configured media providers', () => {
       methods.push(init.method ?? 'GET');
       if (init.method === 'POST') return new Response(JSON.stringify({ id: 'submitted-task' }));
       if (disconnected) throw new Error('poll disconnected');
-      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('recovered async image').toString('base64') }] }));
+      return new Response(JSON.stringify({ data: [{ b64_json: pngBytes.toString('base64') }] }));
     }));
     try {
       await expect(createConfiguredImageGenerator(config, dir)([scene], [prompt], task)).rejects.toThrow('poll disconnected');
       disconnected = false;
       const result = await createConfiguredImageGenerator(config, dir, { recoveryOnly: true })([scene], [prompt], task);
-      expect(await readFile(result[0].path, 'utf8')).toBe('recovered async image');
+      expect(await readFile(result[0].path)).toEqual(pngBytes);
       expect(methods).toEqual(['POST', 'GET', 'GET']);
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
@@ -185,7 +224,7 @@ describe('configured media providers', () => {
 
   it('submits OpenAI-compatible custom image requests asynchronously and polls the task result', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-async-'));
-    const imageBytes = Buffer.from('async-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -225,7 +264,7 @@ describe('configured media providers', () => {
       const generate = createConfiguredImageGenerator(config, dir);
       const assets = await generate([scene], [prompt], { ...task, imageQuality: 'high' });
 
-      expect(await readFile(assets[0].path, 'utf8')).toBe('async-image');
+      expect(await readFile(assets[0].path)).toEqual(pngBytes);
       expect(requests[0]).toMatchObject({
         url: 'https://image.example/v1/images/generations?async=true',
         method: 'POST',
@@ -242,7 +281,7 @@ describe('configured media providers', () => {
 
   it('applies custom image ratio mappings to OpenAI-compatible request bodies', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-ratio-map-'));
-    const imageBytes = Buffer.from('mapped-ratio-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -283,7 +322,7 @@ describe('configured media providers', () => {
 
   it('generates image files from an OpenAI-compatible image endpoint', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-'));
-    const imageBytes = Buffer.from('real-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -306,7 +345,7 @@ describe('configured media providers', () => {
       const assets = await generate([scene], [prompt], { ...task, imageQuality: 'high' });
 
       expect(assets).toHaveLength(1);
-      expect(await readFile(assets[0].path, 'utf8')).toBe('real-image');
+      expect(await readFile(assets[0].path)).toEqual(pngBytes);
       expect(requests[0].url).toBe('https://image.example/v1/images/generations');
       expect(requests[0].body).toMatchObject({
         model: 'gpt-image-2',
@@ -596,7 +635,7 @@ describe('configured media providers', () => {
 
   it('generates image files from Jimeng async visual tasks', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-jimeng-'));
-    const imageBytes = Buffer.from('jimeng-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
     vi.stubGlobal(
       'fetch',
@@ -635,7 +674,7 @@ describe('configured media providers', () => {
       const generate = createConfiguredImageGenerator(config, dir);
       const assets = await generate([scene], [prompt], task);
 
-      expect(await readFile(assets[0].path, 'utf8')).toBe('jimeng-image');
+      expect(await readFile(assets[0].path)).toEqual(pngBytes);
       expect(requests[0].url).toContain('CVSync2AsyncSubmitTask');
       expect(requests[1].url).toContain('CVSync2AsyncGetResult');
       expect(requests[0].body).toMatchObject({ req_key: 'jimeng_t2i_v40', prompt: 'visual prompt', width: 3040, height: 5404 });
@@ -965,7 +1004,7 @@ describe('configured media providers', () => {
 
   it('uses the enabled image profile after config normalization', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-provider-image-profile-'));
-    const imageBytes = Buffer.from('profile-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',

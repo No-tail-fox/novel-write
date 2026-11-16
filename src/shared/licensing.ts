@@ -10,6 +10,8 @@ export interface LicenseLease {
   issuedAt: number;
   validUntil: number;
   expiresAt: number;
+  // Optional server-granted deadline for running on a persisted lease while the license server is unreachable.
+  offlineGraceUntil?: number;
   maxDevices: number;
   devices: Array<{ deviceId: string; label: string; lastSeen: number }>;
 }

@@ -6,6 +6,7 @@ const expectedViews = [
   'projects',
   'conversation-workbench',
   'new-task',
+  'short-video',
   'hot-board',
   'queue',
   'history',
@@ -72,7 +73,7 @@ describe('renderer route registry', () => {
     expect(registryKeys(componentSection)).toEqual(expectedViews);
     expect(registry.match(/lazy\(routeLoaders\['[^']+'\]\)/gu)).toHaveLength(expectedViews.length);
     // 创意动画 and 模板动画 share one page module (route prop), so one import serves two views.
-    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(expectedViews.length - 1);
+    expect(registry.match(/import\('\.\.\/features\//gu)).toHaveLength(expectedViews.length - 2);
     expect(registry).toContain('export async function preloadRoute(view: ShellView)');
     expect(registry).not.toMatch(/^import \{ [A-Za-z0-9]+Page \} from '\.\.\/features\//gmu);
   });
@@ -80,12 +81,12 @@ describe('renderer route registry', () => {
   it('keeps new task separate, every workbench reachable, and task detail route-only', () => {
     expect(newTaskPrimaryAction.view).toBe('new-task');
     expect(sidebarNavGroups.map((group) => group.label)).toEqual(['项目', '素材库', '灵感', '模板', '任务', '设置']);
-    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([6, 7, 4, 2, 2, 1]);
-    expect(sidebarNavItems).toHaveLength(24);
-    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(24);
+    expect(sidebarNavGroups.map((group) => group.items.length)).toEqual([7, 7, 4, 2, 2, 1]);
+    expect(sidebarNavItems).toHaveLength(25);
+    expect(new Set(sidebarNavItems.map((item) => item.view)).size).toBe(25);
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('new-task');
     expect(sidebarNavItems.map((item) => item.view)).not.toContain('task-detail');
-    expect(navigationItems).toHaveLength(25);
+    expect(navigationItems).toHaveLength(26);
     expect(new Set([...navigationItems.map((item) => item.view), 'task-detail'])).toEqual(new Set(expectedViews));
   });
 

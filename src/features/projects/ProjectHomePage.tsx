@@ -27,6 +27,7 @@ import type {
   HistoryArchiveFilter,
   HistoryFamily,
   HistoryListRequest,
+  ProjectSort,
   TaskSummary,
 } from '../../shared/types';
 import { useAsyncAction } from '../../ui/async-action';
@@ -52,8 +53,16 @@ const projectTypeOptions = [
   { value: 'motion-comic', label: 'AI 漫剧' },
 ] as const;
 
+export interface ProjectFilterRequest {
+  taskType: ProjectTaskType;
+  revision: number;
+}
+
+export type ProjectFilterSession = ProjectHomeSession & { filterRevision?: number };
+
 export function ProjectHomePage({
   session,
+  projectFilterRequest,
   config,
   api,
   applyState,
@@ -62,7 +71,8 @@ export function ProjectHomePage({
   isTombstoned,
   familyEpochs,
 }: {
-  session: ProjectHomeSession;
+  session: ProjectFilterSession;
+  projectFilterRequest?: ProjectFilterRequest;
   config: AppConfig;
   api: StoryDreamApi;
   applyState: (result: AppMutationResult | null) => void;
@@ -72,8 +82,15 @@ export function ProjectHomePage({
   familyEpochs: Partial<Record<HistoryFamily, number>>;
 }) {
   const [view, setView] = useState(session.view);
+  const [filterRevision, setFilterRevision] = useState(session.filterRevision);
+  // Adjust before commit: the history hook must never issue an intermediate all-types request.
+  // Persist the consumed revision with the session so ordinary returns preserve manual filters.
+  if (projectFilterRequest && projectFilterRequest.revision !== filterRevision) {
+    setFilterRevision(projectFilterRequest.revision);
+    setView((current) => ({ ...current, taskType: projectFilterRequest.taskType }));
+  }
   const [controller] = useState(() => session.controller ??= createHistoryPageRequestController<'task', TaskSummary>('task', { keepPageOnRefresh: true }));
-  const { archiveFilter, taskType, favoriteFilter, query, layout } = view;
+  const { archiveFilter, taskType, favoriteFilter, query, layout, sort = 'newest' } = view;
   const [searchQuery, setSearchQuery] = useState(query.trim());
   const [composing, setComposing] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TaskSummary | null>(null);
@@ -81,7 +98,10 @@ export function ProjectHomePage({
   const [costTask, setCostTask] = useState<TaskSummary | null>(null);
   const [coverTask, setCoverTask] = useState<TaskSummary | null>(null);
   const projectAction = useAsyncAction();
-  useEffect(() => { session.view = view; }, [session, view]);
+  useEffect(() => {
+    session.view = view;
+    session.filterRevision = filterRevision;
+  }, [filterRevision, session, view]);
   useEffect(() => {
     if (composing) return;
     const timer = window.setTimeout(() => setSearchQuery(query.trim()), 200);
@@ -93,8 +113,9 @@ export function ProjectHomePage({
     ...(searchQuery ? { query: searchQuery } : {}),
     ...(taskType !== 'all' ? { taskType } : {}),
     ...(favoriteFilter === 'favorites' ? { favorite: true } : {}),
+    sort,
     limit: 50,
-  }), [archiveFilter, favoriteFilter, searchQuery, taskType]);
+  }), [archiveFilter, favoriteFilter, searchQuery, sort, taskType]);
   const loadPage = useCallback(async (next: Extract<HistoryListRequest, { family: 'task' }>) => {
     const { family: _family, ...input } = next;
     return api.listTasks(input);
@@ -153,6 +174,7 @@ export function ProjectHomePage({
 
   return (
     <section className="project-home" data-project-home data-project-count={tasks.length}>
+      <header className="project-home-intro"><div><span>YOUR CREATIVE SPACE</span><h1>让故事，成为画面。</h1><p>从一段文字出发，继续你的下一部作品。</p></div><Button variant="primary" icon={<Plus size={16} />} onClick={() => navigate('new-task')}>新建项目</Button></header>
       <Toolbar className="project-home-toolbar" aria-label="项目筛选">
         <SegmentedControl
           label="项目范围"
@@ -192,6 +214,18 @@ export function ProjectHomePage({
           onChange={(value) => setView((current) => ({ ...current, favoriteFilter: value === 'favorites' ? 'favorites' : 'all' }))}
           disabled={controlsBusy}
         />
+        <SelectField
+          label="项目排序"
+          aria-label="项目排序"
+          value={sort}
+          options={[
+            { value: 'newest', label: archiveFilter === 'archived' ? '最新归档' : '最新创建' },
+            { value: 'oldest', label: archiveFilter === 'archived' ? '最早归档' : '最早创建' },
+            { value: 'title', label: '名称' },
+          ]}
+          disabled={controlsBusy}
+          onChange={(event) => setView((current) => ({ ...current, sort: event.target.value as ProjectSort }))}
+        />
         <SegmentedControl
           className="project-layout-toggle"
           iconOnly
@@ -204,15 +238,6 @@ export function ProjectHomePage({
           onChange={(value) => setView((current) => ({ ...current, layout: value as ProjectLayout }))}
           disabled={false}
         />
-        <Button
-          variant="primary"
-          density="compact"
-          icon={<Plus size={15} />}
-          type="button"
-          onClick={() => navigate('new-task')}
-        >
-          新建项目
-        </Button>
       </Toolbar>
 
       <div className="project-home-summary" aria-live="polite">
@@ -260,8 +285,11 @@ export function ProjectHomePage({
               onCost={() => setCostTask(task)}
             />
           ))}
+          {layout === 'grid' && archiveFilter === 'active' && !hasFilters ? <Button className="project-new-card" variant="subtle" onClick={() => navigate('new-task')}><Plus size={30} aria-hidden="true" /><strong>一个新故事</strong><span>导入小说、剧本，或从空白开始</span></Button> : null}
         </div>
       ) : null}
+
+      {tasks.some(task => task.projectActivity) ? <section className="project-home-activity" aria-label="项目活动"><header><h2>项目活动</h2><span>当前页项目的最新状态</span></header>{tasks.filter(task => task.projectActivity).slice(0, 4).map(task => <div className="project-activity-row" key={task.id}><strong>{task.title || '未命名任务'}</strong><span>{task.projectActivity?.detail}</span><StatusBadge status={task.projectActivity!.status} label={task.projectActivity!.label} /><Button disabled={controlsBusy} onClick={() => openTaskDetail(task.id)}>继续制作 →</Button></div>)}</section> : null}
 
       {projectPage.page ? (
         <div className="project-home-pagination">
@@ -366,13 +394,12 @@ function ProjectCard({
                 loading="lazy"
                 onError={() => setFailedCovers((current) => new Set(current).add(cover.url))}
               />
-            : <span className="project-card-cover-empty" aria-label="暂无项目封面"><Play size={22} /></span>}
+            : <span className="project-card-cover-empty" aria-label="暂无项目封面"><Play size={24} aria-hidden="true" /><span>暂无项目封面</span></span>}
         </span>
         <span className="project-card-body">
+          <span className="project-card-meta"><span className="project-card-type">{taskHistoryTypeLabel(task)}</span><span>创建于 {formatTaskOperationTime(task.createdAt)}</span></span>
           <strong>{task.title || '未命名任务'}</strong>
-          <span className="project-card-meta">
-            {taskHistoryTypeLabel(task)} · {formatTaskOperationTime(task.createdAt)}
-          </span>
+          {task.inputPreview?.trim() ? <span className="project-card-description">{task.inputPreview}</span> : null}
           <span className="project-card-status">
             <StatusBadge status={task.projectActivity?.status ?? task.status} label={task.projectActivity?.label} />
             <small>{taskStatusDetail(task)}</small>
@@ -439,9 +466,9 @@ function ProjectCard({
             type="button"
             disabled={openBusy}
             onClick={onOpen}
-            aria-label="继续编辑"
+            aria-label={archived ? '查看项目' : '继续制作'}
           >
-            继续编辑
+            {archived ? '查看项目' : '继续制作'}
           </Button>
         </Toolbar>
       </div>

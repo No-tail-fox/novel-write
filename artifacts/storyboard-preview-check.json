@@ -1,0 +1,21 @@
+{
+  "viewports": [
+    {
+      "width": 1440,
+      "overflow": false,
+      "imagesLoaded": true
+    },
+    {
+      "width": 1024,
+      "overflow": false,
+      "imagesLoaded": true
+    },
+    {
+      "width": 390,
+      "overflow": false,
+      "imagesLoaded": true
+    }
+  ],
+  "pageErrors": [],
+  "selectionDraftFocusMode": "passed"
+}

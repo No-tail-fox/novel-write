@@ -903,10 +903,9 @@ describe('managed history paths', () => {
 
   it('persists image and voice ownership before invoking providers and retains failed rows', async () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
-    const imageHandler = main.slice(
-      main.indexOf("trustedHandle('image-lab:generate'"),
-      main.indexOf("trustedHandle('image-lab:add-record'"),
-    );
+    const imageHandler = sourceSection(main, 'async function generateManagedImageLabRecord(', "trustedHandle('image-lab:generate'");
+    const imageEntry = sourceSection(main, "trustedHandle('image-lab:generate'", "trustedHandle('image-lab:remove-background'");
+    expect(imageEntry).toContain('(await generateManagedImageLabRecord(input)).patch');
     const voiceHandler = main.slice(
       main.indexOf("trustedHandle('voice-lab:generate'"),
       main.indexOf("trustedHandle('account:save'"),

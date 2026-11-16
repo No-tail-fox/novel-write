@@ -21,6 +21,20 @@ function fixture() {
 }
 
 describe('motion comic shot timeline projection', () => {
+  it('does not copy dialogue reference audio into a newly authored shot', () => {
+    const document = fixture();
+    const episode = document.episodes[0];
+    const scene = episode.scenes[0];
+    scene.shots[0].videoProduction = { version: 1, referenceMode: 'references', audioMode: 'audio-driven', referenceAudioAssetVersionIds: ['old-dialogue'] };
+    scene.shots[0].productionUnit = { sourceShotId: 'original', sourceStartMs: 0, sourceEndMs: 5000, index: 1, total: 2, generationDurationSec: 5 };
+    scene.shots[0].sourceBeatIds = ['old-beat'];
+    const next = appendMotionComicShot(document, episode.id, scene.id, { id: 'fresh-dialogue' });
+    const appended = next.episodes[0].scenes[0].shots.at(-1)!;
+    expect(appended.videoProduction).toEqual({ version: 1, referenceMode: 'references', audioMode: 'post-mix' });
+    expect(appended.productionUnit).toBeUndefined();
+    expect(appended.sourceBeatIds).toBeUndefined();
+    expect(document.episodes[0].scenes[0].shots[0].videoProduction?.referenceAudioAssetVersionIds).toEqual(['old-dialogue']);
+  });
   it.each([0, 1, 2])('inserts into scene %i with full-length dialogue and surviving episode ownership', (sceneIndex) => {
     const before = appendMotionComicEpisode(fixture(), { id: 'second-episode' });
     const episode = before.episodes[0];
@@ -106,7 +120,7 @@ describe('motion comic shot timeline projection', () => {
     document.assets.push({ id: 'image', assetId: 'frame', kind: 'image', localPath: 'E:/fixture.png', createdAt: document.createdAt }, { id: 'audio', assetId: 'voice', kind: 'audio', localPath: 'E:/fixture.wav', createdAt: document.createdAt });
     const episode = document.episodes[0];
     const shots = episode.scenes.flatMap((scene) => scene.shots);
-    for (const shot of shots) { shot.firstFrameAssetVersionId = 'image'; shot.voiceAssetVersionId = 'audio'; }
+    for (const shot of shots) { shot.renderStrategy = 'image-motion'; shot.firstFrameAssetVersionId = 'image'; shot.voiceAssetVersionId = 'audio'; }
     const scenes = buildDirectorRenderScenes(document);
     expect(scenes.map((scene) => scene.id)).toEqual(episode.timeline.clips.map((clip) => clip.shotId));
     expect(scenes.reduce((sum, scene) => sum + scene.durationMs, 0)).toBe(episode.timeline.durationMs);

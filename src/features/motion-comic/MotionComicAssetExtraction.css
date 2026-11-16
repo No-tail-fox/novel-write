@@ -1,0 +1,17 @@
+.mc-extraction-dialog.sd-dialog-surface { width: min(900px, calc(100vw - 40px)); max-width: calc(100vw - 40px); }
+.mc-extraction { display: grid; gap: 16px; min-width: 0; line-height: 1.6; color: var(--shell-text); }
+.mc-extraction p { margin: 0; overflow-wrap: anywhere; }
+.mc-extraction__toolbar { display: flex; flex-wrap: wrap; gap: 12px; padding: 0; }
+.mc-extraction__notice { padding: 12px 16px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface-raised); }
+.mc-extraction__source { white-space: pre-wrap; max-height: 240px; overflow: auto; margin-top: 12px !important; }
+.mc-extraction summary { cursor: pointer; padding-block: 8px; }
+.mc-extraction__list { display: grid; gap: 20px; }
+.mc-extraction__candidate { border: 1px solid var(--shell-border); border-radius: 12px; padding: 20px; display: grid; gap: 16px; min-width: 0; }
+.mc-extraction__candidate header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.mc-extraction__meta { color: var(--shell-muted); font-size: 12px; }
+.mc-extraction__item { display: grid; gap: 12px; padding-block: 16px; border-top: 1px solid var(--shell-border); }
+.mc-extraction__check { display: flex; gap: 10px; align-items: center; font-weight: 600; min-height: 36px; cursor: pointer; }
+.mc-extraction__check input { width: 18px; height: 18px; accent-color: var(--shell-accent); }
+.mc-extraction__looks { display: grid; gap: 12px; padding: 12px 16px; background: var(--shell-surface-raised); border-radius: 8px; }
+.mc-extraction__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 600px) { .mc-extraction-dialog.sd-dialog-surface { width: calc(100vw - 24px); max-width: calc(100vw - 24px); } .mc-extraction__choices { grid-template-columns: 1fr; } .mc-extraction__candidate { padding: 12px; } }

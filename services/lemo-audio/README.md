@@ -1,0 +1,9 @@
+# Lemo audio starter runtime
+
+`starter-pack.ts` resolves immutable installation packages without modifying them. `verifyStarterPack(starterRoot)` verifies every listed file hash and every sampler zone path. `listInstalledInstruments(instrumentsRoot)` returns only nonempty index entries whose samples exist; it does not call upstream `sampler.instruments()`, which advertises the entire registry.
+
+`stageAudioRuntime({ upstreamRoot, starterRoot, runtimeRoot, additionalInstrumentRoots? })` creates a **new** runtime directory. Existing destinations are rejected. It copies upstream `core/audio/*.py` unchanged, verifies the copied hashes, copies the complete starter sample hierarchy, merges complete installed entries from optional instruments directories, and writes a merged `core/audio/instruments/index.json`. Later complete packs take precedence. Returned `pythonPath` is the PYTHONPATH root; callers should grant the execution sandbox read access only to the runtime. Python bytecode writes should be disabled with `PYTHONDONTWRITEBYTECODE=1`. Package installation and staging happen in the host, before execution.
+
+Install the exact dependencies in `requirements.txt` into the private application Python runtime at packaging time. No paid API is used. `numba` remains optional; do not advertise physically modeled pluck presets without an installed numba runtime.
+
+The starter pack is rebuilt by `node scripts/build-instrument-starter.mjs --archive <new-path.tar> --download --output <new-directory>`. Existing verified archives may omit `--download`. Temporary extraction defaults to the archive's directory (use a spacious volume, or `--temp-dir`). The builder checks the fixed upstream archive size and SHA-256 before extraction, preserves complete original sample/library directories and licenses, filters only the index, and enforces a 100 MiB limit including its manifest. It refuses to overwrite existing output directories.

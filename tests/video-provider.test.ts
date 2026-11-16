@@ -7,12 +7,75 @@ import { normalizeAppConfig, validateConfigTarget } from '@shared/config-utils';
 import { applyConfigSecrets, extractConfigSecrets, stripConfigSecrets } from '@shared/config-secrets';
 import { createConfiguredVideoProvider, requiredVideoCapabilities, selectVideoGenerationRoute, type VideoGenerationRequest } from '@shared/video-provider';
 import type { VideoProviderConfig } from '@shared/types';
+import { startMockRelay } from './helpers/mock-relay';
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('cloud video provider', () => {
+  it.each([
+    { model: 'custom-video', protocol: 'generic', tokens: ['参考图片 1', '参考图片 2', '参考图片 3'] },
+    { model: 'MiniMax-H3', protocol: 'multimodal', tokens: ['参考图片 1', '参考图片 2', '参考图片 3'] },
+    { model: 'doubao-seedance-2-0-250428', protocol: 'multimodal', tokens: ['@Image1', '@Image2', '@Image3'] },
+    { model: 'doubao-seedance-2.0-mini', protocol: 'geekai', tokens: ['@图1', '@图2', '@图3'] },
+  ])('maps neutral reference numbers to $protocol tokens for $model over local HTTP', async ({ model, protocol, tokens }) => {
+    const relay = await startMockRelay();
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-video-reference-mapping-'));
+    try {
+      const sharedPath = join(dir, 'shared-owner.png');
+      const scenePath = join(dir, 'scene.png');
+      await Promise.all([writeFile(sharedPath, 'shared-owner-image'), writeFile(scenePath, 'scene-image')]);
+      relay.enqueue({ kind: 'json', body: { b64_json: Buffer.from('offline-video').toString('base64') } });
+      if (protocol === 'geekai') {
+        // Keep provider detection intact, but send every HTTP request exclusively to the local relay.
+        const localFetch = globalThis.fetch;
+        vi.stubGlobal('fetch', vi.fn((url: string | URL | Request, init?: RequestInit) => {
+          expect(String(url)).toBe('https://geekai.co/api/v1/videos/generations');
+          return localFetch(`${relay.origin}/api/v1/videos/generations`, init);
+        }));
+      }
+      const config = multimodalConfig(model, {
+        baseUrl: protocol === 'geekai' ? 'https://geekai.co/api/v1' : relay.origin,
+        submitPath: '/videos/generations', maxResolution: model === 'MiniMax-H3' ? '768P' : '720P',
+      });
+      const prompt = '阿青（参考图1）走进庭院（参考图2），阿蓝（参考图3）随后进入。';
+      const request: VideoGenerationRequest = {
+        prompt, durationSec: 5, ratio: '16:9',
+        referenceImages: [
+          { path: sharedPath, kind: 'character', description: '阿青' },
+          { path: scenePath, kind: 'scene', description: '庭院' },
+          { path: sharedPath, kind: 'character', description: '阿蓝' },
+        ],
+      };
+      const originalRequest = structuredClone(request);
+      const provider = createConfiguredVideoProvider(config, dir, {
+        durationSec: 5, requiredCapabilities: requiredVideoCapabilities(request), remainingBudget: Infinity,
+      });
+      const result = await provider.generate(request);
+      const expectedPrompt = `${prompt}\n\n参考素材关系：\n参考图1（${tokens[0]}）用于人物：阿青。\n参考图2（${tokens[1]}）用于场景：庭院。\n参考图3（${tokens[2]}）用于人物：阿蓝。`;
+      const images = ['shared-owner-image', 'scene-image', 'shared-owner-image']
+        .map((bytes) => `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`);
+      expect(relay.requests).toHaveLength(1);
+      expect(relay.requests[0]).toMatchObject({ method: 'POST', url: protocol === 'geekai' ? '/api/v1/videos/generations' : '/videos/generations' });
+      expect(relay.requests[0].json).toEqual(protocol === 'multimodal' ? {
+        model, content: [
+          { type: 'text', text: expectedPrompt },
+          ...images.map((url) => ({ type: 'image_url', image_url: { url }, role: 'reference_image' })),
+        ], duration: 5, ratio: '16:9', resolution: model === 'MiniMax-H3' ? '768P' : '720p',
+      } : {
+        model, prompt: expectedPrompt, duration: 5, aspect_ratio: '16:9',
+        resolution: protocol === 'geekai' ? '720p' : '720P',
+        ...(protocol === 'geekai' ? { async: true, images } : { reference_images: images }),
+      });
+      expect(request).toEqual(originalRequest);
+      expect(await readFile(result.path, 'utf8')).toBe('offline-video');
+    } finally {
+      await relay.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it.each(['geekai.co', 'geekai.dev'])('uses the unified GeekAI contract on %s and downloads video_result', async (host) => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-geekai-video-'));
     const requests: Array<{ url: string; body?: Record<string, unknown> }> = [];
@@ -72,6 +135,19 @@ describe('cloud video provider', () => {
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 
+  it('uses relay orientation encoding only when explicitly configured on an unknown host', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'explicit-relay-'));
+    const requests: RequestInit[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit = {}) => { requests.push(init); return init.method === 'POST' ? Response.json({ b64_json: Buffer.from('video').toString('base64') }) : new Response('video'); }));
+    try {
+      const config = multimodalConfig('minimax_h3_768p-15s', { baseUrl: 'https://foxwrite.example/v1', submitPath: '/videos', maxResolution: '768P', modelPreset: 'custom', requestParamsJson: '{"storydream_protocol":"getezo-relay"}' });
+      const provider = createConfiguredVideoProvider(config, dir, { durationSec: 8, requiredCapabilities: ['t2v'], remainingBudget: Infinity });
+      await provider.generate({ prompt: '竖向画面', durationSec: 8, ratio: '9:16' });
+      const form = requests[0].body as FormData;
+      expect(form).toBeInstanceOf(FormData); expect(form.get('resolution')).toBe('768p竖');
+      expect(form.has('storydream_protocol')).toBe(false);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it('migrates old configs and keeps the provider key in the encrypted secret inventory', () => {
     const config = normalizeAppConfig(defaultConfig);
     expect(config.video.providers[0]).toMatchObject({
@@ -534,6 +610,20 @@ describe('cloud video provider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it.each([400, 429, 503])('preserves HTTP %s and provider details for submission settlement', async (status) => {
+    const fetchMock = vi.fn(async () => Response.json({ code: 'RequestParameterIsWrong', message: '存在未定义的参数', data: null }, { status }));
+    vi.stubGlobal('fetch', fetchMock);
+    const config = multimodalConfig('MiniMax-H3-768p');
+    const request = { prompt: '雨夜街道', durationSec: 6, ratio: '16:9' };
+    const provider = createConfiguredVideoProvider(config, 'C:/unused', {
+      durationSec: 6, requiredCapabilities: requiredVideoCapabilities(request), remainingBudget: Infinity,
+    }, { submitRetryCount: 0 });
+    await expect(provider.generate(request)).rejects.toMatchObject({
+      status, message: expect.stringContaining(`HTTP ${status}`),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     { title: 'fractional H3 duration', model: 'MiniMax-H3', patch: { durationSec: 5.5 }, error: 'DURATION_UNSUPPORTED' },
     { title: 'short H3 duration', model: 'MiniMax-H3', patch: { durationSec: 3 }, error: 'DURATION_UNSUPPORTED' },
@@ -585,9 +675,48 @@ describe('cloud video provider', () => {
       expect(content.filter((item) => item.type === 'image_url').map((item) => item.image_url?.url)).toEqual(images.map((image) => image.path));
       expect(content.filter((item) => item.type === 'image_url').every((item) => item.role === 'reference_image')).toBe(true);
       expect(content.find((item) => item.type === 'video_url')?.video_url?.url).toBe('asset://motion-video');
-      expect(content[0].text).toContain('@Image1 用于开场画面');
-      expect(content[0].text).toContain('@Image30 用于结尾画面');
+      expect(content[0].text).toContain('参考图1（@Image1）用于开场画面');
+      expect(content[0].text).toContain('参考图30（@Image30）用于结尾画面');
     } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it('opts into dynamic H3 prompt plus content without changing media roles or standard H3', async () => {
+    const relay = await startMockRelay();
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-h3-prompt-content-'));
+    try {
+      const request: VideoGenerationRequest = { prompt: '人物抬头', durationSec: 5, ratio: '16:9', referenceImages: [{ path: 'mm_file://person', kind: 'character', description: '林夏' }] };
+      const config = multimodalConfig('MiniMax-H3-768p', { baseUrl: relay.origin, requestParamsJson: JSON.stringify({ storydream_protocol: 'h3-prompt-content', prompt: 'stale configured prompt' }) });
+      const adapter = createConfiguredVideoProvider(config, dir, { durationSec: 5, requiredCapabilities: requiredVideoCapabilities(request), remainingBudget: Infinity });
+      for (const prompt of ['人物抬头', '人物转身']) {
+        relay.enqueue({ kind: 'json', body: { b64_json: Buffer.from('offline-video').toString('base64') } });
+        await adapter.generate({ ...request, prompt });
+      }
+      expect(relay.requests).toHaveLength(2);
+      for (const [index, prompt] of ['人物抬头', '人物转身'].entries()) {
+        const body = relay.requests[index].json as { prompt: string; content: unknown[] };
+        expect(body.prompt).toBe(`${prompt}\n\n参考素材关系：\n参考图1（参考图片 1）用于人物：林夏。`);
+        expect(body.content).toEqual([{ type: 'text', text: body.prompt }, { type: 'image_url', image_url: { url: 'mm_file://person' }, role: 'reference_image' }]);
+        expect(body).toMatchObject({ model: 'MiniMax-H3-768p', duration: 5, ratio: '16:9', resolution: '768P' });
+        expect(body).not.toHaveProperty('storydream_protocol');
+        expect(body).not.toHaveProperty('generate_audio');
+      }
+      const standard = createConfiguredVideoProvider(multimodalConfig('MiniMax-H3-768p', { baseUrl: relay.origin }), dir, { durationSec: 5, requiredCapabilities: requiredVideoCapabilities(request), remainingBudget: Infinity });
+      relay.enqueue({ kind: 'json', body: { b64_json: Buffer.from('offline-video').toString('base64') } });
+      await standard.generate(request);
+      expect(relay.requests[2].json).not.toHaveProperty('prompt');
+      expect(relay.requests[2].json).toHaveProperty('content');
+    } finally { await relay.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  it.each(['custom-video', 'doubao-seedance-2-0-250428'])('rejects H3 prompt-content opt-in for %s before submission', async (model) => {
+    const relay = await startMockRelay();
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-non-h3-protocol-'));
+    try {
+      const request: VideoGenerationRequest = { prompt: '人物转身', durationSec: 5, ratio: '16:9' };
+      const adapter = createConfiguredVideoProvider(multimodalConfig(model, { baseUrl: relay.origin, requestParamsJson: '{"storydream_protocol":"h3-prompt-content"}' }), dir, { durationSec: 5, requiredCapabilities: requiredVideoCapabilities(request), remainingBudget: Infinity });
+      await expect(adapter.generate(request)).rejects.toThrow('VIDEO_PROVIDER_PROTOCOL_UNSUPPORTED');
+      expect(relay.requests).toHaveLength(0);
+    } finally { await relay.close(); await rm(dir, { recursive: true, force: true }); }
   });
 
   it('forwards H3 mm_file references without loading them locally and chooses a valid default resolution', async () => {

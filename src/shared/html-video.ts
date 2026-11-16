@@ -62,6 +62,7 @@ export interface HtmlVideoScene extends HtmlVideoSceneSource {
 }
 
 export interface HtmlVideoComposition {
+  audioSampleRate?: 44100 | 48000;
   /** Two-pass loudness normalisation of the final mix (see ./loudness). Defaults to on; set `false` to keep authored gain. */
   normalizeAudio?: boolean;
   workDir: string;
@@ -150,6 +151,7 @@ export interface HtmlVideoExportResult {
 }
 
 export interface HtmlVideoComposePayload {
+  audio_sample_rate?: 44100 | 48000;
   consume_owned_segments?: boolean;
   normalize_audio?: boolean;
   mode: 'compose_render';
@@ -272,6 +274,7 @@ export function createHtmlVideoComposePayload(
   const frameCounts = allocateHtmlVideoSceneFrameCounts(input.scenes.map(scene => scene.duration), input.fps, input.coverPath ? input.coverDurationS ?? input.scenes[0]?.duration ?? 0 : 0);
   return {
     mode: 'compose_render',
+    ...(input.audioSampleRate !== undefined ? { audio_sample_rate: input.audioSampleRate } : {}),
     work_dir: input.workDir,
     scenes: input.scenes.map((scene, index) => {
       const captured = capturedByScene.get(scene.sceneId);

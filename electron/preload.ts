@@ -154,6 +154,7 @@ function normalizeTaskHistoryRequest(request: HistoryListInput<'task'>): Extract
     ...normalizeHistoryBase('task', request),
     ...(request.taskType !== undefined ? { taskType: request.taskType } : {}),
     ...(request.favorite !== undefined ? { favorite: request.favorite } : {}),
+    ...(request.sort !== undefined ? { sort: request.sort } : {}),
   };
   if (request.statuses !== undefined) return { ...base, statuses: request.statuses };
   return {
@@ -270,6 +271,7 @@ export const storyDreamApi: StoryDreamApi = {
   deleteVoxTemplate: (id) => invokeTrusted('vox:templates-delete', id),
   cancelDirectorRender: (id) => invokeTrusted('director:cancel-render', id),
   exportVoxAnimationShot: (input) => invokeTrusted('vox:export-shot', input),
+  exportMotionComicRender: (input) => invokeTrusted('motion-comic:export-render', input),
   composeResearchCopy: (input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> => invokeTrusted('research:compose-copy', input),
   fetchHotBoard: (input: HotBoardArchiveRequest = {}): Promise<HotBoardArchiveResult> => invokeTrusted('hotboard:fetch', input),
   readHotBoardSource: (input: HotBoardSourceContentInput): Promise<HotBoardSourceContent> => invokeTrusted('hotboard:read-source', input),
@@ -333,10 +335,15 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('editorial-collage:save', input),
   startVoxProduction: input => invokeTrusted('vox-production:start', input),
   controlVoxProduction: input => invokeTrusted('vox-production:control', input),
+  getVoxAgentActivity: input => invokeTrusted('vox-production:agent-activity', input),
+  getVoxPiActivity: input => invokeTrusted('vox-production:pi-activity', input),
   generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest): Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }> =>
     invokeTrusted('director:generate-shot-video', input),
+  resumeDirectorShotVideo: (input) => invokeTrusted('director:resume-shot-video', input),
+  recoverMotionComicVideoSubmission: (input) => invokeTrusted('motion-comic:recover-video-submission', input),
   createMotionComic: (input: MotionComicCreateInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:create', input),
+  importCharacterVoiceSample: (input) => invokeTrusted('motion-comic:import-character-voice-sample', input),
   saveMotionComic: (input: MotionComicSaveInput): Promise<AppMutationResult | null> =>
     invokeTrusted('motion-comic:save', input),
   planMotionComicEpisodes: (input: MotionComicEpisodePlanInput): Promise<MotionComicEpisodePlanResult> =>
@@ -349,6 +356,11 @@ export const storyDreamApi: StoryDreamApi = {
   enqueueMotionComicScripts: (input) => invokeTrusted('motion-comic:scripts-enqueue', input),
   controlMotionComicScripts: (input) => invokeTrusted('motion-comic:scripts-control', input),
   editMotionComicScript: (input) => invokeTrusted('motion-comic:scripts-edit', input),
+  proposeMotionComicAssetExtraction: (input) => invokeTrusted('motion-comic:assets-extract', input),
+  applyMotionComicAssetExtraction: (input) => invokeTrusted('motion-comic:assets-extraction-apply', input),
+  proposeMotionComicScriptChange: (input) => invokeTrusted('motion-comic:scripts-propose', input),
+  adoptMotionComicScriptChange: (input) => invokeTrusted('motion-comic:scripts-adopt', input),
+  revertMotionComicScriptChange: (input) => invokeTrusted('motion-comic:scripts-revert', input),
   approveMotionComicScripts: (input) => invokeTrusted('motion-comic:scripts-approve', input),
   storyboardMotionComicScript: (input) => invokeTrusted('motion-comic:scripts-storyboard', input),
   applyMotionComicScriptStoryboard: (input) => invokeTrusted('motion-comic:scripts-apply-storyboard', input),
@@ -360,6 +372,8 @@ export const storyDreamApi: StoryDreamApi = {
     invokeTrusted('director:recheck-media', input),
   reviewDirectorArtifact: (input: DirectorQualityArtifactRequest): Promise<DirectorQualityArtifactResult> =>
     invokeTrusted('director:review-artifact', input),
+  submitMotionComicReferenceBatch: (input: import('../src/shared/reference-batch').ReferenceBatchSubmitInput): Promise<DirectorBatchRecord> => invokeTrusted('motion-comic:reference-batch-submit', input),
+  controlMotionComicReferenceBatch: (input: import('../src/shared/reference-batch').ReferenceBatchControlInput): Promise<DirectorBatchRecord> => invokeTrusted('motion-comic:reference-batch-control', input),
   createDirectorBatch: (input: CreateDirectorBatchInput): Promise<DirectorBatchRecord> => invokeTrusted('director:batch-create', input),
   getDirectorBatch: (id: string): Promise<DirectorBatchRecord | null> => invokeTrusted('director:batch-get', id),
   listDirectorBatches: (options = {}): Promise<DirectorBatchRecord[]> => invokeTrusted('director:batch-list', options),
@@ -441,6 +455,8 @@ export const storyDreamApi: StoryDreamApi = {
   getFinalFilmGate: (input) => invokeTrusted('task:final-film-gate', input),
   readAssetDataUrl: (path: string): Promise<string> => invokeTrusted('asset:read-data-url', path),
   selectLocalImage: (purpose?: 'video-reference'): Promise<string | null> => invokeTrusted('local-image:select', purpose),
+  selectLocalReferenceImages: (): Promise<string[]> => invokeTrusted('local-images:select', { max: 8 }),
+  sha256File: (path: string): Promise<string> => invokeTrusted('file:sha256', path),
   getPixelleCatalog: () => invokeTrusted('pixelle:catalog'),
   selectLocalVideo: (): Promise<string | null> => invokeTrusted('local-video:select'),
   selectShortVideoMaterials: (): Promise<string[]> => invokeTrusted('short-video-materials:select'),

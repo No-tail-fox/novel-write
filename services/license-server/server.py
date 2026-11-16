@@ -143,9 +143,12 @@ def version_tuple(value):
 
 
 class LicenseStore:
-    def __init__(self, directory, clock=time.time):
+    def __init__(self, directory, clock=time.time, offline_grace=0):
         self.directory = Path(directory)
         self.clock = clock
+        # Seconds a client may keep using a stored lease while this server is unreachable. 0 disables the field.
+        # Clamped to [600, 7 days] so it never undercuts validUntil and matches the client-side cap.
+        self.offline_grace = 0 if not offline_grace else max(600, min(int(offline_grace), 7 * 86400))
         self.config = json.loads((self.directory / 'secrets.json').read_text('utf-8'))
         self.signing_key = serialization.load_pem_private_key((self.directory / 'signing-key.pem').read_bytes(), password=None)
         with closing(self.connect()) as db:
@@ -297,10 +300,13 @@ class LicenseStore:
                     raise Rejected('NOT_FOUND', 404)
                 db.execute('UPDATE devices SET last_seen=? WHERE license_id=? AND device_id=?', (now, license_row['id'], device_id))
             devices = [dict(row) for row in db.execute('SELECT device_id AS deviceId,label,last_seen AS lastSeen FROM devices WHERE license_id=? AND released=0', (license_row['id'],))]
-            return self.signed({'schemaVersion': 1, 'kind': 'lease', 'status': 'active', 'licenseId': license_row['id'],
-                                'deviceId': device_id, 'keyHash': digest, 'issuedAt': now,
-                                'validUntil': min(now + 600, license_row['expires_at']), 'expiresAt': license_row['expires_at'],
-                                'maxDevices': license_row['max_devices'], 'devices': devices})
+            lease = {'schemaVersion': 1, 'kind': 'lease', 'status': 'active', 'licenseId': license_row['id'],
+                     'deviceId': device_id, 'keyHash': digest, 'issuedAt': now,
+                     'validUntil': min(now + 600, license_row['expires_at']), 'expiresAt': license_row['expires_at'],
+                     'maxDevices': license_row['max_devices'], 'devices': devices}
+            if self.offline_grace:
+                lease['offlineGraceUntil'] = min(now + self.offline_grace, license_row['expires_at'])
+            return self.signed(lease)
 
     @staticmethod
     def assert_license(row, now):
@@ -966,6 +972,7 @@ def main():
     serve = sub.add_parser('serve')
     serve.add_argument('--bind', default='0.0.0.0')
     serve.add_argument('--port', type=int, default=8443)
+    serve.add_argument('--offline-grace-hours', type=float, default=0, help='Let clients run on a stored lease this long while the server is unreachable (0 = off, max 168)')
     issue = sub.add_parser('issue')
     issue.add_argument('--days', type=int, default=365)
     issue.add_argument('--max-devices', type=int, default=1)
@@ -998,7 +1005,7 @@ def main():
     if args.command == 'init':
         print(json.dumps(initialize(args.data, args.host, args.port), indent=2))
         return
-    store = LicenseStore(args.data)
+    store = LicenseStore(args.data, offline_grace=int(getattr(args, 'offline_grace_hours', 0) * 3600))
     if args.command == 'serve':
         server = LicenseHTTPServer((args.bind, args.port), store)
         server.serve_forever()

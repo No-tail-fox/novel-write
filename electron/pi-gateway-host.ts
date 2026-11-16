@@ -6,6 +6,10 @@ import { resolvePiModelConfig, type PiModelCapabilities } from './pi-model-confi
 import { assertPiRequestBudget, type PiBudgetLimits } from './pi-agent-budget';
 
 type NativeProtocol = 'anthropic' | 'openai-chat' | 'openai-responses';
+const PI_ADMISSION_CODES = new Set([
+  'PI_OUTPUT_BOUND_REQUIRED', 'PI_INPUT_BOUND_UNSUPPORTED', 'PI_INPUT_CONTEXT_LIMIT', 'PI_BUDGET_INVALID',
+  'PI_BUDGET_USAGE_UNREPORTED', 'PI_BUDGET_REQUEST_LIMIT', 'PI_BUDGET_TOKEN_LIMIT', 'PI_BUDGET_COST_LIMIT',
+]);
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const unsupported = (): never => { throw new Error('PI_INPUT_BOUND_UNSUPPORTED'); };
 
@@ -124,7 +128,11 @@ export async function createPiGatewayHost(options: {
     const gateway = await startPiGateway({ ledger, provider: model.provider, timeoutMs: model.timeoutMs,
       beforeSubmit: async body => {
         await requireGenerationAuthorization();
-        await options.beforeSubmit?.();
+        try { await options.beforeSubmit?.(); }
+        catch (error) {
+          const code = error instanceof Error ? error.message : '';
+          throw new Error(PI_ADMISSION_CODES.has(code) ? code : 'PI_GATEWAY_ADMISSION_REJECTED');
+        }
         let inputTokens = 0, outputTokens = 0, unreportedRequests = 0;
         for (const { receipt } of ledger.receipts()) {
           if (!receipt || receipt.outcome !== 'received') continue;
@@ -165,7 +173,19 @@ export async function createPiGatewayHost(options: {
     return {
       model: { ...model.workerModel, baseUrl: model.workerModel.api === 'anthropic-messages' ? gateway.baseUrl : gateway.baseUrl + '/v1' },
       localToken: gateway.localToken,
-      summary: gateway.summary,
+      summary: () => {
+        const summary = gateway.summary();
+        let inputTokens = 0, outputTokens = 0;
+        for (const { receipt } of ledger.receipts()) {
+          if (!receipt || receipt.outcome !== 'received' || receipt.usageStatus !== 'known' || !receipt.usage) continue;
+          const input = Number(receipt.usage.input_tokens ?? receipt.usage.prompt_tokens);
+          const output = Number(receipt.usage.output_tokens ?? receipt.usage.completion_tokens);
+          if (!Number.isSafeInteger(input) || !Number.isSafeInteger(output)) continue;
+          inputTokens += input + (receipt.protocol === 'anthropic' ? Number(receipt.usage.cache_creation_input_tokens ?? 0) + Number(receipt.usage.cache_read_input_tokens ?? 0) : 0);
+          outputTokens += output;
+        }
+        return { ...summary, inputTokens, outputTokens };
+      },
       close: async () => { await gateway.close(); await ledger.close(); },
     };
   } catch (error) { await ledger.close(); throw error; }

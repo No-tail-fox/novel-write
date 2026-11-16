@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  FINAL_FILM_LOUDNESS, describeLoudnessTarget, isUsableLoudnormMeasurement, loudnessOffTarget, loudnormApplyFilter,
+  AAC_ENCODE_LOUDNESS, FINAL_FILM_LOUDNESS, describeLoudnessTarget, isUsableLoudnormMeasurement, loudnessOffTarget, loudnormApplyFilter,
   loudnormMeasureFilter, loudnormTargetFilter, parseLoudnormJson, resolveNormalizeAudio,
 } from '../src/shared/loudness';
 import { createHtmlVideoComposePayload, type HtmlVideoComposition } from '../src/shared/html-video';
@@ -86,11 +86,14 @@ describe('normalizeAudio default resolution', () => {
 });
 
 describe('Python sidecar uses the shared target and keeps colour tags', () => {
-  it('embeds the shared −14 / −1 loudnorm target and no legacy −16 / −1.5 values', async () => {
+  it('reserves AAC true-peak headroom without changing the shared −14 / −1 acceptance target', async () => {
     const script = await readFile(await writeStoryboundSidecarScript(await temp('loudness-script-')), 'utf8');
-    expect(script).toContain('LOUDNORM_TARGET_FILTER = "loudnorm=I=-14:TP=-1:LRA=11"');
-    expect(script).toContain('LOUDNORM_MEASURE_FILTER = "loudnorm=I=-14:TP=-1:LRA=11:print_format=json"');
-    expect(script).not.toMatch(/loudnorm=I=-16|TP=-1\.5/);
+    expect(AAC_ENCODE_LOUDNESS).toEqual({ integratedLufs: -14, truePeakDb: -1.5, lra: 11 });
+    expect(Object.isFrozen(AAC_ENCODE_LOUDNESS)).toBe(true);
+    expect(script).toContain('LOUDNORM_TARGET_FILTER = "loudnorm=I=-14:TP=-1.5:LRA=11"');
+    expect(script).toContain('LOUDNORM_MEASURE_FILTER = "loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json"');
+    expect(loudnessOffTarget({ integratedLufs: -14, truePeak: -0.9 })).toBe(true);
+    expect(loudnessOffTarget({ integratedLufs: -14, truePeak: -1.1 })).toBe(false);
     expect(script).toContain(`OUTPUT_COLOR_ARGS = ${JSON.stringify([...SIDECAR_OUTPUT_COLOR_ARGS]).replace(/","/g, '", "')}`);
   });
 
@@ -177,9 +180,9 @@ print(json.dumps(report))
     expect(report.silent.analyses).toHaveLength(1);
     expect(report.silent).toMatchObject({ encodes: [], output: 'source' });
     const [analysis] = report.measured.analyses;
-    expect(analysis[analysis.indexOf('-af') + 1]).toBe(loudnormMeasureFilter());
+    expect(analysis[analysis.indexOf('-af') + 1]).toBe(loudnormMeasureFilter(AAC_ENCODE_LOUDNESS));
     const [encode] = report.measured.encodes;
-    expect(encode[encode.indexOf('-af') + 1]).toBe(`${loudnormTargetFilter()}:measured_I=-21.75:measured_TP=-18.06:measured_LRA=0.0:measured_thresh=-31.75:offset=-0.05:linear=true,apad,atrim=duration=2.0`);
+    expect(encode[encode.indexOf('-af') + 1]).toBe(`${loudnormTargetFilter(AAC_ENCODE_LOUDNESS)}:measured_I=-21.75:measured_TP=-18.06:measured_LRA=0.0:measured_thresh=-31.75:offset=-0.05:linear=true,apad,atrim=duration=2.0`);
     expect(report.measured.output).toBe('normalized');
   });
 });

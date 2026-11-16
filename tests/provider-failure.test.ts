@@ -33,6 +33,7 @@ describe('provider failure classification (G-2)', () => {
     [404, '{"error":{"code":"model_not_found"}}', 'model-not-found', 'rejected', 'never'],
     [503, 'No available channel for model gpt-image-2 under group default', 'model-not-found', 'rejected', 'never'],
     [404, 'Not Found', 'not-found', 'rejected', 'never'],
+    [404, '{"error":{"message":"Invalid URL (POST /v1/v1/images/generations)","type":"invalid_request_error","param":"","code":""}}', 'not-found', 'rejected', 'never'],
     [400, 'content_policy_violation', 'content-policy', 'rejected', 'never'],
     [400, 'bad', 'bad-request', 'rejected', 'never'],
   ] as const)('HTTP %s %s → %s', (status, body, kind, outcome, retry) => {

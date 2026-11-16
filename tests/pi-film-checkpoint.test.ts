@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, rename, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, it } from 'vitest';
@@ -14,6 +14,16 @@ it('recovers only immutable same-run segment snapshots', async () => {
     await store.save(film);
     expect(await store.load(1, 'run')).toEqual(film);
     await expect(store.load(1, 'other')).rejects.toThrow('IDENTITY');
-    await expect(store.save(film)).rejects.toThrow('EXISTS');
+    await store.save({ ...film, phase: 'paused', completedModelRequests: 3 });
+    expect(await store.load(1, 'run')).toMatchObject({ phase: 'paused', completedModelRequests: 3 });
+    const segmentPath = join(root, 'segments', '1.json');
+    const backupPath = segmentPath + '.interrupted.bak';
+    await rename(segmentPath, backupPath);
+    await writeFile(segmentPath, 'incomplete');
+    expect(await store.load(1, 'run')).toMatchObject({ phase: 'paused', completedModelRequests: 3 });
+    expect(await readFile(segmentPath, 'utf8')).toContain('paused');
+    const ready = { ...film, phase: 'ready' as const };
+    await store.save(ready);
+    await expect(store.save({ ...ready, completedModelRequests: 4 })).rejects.toThrow('EXISTS');
   } finally { await rm(root, { recursive: true, force: true }); }
 });

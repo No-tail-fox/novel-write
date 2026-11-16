@@ -197,6 +197,7 @@ async function renderHtmlVideo(
         await writeFile(htmlPath, scene.html, 'utf8');
         const segmentPath = join(scratchDir, `segment-${capturedScenes.length}.mp4`);
         const encodeInput = { mode: 'encode_render_scene' as const, work_dir: sceneWorkDir,
+          audio_sample_rate: input.audioSampleRate,
           scene: { frames_dir: sceneDir, audio_path: scene.audioPath,
             ...(scene.audioClips !== undefined ? { audio_clips: scene.audioClips } : {}),
             fps: input.fps, duration_s: scene.duration, video_frame_count: videoFrameCount }, output_path: segmentPath };

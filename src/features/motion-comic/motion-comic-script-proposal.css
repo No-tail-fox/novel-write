@@ -1,0 +1,11 @@
+.comic-script-proposal { min-width: 0; padding: 12px; display: grid; gap: 12px; border-top: 1px solid var(--shell-border); background: var(--shell-surface); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.comic-script-proposal header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.comic-script-proposal p { margin: 4px 0; }
+.comic-script-proposal form, .comic-script-proposal__list { display: grid; gap: 12px; min-width: 0; }
+.comic-script-proposal__selection, .comic-script-proposal__comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.comic-script-proposal__comparison > div { min-width: 0; padding: 8px; border: 1px solid var(--shell-border); border-radius: 6px; }
+.comic-script-proposal__list article { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--shell-border); }
+.comic-script-proposal__text { white-space: pre-wrap; }
+.comic-script-proposal summary { cursor: pointer; padding-block: 6px; }
+.comic-script-proposal .sd-button { justify-self: start; min-height: 36px; }
+@media (max-width: 760px) { .comic-script-proposal__selection, .comic-script-proposal__comparison { grid-template-columns: minmax(0, 1fr); } }

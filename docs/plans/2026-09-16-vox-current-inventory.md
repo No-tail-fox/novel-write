@@ -10,9 +10,9 @@
 
 | 界面选项 | 已实现 | 实际边界 | 代码 |
 | --- | --- | --- | --- |
-| 本地拼贴动画（新项目默认） | 独立背景、透明主体、原生文字；逐层关键帧、相机运动；5 种叙事动作 | 默认通常是背景＋一个主体＋文字，对比/多证据可增加第二主体；没有自动为每镜设计完整前景、中景、后景和遮挡关系 | [动作与图层](/I:/opc/src/shared/editorial-motion.ts:64)、[新镜头默认值](/I:/opc/src/shared/editorial-collage.ts:518) |
-| 图生视频 | 完整关键帧 → 视频模型 → 视频资产 → 合成；元素与相机动作提示分开，任务状态和过期结果保护 | 模型返回整段 MP4。能否呈现独立元素与前后景运动依赖实际生成，不能由提示词存在就判定达标；不是可编辑的独立图层 | [生成页面](/I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx)、[渲染装配](/I:/opc/src/shared/director-render.ts:578) |
-| 动画（Remotion） | 55 个模板、参数编辑、AI 生成 TSX、个人模板、镜头预览/导出、整片混合导出 | 单独入口；普通本地拼贴不会自动选用这 55 个模板。需要选择模板并提供合适的图片、文字、数据 | [引擎切换](/I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:1839)、[编辑器](/I:/opc/src/features/vox-animation/VoxAnimationEditor.tsx:22) |
+| 本地拼贴动画（新项目默认） | 独立背景、透明主体、原生文字；逐层关键帧、相机运动；5 种叙事动作 | 默认通常是背景＋一个主体＋文字，对比/多证据可增加第二主体；没有自动为每镜设计完整前景、中景、后景和遮挡关系 | [动作与图层](/I:/项目/story-dream/src/shared/editorial-motion.ts:64)、[新镜头默认值](/I:/项目/story-dream/src/shared/editorial-collage.ts:518) |
+| 图生视频 | 完整关键帧 → 视频模型 → 视频资产 → 合成；元素与相机动作提示分开，任务状态和过期结果保护 | 模型返回整段 MP4。能否呈现独立元素与前后景运动依赖实际生成，不能由提示词存在就判定达标；不是可编辑的独立图层 | [生成页面](/I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx)、[渲染装配](/I:/项目/story-dream/src/shared/director-render.ts:578) |
+| 动画（Remotion） | 55 个模板、参数编辑、AI 生成 TSX、个人模板、镜头预览/导出、整片混合导出 | 单独入口；普通本地拼贴不会自动选用这 55 个模板。需要选择模板并提供合适的图片、文字、数据 | [引擎切换](/I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:1839)、[编辑器](/I:/项目/story-dream/src/features/vox-animation/VoxAnimationEditor.tsx:22) |
 
 本地拼贴与 Remotion 都属于“不用视频模型”的程序动画。AI 生成 TSX 会使用文本模型，自动制作图片仍会使用图片模型。图生视频才调用视频模型。
 
@@ -20,16 +20,16 @@
 
 | 工作 | 做了什么 | 哪里查看 / 使用 | 还不能据此承诺什么 |
 | --- | --- | --- | --- |
-| 双链路资产保留 | 本地背景/主体与完整视频关键帧分别保存，逐镜切换保留素材；关键帧完成不再显示视频已完成 | 画面中的渲染方式；[实施记录](/I:/opc/docs/plans/2026-09-14-vox-dual-route-implementation.md) | 不代表每个实际视频模型已成功出片 |
-| 独立素材生产 | 背景和主体分别请求图片；主体生成在纯绿色底上，再本地去绿、羽化和检查透明面积；成功背景可保留，缺主体时只补主体 | “生成分层素材 / 补齐分层素材”；[生成逻辑](/I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx:748)、[抠像](/I:/opc/src/shared/editorial-cutout.ts:18) | 这是指定绿底抠像，不是任意成品海报的语义拆层；实际图片质量未靠本地夹具证明 |
-| 5 种默认叙事动作 | 切片入场、聚焦揭示、证据落版、路径推进、并列对比；关键词选取，未命中时轮换 | 画面 → 叙事动作；[定义](/I:/opc/src/shared/editorial-motion.ts:3) | 只是有限模板。相似文案可命中同一模板，不是按每句话自动导演编舞 |
-| 内容标题 | 分离“钩子/背景/证据/结论”等内部角色与上屏标题；默认抽取正文分句，可改可隐藏；短文按整句分镜 | 画面 → 上屏标题；[标题代码](/I:/opc/src/shared/editorial-storytelling.ts:11)、[记录](/I:/opc/docs/plans/2026-09-15-vox-story-titles-and-motion.md) | 默认仍是规则抽句，不是经过编辑判断的标题创作 |
-| 49 个 Remotion 原模板 | 纸张、证据、图表、地图、流程、书籍、字幕等 11 类；参数、素材导入、模板搜索和个人模板 | 画面 → 动画 → 动画模板 → 选择模板；[目录](/I:/opc/src/shared/vox-animation.ts:10) | 49 个模板 ID 共享若干组件与布局，不等于 49 套完全不同的视觉编排 |
-| AI 代码动画 | 文本模型生成/修改 TSX，支持代码查看、编译、取消和过期结果保护；现有时间戳可供代码使用 | 动画 → AI 生成动画；[编辑器](/I:/opc/src/features/vox-animation/VoxAnimationEditor.tsx)、[接入记录](/I:/opc/docs/research/remotion-templates-2026-09-15/implementation.md) | 测试用了固定模型响应，不能保证真实模型生成代码的质量和可运行率 |
-| 6 个 ShotCraft 模板 | 改编 5 张上游配方的 6 个变体，保留独立模板 ID、参数约束和许可声明 | 同一个动画模板库；[来源与参数](/I:/opc/src/shared/shotcraft-recipes.ts:3)、[实施记录](/I:/opc/docs/plans/shotcraft-integration/README.md) | 没有导入上游全部 157 张配方，也没有把 214 个样式都变成模板 |
-| 4 种技能制作方式 | Paper Cut、旁白 VOX、gbro、Nantian 的产品适配；详见下表 | 画面 → 制作方式；[适配定义](/I:/opc/src/shared/editorial-recipe-catalog.ts:1) | 不是直接执行五个技能的全套工作流 |
-| 音频截尾与时长 | 按实测录音重排镜头、后续时间线和自动字幕；导出前再测长；可听旁白溢出阻止合格交付 | [时间校准](/I:/opc/src/shared/editorial-narration-timing.ts:9)、[审计和修复记录](/I:/opc/docs/plans/2026-09-15-vox-audio-sync.md) | 不是逐字 ASR；旧 MP4 不会自动修复，仍需用更新后的程序重新导出 |
-| 局部重试与资产保护 | 局部图片失败后保留成功图层；变更提示/关键帧后不让旧请求结果覆盖当前编辑 | [生成逻辑](/I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx:753) | 视频队列重试存在已确认的错路由，不能宣称“重试已全部完成” |
+| 双链路资产保留 | 本地背景/主体与完整视频关键帧分别保存，逐镜切换保留素材；关键帧完成不再显示视频已完成 | 画面中的渲染方式；[实施记录](/I:/项目/story-dream/docs/plans/2026-09-14-vox-dual-route-implementation.md) | 不代表每个实际视频模型已成功出片 |
+| 独立素材生产 | 背景和主体分别请求图片；主体生成在纯绿色底上，再本地去绿、羽化和检查透明面积；成功背景可保留，缺主体时只补主体 | “生成分层素材 / 补齐分层素材”；[生成逻辑](/I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx:748)、[抠像](/I:/项目/story-dream/src/shared/editorial-cutout.ts:18) | 这是指定绿底抠像，不是任意成品海报的语义拆层；实际图片质量未靠本地夹具证明 |
+| 5 种默认叙事动作 | 切片入场、聚焦揭示、证据落版、路径推进、并列对比；关键词选取，未命中时轮换 | 画面 → 叙事动作；[定义](/I:/项目/story-dream/src/shared/editorial-motion.ts:3) | 只是有限模板。相似文案可命中同一模板，不是按每句话自动导演编舞 |
+| 内容标题 | 分离“钩子/背景/证据/结论”等内部角色与上屏标题；默认抽取正文分句，可改可隐藏；短文按整句分镜 | 画面 → 上屏标题；[标题代码](/I:/项目/story-dream/src/shared/editorial-storytelling.ts:11)、[记录](/I:/项目/story-dream/docs/plans/2026-09-15-vox-story-titles-and-motion.md) | 默认仍是规则抽句，不是经过编辑判断的标题创作 |
+| 49 个 Remotion 原模板 | 纸张、证据、图表、地图、流程、书籍、字幕等 11 类；参数、素材导入、模板搜索和个人模板 | 画面 → 动画 → 动画模板 → 选择模板；[目录](/I:/项目/story-dream/src/shared/vox-animation.ts:10) | 49 个模板 ID 共享若干组件与布局，不等于 49 套完全不同的视觉编排 |
+| AI 代码动画 | 文本模型生成/修改 TSX，支持代码查看、编译、取消和过期结果保护；现有时间戳可供代码使用 | 动画 → AI 生成动画；[编辑器](/I:/项目/story-dream/src/features/vox-animation/VoxAnimationEditor.tsx)、[接入记录](/I:/项目/story-dream/docs/research/remotion-templates-2026-09-15/implementation.md) | 测试用了固定模型响应，不能保证真实模型生成代码的质量和可运行率 |
+| 6 个 ShotCraft 模板 | 改编 5 张上游配方的 6 个变体，保留独立模板 ID、参数约束和许可声明 | 同一个动画模板库；[来源与参数](/I:/项目/story-dream/src/shared/shotcraft-recipes.ts:3)、[实施记录](/I:/项目/story-dream/docs/plans/shotcraft-integration/README.md) | 没有导入上游全部 157 张配方，也没有把 214 个样式都变成模板 |
+| 4 种技能制作方式 | Paper Cut、旁白 VOX、gbro、Nantian 的产品适配；详见下表 | 画面 → 制作方式；[适配定义](/I:/项目/story-dream/src/shared/editorial-recipe-catalog.ts:1) | 不是直接执行五个技能的全套工作流 |
+| 音频截尾与时长 | 按实测录音重排镜头、后续时间线和自动字幕；导出前再测长；可听旁白溢出阻止合格交付 | [时间校准](/I:/项目/story-dream/src/shared/editorial-narration-timing.ts:9)、[审计和修复记录](/I:/项目/story-dream/docs/plans/2026-09-15-vox-audio-sync.md) | 不是逐字 ASR；旧 MP4 不会自动修复，仍需用更新后的程序重新导出 |
+| 局部重试与资产保护 | 局部图片失败后保留成功图层；变更提示/关键帧后不让旧请求结果覆盖当前编辑 | [生成逻辑](/I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx:753) | 视频队列重试存在已确认的错路由，不能宣称“重试已全部完成” |
 
 ## 3. 五个已安装技能，实际对应四种制作方式
 
@@ -42,7 +42,7 @@
 | 口播配画面 · gbro | `gbro-collage-broll`，pyang5166/gbro-collage-broll | 切到图生视频；将口播、单一视觉隐喻、半调纸片、最多四组物件组装写入图/视频提示 | 主要是提示和工作流适配；不会因此得到四个本地可编辑物件，效果尚需真实模型验证 |
 | 拼贴艺术动画 · Nantian | `vox-collage-art-animation-nantian`，nantian721/vox-collage-art-animation-nantian | 图生视频要求首尾帧；可用下一镜头关键帧作尾帧；检查供应商首尾帧能力，缺尾帧禁止提交 | 没有复刻上游完整调研、故事板、配音与剪辑流程；输出仍是模型 MP4 |
 
-代码：[制作方式编辑器](/I:/opc/src/features/editorial-collage/EditorialRecipeInspector.tsx:27)、[切换适配](/I:/opc/src/shared/editorial-recipes.ts:6)、[原画参考请求](/I:/opc/src/features/director-desk/director-generation.ts:283)。完整接入记录见 [技能接入报告](/I:/opc/docs/plans/2026-09-15-vox-skill-integration.md)。
+代码：[制作方式编辑器](/I:/项目/story-dream/src/features/editorial-collage/EditorialRecipeInspector.tsx:27)、[切换适配](/I:/项目/story-dream/src/shared/editorial-recipes.ts:6)、[原画参考请求](/I:/项目/story-dream/src/features/director-desk/director-generation.ts:283)。完整接入记录见 [技能接入报告](/I:/项目/story-dream/docs/plans/2026-09-15-vox-skill-integration.md)。
 
 ## 4. 55 个动画模板完整目录
 
@@ -62,18 +62,18 @@
 | 音频与字幕 | 4 | 逐词字幕、播客音频卡、音乐频谱、歌词切换 |
 | 转场与标注 | 4 | 纸张翻页、墨迹揭示、焦点推近、人物与地点说明 |
 
-ShotCraft 的六项是纸胶带定妆、折页纸卡立起、逐词纸面压印、刻度时间轴巡游、来源汇聚成一体、环层结构注释。上游固定为 `Vincentwei1021/video-shotcraft` 的 `5e71af35a2daee492dd3ea93e5e8903f32dcd13c`，来源及改编范围见 [THIRD_PARTY_NOTICES.md](/I:/opc/src/features/vox-animation/THIRD_PARTY_NOTICES.md)。
+ShotCraft 的六项是纸胶带定妆、折页纸卡立起、逐词纸面压印、刻度时间轴巡游、来源汇聚成一体、环层结构注释。上游固定为 `Vincentwei1021/video-shotcraft` 的 `5e71af35a2daee492dd3ea93e5e8903f32dcd13c`，来源及改编范围见 [THIRD_PARTY_NOTICES.md](/I:/项目/story-dream/src/features/vox-animation/THIRD_PARTY_NOTICES.md)。
 
-模板数量与感受到的丰富度有差距：旧模板有共享布局；大量模板是文字、图表或卡片，不是多景深拼贴；默认流程也没有自动挑选、填充这些模板。`paper-actors` 是第一张图铺背景、后续图各自进入，如果后续图仍是完整海报，就会表现为整张卡片运动，而不是抠出的主体。该模板没有自动完成海报分层。[实际组件](/I:/opc/src/features/vox-animation/VoxComposition.tsx:25)。
+模板数量与感受到的丰富度有差距：旧模板有共享布局；大量模板是文字、图表或卡片，不是多景深拼贴；默认流程也没有自动挑选、填充这些模板。`paper-actors` 是第一张图铺背景、后续图各自进入，如果后续图仍是完整海报，就会表现为整张卡片运动，而不是抠出的主体。该模板没有自动完成海报分层。[实际组件](/I:/项目/story-dream/src/features/vox-animation/VoxComposition.tsx:25)。
 
 ## 5. 重试与前后景问题的当前结论
 
 ### 已确认的重试缺陷
 
-- 视频失败项的普通队列“重试”接到了生图：队列映射只为风格试片保留 kind，[EditorialCollagePage.tsx:241](/I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx:241)；重试 handler 对其他项全部调用 `startGeneration`，[DirectorDeskWorkspace.tsx:1170](/I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:1170)。所以它不会执行视频重试。右侧专用“重试视频生成”则是另一条正确调用视频的入口。
+- 视频失败项的普通队列“重试”接到了生图：队列映射只为风格试片保留 kind，[EditorialCollagePage.tsx:241](/I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx:241)；重试 handler 对其他项全部调用 `startGeneration`，[DirectorDeskWorkspace.tsx:1170](/I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:1170)。所以它不会执行视频重试。右侧专用“重试视频生成”则是另一条正确调用视频的入口。
 - 普通图片/视频队列未包含旁白任务，不能把这处视频错路由扩大成“旁白队列也证实误生图”。
-- 批量重试有静默拦截条件：批次控制器/活动状态、空节点或当前配置不可用时直接返回，不显示本次原因；可用性检查针对当前批量勾选项，未按实际重试节点收窄。[入口守卫](/I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:1183)。这能解释一种无响应路径，但未结合用户当前运行状态复现。
-- 未发现“失败节点因为状态没重置，所以批量重试必然不执行”：普通重试确实重置 pending。[执行器](/I:/opc/src/features/director-desk/director-batch.ts:179)。
+- 批量重试有静默拦截条件：批次控制器/活动状态、空节点或当前配置不可用时直接返回，不显示本次原因；可用性检查针对当前批量勾选项，未按实际重试节点收窄。[入口守卫](/I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:1183)。这能解释一种无响应路径，但未结合用户当前运行状态复现。
+- 未发现“失败节点因为状态没重置，所以批量重试必然不执行”：普通重试确实重置 pending。[执行器](/I:/项目/story-dream/src/features/director-desk/director-batch.ts:179)。
 - 重试会建立新任务，旧失败历史行仍然存在；看到旧失败行本身不能证明新请求没发出。
 
 ### 为什么仍可能看不到前后景动画
@@ -87,16 +87,16 @@ ShotCraft 的六项是纸胶带定妆、折页纸卡立起、逐词纸面压印�
 
 ## 6. 已有验证、借鉴来源与还缺的闭环
 
-早期 GitHub 对照的实际借鉴：paper-cutout-remotion 的独立背景/角色与错峰运动，voxstylehub 的准确文字与多时点检查，vox-director 的逐镜 I2V 和元素/相机动作分离，vox-explainer-skill 的旁白测时与装配。它们提供设计依据，不是四套引擎全部导入。来源与当时问题见 [早期 GitHub 调研](/I:/opc/docs/plans/2026-09-14-vox-motion-skill-research.md)。
+早期 GitHub 对照的实际借鉴：paper-cutout-remotion 的独立背景/角色与错峰运动，voxstylehub 的准确文字与多时点检查，vox-director 的逐镜 I2V 和元素/相机动作分离，vox-explainer-skill 的旁白测时与装配。它们提供设计依据，不是四套引擎全部导入。来源与当时问题见 [早期 GitHub 调研](/I:/项目/story-dream/docs/plans/2026-09-14-vox-motion-skill-research.md)。
 
 | 验收 | 可以证明 | 证据 |
 | --- | --- | --- |
-| 双链路与标题 | 模拟服务下独立图层请求、部分失败补齐、关键帧隔离、标题保存和重载 | [双链路结果](/I:/opc/.artifacts/editorial-dual-chain/result.json) |
-| 5 种默认动作 | 合成透明素材经过实际 Electron/FFmpeg 后能出现不同轨迹 | [12.5 秒测试样片](/I:/opc/.artifacts/vox-motion-variety-qa/run-LxOgL6/vox-five-motion-styles.mp4) |
-| 49 个 Remotion 模板 | 98 次横竖屏浏览器检查，以及模板/代码/原有拼贴的实际混合导出 | [接入与验收](/I:/opc/docs/research/remotion-templates-2026-09-15/implementation.md) |
-| 4 种制作方式 | 隔离组件验收参考图片、首尾帧请求、保存重载和 Remotion 播放 | [验收报告](/I:/opc/.artifacts/editorial-recipes/report.json) |
-| 6 个 ShotCraft 模板 | 四画幅、24/30 fps 的 48 组关键帧；26 秒 1080p/24 fps 实际导出 | [测试样片](/I:/opc/.artifacts/shotcraft-qa/shotcraft-integration.mp4)、[记录](/I:/opc/docs/plans/shotcraft-integration/README.md) |
-| 音频截尾 | 真实《撒日朗》原成片第 3/4 镜分别裁掉 282/414ms；隔离副本校准后保留全部原旁白，测试导出保留尾音 | [真实媒体审计](/I:/opc/.artifacts/vox-audio-sync-audit/README.md)、[校准验收](/I:/opc/.artifacts/vox-audio-sync-qa/run-P44a3p/report.json) |
+| 双链路与标题 | 模拟服务下独立图层请求、部分失败补齐、关键帧隔离、标题保存和重载 | [双链路结果](/I:/项目/story-dream/.artifacts/editorial-dual-chain/result.json) |
+| 5 种默认动作 | 合成透明素材经过实际 Electron/FFmpeg 后能出现不同轨迹 | [12.5 秒测试样片](/I:/项目/story-dream/.artifacts/vox-motion-variety-qa/run-LxOgL6/vox-five-motion-styles.mp4) |
+| 49 个 Remotion 模板 | 98 次横竖屏浏览器检查，以及模板/代码/原有拼贴的实际混合导出 | [接入与验收](/I:/项目/story-dream/docs/research/remotion-templates-2026-09-15/implementation.md) |
+| 4 种制作方式 | 隔离组件验收参考图片、首尾帧请求、保存重载和 Remotion 播放 | [验收报告](/I:/项目/story-dream/.artifacts/editorial-recipes/report.json) |
+| 6 个 ShotCraft 模板 | 四画幅、24/30 fps 的 48 组关键帧；26 秒 1080p/24 fps 实际导出 | [测试样片](/I:/项目/story-dream/.artifacts/shotcraft-qa/shotcraft-integration.mp4)、[记录](/I:/项目/story-dream/docs/plans/shotcraft-integration/README.md) |
+| 音频截尾 | 真实《撒日朗》原成片第 3/4 镜分别裁掉 282/414ms；隔离副本校准后保留全部原旁白，测试导出保留尾音 | [真实媒体审计](/I:/项目/story-dream/.artifacts/vox-audio-sync-audit/README.md)、[校准验收](/I:/项目/story-dream/.artifacts/vox-audio-sync-qa/run-P44a3p/report.json) |
 
 上述验收主要使用本地素材、模拟服务或隔离副本，没有为用户真实项目跑通收费生成到最终成片的完整验收。ShotCraft 样片使用本地图片和空音轨；动画样片不代表主题影片质量。没有重做《撒日朗》原片。历史报告还保留全仓类型检查/旧测试失败，不能概括为全项目无 bug。
 

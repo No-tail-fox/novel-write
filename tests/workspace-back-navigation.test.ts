@@ -90,6 +90,7 @@ describe('workspace back navigation', () => {
     expect(start).not.toContain('onReturnTasks');
     expect(start).not.toContain('onBack');
     expect(css).toContain(".app-shell[data-shell-view='editorial-collage']:has(.director-desk) .page-head");
-    expect(css).toContain(".app-shell[data-shell-view='motion-comic']:has(.director-desk) .page-head");
+    // Motion-comic keeps the global shell visible across its three workspace views.
+    expect(css).not.toContain(".app-shell[data-shell-view='motion-comic']:has(.director-desk) .page-head");
   });
 });

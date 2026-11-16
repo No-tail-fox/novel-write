@@ -436,6 +436,60 @@ describe('task run lifecycle intent coordination', () => {
     afterFailure.release();
   });
 
+  it('reuses an existing generated image record without invoking the provider again', async () => {
+    const existing = {
+      id: 'image-reused',
+      status: 'generated',
+      upstreamTaskId: undefined,
+      managedStorageKey: 'existing-key',
+      imagePath: 'existing.png',
+    };
+    const registry = new HistoryActivityRegistry();
+    let providerCalls = 0;
+    const published: unknown[] = [];
+    const handler = await loadLabGenerateHandler({
+      channel: 'image-lab:generate',
+      family: 'image-lab',
+      generatorName: 'generateImageLabRecord',
+      workDirName: 'imageLabWorkDir',
+      summaryName: 'imageLabSummary',
+    }, {
+      registry,
+      database: labDatabase(async () => undefined, existing),
+      reuseExisting: true,
+      async publish(patch) { published.push(patch); return patch; },
+      async generate() {
+        providerCalls += 1;
+        throw new Error('provider should not run for an existing generated record');
+      },
+    });
+
+    await handler({ id: existing.id, prompt: 'same prompt', ratio: '9:16', style: 'photo-real' });
+    expect(providerCalls).toBe(0);
+    expect(published).toEqual([{ kind: 'image-lab-upsert', record: existing }]);
+    const governance = registry.reserveGovernance('image-lab', existing.id);
+    governance.release();
+  });
+
+  it.each([
+    { existing: null, error: 'REFERENCE_BATCH_RECOVERY_UNKNOWN' },
+    { existing: { id: 'recovery', upstreamTaskId: 'another-project', status: 'generated' }, error: 'REFERENCE_BATCH_RECORD_MISMATCH' },
+  ])('rejects unsafe image recovery before calling the provider: $error', async ({ existing, error }) => {
+    const registry = new HistoryActivityRegistry();
+    const generate = vi.fn(async () => ({}));
+    const handler = await loadLabGenerateHandler({
+      channel: 'image-lab:generate', family: 'image-lab',
+      generatorName: 'generateImageLabRecord', workDirName: 'imageLabWorkDir', summaryName: 'imageLabSummary',
+    }, {
+      registry, database: labDatabase(async () => undefined, existing),
+      recoveryOnly: true, generate,
+    });
+    await expect(handler({ id: 'recovery', upstreamTaskId: 'project' })).rejects.toThrow(error);
+    expect(generate).not.toHaveBeenCalled();
+    const governance = registry.reserveGovernance('image-lab', 'recovery');
+    governance.release();
+  });
+
   it.each([
     { channel: 'html-video:create-task', family: 'task' as const, id: 'created-task', input: { inputText: 'html' } },
     { channel: 'task:create-and-run', family: 'task' as const, id: 'created-task', input: { inputText: 'task' } },
@@ -1504,6 +1558,8 @@ interface StartOwnedTaskRunDependencies {
     workDir: string,
     reservation: { release(): void },
   ) => boolean;
+  /** Records a failure that happened before the runner took ownership. */
+  recordUnstartedTaskFailure?: (database: unknown, taskId: string, error: unknown) => Promise<void>;
 }
 
 async function loadStartOwnedTaskRun(dependencies: StartOwnedTaskRunDependencies) {
@@ -1532,6 +1588,7 @@ async function loadStartOwnedTaskRun(dependencies: StartOwnedTaskRunDependencies
     'startTaskRun',
     'takeHistoryActivityReservation',
     'publishTaskUpsert',
+    'recordUnstartedTaskFailure',
     `${compiledSource}\nreturn startOwnedTaskRun;`,
   );
   const compiled = factory(
@@ -1542,6 +1599,7 @@ async function loadStartOwnedTaskRun(dependencies: StartOwnedTaskRunDependencies
     dependencies.startTaskRun,
     takeHistoryActivityReservation,
     async () => undefined,
+    dependencies.recordUnstartedTaskFailure ?? (async () => undefined),
   ) as (
     database: unknown,
     task: { id: string },
@@ -1957,6 +2015,7 @@ async function loadShutdownApplication(
     'updateTimer',
     'motionComicScriptService',
     'voxProductionService',
+    'referenceBatchService',
     `${compiledSource}\nreturn shutdownApplication;`,
   );
   return factory(
@@ -1975,6 +2034,7 @@ async function loadShutdownApplication(
     { close: async () => undefined },
     undefined,
     undefined,
+    null,
     null,
     null,
   ) as () => Promise<void>;
@@ -2059,6 +2119,9 @@ interface LabHandlerSpec {
 interface LabHandlerDependencies {
   registry: HistoryActivityRegistry;
   database: ReturnType<typeof labDatabase>;
+  reuseExisting?: boolean;
+  recoveryOnly?: boolean;
+  publish?: (patch: unknown) => Promise<unknown>;
   generate: () => Promise<Record<string, unknown>>;
 }
 
@@ -2070,16 +2133,17 @@ async function loadLabGenerateHandler(
   const FunctionConstructor = Function as unknown as new (
     ...args: string[]
   ) => (...args: unknown[]) => unknown;
-  const compiledSource = transpileModule(
-    `async function labGenerateHandler(_event, input) {${extractHandlerBody(main, spec.channel)}\n}`,
-    {
-      compilerOptions: {
-        target: ScriptTarget.ES2022,
-        module: ModuleKind.None,
-      },
+  const handlerSource = spec.channel === 'image-lab:generate'
+    ? `async function labGenerateHandler(_event, input) { return (await generateManagedImageLabRecord(input, { reuseExisting: ${dependencies.reuseExisting ? 'true' : 'false'}, recoveryOnly: ${dependencies.recoveryOnly ? 'true' : 'false'} })).patch; }\n${extractFunctionUntilHandler(main, 'async function generateManagedImageLabRecord', spec.channel)}`
+    : `async function labGenerateHandler(_event, input) {${extractHandlerBody(main, spec.channel)}\n}`;
+  const compiledSource = transpileModule(handlerSource, {
+    compilerOptions: {
+      target: ScriptTarget.ES2022,
+      module: ModuleKind.None,
     },
-  ).outputText;
+  }).outputText;
   const factory = new FunctionConstructor(
+    'requireDesktopGeneration',
     'randomUUID',
     'historyActivityRegistry',
     'getDb',
@@ -2095,13 +2159,14 @@ async function loadLabGenerateHandler(
     `${compiledSource}\nreturn labGenerateHandler;`,
   );
   const compiled = factory(
+    async () => undefined,
     () => 'generated-id',
     dependencies.registry,
     async () => dependencies.database,
     async () => ({ getRuntimeConfig: async () => ({}) }),
     dependencies.generate,
     () => 'work/managed-key',
-    async () => null,
+    dependencies.publish ?? (async () => null),
     (record: Record<string, unknown>) => record,
     () => () => undefined,
     async () => ({}),
@@ -2113,10 +2178,12 @@ async function loadLabGenerateHandler(
 
 function labDatabase(
   onTerminalUpdate: (patch: Record<string, unknown>) => Promise<void>,
+  existing: Record<string, unknown> | null = null,
 ) {
-  let record: Record<string, unknown> = {};
+  let record: Record<string, unknown> = existing ?? {};
   return {
     async getCustomStyleDetail() { return undefined; },
+    async getImageLabRecordDetail(_id: string) { return existing; },
     async addImageLabRecord(input: Record<string, unknown>) {
       record = { ...input, managedStorageKey: 'managed-key' };
       return record;
@@ -2225,6 +2292,17 @@ async function loadCreatedRunHandler(
     (await import('../src/shared/html-video-spec')).markHtmlVideoPipelineDataForCreation,
   ) as (_event: unknown, input: Record<string, unknown>) => Promise<unknown>;
   return (input: Record<string, unknown>) => compiled(undefined, input);
+}
+
+function extractFunctionUntilHandler(source: string, marker: string, channel: string): string {
+  const functionStart = source.indexOf(marker);
+  const nextHandler = source.indexOf('\ntrustedHandle(', functionStart);
+  const functionBodyStart = source.indexOf('{', functionStart);
+  const functionEnd = source.lastIndexOf('\n}', nextHandler < 0 ? source.length : nextHandler);
+  if (functionStart < 0 || functionBodyStart < 0 || functionEnd < functionBodyStart) {
+    throw new Error(`Unable to locate ${marker} for ${channel}.`);
+  }
+  return source.slice(functionStart, functionEnd + 2);
 }
 
 function extractHandlerBody(source: string, channel: string): string {

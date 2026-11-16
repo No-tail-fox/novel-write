@@ -18,9 +18,15 @@ import { EDITORIAL_IMAGE_REQUEST_OPTIONS } from '../../shared/editorial-image-pr
 import { applyEditorialRecipe, setEditorialLastFrame, setEditorialRecipeKeyframe } from '../../shared/editorial-recipes';
 import { EditorialRecipeInspector } from './EditorialRecipeInspector';
 import { VoxProductionDialog } from './VoxProductionDialog';
+import { CodeVideoSourceDialog } from './CodeVideoSourceDialog';
+import { codeVideoSourcePreflightErrors } from '../../shared/code-video-source-plan';
 import { VoxProductionProgress, voxProductionNodeLabels } from './VoxProductionProgress';
 import { summarizeErrorMessage } from '../../components/ErrorDetails';
 import { voxProductionNodeStatus, voxProductionSettings, voxProductionSettingsSchema, type VoxProductionControl, type VoxProductionSettings } from '../../shared/vox-production';
+import { voxProductionStepCount } from '../../shared/lemo-agent-activity';
+import { LemoAgentWorkbench, useLemoAgentActivity } from './LemoAgentWorkbench';
+import { piFilmReadyErrors } from '../../shared/creative-animation/pi-film';
+import { useVoxPiActivity } from './useVoxPiActivity';
 import { editorialShotTitle } from '../../shared/editorial-storytelling';
 import { COPYWRITING_TRACKS, copywritingTrack } from '../../shared/copywriting-tracks';
 import { DEFAULT_EDITORIAL_WRITING_STYLE, EDITORIAL_WRITING_STYLES, editorialWritingStyle, type EditorialWritingStyleId } from '../../shared/editorial-writing-styles';
@@ -72,7 +78,7 @@ import { resolveEditorialSystemStatus } from '../../shared/director-system-statu
 import { addDirectorSoundClip, removeDirectorSoundClip, updateDirectorAudioClip, type DIRECTOR_SOUND_TRACKS } from '../../shared/director-audio-edit';
 import { directorSoundClips, readDirectorSoundDuration } from '../director-desk/director-sound';
 import { DirectorCopyAssist, DirectorCreateWizard, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
-import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
+import { buildDirectorCopyAssistRequest, directorCopyRequestedCharacters, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
 import {
   applyEditorialImageRecord,
   prepareEditorialLayerGeneration,
@@ -134,6 +140,7 @@ export function EditorialCollagePage({
   const [createModels, setCreateModels] = useState(() => defaultProjectModels(state.config));
   const [document, setDocument] = useState<EditorialCollagePipelineData | null>(null);
   const [productionOpen, setProductionOpen] = useState(false);
+  const [sourcePreparation, setSourcePreparation] = useState<{ document: EditorialCollagePipelineData; settings: VoxProductionSettings } | null>(null);
   const [musicOpen, setMusicOpen] = useState(false);
   const [musicSettings, setMusicSettings] = useState<VoxProductionSettings | null>(null);
   const [productionDetailsOpen, setProductionDetailsOpen] = useState(false);
@@ -170,6 +177,17 @@ export function EditorialCollagePage({
   const createReadingSpeed = createPlan.plan
     ? `预计 ${createPlan.plan.minimumReadingCharsPerSecond.toFixed(1)} 字/秒 · 最长句 ${createPlan.plan.maximumCueCharsPerSecond.toFixed(1)} 字/秒`
     : '';
+  // The direction box may carry its own word count; tell the creator which length will be used.
+  const createCopyLengthHint = useMemo(() => {
+    const base = '选填 · 写下叙事角度、目标观众、表达风格，以及希望包含或避免的内容。AI 创作和 AI 修改都会参考。';
+    const requested = directorCopyRequestedCharacters(createRequirements);
+    if (!requested) return base;
+    if (createDurationMs === 'auto' || typeof createDurationMs !== 'number') return `${base}要求中的 ${requested} 字为目标字数，总时长会按正文长度分配。`;
+    const preset = Math.round(createDurationMs / 1000 * 3);
+    return Math.abs(preset - requested) > Math.max(30, preset * 0.2)
+      ? `${base}要求中的 ${requested} 字为目标字数，优先于预设时长的约 ${preset} 字。`
+      : `${base}要求中的 ${requested} 字为目标字数，建议“起步时长”选择“按全文分配时长”。`;
+  }, [createRequirements, createDurationMs]);
   const [createStyleId, setCreateStyleId] = useState<string>(EDITORIAL_STYLE_PRESETS[0].id);
   const [createLayoutTemplate, setCreateLayoutTemplate] = useState<DirectorLayoutTemplate>('对比拼贴 · 纸张撕裂');
   const [createMotionPreset, setCreateMotionPreset] = useState<DirectorMotionPreset>('平移 + 缓慢推进');
@@ -248,6 +266,10 @@ export function EditorialCollagePage({
   const outputAsset = renderOutputs.current;
   // E-5: advisory final-film gate (quality-gate.json) next to the current film; read-only, never re-runs checks.
   const finalFilmGate = useFinalFilmGate(api, activeProjectId, { refreshKey: `${outputAsset?.id ?? ''}:${outputAsset?.localPath ?? ''}`, enabled: Boolean(outputAsset?.localPath) });
+  // Lemo v3: read-only per-turn process of the native Agent, polled while the run executes.
+  const agentFilm = document?.productionRun?.authoringVersion === 3 && document.upstreamFilm?.runId === document.productionRun.id ? document.upstreamFilm : undefined;
+  const agentActivity = useLemoAgentActivity(api, document?.id, document?.productionRun, agentFilm?.turn);
+  const piActivityState = useVoxPiActivity(api, document?.id, document?.productionRun);
   const [outputMediaRequest, setOutputMediaRequest] = useState<{ projectId: string; assetId: string; path: string; url?: string; status: 'loading' | 'ready' | 'unavailable'; error?: string } | null>(null);
   const outputAssetPath = outputAsset?.localPath ?? '';
   const outputMedia = outputAsset && outputMediaRequest?.projectId === activeProjectId
@@ -557,7 +579,8 @@ export function EditorialCollagePage({
       catch (error) { projectAction.reportError(error); return; }
     }
     const before = shots.find((shot) => shot.id === id);
-    if (before && ((update.voiceId !== undefined && update.voiceId !== before.voiceId) || (update.voiceSpeed !== undefined && update.voiceSpeed !== before.voiceSpeed))) {
+    const beforeVoiceProvider = documentRef.current?.beats.flatMap(beat => beat.shots).find(shot => shot.id === id)?.voiceProvider;
+    if (before && ((update.voiceId !== undefined && (update.voiceId !== before.voiceId || voiceStatus.provider !== beforeVoiceProvider)) || (update.voiceSpeed !== undefined && update.voiceSpeed !== before.voiceSpeed))) {
       mutateDocument((current) => invalidateDirectorShotSpeech(current, id));
     }
     if (update.title !== undefined) mutateDocument((current) => setEditorialShotTitle(current, id, update.title!));
@@ -576,6 +599,7 @@ export function EditorialCollagePage({
           motionPrompt: update.motionPrompt ?? shot.motionPrompt,
           durationMs: update.durationMs ?? shot.durationMs,
           voiceId: update.voiceId ?? shot.voiceId,
+          voiceProvider: update.voiceId !== undefined ? voiceStatus.provider : shot.voiceProvider,
           voiceLabel: update.voice ?? shot.voiceLabel,
           voiceSpeed: update.voiceSpeed ?? shot.voiceSpeed,
           layoutTemplate: update.layoutTemplate ?? shot.layoutTemplate,
@@ -770,6 +794,7 @@ export function EditorialCollagePage({
             layoutTemplate: createLayoutTemplate,
             motionPreset: createMotionPreset,
             voiceId: createVoiceIdForProject,
+            voiceProvider: createVoiceIdForProject ? voiceStatus.provider : undefined,
             voiceLabel: createVoiceLabel,
             subtitleStyle: createEffectiveSubtitleStyle,
             seed: shot.seed ?? '24681357',
@@ -867,6 +892,14 @@ export function EditorialCollagePage({
   async function startProduction(settings: VoxProductionSettings) {
     const current = documentRef.current;
     if (!current) return;
+    if (settings.authoring?.mode === 'ai-code' && settings.codeVideo && codeVideoSourcePreflightErrors(current, settings.codeVideo).length) {
+      const prepared = await projectAction.run(() => enqueueProjectMutation(current.id, latest => ({ ...latest, productionSettings: settings })));
+      if (prepared.ok && documentRef.current?.id === current.id) {
+        setProductionOpen(false);
+        setSourcePreparation({ document: prepared.value, settings });
+      }
+      return;
+    }
     await projectAction.run(async () => {
       const saved = await enqueueProjectMutation(current.id, latest => latest);
       await api.startVoxProduction({ id: saved.id, expectedUpdatedAt: saved.updatedAt, settings });
@@ -879,7 +912,7 @@ export function EditorialCollagePage({
     });
   }
 
-  async function controlProduction(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence'>) {
+  async function controlProduction(action: VoxProductionControl['action'], extra?: Pick<VoxProductionControl, 'nodeId' | 'evidence' | 'budget'>) {
     const current = documentRef.current;
     if (!current?.productionRun) return;
     await projectAction.run(async () => {
@@ -1199,7 +1232,7 @@ export function EditorialCollagePage({
           value={createRequirements}
           onChange={(_, data) => { setCreateRequirements(data.value); copyAction.clearFeedback(); }}
           placeholder="例如：面向第一次到拉萨的年轻旅行者，从一家老茶馆切入，讲清旧城生活如何变化。采用克制、有温度的纪录片口吻，突出普通人的故事，避免旅游广告腔和未经核实的数据。"
-          hint="选填 · 写下叙事角度、目标观众、表达风格，以及希望包含或避免的内容。AI 创作和 AI 修改都会参考。"
+          hint={createCopyLengthHint}
           rows={4}
           maxLength={8000}
           resize="vertical"
@@ -1240,15 +1273,19 @@ export function EditorialCollagePage({
   if (!document) return <div data-editorial-collage-workbench="true"><DirectorProjectRecovery mode="vox" voxLabel={routeLabel} errorMessage={actionError} onNewProject={startCreate} /></div>;
 
   const productionRun = document.productionRun;
+  const piReadyErrors = productionRun?.authoringVersion === 4 ? (!document.piFilm || document.piFilm.runId !== productionRun.id ? ['PI_FILM_NOT_READY'] : piFilmReadyErrors(document.piFilm)) : [];
+  const renderDisabledReason = productionRun?.authoringVersion === 4 && piReadyErrors.length ? `原生动画尚未完成审片与宿主检查，暂不可导出（${piReadyErrors.join('、')}）。请先完成自动制作进度中的检查。` : undefined;
   const productionRunning = productionRun?.status === 'running';
   const productionUnknown = Boolean(productionRun?.nodes.some(node => voxProductionNodeStatus(node) === 'unknown'));
   const productionResume = productionRun && ['paused', 'failed'].includes(productionRun.status);
   const activeNode = productionRun?.nodes.find(node => node.status === 'running' || node.status === 'unknown' || node.status === 'failed');
   const runningNode = productionRun?.nodes.find(node => node.status === 'running');
   const currentNode = runningNode ?? activeNode ?? productionRun?.nodes.find(node => node.status === 'pending');
+  const productionSteps = productionRun ? voxProductionStepCount(productionRun, document.upstreamFilm) : undefined;
   const productionProgress = productionRun?.nodes.length ? {
     current: productionRun.status === 'completed' ? productionRun.nodes.length : currentNode ? productionRun.nodes.indexOf(currentNode) + 1 : productionRun.nodes.filter(node => node.status === 'completed').length,
     total: productionRun.nodes.length,
+    ...(productionSteps?.max ? { max: productionSteps.max } : {}),
   } : undefined;
   const productionPhase = productionIntent
     ? `正在提交 · ${activeNode ? voxProductionNodeLabels[activeNode.kind] : '当前步骤'}`
@@ -1260,12 +1297,13 @@ export function EditorialCollagePage({
           : productionRun?.status === 'paused' ? '已暂停' : undefined;
   return <div data-editorial-collage-workbench="true">
     <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} />
+    {sourcePreparation && sourcePreparation.document.id === document.id ? <CodeVideoSourceDialog key={document.id} document={sourcePreparation.document} settings={sourcePreparation.settings} api={api} projectModels={projectTask?.projectModels} applyState={applyState} onClose={() => setSourcePreparation(null)} onReview={id => { setSourcePreparation(null); void openProject(id); }} /> : null}
     {productionOpen ? <VoxProductionDialog key={document.id} document={document} busy={projectAction.busy} onClose={() => setProductionOpen(false)} onStart={startProduction} onSave={saveProductionSettings} onApply={applyProductionStyle} onOpenUrl={api.openHotBoardUrl} onImportAsset={importProductionAsset} musicLibrary={state.config.jianying.bgmLibrary} api={api} costConfig={modelConfig} /> : null}
     {musicOpen && musicSettings ? <Dialog key={document.id} open title="整片背景音乐" onOpenChange={open => { if (!projectAction.busy) setMusicOpen(open); }} actions={<>
       <Button disabled={projectAction.busy} onClick={() => setMusicOpen(false)}>取消</Button>
       <Button variant="primary" disabled={projectAction.busy || productionRunning} onClick={() => void saveProductionSettings(musicSettings)}>保存音乐</Button>
     </>}><ProjectMusicFields value={musicSettings.music} library={state.config.jianying.bgmLibrary} api={api} busy={projectAction.busy || productionRunning} onChange={music => setMusicSettings({ ...musicSettings, music })} /></Dialog> : null}
-    {productionDetailsOpen && productionRun ? <VoxProductionProgress key={productionRun.id} run={productionRun} shots={document.beats.flatMap(beat => beat.shots)} upstreamFilm={document.upstreamFilm} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} /> : null}
+    {productionDetailsOpen && productionRun ? <VoxProductionProgress key={productionRun.id} run={productionRun} shots={document.beats.flatMap(beat => beat.shots)} upstreamFilm={document.upstreamFilm} piEvidence={document.piFilm?.runId === productionRun.id ? document.piFilm.evidence : undefined} piActivity={piActivityState} agentActivity={agentActivity.activity} busy={projectAction.busy} onClose={() => setProductionDetailsOpen(false)} onControl={controlProduction} resumeBudget={{ agentMaxTurns: document.productionSettings?.agentMaxTurns, agentMaxTokens: document.productionSettings?.agentMaxTokens, agentMaxCost: document.productionSettings?.agentMaxCost, piMaxRequests: document.productionSettings?.piMaxRequests }} /> : null}
     <DirectorDeskWorkspace
       mode="vox"
       musicVideo={isMusicVideo}
@@ -1294,7 +1332,9 @@ export function EditorialCollagePage({
         running: productionRunning,
         phase: productionPhase,
         progress: productionProgress,
-        summary: productionIntent || (productionRun ? `${productionRun.nodes.filter(n => n.status === 'completed').length}/${productionRun.nodes.length} 步 · ${activeNode ? voxProductionNodeLabels[activeNode.kind] : productionRun.status === 'completed' ? '已完成' : productionRun.status === 'paused' ? '已暂停' : '制作任务'}${productionRun.message ? ` · ${productionRun.status === 'failed' ? summarizeErrorMessage(productionRun.message) : productionRun.message}` : ' · 应用保持打开时可离开页面继续执行'}` : '选择预设后自动制作；高级设置可保留自定义镜头'),
+        summary: productionIntent || (productionRun && productionSteps ? `${activeNode ? voxProductionNodeLabels[activeNode.kind] : productionRun.status === 'completed' ? '已完成' : productionRun.status === 'paused' ? '已暂停' : '制作任务'}${productionRun.message ? ` · ${summarizeErrorMessage(productionRun.message)}` : ' · 应用保持打开时可离开页面继续执行'}` : '选择预设后自动制作；高级设置可保留自定义镜头'),
+        needsReconciliation: productionUnknown,
+        alert: productionUnknown ? '部分请求结果未知，可能已计费，系统不会自动重发。请核对后再继续。' : undefined,
         label: productionUnknown ? '查看失败与恢复' : productionIntent ? '等待当前步骤…' : productionRunning ? '暂停制作' : productionResume ? productionRun.status === 'failed' ? '重试失败步骤' : '继续自动制作' : productionRun?.status === 'completed' ? '重新制作…' : '自动制作…',
         disabled: !shots.length || projectAction.busy || providerAction.busy || Boolean(productionIntent),
         onAction: () => productionUnknown ? setProductionDetailsOpen(true) : productionResume ? void controlProduction('resume') : setProductionOpen(true),
@@ -1335,6 +1375,7 @@ export function EditorialCollagePage({
       onResolveOutputMedia={resolveHistoryOutputMedia}
       qualityReview={qualityReview}
       finalFilmGate={finalFilmGate}
+      upstreamWorkbench={productionRun?.authoringVersion === 3 ? <LemoAgentWorkbench run={productionRun} film={agentFilm} activity={agentActivity.activity} error={agentActivity.error} /> : undefined}
       onReviewQualityArtifact={reviewQualityArtifact}
       onRecheckSubtitles={recheckSubtitles}
       onRecheckMedia={recheckMedia}
@@ -1390,6 +1431,7 @@ export function EditorialCollagePage({
       onGenerateVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
       onRetryVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
 
+      renderDisabledReason={renderDisabledReason}
       onRender={() => withHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, renderProject)}
       onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
       onOpenSettings={() => openSettings?.('image', 'editorial-collage', document.id)}
@@ -1431,7 +1473,7 @@ function directorShotFromEditorial(document: EditorialCollagePipelineData, beat:
     : latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video');
   const sourceCues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
   let semanticBeats;
-  try { semanticBeats = shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined; } catch { /* Export reports stale source spans; keep the authored preview available. */ }
+  try { semanticBeats = shot.animation?.creativeStyle?.composition !== 'template' && shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined; } catch { /* Export reports stale source spans; keep the authored preview available. */ }
   const creativeScene = shot.animation?.creativeStyle?.composition === 'scene';
   const compiledLayers = semanticBeats && !creativeScene ? compileEditorialCueLayers(shot.layers, semanticBeats, shot.durationMs) : shot.layers;
   const previewLayers = compiledLayers.map((layer) => {

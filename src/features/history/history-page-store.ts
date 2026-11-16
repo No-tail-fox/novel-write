@@ -93,6 +93,8 @@ export function canonicalHistoryPageRequest<F extends HistoryFamily>(
     }
     if (taskRequest.taskType !== undefined) canonical.taskType = taskRequest.taskType;
     if (taskRequest.favorite !== undefined) canonical.favorite = taskRequest.favorite;
+    // Omitted sorting and explicit newest share the legacy default view/cursor.
+    if (taskRequest.sort && taskRequest.sort !== 'newest') canonical.sort = taskRequest.sort;
   } else if (source.status !== undefined) {
     canonical.status = source.status;
   }

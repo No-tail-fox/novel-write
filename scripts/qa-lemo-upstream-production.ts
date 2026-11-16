@@ -1,8 +1,9 @@
 /** Isolated production-chain QA. fixture = no paid calls; live requires an explicit flag and environment key. */
 import { app } from 'electron';
 import { setGenerationAuthorization } from '../src/shared/generation-authorization';
+import { setDefaultPythonRuntimeAppRoot } from '../src/shared/python-runtime';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { createEditorialCollageDraft, createEditorialCollageStarterPlan, parseEditorialCollagePipelineData, type EditorialCollagePipelineData } from '../src/shared/editorial-collage';
@@ -12,6 +13,7 @@ import { VoxProductionService } from '../electron/vox-production-service';
 import { createLemoUpstreamOperations, lemoProductionContext, preflightLemoUpstream } from '../electron/lemo-upstream-production';
 import { prepareLemoUpstreamPicture } from '../electron/lemo-upstream-picture';
 import { renderDirectorVideo } from '../electron/director-renderer';
+import { defaultLemoUpstreamPythonRoot, finalizeLemoUpstreamFilm, lemoFilmGrain, resolveLemoUpstreamRenderRuntime } from '../electron/lemo-upstream-video';
 import { buildDirectorRenderScenes, directorCanvasForRatio, directorDocumentRenderFingerprint, evaluateDirectorQuality, directorQualityStatus, mergeDirectorRenderCompletion, isDirectorQualityBlocker } from '../src/shared/director-render';
 import { runStoryboundMediaSidecar } from '../src/shared/storybound-sidecar';
 import { voxProductionSettings } from '../src/shared/vox-production';
@@ -22,6 +24,7 @@ const live = process.env.STORYDREAM_LEMO_QA_LIVE === '1';
 const output = resolve(process.env.STORYDREAM_LEMO_QA_OUTPUT || join(root, '.artifacts/lemo-upstream-production', (live ? 'live-' : 'fixture-') + Date.now()));
 const resume = process.env.STORYDREAM_LEMO_QA_RESUME === '1';
 const modelName = process.env.STORYDREAM_LEMO_QA_MODEL || 'gemini-3.1-pro-high';
+const modelBaseUrl = process.env.STORYDREAM_LEMO_QA_BASE_URL || 'https://moeapi.cloud';
 const budget = Number(process.env.STORYDREAM_LEMO_QA_ROUNDS || '16');
 // Offscreen review windows are transient; keep the QA coordinator alive between turns.
 app.on('window-all-closed', () => {});
@@ -30,21 +33,24 @@ app.commandLine.appendSwitch('force-device-scale-factor', '1');
 app.commandLine.appendSwitch('force-color-profile', 'srgb');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 async function main() {
-  await app.whenReady(); await mkdir(output, { recursive: true });
-  if (live && !process.env.MOE_API_KEY) throw new Error('MOE_API_KEY missing; no model request submitted');
+  await app.whenReady();
+  setDefaultPythonRuntimeAppRoot(root);
+  await mkdir(output, { recursive: true });
+  if (live && !(process.env.STORYDREAM_LEMO_QA_API_KEY || process.env.MOE_API_KEY)) throw new Error('STORYDREAM_LEMO_QA_API_KEY missing; no model request submitted');
   if (existsSync(join(output, 'document.json')) && !resume) throw new Error('QA_EXISTS: explicitly resume saved receipts instead of creating another paid run');
   // Isolated QA uses the user's own provider key with explicit opt-in, not desktop IPC.
   // Never alter the desktop licensing hook or reuse a production userData directory.
   setGenerationAuthorization(async () => {
-    if (!live || !process.env.MOE_API_KEY) throw new Error('QA_GENERATION_NOT_AUTHORIZED');
+    if (!live || !(process.env.STORYDREAM_LEMO_QA_API_KEY || process.env.MOE_API_KEY)) throw new Error('QA_GENERATION_NOT_AUTHORIZED');
   });
-  const library = { upstreamRoot: join(root, 'vendor/lemo-upstream'), threeRoot: join(root, 'node_modules/three'),
+  const upstreamRoot = join(root, 'vendor/lemo-upstream');
+  const library = { upstreamRoot, pythonRoot: defaultLemoUpstreamPythonRoot(upstreamRoot), cacheDir: join(output, 'cache'), threeRoot: join(root, 'node_modules/three'),
     ...(existsSync(join(root, '.artifacts/lemo-upstream/resources/resources.json')) ? { resourceRoot: join(root, '.artifacts/lemo-upstream/resources') } : {}) };
   let d = resume ? parseEditorialCollagePipelineData(JSON.parse(await readFile(join(output, 'document.json'), 'utf8'))) : createEditorialCollageStarterPlan(
     createEditorialCollageDraft({ id: 'lemo-upstream-qa-' + randomUUID(), title: '一滴雨水的花园旅程', ratio: '16:9' }),
     '雨水落在城市路面。流入雨水花园后，土壤留住水分，植物重新舒展。', new Date().toISOString(), 15000);
   let revision = Date.parse(d.updatedAt), requests = 0;
-  const model = createConfiguredTextLlm({ provider: 'custom', protocol: 'openai', apiKey: process.env.MOE_API_KEY || '', baseUrl: 'https://moeapi.cloud', model: modelName, proxyUrl: '', requestParamsJson: '{}' });
+  const model = createConfiguredTextLlm({ provider: 'custom', protocol: 'openai', apiKey: process.env.STORYDREAM_LEMO_QA_API_KEY || process.env.MOE_API_KEY || '', baseUrl: modelBaseUrl, model: modelName, proxyUrl: '', requestParamsJson: '{}' });
   const write = (path: string, body: string) => '```json\n' + JSON.stringify({ tool: 'write_file', path }) + '\n```\n```html\n' + body + '\n```';
   const upstream = createLemoUpstreamOperations(library, output, async request => {
     requests++;
@@ -68,11 +74,17 @@ async function main() {
       const scenes = buildDirectorRenderScenes(doc, undefined, { upstreamVideoPath: picturePath });
       const fingerprint = directorDocumentRenderFingerprint(doc);
       console.log(JSON.stringify({ event: 'compose_subtitles', scenes: scenes.length }));
-      const result = await renderDirectorVideo({ workDir: output, ratio: doc.ratio, projectTitle: doc.title, modeLabel: 'Lemo QA', scenes });
+      const result = await renderDirectorVideo({ workDir: output, ratio: doc.ratio, projectTitle: doc.title, modeLabel: 'Lemo QA', scenes,
+        audioExpected: doc.productionRun?.settings.narration !== false || Boolean(doc.productionRun?.settings.music) });
+      const renderRuntime = await resolveLemoUpstreamRenderRuntime(library);
+      const mux = await finalizeLemoUpstreamFilm(result.outputPath, { ffmpegPath: renderRuntime.ffmpegPath, fps: 24,
+        grain: await lemoFilmGrain(doc.upstreamFilm!.directory), qualityGate: { expected: { durationMs: result.durationMs, width: result.width, height: result.height,
+          audioExpected: doc.productionRun?.settings.narration !== false || Boolean(doc.productionRun?.settings.music) }, lemoProjectDir: doc.upstreamFilm!.directory } });
+      result.sizeBytes = (await stat(result.outputPath)).size;
       const checks = evaluateDirectorQuality(doc, scenes, result, fingerprint);
       const sha = createHash('sha256').update(await readFile(result.outputPath)).digest('hex');
       const now = new Date().toISOString(), id = randomUUID();
-      lastReceipt = { mode: live ? 'live-generated-picture-with-host-subtitles-no-speech' : 'offline-fixture', model: live ? modelName : null, requests, picture: picturePath, outputPath: result.outputPath, result, checks, sha256: sha };
+      lastReceipt = { mode: live ? 'live-generated-picture-with-host-subtitles-no-speech' : 'offline-fixture', model: live ? modelName : null, requests, picture: picturePath, outputPath: result.outputPath, result, mux: { measured: mux.measured, warnings: mux.warnings, qualityGate: mux.qualityGate }, checks, sha256: sha };
       await writeFile(join(output, 'export.json'), JSON.stringify(lastReceipt, null, 2), 'utf8');
       if (directorQualityStatus(checks) !== 'passed') throw new Error('QA_QUALITY_GATE: ' + checks.filter(isDirectorQualityBlocker).map(c => c.detail || c.label).join('; '));
       return mergeDirectorRenderCompletion(doc, {

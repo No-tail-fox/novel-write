@@ -37,12 +37,16 @@ export interface ProductionAssetVersion {
   createdAt: string;
   selected?: boolean;
   pinned?: boolean;
+  /** What the user pinned this image for; multi-image editors keep one pinned image per role. */
+  referenceRole?: 'design' | 'front' | 'side' | 'back' | 'detail' | 'outfit';
   /** Render scope for derived assets. Motion-comic assets are episode-owned. */
   episodeId?: string;
   /** Fingerprint of the exact inputs consumed by a deterministic render. */
   renderFingerprint?: string;
   /** Measured media duration for audio/video assets, in milliseconds. */
   durationMs?: number;
+  /** Rejected paid media stays reviewable, but cannot be adopted or rendered as valid output. */
+  outputValidation?: { status: 'rejected'; code: string; reason: string; width: number; height: number; expectedRatio: string; expectedDurationMs: number };
 }
 
 export interface ProductionProviderJob {
@@ -60,6 +64,8 @@ export interface ProductionProviderJob {
   attempt: number;
   remoteTaskId?: string;
   videoInputSnapshot?: string;
+  /** Persisted shot-video intent; absent on legacy jobs means automatic. */
+  videoAdoption?: 'candidate' | 'automatic';
   phase?: 'prepared' | 'submitted' | 'downloaded' | 'completed';
   createdAt: string;
   updatedAt: string;

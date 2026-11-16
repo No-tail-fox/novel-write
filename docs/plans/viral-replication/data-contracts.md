@@ -8,15 +8,15 @@
 
 | 现状 | 实现位置 | 对本期的直接影响 |
 | --- | --- | --- |
-| 输入仅有 `url/platform/title/settings` | [types.ts](/I:/opc/src/shared/types.ts:1802)、[ipc-contract.ts](/I:/opc/src/shared/ipc-contract.ts:792) | 本地导入不能伪造一个 HTTPS 链接进入下载器；增加独立导入入口 |
-| 下载、抽取、ASR、逐帧理解、拆解、再创作均以 provider 注入 | [viral-analysis.ts](/I:/opc/src/shared/viral-analysis.ts:56)、[viral-runtime.ts](/I:/opc/src/shared/viral-runtime.ts:30) | 可按模式插入证据规划与分段观察，不需要新建调度系统 |
-| 等距抽帧默认 8、实际最大 40，图宽 768；IPC 目前接受到 500 | [viral-runtime.ts](/I:/opc/src/shared/viral-runtime.ts:80)、[ipc-contract.ts](/I:/opc/src/shared/ipc-contract.ts:805) | UI、schema、runtime 的快速模式限额本期统一到 1–40 |
-| 帧分析只在全部完成后保存 | [viral-analysis.ts](/I:/opc/src/shared/viral-analysis.ts:222) | 必须改成每个分析单元独立落盘；整片分批处理，失败不重复已完成的调用 |
-| checkpoint JSON 限 2 MiB；结果文件读取限 8 MiB | [storage.ts](/I:/opc/src/shared/storage.ts:4470)、[main.ts](/I:/opc/electron/main.ts:1212) | 图像不内嵌 JSON，大段观察保存单元文件，checkpoint 只放索引与摘要 |
-| `runGeneration` 已用于 checkpoint、事件和最终结果校验 | [storage.ts](/I:/opc/src/shared/storage.ts:3224)、[main.ts](/I:/opc/electron/main.ts:1869) | 延续运行代号；另加文档 revision 处理人工编辑，二者不能混用 |
-| `beginViralAnalysisRun` 会保留旧 checkpoint、移除 completed 并提升 generation | [storage.ts](/I:/opc/src/shared/storage.ts:3224) | 恢复前必须校验输入依赖，不能只换 generation 就信任所有旧产物 |
-| 已有归档、恢复、受管目录隔离删除与 tombstone | [managed-history-paths.ts](/I:/opc/electron/managed-history-paths.ts:29)、[main.ts](/I:/opc/electron/main.ts:718) | 新文件放进现有记录的受管目录；不创建第二套回收站 |
-| 公开 detail 已移除 checkpoint | [main.ts](/I:/opc/electron/main.ts:784) | 新运行索引及模型原始响应仍留在主进程，报告通过专用读取接口获取 |
+| 输入仅有 `url/platform/title/settings` | [types.ts](/I:/项目/story-dream/src/shared/types.ts:1802)、[ipc-contract.ts](/I:/项目/story-dream/src/shared/ipc-contract.ts:792) | 本地导入不能伪造一个 HTTPS 链接进入下载器；增加独立导入入口 |
+| 下载、抽取、ASR、逐帧理解、拆解、再创作均以 provider 注入 | [viral-analysis.ts](/I:/项目/story-dream/src/shared/viral-analysis.ts:56)、[viral-runtime.ts](/I:/项目/story-dream/src/shared/viral-runtime.ts:30) | 可按模式插入证据规划与分段观察，不需要新建调度系统 |
+| 等距抽帧默认 8、实际最大 40，图宽 768；IPC 目前接受到 500 | [viral-runtime.ts](/I:/项目/story-dream/src/shared/viral-runtime.ts:80)、[ipc-contract.ts](/I:/项目/story-dream/src/shared/ipc-contract.ts:805) | UI、schema、runtime 的快速模式限额本期统一到 1–40 |
+| 帧分析只在全部完成后保存 | [viral-analysis.ts](/I:/项目/story-dream/src/shared/viral-analysis.ts:222) | 必须改成每个分析单元独立落盘；整片分批处理，失败不重复已完成的调用 |
+| checkpoint JSON 限 2 MiB；结果文件读取限 8 MiB | [storage.ts](/I:/项目/story-dream/src/shared/storage.ts:4470)、[main.ts](/I:/项目/story-dream/electron/main.ts:1212) | 图像不内嵌 JSON，大段观察保存单元文件，checkpoint 只放索引与摘要 |
+| `runGeneration` 已用于 checkpoint、事件和最终结果校验 | [storage.ts](/I:/项目/story-dream/src/shared/storage.ts:3224)、[main.ts](/I:/项目/story-dream/electron/main.ts:1869) | 延续运行代号；另加文档 revision 处理人工编辑，二者不能混用 |
+| `beginViralAnalysisRun` 会保留旧 checkpoint、移除 completed 并提升 generation | [storage.ts](/I:/项目/story-dream/src/shared/storage.ts:3224) | 恢复前必须校验输入依赖，不能只换 generation 就信任所有旧产物 |
+| 已有归档、恢复、受管目录隔离删除与 tombstone | [managed-history-paths.ts](/I:/项目/story-dream/electron/managed-history-paths.ts:29)、[main.ts](/I:/项目/story-dream/electron/main.ts:718) | 新文件放进现有记录的受管目录；不创建第二套回收站 |
+| 公开 detail 已移除 checkpoint | [main.ts](/I:/项目/story-dream/electron/main.ts:784) | 新运行索引及模型原始响应仍留在主进程，报告通过专用读取接口获取 |
 
 ## 2. 版本与两个时钟
 
@@ -279,7 +279,7 @@ ID 与文本定位约定：
   derived/timeline-<inputHash>.json
 ```
 
-`manifest-v1.json` 仅在主进程保存 `mediaId → 相对路径/hash/MIME/大小`。报告回放通过拟新增 `viral:media-url({analysisId,mediaId})` 获取 URL；主进程先查归属、文件实际路径及受管目录，再复用 [html-video-runtime.ts](/I:/opc/electron/html-video-runtime.ts) 的受控媒体响应和 Range 能力。新增 family 命名空间，不能把同名 viral ID 当成 task ID。渲染器不能传任意 path，返回 URL 不能突破清单或目录。
+`manifest-v1.json` 仅在主进程保存 `mediaId → 相对路径/hash/MIME/大小`。报告回放通过拟新增 `viral:media-url({analysisId,mediaId})` 获取 URL；主进程先查归属、文件实际路径及受管目录，再复用 [html-video-runtime.ts](/I:/项目/story-dream/electron/html-video-runtime.ts) 的受控媒体响应和 Range 能力。新增 family 命名空间，不能把同名 viral ID 当成 task ID。渲染器不能传任意 path，返回 URL 不能突破清单或目录。
 
 证据区间通常直接 seek 托管原视频并到 endMs 停止；首期不为每段转码一份视频。浏览器不支持的编码可按需生成一份 H.264/AAC 预览代理，清单同时记录原文件 hash 与代理 hash，原始媒体时间保持一致；代理生成失败仍可读取文本报告，证据回放显示明确失败状态。
 
@@ -494,7 +494,7 @@ M1 的分析调用收据索引存在 checkpoint，按批次分页，其内容保
 
 响应已写入独立 receipt 文件、但 checkpoint 索引提交前崩溃，是一个需要专门处理的窗口：submitting 收据预先记录该 attempt 唯一的 responseRef 位置。恢复只检查该已知位置，做 hash / inputHash / requestId 校验，成功后补提交；不能遍历目录选择“最近一个响应”。响应自身尚未落盘的窗口仍不可消除。旧 generation 晚回只允许补写它预先拥有的 append-only 收据槽，不得提升当前单元或预算状态；新 generation 在既定恢复步骤中接收该结果。
 
-M2 的生成节点继续显示为 `ProductionProviderJob`，而精细收据放在任务受管目录并由工程 operation 引用。现有 [production-workflow.ts](/I:/opc/src/shared/production-workflow.ts:43) 和 [editorial-collage.ts](/I:/opc/src/shared/editorial-collage.ts:212) 只有 queued/running/completed/failed/cancelled，且 `estimatedCost` 为必填数值：**不能直接写入 reserved/outcome-unknown 或以 0 代表未知价格。** 最小扩展是在 job 添加 `receiptId/receiptHash/requestOutcome?/costEstimateStatus?`，完整状态以收据为权威；如需要 job 新状态，必须同步 TS、Zod、持久化、UI 与所有分支。未知价格应允许明确 missing/unknown 值或独立字段，旧 job 兼容；不能靠类型断言绕过 strict schema。分析收据不塞进有历史数量上限的 providerJobs 数组。
+M2 的生成节点继续显示为 `ProductionProviderJob`，而精细收据放在任务受管目录并由工程 operation 引用。现有 [production-workflow.ts](/I:/项目/story-dream/src/shared/production-workflow.ts:43) 和 [editorial-collage.ts](/I:/项目/story-dream/src/shared/editorial-collage.ts:212) 只有 queued/running/completed/failed/cancelled，且 `estimatedCost` 为必填数值：**不能直接写入 reserved/outcome-unknown 或以 0 代表未知价格。** 最小扩展是在 job 添加 `receiptId/receiptHash/requestOutcome?/costEstimateStatus?`，完整状态以收据为权威；如需要 job 新状态，必须同步 TS、Zod、持久化、UI 与所有分支。未知价格应允许明确 missing/unknown 值或独立字段，旧 job 兼容；不能靠类型断言绕过 strict schema。分析收据不塞进有历史数量上限的 providerJobs 数组。
 
 请求预算在 reserved 时占用名额和已知最大成本；received/completed 时结算实际用量，有响应但校验失败仍计费。failed / cancelled 不自动释放额度，只有可证实未提交或上游确认未计费才释放；用户停止等待不代表远端已取消。货币分别累积，未记录汇率时不能把不同币种相加。因 unknown-price 节点不能给出可信金额上界时，仍显示请求数 / 音视频分钟硬上限和未知项，而不声称总费用保证。
 
@@ -525,7 +525,7 @@ UNIQUE(idempotency_scope, idempotency_key)
 
 同幂等键同 request_hash 返回原操作/工程；同键不同请求返回冲突。scope 由主进程依据来源 / 目标与操作类型生成，不让 renderer 任意拼接。request_hash 使用规范化输入、蓝图 hash、变体、编译器及渲染设置，不包含当前时间、凭据或临时路径。claim 操作以 expectedRevision / ownerGeneration 条件更新并递增，配合 activity reservation 防止双击和旧运行晚回取得同一节点执行权。
 
-创建工程最终提交必须将 task 文档、task 事件与 operation 完成状态在同一数据库持久化提交写入。现有 [storage.ts](/I:/opc/src/shared/storage.ts:876) 使用 sql.js 内存快照、串行 `enqueueCommit` 与原子数据库文件写入；因此必须新增**一个专用 FileDatabase 方法**，在同一 callback 中执行 insertTask、工程文档更新、事件插入和 operation 更新。不能先调用公开 `createEditorialCollageTask`，然后再单独 update operation 并声称原子。callback 内不做异步文件复制或外部调用。
+创建工程最终提交必须将 task 文档、task 事件与 operation 完成状态在同一数据库持久化提交写入。现有 [storage.ts](/I:/项目/story-dream/src/shared/storage.ts:876) 使用 sql.js 内存快照、串行 `enqueueCommit` 与原子数据库文件写入；因此必须新增**一个专用 FileDatabase 方法**，在同一 callback 中执行 insertTask、工程文档更新、事件插入和 operation 更新。不能先调用公开 `createEditorialCollageTask`，然后再单独 update operation 并声称原子。callback 内不做异步文件复制或外部调用。
 
 文件与数据库无法共享真正原子事务，按发布顺序解决：prepared operation 先持久化随机 staged_task_id / staged_storage_key 与源快照 hash；将输入和媒体写到该明确拥有的目标目录，逐个校验并发布不可变 manifest；最后做上述单次 DB commit，把 target_task_id 关联并置 completed，此时才向 UI 发布工程。DB 前崩溃可依据 operation 指定位置核验并继续，不重建另一份任务；DB 后崩溃时重复请求返回已有 task。任务保存前失败只留下受管 staging，不能显示半成品，也不能通过扫描最大编号目录猜成功。
 

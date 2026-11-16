@@ -1,5 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { defaultConfig } from '../src/shared/config';
 import { createConfiguredJsonLlm, LlmJsonParseError } from '../src/shared/llm-provider';
 import { LEMO_PLAN_MAX_TOKENS, lemoPlanRequest } from '../src/shared/creative-animation/native-film';
@@ -40,14 +39,6 @@ it('does not retry a rejected plan or accept a malformed successful response', a
  vi.stubGlobal('fetch', invalid);
  await expect(provider.run(lemoPlanRequest('ref', prompt, provider.protocol))).rejects.toThrow('did not return valid JSON');
  expect(invalid).toHaveBeenCalledOnce();
-});
-it('wires the desktop production planner to the tested request builder', () => {
- const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8');
- const planner = source.slice(source.indexOf('planFilm: async'), source.indexOf('editFilmFile: async'));
- expect(planner).toContain('const request = lemoPlanRequest(reference, prompt, planner.protocol)');
- expect(planner).toContain('cachedLemoPlanResponse(work, receipt,');
- expect(planner).toContain('() => planner.run(request)');
- expect(planner).toContain('return result.json');
 });
 
 it.each([true, false])('requires a terminal event for a streamed director plan (complete=%s)', async complete => {

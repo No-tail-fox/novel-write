@@ -26,6 +26,9 @@ const controls = {
 const task = () => ({ id: document.id, title: document.title, taskType: 'motion-comic', pipelineData: JSON.stringify(document), createdAt: now, status: 'draft' });
 const api = {
   async getTaskDetail() { return task(); },
+  async getFinalFilmGate() { return null; },
+  async listDirectorBatches() { return []; },
+  async getMotionComicScripts() { throw new Error('No script batch in this structural fixture'); },
   async saveMotionComic(input: { document: MotionComicPipelineData }) {
     document = structuredClone({ ...input.document, updatedAt: new Date(Date.parse(document.updatedAt) + 1).toISOString() });
     controls.saved.push(structuredClone(document));

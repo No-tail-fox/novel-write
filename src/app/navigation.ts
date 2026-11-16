@@ -44,6 +44,7 @@ export const newTaskPrimaryAction: NavigationItem = { view: 'new-task', label: '
 export const projectHomeNavigationItem: NavigationItem = { view: 'projects', label: '项目', hint: '继续与新建', icon: LayoutTemplate };
 
 export const productionNavItems: NavigationItem[] = [
+  { view: 'short-video', label: '图文短片生成', hint: '图文素材 · 配音 · 剪辑', icon: MonitorPlay },
   { view: 'editorial-collage', label: '创意动画', hint: 'Lemo · 66 种风格 + OPUSCAR 98', icon: Clapperboard },
   { view: 'template-animation', label: '模板动画', hint: 'Remotion 模板 · 稳定批量', icon: LayoutTemplate },
   { view: 'motion-comic', label: 'AI 漫剧', hint: '系列与分镜', icon: Images },
@@ -116,6 +117,7 @@ export const taskDetailNavigationItem = { label: '任务详情', hint: '单任�
 
 const viewToPrimaryView: Partial<Record<ShellView, ShellView>> = {
   'new-task': 'projects',
+  'short-video': 'projects',
   'conversation-workbench': 'person-assets',
   'copy-studio': 'person-assets',
   'task-detail': 'projects',
@@ -198,6 +200,7 @@ export function pageSubtitle(view: ShellView): string {
   const map: Partial<Record<ShellView, string>> = {
     projects: '继续最近项目，或按制作类型创建新的视频项目',
     'new-task': '选择制作方式，按步骤建立新的视频项目',
+    'short-video': '整理图文内容，配置配音与剪辑，制作图文短片',
     'conversation-workbench': '围绕项目资料提问，快速产出脚本、标题和分镜建议',
     'copy-studio': '检索可信来源，经过多轮精修和赛道强化后送入视频制作',
     'hot-board': '追踪多平台实时热点，筛选后直接带入创作',

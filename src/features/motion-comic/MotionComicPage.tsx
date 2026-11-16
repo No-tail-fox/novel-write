@@ -1,12 +1,14 @@
+import { updateMotionComicMakeShot, toggleMotionComicMakeAsset } from './motion-comic-make-edits';
+import './motion-comic-project-controls.css';
+import { startRecordedVideoRequest } from './motion-comic-video-background';
 import { ProjectModelFields, ProjectModelBar, useProjectModelConfig } from '../projects/ProjectModelFields';
 import { defaultProjectModels, readProjectModelsDraft } from '../../shared/project-models';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronRight, CircleAlert, Download, FileText, ImagePlus, Images, Layers3, Loader2, Plus, Save, Scissors, Settings2, Sparkles, Upload, Users, Video, Volume2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronRight, CircleAlert, Download, FileText, ImageOff, ImagePlus, Images, Layers3, Loader2, Plus, Save, Scissors, Settings2, Sparkles, Trash2, Upload, Users, Video, Volume2 } from 'lucide-react';
 import type { ApplyMutationResult, RendererAppState as AppState } from '../../app/route-types';
-import { navigationReturnLabel } from '../../app/navigation';
 import { useUnsavedChanges } from '../../app/workspace-navigation';
 import { useWorkspaceDraft } from '../../app/workspace-draft';
-import { mergeDirectorSavedDocument } from '../../shared/director-document-sync';
+import { mergeMotionComicSavedDocument } from '../../shared/motion-comic-document-sync';
 import { createProductionHistoryReservations, productionHistoryUsage, PRODUCTION_MEDIA_HISTORY_DEMAND, PRODUCTION_RENDER_HISTORY_DEMAND, type ProductionHistoryDemand, type ProductionHistoryReservation } from '../../shared/production-history';
 import type { ShellView } from '../../shared/types';
 import type { SettingsSection } from '../settings/SettingsPage';
@@ -19,11 +21,13 @@ import {
   renameMotionComicAct,
   removeMotionComicShot,
   reorderMotionComicShot,
-  resolveMotionComicSceneAct,
   setMotionComicActBoundary,
+  setMotionComicShotFirstFrame,
+  setMotionComicShotLastFrame,
+  applyMotionComicPreviousFrameAsFirst,
+  motionComicPreviousShotFrameId,
   splitMotionComicSourceEpisodes,
   updateMotionComicRatio,
-  updateMotionComicShotDuration,
   type MotionComicAdaptationMode,
   type MotionComicEpisode,
   type MotionComicPipelineData,
@@ -35,27 +39,40 @@ import {
 import { activeImageProfileId, enableImageProfile } from '../../shared/provider-profile-utils';
 import { AppError } from '../../shared/app-error';
 import { alignDirectorSubtitleCueFromTimestampFile, updateDirectorSubtitleCue, estimateDirectorSubtitleCue } from '../../shared/director-subtitles';
-import { addDirectorSubtitleCue, removeDirectorSubtitleCue, invalidateDirectorShotSpeech } from '../../shared/director-subtitle-structure';
+import { addDirectorSubtitleCue, removeDirectorSubtitleCue, setDirectorSubtitleCues } from '../../shared/director-subtitle-structure';
 import type { StoryDreamApi } from '../../shared/storydream-api';
-import { Button, Pane, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, IconButton, Pane, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 import { useAsyncAction } from '../../ui/async-action';
-import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion } from '../director-desk/DirectorDeskWorkspace';
+import { AsyncActionFeedback } from '../../components/AsyncActionFeedback';
+import { DirectorDeskWorkspace, type DirectorAsset, type DirectorQueueItem, type DirectorShot, type DirectorVersion, type DirectorVideoResult } from '../director-desk/DirectorDeskWorkspace';
+import { MotionComicTaskDrawer } from './MotionComicTaskDrawer';
+import { buildMotionComicTaskViewModel, type MotionComicTaskNavigation } from './motion-comic-task-view-model';
+import { useMotionComicTaskSnapshot } from './use-motion-comic-task-snapshot';
+import { MotionComicAssetCreateDialog, type MotionComicAssetCreateInput, type MotionComicAssetCreateKind } from './MotionComicAssetCreateDialog';
 import { useFinalFilmGate } from '../final-film-gate/FinalFilmGatePanel';
-import type { DirectorPreviewAudioClip } from '../director-desk/DirectorAudioPreview';
-import { productionAudioClipsForShot } from '../../shared/production-audio';
+import { motionComicPreviewAudioClips, motionComicShotUsesNativeAudio } from './motion-comic-audio-preview';
 import { latestProductionProviderJob } from '../../shared/production-workflow';
 import { addDirectorSoundClip, removeDirectorSoundClip, updateDirectorAudioClip, type DIRECTOR_SOUND_TRACKS } from '../../shared/director-audio-edit';
 import { directorSoundClips, readDirectorSoundDuration } from '../director-desk/director-sound';
-import { motionComicDialogueCuesToGenerate, motionComicDialogueInput, motionComicDialogueInputMatches, updateMotionComicCharacterVoice } from '../../shared/motion-comic-dialogue';
+import { motionComicDialogueCuesToGenerate, motionComicDialogueInput, motionComicDialogueInputMatches, refreshMotionComicDialogueInputsAfterTiming, updateMotionComicCharacterVoice } from '../../shared/motion-comic-dialogue';
 import { DirectorCopyAssist, DirectorProjectLoading, DirectorProjectRecovery } from '../director-desk/DirectorProjectStart';
 import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError, type DirectorCopyAssistIntent } from '../director-desk/director-copy-assist';
 import { applyMotionComicImageRecord, applyMotionComicVoiceRecord, directorImageInput, directorImageInputMatches, restoreMotionComicImageVersion, resolveDirectorImageProviderOptions, resolveDirectorImageProviderStatus, resolveDirectorVideoProviderOptions, resolveDirectorVideoProviderStatus, resolveDirectorVoiceProviderStatus, type DirectorVideoProviderStatus } from '../director-desk/director-generation';
-import { attachMotionComicReference, createMotionComicReferenceAsset, fixedMotionComicReferenceAsset, imageLabRecordIdFromMutation, inspectMotionComicShotConsistency, motionComicConsistencyReady, motionComicConsistencySummary, motionComicReferenceAssets, motionComicReferenceVersionIds, referenceTargetLabel, setMotionComicFixedReference, type MotionComicReferenceKind, type MotionComicReferenceTarget } from './motion-comic-consistency';
-import { applyGeneratedMotionComicReference, motionComicReferenceGenerationFingerprint, motionComicReferenceGenerationInput, motionComicReferenceGenerationLabel } from './motion-comic-reference-generation';
+import { attachMotionComicReference, createMotionComicReferenceAsset, fixedMotionComicReferenceAsset, fixedMotionComicReferenceAssets, imageLabRecordIdFromMutation, inspectMotionComicShotConsistency, motionComicConsistencySummary, motionComicEpisodeMissingReferenceTargets, motionComicReferenceAssets, motionComicReferenceRole, motionComicReferenceVersionIds, referenceTargetLabel, setMotionComicFixedReference, setMotionComicReferenceRole, unpinMotionComicReference, type MotionComicReferenceKind, type MotionComicReferenceRole, type MotionComicReferenceTarget } from './motion-comic-consistency';
+import { motionComicReferenceGenerationInput, motionComicReferenceGenerationLabel } from './motion-comic-reference-generation';
 import { MotionComicPlanDialog } from './MotionComicPlanDialog';
 import { MotionComicScriptWorkspace } from './MotionComicScriptWorkspace';
-import { MotionComicReferenceEditor } from './MotionComicReferenceEditor';
+import { MotionComicGenerationReferences } from './MotionComicGenerationReferences';
+import { defaultMotionComicLookReferencePrompt } from './motion-comic-reference-generation';
+import { MotionComicAssetGallery } from './MotionComicAssetGallery';
+import { MotionComicAssetExtraction } from './MotionComicAssetExtraction';
+import { MotionComicReferenceBatch } from './MotionComicReferenceBatch';
+import { MotionComicAssetRemoveDialog } from './MotionComicAssetRemoveDialog';
+import { MotionComicCharacterVoiceSample } from './MotionComicCharacterVoiceSample';
+import { MotionComicCharacterProfile, type MotionComicCharacterProfilePatch } from './MotionComicCharacterProfile';
+import { MotionComicReferenceBoard, type MotionComicReferenceCard } from './MotionComicReferenceBoard';
 import { MotionComicAssetUsage } from './MotionComicAssetUsage';
+import { planMotionComicAssetRemoval, referenceJobFor, type MotionComicAssetRemovalTarget } from './motion-comic-asset-removal';
 import type { MotionComicAssetEpisodeUsage } from './motion-comic-asset-usage';
 import {
   createMotionComicRuleSplitEvidence,
@@ -65,6 +82,7 @@ import {
 import {
   isUntouchedMotionComicStarter,
   plannedMotionComicSourceEpisodeIds,
+  motionComicSourceEpisodeIdForEpisode,
   type MotionComicPlanResult,
   type MotionComicPlanRecovery,
   type MotionComicScriptFailure,
@@ -73,11 +91,22 @@ import {
   motionComicScriptFailureSchema,
 } from '../../shared/motion-comic-planning';
 import { MotionComicVideoReadiness } from './MotionComicVideoReadiness';
+import { MotionComicFramePanel } from './MotionComicFramePanel';
+import { importMotionComicFrame, motionComicFrameAssets } from './motion-comic-frame-import';
+import { MotionComicMakeWorkspace } from './MotionComicMakeWorkspace';
+import { motionComicReferenceToken } from '../../shared/motion-comic-reference-compiler';
+import { MotionComicVideoVersions } from './MotionComicVideoVersions';
+import { MotionComicReferenceEditor } from './MotionComicReferenceEditor';
+import { adoptMotionComicVideoVersion, motionComicVideoVersions } from '../../shared/motion-comic-video-versions';
+import { MOTION_COMIC_VIDEO_CANDIDATE_MIME, MotionComicCandidateDock, readCandidateDrag } from './MotionComicCandidateDock';
 import { MotionComicCreateFlow, type MotionComicEpisodeDraft } from './MotionComicCreateFlow';
 import { MotionComicProductionWorkspace, type MotionComicStageState } from './MotionComicProductionWorkspace';
-import { MotionComicEmptyStructuredPanel, MotionComicEpisodesPanel, MotionComicScenesPanel, MotionComicSourcePanel } from './MotionComicWorkflowPanels';
+import { MotionComicProjectOverview } from './MotionComicProjectOverview';
+import { resolveMotionComicResume } from './motion-comic-resume';
+import { motionComicBackTarget } from './motion-comic-navigation';
+import { MotionComicEpisodesPanel, MotionComicScenesPanel, MotionComicSourcePanel } from './MotionComicWorkflowPanels';
 import { resolveMotionComicActiveEpisodeReadiness, resolveMotionComicStageState } from './motion-comic-stage-state';
-import { motionComicVideoReferences, motionComicVideoDialogue } from '../../shared/motion-comic-video';
+import { buildMotionComicShotVideoRequest, motionComicVideoReferences, motionComicVideoDialogue } from '../../shared/motion-comic-video';
 import { planMotionComicProductionUnits, splitMotionComicProductionUnits } from '../../shared/motion-comic-production';
 import { invalidateMotionComicVideosForChangedInputs } from '../../shared/motion-comic-video';
 import { currentMotionComicShotContinuityAdvice } from '../../shared/motion-comic-continuity';
@@ -111,6 +140,9 @@ export function MotionComicPage({
   const sourceFileAction = useAsyncAction();
   const episodePlanningAction = useAsyncAction();
   const referenceAction = useAsyncAction();
+  const referenceGenerationAction = useAsyncAction();
+  const referenceSubmissionRef = useRef(new Set<string>());
+  const [referenceGenerationBatches, setReferenceGenerationBatches] = useState<import('../../shared/director-batch-persistence').DirectorBatchRecord[]>([]);
   const planningAction = useAsyncAction();
   const planApplyAction = useAsyncAction();
   const [createModels, setCreateModels] = useState(() => defaultProjectModels(state.config));
@@ -118,6 +150,7 @@ export function MotionComicPage({
   const documentRef = useRef<MotionComicPipelineData | null>(null);
   const savedDocumentRef = useRef<MotionComicPipelineData | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const videoRequestsRef = useRef(new Set<string>());
   const scriptDraftGuardRef = useRef<(() => boolean) | null>(null);
   const planRequestRef = useRef(0);
   const episodePlanningRequestRef = useRef(0);
@@ -130,6 +163,7 @@ export function MotionComicPage({
   const [createOpen, setCreateOpen] = useState(() => !requestedTaskId);
   const [createStep, setCreateStep] = useState(0);
   const [createTitle, setCreateTitle] = useState('');
+  const [createVisualStyle, setCreateVisualStyle] = useState('');
   const [createRatio, setCreateRatio] = useState<MotionComicPipelineData['ratio']>('16:9');
   const [createSourceKind, setCreateSourceKind] = useState<MotionComicSourceKind>('script');
   const [createAdaptationMode, setCreateAdaptationMode] = useState<MotionComicAdaptationMode>('faithful-script');
@@ -143,6 +177,10 @@ export function MotionComicPage({
   const [createSplitEvidence, setCreateSplitEvidence] = useState<MotionComicSourceSplitEvidence | null>(null);
   const [createSplitWarnings, setCreateSplitWarnings] = useState<string[]>([]);
   const [workflowStage, setWorkflowStage] = useState<MotionComicWorkflowStage>('source');
+  const workflowNavigationMemory = useRef<{ projectId: string; stages: Record<string, MotionComicWorkflowStage> }>({ projectId: '', stages: {} });
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const taskSnapshot = useMotionComicTaskSnapshot(api, document?.id, tasksOpen || overviewOpen);
   const [selectedSourceEpisodeId, setSelectedSourceEpisodeId] = useState('');
   const [sceneSourcePreviewId, setSceneSourcePreviewId] = useState('');
   const [planOpen, setPlanOpen] = useState(false);
@@ -168,16 +206,26 @@ export function MotionComicPage({
     },
   });
   const [referenceTargetId, setReferenceTargetId] = useState('');
+  const [activeLookIds, setActiveLookIds] = useState<Record<string, string>>({});
+  const [assetRemoval, setAssetRemoval] = useState<MotionComicAssetRemoveRequest | null>(null);
+  const [removingAsset, setRemovingAsset] = useState(false);
   const [libraryTarget, setLibraryTarget] = useState<{ kind: MotionComicReferenceKind; id: string; projectId: string } | null>(null);
+  /** Confirmed imports waiting for the user to pick a role; keyed by target and never guessed. */
+  const [pendingReferenceImports, setPendingReferenceImports] = useState<Record<string, MotionComicReferenceCard[]>>({});
+  const [referenceImports, setReferenceImports] = useState<Record<string, number>>({});
+  const [referenceComposeTargets, setReferenceComposeTargets] = useState<Set<string>>(() => new Set());
   const [assetSection, setAssetSection] = useState<'series' | 'characters' | 'scenes' | 'props'>('characters');
+  const [assetDisplay, setAssetDisplay] = useState<'gallery' | 'detail'>('gallery');
+  const [assetCreate, setAssetCreate] = useState<{ kind: MotionComicAssetCreateKind; projectId: string; characterId?: string } | null>(null);
   const [assetQuery, setAssetQuery] = useState('');
   const [selectedProjectAssets, setSelectedProjectAssets] = useState<Record<string, string>>({});
   const creationDraft = useWorkspaceDraft({
-    id: 'motion-comic-create', label: 'AI 漫剧新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSourceText.trim()),
+    id: 'motion-comic-create', label: 'AI 漫剧新建草稿', enabled: createOpen && Boolean(createTitle.trim() || createSourceText.trim() || createVisualStyle.trim()),
     busy: projectAction.busy || sourceFileAction.busy || episodePlanningAction.busy,
     value: {
       createModelsJson: JSON.stringify(createModels),
       createTitle,
+      createVisualStyle,
       createRatio,
       createSourceKind,
       createAdaptationMode,
@@ -194,6 +242,7 @@ export function MotionComicPage({
     restore: (draft) => {
       setCreateModels(current => readProjectModelsDraft(draft.createModelsJson, current));
       setCreateTitle(draft.createTitle); setCreateRatio(draft.createRatio); setCreateSourceKind(draft.createSourceKind);
+      setCreateVisualStyle(draft.createVisualStyle ?? '');
       setCreateAdaptationMode(draft.createAdaptationMode); setCreateSourceFileName(draft.createSourceFileName); setCreateSourceText(draft.createSourceText);
       setCreateTargetCharacters(draft.createTargetCharacters);
       setCreateTargetDurationSec(draft.createTargetDurationSec);
@@ -294,11 +343,9 @@ export function MotionComicPage({
       && !document.episodes.some((episode) => episode.planningEvidence?.sourceEpisodeId === source.id
         || episode.planningEvidence?.sourceText.trim() === source.sourceText.trim()))
     : undefined;
-  const activeEpisode: MotionComicEpisode | null = selectedUnplannedSource && document ? {
-    id: selectedUnplannedSource.id, seriesId: document.series.id, number: selectedUnplannedSource.number,
-    title: selectedUnplannedSource.title, logline: '', script: selectedUnplannedSource.sourceText,
-    status: 'draft', scenes: [], dialogueCues: [], timeline: { durationMs: 0, clips: [], audioAssetVersionIds: [] },
-  } : document?.episodes.find((episode) => episode.id === document.activeEpisodeId) ?? document?.episodes[0] ?? null;
+  // A source episode is not a generated episode; dependent workspaces need a real one.
+  const activeEpisode: MotionComicEpisode | null = selectedUnplannedSource ? null
+    : document?.episodes.find((episode) => episode.id === document.activeEpisodeId) ?? document?.episodes[0] ?? null;
   const videoProviderStatuses = useMemo(() => new Map((activeEpisode?.scenes ?? []).flatMap((scene) => scene.shots.map((shot) => [
     shot.id,
     resolveDirectorVideoProviderStatus(modelConfig, state.secretStatus, { durationMs: shot.durationMs, committedCost: committedVideoCost, requiresLastFrame: Boolean(shot.lastFrameAssetVersionId), comic: document ? {document,shot} : undefined }),
@@ -306,14 +353,16 @@ export function MotionComicPage({
   const selectedVideoProviderStatus = videoProviderStatuses.get(selectedShotId || activeEpisode?.scenes[0]?.shots[0]?.id || '')
     ?? resolveDirectorVideoProviderStatus(modelConfig, state.secretStatus, { durationMs: activeEpisode?.scenes[0]?.shots[0]?.durationMs ?? 1_000, committedCost: committedVideoCost });
   const shots = useMemo(() => activeEpisode ? activeEpisode.scenes.flatMap((scene) => scene.shots.map((shot) => directorShotFromComic(activeEpisode, scene.title, shot, document, videoProviderStatuses.get(shot.id)))).map((shot, index) => ({ ...shot, index: index + 1 })) : [], [activeEpisode, document, videoProviderStatuses]);
-  const renderOutputs = useMemo(() => document ? directorRenderOutputs(document, activeEpisode?.id) : { history: [], current: undefined }, [activeEpisode?.id, document]);
-  const qualityReview = useMemo(() => document ? directorQualityReview(document, activeEpisode?.id) : undefined, [activeEpisode?.id, document]);
+  const renderOutputs = useMemo(() => document && activeEpisode ? directorRenderOutputs(document, activeEpisode.id) : { history: [], current: undefined }, [activeEpisode?.id, document]);
+  const qualityReview = useMemo(() => document && activeEpisode ? directorQualityReview(document, activeEpisode.id) : undefined, [activeEpisode?.id, document]);
   const outputAsset = renderOutputs.current;
   // E-5: advisory final-film gate (quality-gate.json) next to this episode's current film; read-only.
   const finalFilmGate = useFinalFilmGate(api, activeProjectId, { ...(activeEpisode?.id ? { episodeId: activeEpisode.id } : {}), refreshKey: `${outputAsset?.id ?? ''}:${outputAsset?.localPath ?? ''}`, enabled: Boolean(outputAsset?.localPath) });
   const projectOptions = useMemo(() => projects.map((task) => ({ id: task.id, title: task.title || '未命名 AI 漫剧', meta: `创建于 ${new Date(task.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` })), [projects]);
   const episodeOptions = useMemo(() => (document?.episodes ?? []).map((episode) => ({ id: episode.id, number: episode.number, title: episode.title, meta: `${episode.scenes.length} 场 · ${episode.scenes.flatMap((scene) => scene.shots).length} 镜头` })), [document?.episodes]);
   const consistencySummary = useMemo(() => document ? motionComicConsistencySummary(document) : null, [document]);
+  const missingEpisodeReferenceTargets = useMemo(() => document && activeEpisode
+    ? motionComicEpisodeMissingReferenceTargets(document, activeEpisode.id) : [], [activeEpisode?.id, document]);
   const brokenFixedReferenceCount = useMemo(() => {
     if (!document || brokenReferenceIds.size === 0) return 0;
     const referenceIds = motionComicReferenceVersionIds(document);
@@ -457,10 +506,15 @@ export function MotionComicPage({
     documentRef.current = result.value;
     savedDocumentRef.current = result.value;
     setActiveProjectId(taskId);
-    const openedEpisode = result.value.episodes.find((episode) => episode.id === result.value.activeEpisodeId) ?? result.value.episodes[0];
-    setSelectedShotId(openedEpisode?.scenes[0]?.shots[0]?.id ?? '');
-    setSelectedSourceEpisodeId(result.value.sourceDocument?.episodes.find((source) => !plannedMotionComicSourceEpisodeIds(result.value).has(source.id))?.id ?? result.value.sourceDocument?.episodes[0]?.id ?? '');
-    setWorkflowStage(suggestMotionComicWorkflowStage(result.value));
+    setAssetDisplay('gallery');
+    setAssetQuery('');
+    setSelectedProjectAssets({});
+    const resume = resolveMotionComicResume(result.value);
+    setSelectedShotId(resume.shotId);
+    setSelectedSourceEpisodeId(resume.sourceEpisodeId);
+    setSceneSourcePreviewId('');
+    setWorkflowStage(resume.stage);
+    setOverviewOpen(true);
     setCreateOpen(false);
     setDirty(false);
   }, [api, projectAction.run]);
@@ -469,6 +523,18 @@ export function MotionComicPage({
     if (!requestedTaskId) return;
     void openProject(requestedTaskId).finally(() => onRequestedTaskHandled(requestedTaskId));
   }, [onRequestedTaskHandled, openProject, requestedTaskId]);
+
+  // Pending import cards and the compose choice belong to one asset in one project:
+  // switching projects must not leave another project's cards on screen.
+  const referenceStateProjectRef = useRef(document?.id);
+  useEffect(() => {
+    if (referenceStateProjectRef.current === document?.id) return;
+    referenceStateProjectRef.current = document?.id;
+    setPendingReferenceImports({});
+    setReferenceImports({});
+    setReferenceComposeTargets(new Set());
+    setReferenceTargetId('');
+  }, [document?.id]);
 
   function mutateDocument(update: (current: MotionComicPipelineData) => MotionComicPipelineData) {
     const current = documentRef.current;
@@ -516,54 +582,8 @@ export function MotionComicPage({
     }, { successMessage: '已导入识别时间戳；对白将按真实时间切换。' });
   }
 
-  function updateShot(id: string, update: Partial<DirectorShot>) {
-    if (documentRef.current?.sourceDocument && update.renderStrategy !== undefined && update.renderStrategy !== 'living-poster') {
-      throw new Error('导入剧本创建的 AI 漫剧只允许使用远程视频 API。');
-    }
-    const before = shots.find((shot) => shot.id === id);
-    const invalidatesVideo = Boolean(before && (
-      (update.prompt !== undefined && update.prompt !== before.prompt)
-      || (update.motionPrompt !== undefined && update.motionPrompt !== before.motionPrompt)
-      || (update.framing !== undefined && update.framing !== before.framing)
-      || (update.durationMs !== undefined && update.durationMs !== before.durationMs)
-      || (update.renderStrategy !== undefined && update.renderStrategy !== before.renderStrategy)
-    ));
-    if (before && ((update.voiceId !== undefined && update.voiceId !== before.voiceId) || (update.voiceSpeed !== undefined && update.voiceSpeed !== before.voiceSpeed))) {
-      mutateDocument((current) => invalidateDirectorShotSpeech(current, id));
-    }
-    mutateDocument((current) => {
-      const owningEpisode = current.episodes.find((episode) => episode.scenes.some((scene) => scene.shots.some((shot) => shot.id === id)));
-      const base = owningEpisode && update.durationMs !== undefined && update.durationMs !== before?.durationMs
-        ? updateMotionComicShotDuration(current, owningEpisode.id, id, update.durationMs)
-        : current;
-      const next: MotionComicPipelineData = {
-        ...base,
-        episodes: base.episodes.map((episode) => ({
-          ...episode,
-          scenes: episode.scenes.map((scene) => ({
-            ...scene,
-            shots: scene.shots.map((shot) => shot.id !== id ? shot : ({
-              ...shot,
-              title: update.title ?? shot.title,
-              prompt: update.prompt ?? shot.prompt,
-              motionPrompt: update.motionPrompt ?? shot.motionPrompt,
-              framing: update.framing ?? shot.framing,
-              durationMs: update.durationMs ?? shot.durationMs,
-              voiceId: update.voiceId ?? shot.voiceId,
-              voiceLabel: update.voice ?? shot.voiceLabel,
-              voiceSpeed: update.voiceSpeed ?? shot.voiceSpeed,
-              layoutTemplate: update.layoutTemplate ?? shot.layoutTemplate,
-              motionPreset: update.motionPreset ?? shot.motionPreset,
-              subtitleStyle: update.subtitleStyle ?? shot.subtitleStyle,
-              seed: update.seed ?? shot.seed,
-              seedLocked: update.seedLocked ?? shot.seedLocked,
-              ...(update.renderStrategy !== undefined ? { renderStrategy: update.renderStrategy === 'living-poster' ? 'remote-video' as const : 'image-motion' as const } : {}),
-             })),
-          })),
-        })),
-      };
-      return invalidatesVideo ? invalidateMotionComicShotVideo(next, id) : next;
-    });
+  function updateShot(id: string, update: Partial<DirectorShot> & Pick<Partial<MotionComicShot>, 'continuity'>) {
+    mutateDocument(current => updateMotionComicMakeShot(current, id, update));
   }
 
   function replaceDocument(next: MotionComicPipelineData) {
@@ -592,9 +612,27 @@ export function MotionComicPage({
     }
     if (!episode) return;
     setSceneSourcePreviewId('');
-    setSelectedSourceEpisodeId(episode.planningEvidence?.sourceEpisodeId ?? '');
-    replaceDocument({ ...current, activeEpisodeId: episodeId });
+    setSelectedSourceEpisodeId(motionComicSourceEpisodeIdForEpisode(current, episode) ?? '');
+    if (current.activeEpisodeId !== episodeId) {
+      replaceDocument({ ...current, activeEpisodeId: episodeId });
+    }
     setSelectedShotId(episode.scenes[0]?.shots[0]?.id ?? '');
+  }
+
+  function backWithinProject() {
+    if (scriptDraftGuardRef.current?.() === false) return;
+    const target = motionComicBackTarget(workflowStage);
+    if (!target.stage) {
+      setOverviewOpen(true);
+      return;
+    }
+    if (target.stage === 'episodes') {
+      const current = documentRef.current;
+      const episode = current?.episodes.find(item => item.id === current.activeEpisodeId);
+      const sourceId = sceneSourcePreviewId || (current && episode ? motionComicSourceEpisodeIdForEpisode(current, episode) : undefined);
+      if (sourceId) setSelectedSourceEpisodeId(sourceId);
+    }
+    setWorkflowStage(target.stage);
   }
 
   function openAssetUsage(usage: MotionComicAssetEpisodeUsage) {
@@ -840,19 +878,20 @@ export function MotionComicPage({
     setSelectedShotId(next.episodes.find((episode) => episode.id === next.activeEpisodeId)?.scenes.at(-1)?.shots[0]?.id ?? '');
   }
 
-  function addCharacterAsset() {
+  function addCharacterAsset(input?: MotionComicAssetCreateInput | unknown) {
+    if (!input || typeof input !== 'object' || !('kind' in input) || !('name' in input)) { if (documentRef.current) setAssetCreate({ kind: 'character', projectId: documentRef.current.id }); return; }
+    const data = input as MotionComicAssetCreateInput;
     const characterId = `character-${crypto.randomUUID()}`;
     mutateDocument((current) => {
       const lookId = `look-${crypto.randomUUID()}`;
-      const number = current.characters.length + 1;
       return {
         ...current,
         series: { ...current.series, characterIds: [...current.series.characterIds, characterId] },
         characters: [...current.characters, {
           id: characterId,
-          name: `人物 ${number}`,
+          name: data.name.trim(),
           role: '待定义',
-          identityPrompt: '',
+          identityPrompt: data.description.trim(),
           personality: '',
           voiceNotes: '',
           looks: [{
@@ -870,29 +909,91 @@ export function MotionComicPage({
     });
     setAssetQuery('');
     setSelectedProjectAssets((current) => ({ ...current, characters: characterId }));
+    setAssetDisplay('detail');
   }
 
-  function addCharacterLook(characterId: string) {
+  function addCharacterLook(characterId: string, input?: MotionComicAssetCreateInput) {
+    const current = documentRef.current;
+    if (!current) return;
+    if (!input) { setAssetCreate({ kind: 'look', characterId, projectId: current.id }); return; }
+    const target = current.characters.find(character => character.id === characterId);
+    if (!target) throw new Error('人物已不存在，请重新选择人物。');
+    if (target.looks.length >= 50) throw new Error('每个人物最多保存 50 个造型。');
+    const lookId = `look-${crypto.randomUUID()}`;
+    setActiveLookIds((ids) => ({ ...ids, [characterId]: lookId }));
     mutateDocument((current) => ({ ...current, characters: current.characters.map((character) => character.id !== characterId || character.looks.length >= 50 ? character : {
       ...character, looks: [...character.looks, {
-        id: `look-${crypto.randomUUID()}`, characterId, label: `造型 ${character.looks.length + 1}`,
-        appearancePrompt: '', wardrobe: '', continuityNotes: '', referenceAssetVersionIds: [], pinned: false,
+        id: lookId, characterId, label: input.name.trim(),
+        appearancePrompt: input.description.trim(), wardrobe: '', continuityNotes: '', referencePrompt: '', referenceAssetVersionIds: [], pinned: false,
       }],
     }) }));
   }
 
-  function addSceneAsset() {
+  type MotionComicAssetRemoveRequest =
+    | { kind: 'character'; id: string; name: string; target: MotionComicAssetRemovalTarget }
+    | { kind: 'look'; id: string; name: string; target: MotionComicAssetRemovalTarget }
+    | { kind: 'scene'; id: string; name: string; target: MotionComicAssetRemovalTarget }
+    | { kind: 'prop'; id: string; name: string; target: MotionComicAssetRemovalTarget };
+
+  function openRemove(kind: 'look', character: { id: string; name: string }, look: { id: string; label: string }): void;
+  function openRemove(kind: 'scene' | 'prop', asset: { id: string; label: string }): void;
+  function openRemove(kind: 'character' | 'look' | 'scene' | 'prop', owner: { id: string; name?: string; label?: string }, look?: { id: string; label: string }) {
+    const current = documentRef.current;
+    if (!current) return;
+    if (kind === 'look') {
+      if (!look || !owner.id) return;
+      setAssetRemoval({ kind, id: look.id, name: `${owner.name ?? ''} · ${look.label}`.trim(), target: { kind: 'look', characterId: owner.id, lookId: look.id } });
+      return;
+    }
+    if (kind === 'character') {
+      setAssetRemoval({ kind, id: owner.id, name: owner.name ?? '人物', target: { kind: 'character', characterId: owner.id } });
+      return;
+    }
+    setAssetRemoval({ kind, id: owner.id, name: owner.label ?? (kind === 'scene' ? '地点' : '道具'), target: kind === 'scene' ? { kind: 'scene', sceneAssetId: owner.id } : { kind: 'prop', propAssetId: owner.id } });
+  }
+
+  async function confirmRemoveAsset() {
+    const request = assetRemoval;
+    const current = documentRef.current;
+    if (!request || !current || removingAsset) return;
+    if (!planMotionComicAssetRemoval(current, request.target).next) return;
+    setRemovingAsset(true);
+    try {
+      mutateDocument((latest) => planMotionComicAssetRemoval(latest, request.target).next ?? latest);
+      forgetRemovedAsset(request);
+      referenceAction.clearFeedback();
+      setAssetRemoval(null);
+    } finally {
+      setRemovingAsset(false);
+    }
+  }
+
+  /** Clear the now-stale selections after a successful removal. */
+  function forgetRemovedAsset(request: MotionComicAssetRemoveRequest) {
+    const target = request.target;
+    if (target.kind === 'character') setSelectedProjectAssets((ids) => ({ ...ids, characters: '' }));
+    else if (target.kind === 'look') {
+      setSelectedProjectAssets((ids) => ({ ...ids, characters: target.characterId }));
+      setActiveLookIds((ids) => ({ ...ids, [target.characterId]: '' }));
+    } else if (target.kind === 'scene') setSelectedProjectAssets((ids) => ({ ...ids, scenes: '' }));
+    else setSelectedProjectAssets((ids) => ({ ...ids, props: '' }));
+    const removedId = target.kind === 'look' ? target.lookId : target.kind === 'character' ? target.characterId : target.kind === 'scene' ? target.sceneAssetId : target.propAssetId;
+    if (referenceTargetId.endsWith(`:${removedId}`)) setReferenceTargetId('');
+  }
+
+  function addSceneAsset(input?: MotionComicAssetCreateInput | unknown) {
+    if (!input || typeof input !== 'object' || !('kind' in input) || !('name' in input)) { if (documentRef.current) setAssetCreate({ kind: 'scene', projectId: documentRef.current.id }); return; }
+    const data = input as MotionComicAssetCreateInput;
     const id = `scene-asset-${crypto.randomUUID()}`;
     mutateDocument((current) => {
-      const number = current.sceneAssets.length + 1;
       return {
         ...current,
         series: { ...current.series, sceneAssetIds: [...current.series.sceneAssetIds, id] },
         sceneAssets: [...current.sceneAssets, {
           id,
-          label: `场景 ${number}`,
-          description: '',
-          prompt: '',
+          label: data.name.trim(),
+          description: data.description.trim(),
+          prompt: data.description.trim(),
           continuityNotes: '',
           referenceAssetVersionIds: [],
         }],
@@ -900,26 +1001,29 @@ export function MotionComicPage({
     });
     setAssetQuery('');
     setSelectedProjectAssets((current) => ({ ...current, scenes: id }));
+    setAssetDisplay('detail');
   }
 
-  function addPropAsset() {
+  function addPropAsset(input?: MotionComicAssetCreateInput | unknown) {
+    if (!input || typeof input !== 'object' || !('kind' in input) || !('name' in input)) { if (documentRef.current) setAssetCreate({ kind: 'prop', projectId: documentRef.current.id }); return; }
+    const data = input as MotionComicAssetCreateInput;
     const id = `prop-${crypto.randomUUID()}`;
     mutateDocument((current) => {
-      const number = current.props.length + 1;
       return {
         ...current,
         series: { ...current.series, propAssetIds: [...current.series.propAssetIds, id] },
         props: [...current.props, {
           id,
-          label: `道具 ${number}`,
-          description: '',
-          prompt: '',
+          label: data.name.trim(),
+          description: data.description.trim(),
+          prompt: data.description.trim(),
           referenceAssetVersionIds: [],
         }],
       };
     });
     setAssetQuery('');
     setSelectedProjectAssets((current) => ({ ...current, props: id }));
+    setAssetDisplay('detail');
   }
 
   function updateScene(sceneId: string, update: Partial<Pick<MotionComicPipelineData['episodes'][number]['scenes'][number], 'title' | 'summary' | 'actIndex' | 'actTitle' | 'actBoundaryReason' | 'actSource'>>) {
@@ -971,6 +1075,20 @@ export function MotionComicPage({
     replaceDocument(next);
   }
 
+  function reorderTimelineShot(shotId: string, targetShotId: string) {
+    const current = documentRef.current;
+    const episode = current?.episodes.find((item) => item.id === current.activeEpisodeId);
+    if (!current || !episode || shotId === targetShotId) return;
+    const ordered = episode.scenes.flatMap((scene) => scene.shots);
+    const from = ordered.findIndex((shot) => shot.id === shotId);
+    const to = ordered.findIndex((shot) => shot.id === targetShotId);
+    const scene = episode.scenes.find((item) => item.shots.some((shot) => shot.id === targetShotId));
+    if (from < 0 || to < 0 || !scene) return;
+    const index = scene.shots.filter((shot) => shot.id !== shotId).findIndex((shot) => shot.id === targetShotId) + (to > from ? 1 : 0);
+    replaceDocument(reorderMotionComicShot(current, episode.id, shotId, scene.id, index));
+    setSelectedShotId(shotId);
+  }
+
   function restoreVersion(versionId: string) {
     mutateDocument((current) => restoreMotionComicImageVersion(current, selectedShotId, versionId));
   }
@@ -980,94 +1098,233 @@ export function MotionComicPage({
       restoreVersion(asset.sourceVersionId);
       return;
     }
-    mutateDocument((current) => {
-      let changed = false;
-      const next: MotionComicPipelineData = {
-        ...current,
-        episodes: current.episodes.map((episode) => ({ ...episode, scenes: episode.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => {
-          if (shot.id !== selectedShotId) return shot;
-          if (current.characters.some((character) => character.looks.some((look) => look.id === asset.id))) {
-            changed = true;
-            return { ...shot, characterLookIds: shot.characterLookIds.includes(asset.id) ? shot.characterLookIds.filter((id) => id !== asset.id) : [...shot.characterLookIds, asset.id] };
-          }
-          if (current.sceneAssets.some((sceneAsset) => sceneAsset.id === asset.id)) {
-            if (shot.sceneAssetId === asset.id) return shot;
-            changed = true;
-            return { ...shot, sceneAssetId: asset.id };
-          }
-          if (current.props.some((prop) => prop.id === asset.id)) {
-            changed = true;
-            return { ...shot, propAssetIds: shot.propAssetIds.includes(asset.id) ? shot.propAssetIds.filter((id) => id !== asset.id) : [...shot.propAssetIds, asset.id] };
-          }
-          return shot;
-        }) })) })),
-      };
-      return changed ? invalidateMotionComicShotVideo(next, selectedShotId) : current;
-    });
+    mutateDocument(current => toggleMotionComicMakeAsset(current, selectedShotId, asset.id));
   }
 
+  /**
+   * Import one or more reference images. Each confirmed image waits in `pending` until the
+   * user says what it is for: a look can hold a design sheet plus angles, and guessing the role
+   * from the file name would silently change what the provider sees.
+   */
   async function importReference(kind: MotionComicReferenceKind, targetId: string, selection?: LibrarySelection) {
     const current = documentRef.current;
     if (!current || referenceAction.busy) return;
     const target = { kind, id: targetId } as const;
     const targetKey = `${kind}:${targetId}`;
     setReferenceTargetId(targetKey);
-    const result = await referenceAction.run(() => withHistoryCapacity({ assets: 1 }, async () => {
-      const imagePath = selection?.imagePath || await api.selectLocalImage();
-      if (!imagePath) return false;
-      const imported = await api.addImageLabRecord({
-        prompt: `AI 漫剧一致性参考图 · ${referenceTargetLabel(current, target)}`,
-        ratio: current.ratio,
-        style: 'reference',
-        provider: 'local-import',
-        imagePath,
-        resolution: '2K',
-        quality: 'high',
-        smartMode: 'reference-edit',
-        upstreamTaskId: current.id,
-      });
-      applyState(imported);
-      const recordId = imageLabRecordIdFromMutation(imported);
-      const record = await api.getImageLabRecordDetail(recordId);
-      if (!record || record.status !== 'generated' || !record.imagePath) {
-        throw new Error('参考图已选择，但未能完成托管导入。');
+    const limit = Math.max(1, providerStatus.maxReferenceImages || 6);
+    let queued = 0;
+    const result = await referenceAction.run(() => withHistoryCapacity({ assets: limit }, async () => {
+      const imagePaths = selection ? [selection.imagePath] : await api.selectLocalReferenceImages();
+      if (!imagePaths?.length) return { added: 0, failed: 0 };
+      const known = new Set([
+        ...(pendingReferenceImports[targetKey] ?? []).flatMap((card) => card.paths),
+      ]);
+      let added = 0;
+      let failed = 0;
+      for (const imagePath of imagePaths.filter((path): path is string => Boolean(path))) {
+        const latestBefore = documentRef.current;
+        if (!latestBefore || latestBefore.id !== current.id) throw new Error('AI 漫剧项目已切换，本次参考图未写入其他项目。');
+        if (known.has(imagePath)) continue;
+        const batch = `${targetKey}:${crypto.randomUUID()}`;
+        queued += 1;
+        setReferenceImports((items) => ({ ...items, [batch]: (items[batch] ?? 0) + 1 }));
+        try {
+          // SHA-256 is computed by the main process, so the card identity is never trusted from the draft.
+          const sha256 = await api.sha256File(imagePath);
+          const imported = await api.addImageLabRecord({
+            prompt: `AI 漫剧一致性参考图 · ${referenceTargetLabel(latestBefore, target)}`,
+            ratio: latestBefore.ratio,
+            style: 'reference',
+            provider: 'local-import',
+            imagePath,
+            resolution: '2K',
+            quality: 'high',
+            smartMode: 'reference-edit',
+            upstreamTaskId: latestBefore.id,
+          });
+          applyState(imported);
+          const recordId = imageLabRecordIdFromMutation(imported);
+          const record = await api.getImageLabRecordDetail(recordId);
+          if (!record || record.status !== 'generated' || !record.imagePath) throw new Error('参考图已选择，但未能完成托管导入。');
+          const latest = documentRef.current;
+          if (!latest || latest.id !== current.id) throw new Error('AI 漫剧项目已切换，本次参考图未写入其他项目。');
+          const versionId = `motion-comic-reference-${record.id}`;
+          const asset = {
+            ...createMotionComicReferenceAsset(record, targetId, kind),
+            sha256,
+            ...(selection?.libraryId && selection.revision ? { librarySource: { id: selection.libraryId, revision: selection.revision } } : {}),
+          };
+          const next = invalidateMotionComicVideosForChangedInputs(latest, attachMotionComicReference(latest, target, asset, { setFixed: false }));
+          setDocument(next);
+          documentRef.current = next;
+          setDirty(true);
+          known.add(imagePath);
+          setPendingReferenceImports((items) => ({ ...items, [targetKey]: [...(items[targetKey] ?? []).filter((card) => card.sha256 !== sha256), { sha256, paths: [imagePath], size: 0, versionId }] }));
+          added += 1;
+        } catch (error) {
+          failed += 1;
+          if (imagePaths.length === 1) throw error;
+        } finally {
+          setReferenceImports((items) => {
+            const remaining = (items[batch] ?? 1) - 1;
+            const next = { ...items };
+            if (remaining > 0) next[batch] = remaining;
+            else delete next[batch];
+            return next;
+          });
+        }
       }
-      const asset = { ...createMotionComicReferenceAsset(record, targetId, kind), ...(selection?.libraryId && selection.revision ? { librarySource: { id: selection.libraryId, revision: selection.revision } } : {}) };
-      const latest = documentRef.current;
-      if (!latest || latest.id !== current.id) throw new Error('AI 漫剧项目已切换，本次参考图未写入其他项目。');
-      const next = invalidateMotionComicVideosForChangedInputs(latest, attachMotionComicReference(latest, target, asset));
-      setDocument(next);
-      documentRef.current = next;
-      setDirty(true);
-      return true;
-    }), { successMessage: '参考图已导入并固定到系列圣经。' });
-    if (result.ok && !result.value) referenceAction.clearFeedback();
+      return { added, failed };
+    }), { successMessage: '参考图已导入。请为每张图选择用途，选好并确认后才会成为固定参考。' });
+    if (result.ok && !result.value?.added) referenceAction.clearFeedback();
     if (!result.ok && selection) throw new Error('参考图未能导入，请检查当前项目的操作提示后重试。');
+  }
+
+  function generationReferencePaths(current: MotionComicPipelineData, lookId: string): string[] {
+    const look = current.characters.flatMap((character) => character.looks).find((item) => item.id === lookId);
+    return look?.generationReferenceImagePaths ?? (look ? fixedMotionComicReferenceAssets(current, look.referenceAssetVersionIds).flatMap((asset) => asset.localPath ? [asset.localPath] : []) : []);
+  }
+
+  async function importGenerationReferences(projectId: string, lookId: string, selectedPaths?: string[]) {
+    const paths = selectedPaths ?? await api.selectLocalReferenceImages();
+    if (!paths?.length) return;
+    if (documentRef.current?.id !== projectId) throw new Error('项目已切换，请重新选择参考图。');
+    mutateDocument((current) => ({ ...current, characters: current.characters.map((character) => ({ ...character, looks: character.looks.map((look) => look.id === lookId ? { ...look, generationReferenceImagePaths: [...new Set([...generationReferencePaths(current, lookId), ...paths])].slice(0, 20) } : look) })) }));
+  }
+
+  /** Fixed slots for the board: one pinned image per role, in provider order. */
+  function referenceSlots(current: MotionComicPipelineData, versionIds: readonly string[]): Array<{ role: MotionComicReferenceRole; versionId: string }> {
+    return fixedMotionComicReferenceAssets(current, versionIds).map((asset) => ({ role: motionComicReferenceRole(asset), versionId: asset.id }));
+  }
+
+  function referenceImporting(targetKey: string): number {
+    return Object.entries(referenceImports).reduce((total, [key, count]) => (key.startsWith(`${targetKey}:`) ? total + count : total), 0);
+  }
+
+  function toggleReferenceCompose(targetKey: string, value: boolean) {
+    setReferenceComposeTargets((current) => {
+      const next = new Set(current);
+      if (value) next.add(targetKey);
+      else next.delete(targetKey);
+      return next;
+    });
+  }
+
+  function setReferenceRoleSilent(target: MotionComicReferenceTarget, versionId: string, action: 'unpin') {
+    if (action !== 'unpin') return;
+    setReferenceTargetId(`${target.kind}:${target.id}`);
+    referenceAction.clearFeedback();
+    mutateDocument((current) => unpinMotionComicReference(current, target, versionId));
+  }
+
+  /** Abandon a just-imported card: nothing stays fixed, so the candidate is simply detached. */
+  function discardReferenceImport(target: MotionComicReferenceTarget, versionId: string) {
+    setPendingReferenceImports((items) => ({ ...items, [`${target.kind}:${target.id}`]: (items[`${target.kind}:${target.id}`] ?? []).filter((card) => card.versionId !== versionId) }));
+    removeReferenceVersion(target, versionId);
+  }
+
+  function removeReferenceVersion(target: MotionComicReferenceTarget, versionId: string) {
+    setReferenceTargetId(`${target.kind}:${target.id}`);
+    referenceAction.clearFeedback();
+    mutateDocument((current) => {
+      // Detach from this target only; the image and its history stay in the project assets.
+      const detach = <T extends { referenceAssetVersionIds: string[] }>(item: T): T => ({ ...item, referenceAssetVersionIds: item.referenceAssetVersionIds.filter((id) => id !== versionId) });
+      if (target.kind === 'look') return { ...current, characters: current.characters.map((character) => ({ ...character, looks: character.looks.map((look) => (look.id === target.id ? detach(look) : look)) })) };
+      if (target.kind === 'scene') return { ...current, sceneAssets: current.sceneAssets.map((scene) => (scene.id === target.id ? detach(scene) : scene)) };
+      return { ...current, props: current.props.map((prop) => (prop.id === target.id ? detach(prop) : prop)) };
+    });
+  }
+
+  /** Assign a role to a confirmed import; the dialog has already validated the choice. */
+  function setReferenceRole(target: MotionComicReferenceTarget, versionId: string, role: MotionComicReferenceRole) {
+    setReferenceTargetId(`${target.kind}:${target.id}`);
+    referenceAction.clearFeedback();
+    mutateDocument((current) => setMotionComicReferenceRole(current, target, versionId, role));
+    setPendingReferenceImports((items) => ({ ...items, [`${target.kind}:${target.id}`]: (items[`${target.kind}:${target.id}`] ?? []).filter((card) => card.versionId !== versionId) }));
+  }
+
+  // Poll persisted jobs independently of the asset selection and merge into the latest local draft.
+  useEffect(() => {
+    const projectId = document?.id;
+    if (!projectId) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const batches = await api.listDirectorBatches({ projectId });
+        if (disposed) return;
+        const references = batches.filter(batch => batch.plan.purpose === 'reference-generation');
+        setReferenceGenerationBatches(references);
+        if (references.length) {
+          const pending = persistQueueRef.current.then(async () => {
+            const baseline = savedDocumentRef.current;
+            if (disposed || baseline?.id !== projectId) return;
+            const task = await api.getTaskDetail(projectId);
+            if (disposed || !task || documentRef.current?.id !== projectId) return;
+            const saved = parseMotionComicPipelineData(task.pipelineData);
+            if (saved.updatedAt !== baseline.updatedAt) acceptSavedDocument(saved, baseline);
+          });
+          persistQueueRef.current = pending.then(() => undefined, () => undefined);
+          await pending;
+        }
+      } catch { /* Jobs remain persisted; the next poll retries without resubmitting. */ }
+      finally { if (!disposed) timer = setTimeout(() => void poll(), 2000); }
+    };
+    void poll();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [api, document?.id]);
+
+  function referenceGenerationPending(target: MotionComicReferenceTarget): boolean {
+    const projectId = document?.id;
+    return referenceSubmissionRef.current.has(`${projectId}:${target.kind}:${target.id}`)
+      || referenceGenerationBatches.some(batch => batch.projectId === projectId
+        && ['queued', 'running', 'paused', 'cancelling'].includes(batch.status)
+        && batch.nodes.some(node => node.reference?.target.kind === target.kind && node.reference.target.id === target.id
+          && ['pending', 'running'].includes(node.status)));
+  }
+
+  function referenceGenerationStatus(target: MotionComicReferenceTarget): string | undefined {
+    const batches = referenceGenerationBatches.filter(batch => batch.projectId === document?.id
+      && batch.nodes.some(node => node.reference?.target.kind === target.kind && node.reference.target.id === target.id));
+    const latest = batches.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    if (!latest) return referenceGenerationPending(target) ? '正在提交后台任务…' : undefined;
+    const nodes = latest.nodes.filter(node => node.reference?.target.kind === target.kind && node.reference.target.id === target.id);
+    const complete = nodes.filter(node => node.reference?.applyState === 'applied').length;
+    if (latest.recoveryRequired) return `已完成 ${complete}/${nodes.length}，请在任务中心核对未完成请求。`;
+    if (nodes.some(node => node.reference?.applyState === 'stale')) return '资产设定已变化，过期结果保留在图片历史中。';
+    if (latest.status === 'failed') return `已完成 ${complete}/${nodes.length}，部分生成失败，请在任务中心查看原因。`;
+    if (latest.status === 'cancelled') return `生成已取消，保留已完成的 ${complete} 张候选。`;
+    return complete === nodes.length ? `已生成 ${complete} 张候选，待确认用途。` : `后台生成中 ${complete}/${nodes.length}，可继续编辑。`;
   }
 
   async function generateReference(kind: MotionComicReferenceKind, targetId: string) {
     const current = documentRef.current;
-    if (!current || referenceAction.busy || providerAction.busy) return;
     const target = { kind, id: targetId } as const;
-    const provider = providerStatus;
+    if (!current || referenceGenerationPending(target)) return;
+    const key = `${current.id}:${kind}:${targetId}`;
+    referenceSubmissionRef.current.add(key);
     setReferenceTargetId(`${kind}:${targetId}`);
-    await referenceAction.run(() => withHistoryCapacity({ assets: 1, providerJobs: 1 }, async () => {
-      if (!provider.connected) throw new AppError('MOTION_COMIC_IMAGE_PROVIDER_REQUIRED', provider.unavailableReason ?? '请先配置图片模型。');
-      const input = motionComicReferenceGenerationInput(current, target, provider);
-      const fingerprint = motionComicReferenceGenerationFingerprint(current, target, provider);
-      const recordId = crypto.randomUUID();
-      for (const path of input.referenceImagePaths ?? []) await api.readAssetDataUrl(path);
-      const mutation = await api.generateImageLab({ ...input, id: recordId });
-      applyState(mutation);
-      const record = await api.getImageLabRecordDetail(recordId);
-      if (!record || record.status !== 'generated' || !record.imagePath) throw new AppError('MOTION_COMIC_REFERENCE_GENERATION_FAILED', record?.errorMessage || '图片服务没有返回可用的参考图。', true);
-      await enqueueProjectMutation(current.id, (latest) => {
-        if (motionComicReferenceGenerationFingerprint(latest, target, provider) !== fingerprint) {
-          throw new AppError('MOTION_COMIC_REFERENCE_INPUT_CHANGED', '资产设定已修改：生成图已保留在图片历史中，请确认后重新生成或导入。');
-        }
-        return invalidateMotionComicVideosForChangedInputs(latest, applyGeneratedMotionComicReference(latest, target, record, provider));
-      });
-    }), { successMessage: '参考图已生成、固定并保存到项目。' });
+    try {
+      await referenceGenerationAction.run(async () => {
+        if (!providerStatus.connected) throw new AppError('MOTION_COMIC_IMAGE_PROVIDER_REQUIRED', providerStatus.unavailableReason ?? '请先配置图片模型。');
+        return withSavedScriptProject(async saved => {
+          if (saved.id !== current.id) throw new Error('项目已切换，请重新提交参考图任务。');
+          const batch = await api.submitMotionComicReferenceBatch({ projectId: saved.id, expectedProjectUpdatedAt: saved.updatedAt,
+            targets: [target], selectionMode: 'selected', concurrency: kind === 'look' ? 3 : 1,
+            composeMultiple: referenceComposeTargets.has(`${kind}:${targetId}`) });
+          setReferenceGenerationBatches(items => [batch, ...items.filter(item => item.id !== batch.id)]);
+          return batch;
+        });
+      }, { successMessage: kind === 'look' ? '正面、侧面、背面三张候选已提交后台生成，可继续其他操作。' : '参考图已提交后台生成，可继续其他操作。' });
+    } finally { referenceSubmissionRef.current.delete(key); }
+  }
+  function referenceImageCount(target: MotionComicReferenceTarget): number {
+    if (!document) return 0;
+    const ids = target.kind === 'look'
+      ? document.characters.flatMap((character) => character.looks).find((look) => look.id === target.id)?.referenceAssetVersionIds ?? []
+      : target.kind === 'scene' ? document.sceneAssets.find((scene) => scene.id === target.id)?.referenceAssetVersionIds ?? [] : document.props.find((prop) => prop.id === target.id)?.referenceAssetVersionIds ?? [];
+    return fixedMotionComicReferenceAssets(document, ids).length;
   }
 
   function referenceGenerationIssue(target: MotionComicReferenceTarget): string | undefined {
@@ -1083,9 +1340,9 @@ export function MotionComicPage({
     const definitionError = referenceGenerationIssue(target);
     return <>
       <Button density="compact" variant="primary" icon={active && referenceAction.busy ? <Loader2 className="director-spin" size={13} /> : <Sparkles size={13} />}
-        aria-label={document ? motionComicReferenceGenerationLabel(document, target) : '生成参考图'}
-        title={definitionError ?? providerStatus.unavailableReason ?? `使用 ${providerStatus.label} / ${providerStatus.model}，将调用图片服务`}
-        disabled={referenceAction.busy || providerAction.busy || !providerStatus.connected || Boolean(definitionError)} onClick={() => void generateReference(kind, targetId)}>生成参考图</Button>
+        aria-label={document ? motionComicReferenceGenerationLabel(document, target) : '生成参考图候选'}
+        title={definitionError ?? providerStatus.unavailableReason ?? `使用 ${providerStatus.label} / ${providerStatus.model}，将调用图片服务；仅新增候选，不替换固定版本`}
+        disabled={referenceAction.busy || providerAction.busy || !providerStatus.connected || Boolean(definitionError)} onClick={() => void generateReference(kind, targetId)}>生成候选</Button>
       <Button density="compact" variant="secondary" icon={<Upload size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => void importReference(kind, targetId)}>{hasVersions ? '导入新版本' : '导入参考图'}</Button>
       <Button density="compact" variant="subtle" icon={<Images size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => { if (document) setLibraryTarget({ kind, id: targetId, projectId: document.id }); }}>从素材库选择</Button>
     </>;
@@ -1094,7 +1351,7 @@ export function MotionComicPage({
   function setFixedReference(target: MotionComicReferenceTarget, versionId: string | null) {
     setReferenceTargetId(`${target.kind}:${target.id}`);
     referenceAction.clearFeedback();
-    mutateDocument((current) => setMotionComicFixedReference(current, target, versionId));
+    mutateDocument((current) => invalidateMotionComicVideosForChangedInputs(current, setMotionComicFixedReference(current, target, versionId)));
   }
 
   function markReferenceFileStatus(versionId: string, status: 'ready' | 'error') {
@@ -1236,6 +1493,7 @@ export function MotionComicPage({
   }
 
   function startCreateNow() {
+    setOverviewOpen(false);
     projectOpenRequestRef.current += 1;
     planRequestRef.current += 1;
     generationRequestsRef.current.clear();
@@ -1251,6 +1509,7 @@ export function MotionComicPage({
     setSelectedSourceEpisodeId('');
     setCreateStep(0);
     setCreateTitle('');
+    setCreateVisualStyle('');
     setCreateSourceFileName('');
     setCreateSourceText('');
     setCreateTargetCharacters('2400');
@@ -1284,6 +1543,7 @@ export function MotionComicPage({
         title: createTitle,
         premise,
         ratio: createRatio,
+        ...(createVisualStyle.trim() ? { visualStyle: createVisualStyle.trim() } : {}),
         source: {
           kind: createSourceKind,
           adaptationMode: createAdaptationMode,
@@ -1309,6 +1569,7 @@ export function MotionComicPage({
     setSelectedSourceEpisodeId(result.value.document.sourceDocument?.episodes[0]?.id ?? '');
     setWorkflowStage('episodes');
     setCreateTitle('');
+    setCreateVisualStyle('');
     setCreateSourceFileName('');
     setCreateSourceText('');
     setCreateTargetCharacters('2400');
@@ -1326,19 +1587,35 @@ export function MotionComicPage({
   }
 
   async function persistProject(nextDocument: MotionComicPipelineData, baseline = nextDocument): Promise<MotionComicPipelineData> {
-    const mutation = await api.saveMotionComic({ id: nextDocument.id, expectedUpdatedAt: nextDocument.updatedAt, document: nextDocument });
-    applyState(mutation);
-    const task = await api.getTaskDetail(nextDocument.id);
-    if (!task) throw new Error('AI 漫剧项目保存后无法重新读取。');
-    const saved = parseMotionComicPipelineData(task.pipelineData);
-    acceptSavedDocument(saved, baseline);
-    return saved;
+    let candidate = nextDocument;
+    let knownSaved = savedDocumentRef.current?.id === candidate.id ? savedDocumentRef.current : null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const mutation = await api.saveMotionComic({ id: candidate.id, expectedUpdatedAt: candidate.updatedAt, document: candidate });
+        applyState(mutation);
+        const task = await api.getTaskDetail(candidate.id);
+        if (!task) throw new Error('AI 漫剧项目保存后无法重新读取。');
+        const saved = parseMotionComicPipelineData(task.pipelineData);
+        acceptSavedDocument(saved, baseline);
+        return saved;
+      } catch (error) {
+        if (!String(error).includes('MOTION_COMIC_STALE_WRITE') || !knownSaved || attempt === 7) throw error;
+        const task = await api.getTaskDetail(candidate.id);
+        if (!task) throw error;
+        const remote = parseMotionComicPipelineData(task.pipelineData);
+        // Rebase this save, preserving its edits and remote candidate additions. Newer typing
+        // stays in documentRef and is reconciled by acceptSavedDocument after the save.
+        candidate = mergeMotionComicSavedDocument(candidate, knownSaved, remote);
+        knownSaved = remote;
+      }
+    }
+    throw new Error('AI 漫剧项目保存冲突，请重试。');
   }
 
   function acceptSavedDocument(saved: MotionComicPipelineData, submitted: MotionComicPipelineData) {
     const live = documentRef.current;
     if (live?.id === submitted.id) {
-      const next = mergeDirectorSavedDocument(live, submitted, saved, savedDocumentRef.current ?? undefined);
+      const next = mergeMotionComicSavedDocument(live, submitted, saved, savedDocumentRef.current ?? undefined);
       savedDocumentRef.current = saved;
       setDocument(next);
       documentRef.current = next;
@@ -1389,7 +1666,7 @@ export function MotionComicPage({
       acceptSavedDocument(saved, submitted);
       if (documentRef.current?.id !== submitted.id) return;
       const episode = saved.episodes.find((episode) => episode.id === saved.activeEpisodeId);
-      setSelectedSourceEpisodeId(episode?.planningEvidence?.sourceEpisodeId ?? '');
+      setSelectedSourceEpisodeId(episode ? motionComicSourceEpisodeIdForEpisode(saved, episode) ?? '' : '');
       setSceneSourcePreviewId('');
       setSelectedShotId(episode?.scenes[0]?.shots[0]?.id ?? '');
       setWorkflowStage('scenes');
@@ -1404,6 +1681,20 @@ export function MotionComicPage({
       acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), submitted);
       return snapshot;
     });
+  }
+
+  async function adoptVideoVersion(episodeId: string, shotId: string, versionId: string): Promise<void> {
+    const current = documentRef.current;
+    if (!current) throw new Error('项目已关闭，请重新打开。');
+    // Validate before reading, then repeat against the latest queued document.
+    adoptMotionComicVideoVersion(current, episodeId, shotId, versionId);
+    const path = current.assets.find(asset => asset.id === versionId)!.localPath!;
+    const mediaUrl = await api.getTaskMediaUrl(current.id, path);
+    if (!mediaUrl) throw new Error('本地视频文件不可读取，未采用该候选。');
+    await enqueueProjectMutation(current.id, latest => {
+      if (latest.assets.find(asset => asset.id === versionId)?.localPath !== path) throw new Error('候选文件已变化，请重新预览后采用。');
+      return adoptMotionComicVideoVersion(latest, episodeId, shotId, versionId);
+    }, false);
   }
 
   async function saveProject() {
@@ -1534,7 +1825,8 @@ export function MotionComicPage({
       let latestAudioUrl: string | undefined;
       let firstError: Error | undefined;
       // Keep cue generation and persistence ordered while holding the remaining capacity.
-      for (const input of inputs) {
+      for (let inputIndex = 0; inputIndex < inputs.length; inputIndex += 1) {
+        const input = inputs[inputIndex];
         if (!documentRef.current || !motionComicDialogueInputMatches(documentRef.current, input)) throw new Error('项目或对白已修改，已停止后续配音。请确认后重新生成。');
         const recordId = `director-comic-voice-${crypto.randomUUID()}`;
         try {
@@ -1560,9 +1852,20 @@ export function MotionComicPage({
             }
           }
           if (firstError) break;
-          const saved = await enqueueProjectMutation(current.id, (latest) => applyMotionComicVoiceRecord(latest, shotId, record, voiceStatus.model, input.cueId, input, measuredDurationMs));
+          let inputChanged = false;
+          await enqueueProjectMutation(current.id, (latest) => {
+            inputChanged = !motionComicDialogueInputMatches(latest, input);
+            // Only advance snapshots that still match before our own timing fit.
+            // Real edits made while the request was running must remain stale.
+            const next = applyMotionComicVoiceRecord(latest, shotId, record, voiceStatus.model, input.cueId, input, measuredDurationMs);
+            if (!inputChanged) {
+              const remaining = refreshMotionComicDialogueInputsAfterTiming(latest, next, inputs.slice(inputIndex + 1));
+              inputs.splice(inputIndex + 1, remaining.length, ...remaining);
+            }
+            return next;
+          });
           reservation.consume({ assets: record.status === 'generated' && record.audioPath ? 1 : 0, providerJobs: 1 });
-          if (!motionComicDialogueInputMatches(saved, input)) throw new Error('对白已修改：生成音频保留在历史中，未绑定到新对白。');
+          if (inputChanged) throw new Error('对白已修改：生成音频保留在历史中，未绑定到新对白。');
           if (record.status === 'generated' && record.audioPath) latestAudioUrl = toLocalAssetUrl(record.audioPath);
           if (record.status !== 'generated') firstError ??= new Error(record.errorMessage || '对白音频生成失败。');
         } else {
@@ -1576,25 +1879,77 @@ export function MotionComicPage({
     });
   }
 
-  async function generateVideo(shotId: string) {
+  function generateVideo(shotId: string, adoption: 'automatic', resumeOnly: true): Promise<void>;
+  function generateVideo(shotId: string, adoption?: 'automatic'): Promise<DirectorVideoResult>;
+  function generateVideo(shotId: string, adoption: 'candidate'): Promise<void>;
+  async function generateVideo(shotId: string, adoption: 'candidate' | 'automatic' = 'candidate', resumeOnly = false): Promise<DirectorVideoResult | void> {
     const projectId = documentRef.current?.id;
     if (!projectId) throw new Error('当前 AI 漫剧项目不存在。');
+    const requestKey = `${projectId}:${shotId}`;
+    if (videoRequestsRef.current.has(requestKey)) throw new Error('该镜头已有视频任务正在执行，请勿重复提交。');
+    videoRequestsRef.current.add(requestKey);
+    const openRequest = projectOpenRequestRef.current;
     const pending = persistQueueRef.current.then(async () => {
       const latest = documentRef.current;
-      if (!latest || latest.id !== projectId) throw new Error('AI 漫剧项目已切换，本次视频生成已取消。');
+      if (!latest || latest.id !== projectId || projectOpenRequestRef.current !== openRequest) throw new Error('AI 漫剧项目已切换，本次视频生成已取消。');
       const sourceShot = latest.episodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots)).find((shot) => shot.id === shotId);
       if (!sourceShot) throw new Error('当前 AI 漫剧镜头不存在。');
       if (sourceShot.renderStrategy !== 'remote-video') throw new Error('当前镜头使用图片运镜，无需调用远程视频服务。');
+      const latestVideoJob = latestProductionProviderJob(latest.providerJobs, shotId, 'image-to-video', sourceShot.episodeId);
+      if (resumeOnly && (!latestVideoJob || !['running', 'failed'].includes(latestVideoJob.status) || !latestVideoJob.remoteTaskId)) {
+        throw new Error('原视频任务已变化或缺少云端任务 ID，不能恢复查询；本次不会重新提交生成。');
+      }
+      const effectiveAdoption = resumeOnly ? latestVideoJob?.videoAdoption ?? 'automatic' : adoption;
+      if (!resumeOnly && adoption === 'candidate' && latest.providerJobs.some(job => job.nodeId === shotId && job.episodeId === sourceShot.episodeId
+        && job.capability === 'image-to-video' && !['completed', 'failed', 'cancelled'].includes(job.status))) {
+        throw new Error('已有视频任务正在执行或结果尚未确认，请先核对任务状态，勿重复提交。');
+      }
       const current = await persistProject(latest);
+      // Saving re-reads the document: a concurrent completion must never turn recovery into a new POST.
+      const persistedVideoJob = latestProductionProviderJob(current.providerJobs, shotId, 'image-to-video', sourceShot.episodeId);
+      if (resumeOnly) assertMotionComicVideoRecovery(persistedVideoJob, latestVideoJob);
+      if (documentRef.current?.id !== projectId || projectOpenRequestRef.current !== openRequest) throw new Error('项目已切换，本次视频生成已取消。');
+      const knownJobs = new Set(current.providerJobs.map(job => job.id));
+      let recordingActive = true;
+      const { completion } = await startRecordedVideoRequest({
+        start: () => resumeOnly
+          ? api.resumeDirectorShotVideo({ id: current.id, shotId, expectedUpdatedAt: current.updatedAt, adoption: effectiveAdoption })
+          : api.generateDirectorShotVideo({ id: current.id, shotId, expectedUpdatedAt: current.updatedAt, adoption: effectiveAdoption }),
+        isRecorded: async () => {
+          if (resumeOnly) return true;
+          const task = await api.getTaskDetail(projectId);
+          if (!task) return false;
+          const saved = parseMotionComicPipelineData(task.pipelineData);
+          const recorded = saved.providerJobs.some(job => !knownJobs.has(job.id) && job.nodeId === shotId && job.capability === 'image-to-video');
+          if (recordingActive && recorded && documentRef.current?.id === projectId && projectOpenRequestRef.current === openRequest) acceptSavedDocument(saved, current);
+          return recorded;
+        },
+      });
+      recordingActive = false;
+      return { current, effectiveAdoption, completion };
+    });
+    persistQueueRef.current = pending.then(() => undefined, () => undefined);
+    try {
+      const { current, effectiveAdoption, completion } = await pending;
+      const refreshResult = () => {
+        const refresh = persistQueueRef.current.then(async () => {
+          const task = await api.getTaskDetail(projectId);
+          if (!task) throw new Error('远程镜头视频已生成，但项目无法重新读取。');
+          const saved = parseMotionComicPipelineData(task.pipelineData);
+          if (documentRef.current?.id === projectId && projectOpenRequestRef.current === openRequest) acceptSavedDocument(saved, current);
+          return saved;
+        });
+        persistQueueRef.current = refresh.then(() => undefined, () => undefined);
+        return refresh;
+      };
       try {
-        const response = await api.generateDirectorShotVideo({ id: current.id, shotId, expectedUpdatedAt: current.updatedAt });
+        const response = await completion;
         applyState(response.mutation);
-        const task = await api.getTaskDetail(projectId);
-        if (!task) throw new Error('远程镜头视频已生成，但项目无法重新读取。');
-        const saved = parseMotionComicPipelineData(task.pipelineData);
-        acceptSavedDocument(saved, current);
+        const saved = await refreshResult();
         const asset = saved.assets.find((candidate) => candidate.id === response.result.videoAssetVersionId && candidate.kind === 'video');
         if (!asset?.localPath) throw new Error('远程视频任务完成，但没有返回可播放的视频资产。');
+        // Candidate generation refreshes history only; never hand its URL to the current preview.
+        if (resumeOnly || effectiveAdoption === 'candidate') return;
         return {
           videoUrl: toLocalAssetUrl(asset.localPath),
           provider: response.result.providerName,
@@ -1603,13 +1958,12 @@ export function MotionComicPage({
           jobId: response.result.videoJobId,
         };
       } catch (error) {
-        const task = await api.getTaskDetail(projectId).catch(() => null);
-        if (task) acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), current);
+        await refreshResult().catch(() => undefined);
         throw error;
       }
-    });
-    persistQueueRef.current = pending.then(() => undefined, () => undefined);
-    return pending;
+    } finally {
+      videoRequestsRef.current.delete(requestKey);
+    }
   }
 
   async function renderProject() {
@@ -1646,6 +2000,8 @@ export function MotionComicPage({
       ]}
       step={createStep}
       title={createTitle}
+      visualStyle={createVisualStyle}
+      onVisualStyleChange={setCreateVisualStyle}
       ratio={createRatio}
       sourceKind={createSourceKind}
       adaptationMode={createAdaptationMode}
@@ -1685,7 +2041,7 @@ export function MotionComicPage({
     /></div>;
   }
 
-  if (!document || !activeEpisode) return <div data-motion-comic-workbench="true"><DirectorProjectRecovery mode="motion-comic" errorMessage={actionError} onNewProject={startCreate} /></div>;
+  if (!document) return <div data-motion-comic-workbench="true"><DirectorProjectRecovery mode="motion-comic" errorMessage={actionError} onNewProject={startCreate} /></div>;
 
   const projectAssetItems = (assetSection === 'characters' ? document.characters.map((item) => ({ id: item.id, label: item.name, detail: `${item.looks.length} 个造型`, search: `${item.name} ${(item.aliases ?? []).join(' ')}` }))
     : assetSection === 'scenes' ? document.sceneAssets.map((item) => ({ id: item.id, label: item.label, detail: item.description, search: item.label }))
@@ -1697,14 +2053,244 @@ export function MotionComicPage({
     busy={referenceAction.busy || projectAction.busy} onOpen={openAssetUsage}
   /> : null;
 
-  const libraryPicker = libraryTarget ? <LibraryPicker api={api} kind="image" title="选择项目参考图" actionLabel="采用并固定新版本" onClose={() => setLibraryTarget(null)} onChoose={async (selection) => {
+  const taskView = buildMotionComicTaskViewModel({ project: document, scriptSnapshot: taskSnapshot.scripts, referenceBatches: taskSnapshot.batches });
+  function navigateTask(target: MotionComicTaskNavigation) {
+    if (scriptDraftGuardRef.current?.() === false) return;
+    setOverviewOpen(false);
+    if (target.kind === 'script') { setSelectedSourceEpisodeId(target.sourceEpisodeId); setWorkflowStage('episodes'); }
+    else if (target.kind === 'episode') { selectEpisode(target.episodeId); setWorkflowStage(target.stage === 'storyboard' ? 'storyboard' : target.stage); }
+    else {
+      setWorkflowStage('assets');
+      if (target.target) {
+        const item = target.target;
+        const section = item.kind === 'look' ? 'characters' : item.kind === 'scene' ? 'scenes' : 'props';
+        const id = item.kind === 'look' ? documentRef.current?.characters.find(character => character.looks.some(look => look.id === item.id))?.id : item.id;
+        setAssetSection(section); setAssetQuery('');
+        if (id) { setSelectedProjectAssets(current => ({ ...current, [section]: id })); setAssetDisplay('detail'); }
+      }
+    }
+    setTasksOpen(false);
+  }
+  const taskDrawer = <MotionComicTaskDrawer open={tasksOpen} onOpenChange={setTasksOpen} items={taskView.items} loading={taskSnapshot.loading} error={taskSnapshot.error} projectTitle={document.title} resolveUrl={path => api.getTaskMediaUrl(document.id, path)} onNavigate={navigateTask} />;
+  const modelLocked = rendering || taskView.items.some(item => ['running', 'queued', 'paused', 'cancelling', 'unknown'].includes(item.status));
+  const taskButton = <Button density="compact" variant="subtle" icon={<Layers3 size={14} />} aria-label={`后台任务${taskView.counts.total ? `，${taskView.counts.total} 条` : ''}`} onClick={() => setTasksOpen(true)}>后台任务{taskView.counts.total ? <span className="comic-task-count">{taskView.counts.total}</span> : null}</Button>;
+  /** Single project header: models + tasks live beside save, not in an extra row. */
+  const headerActions = <><ProjectModelBar inline task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={modelLocked} />{taskButton}{taskDrawer}</>;
+  const projectControls = <div className="comic-project-controls"><ProjectModelBar inline task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={modelLocked} />{taskButton}{taskDrawer}</div>;
+
+  const selectedCharacter = assetSection === 'characters' ? document.characters.find((item) => item.id === selectedProjectAssetId) : undefined;
+  /** One canonical look selection per character; falls back to the first look. */
+  const selectedCharacterLookId = selectedCharacter
+    ? (selectedCharacter.looks.some((look) => look.id === activeLookIds[selectedCharacter.id]) ? activeLookIds[selectedCharacter.id] : selectedCharacter.looks[0]?.id)
+    : undefined;
+  const selectedLook = selectedCharacter?.looks.find((look) => look.id === selectedCharacterLookId);
+  /** Background reference batch state for the focused target, straight from the task snapshot. */
+  const activeReferenceJob = document && referenceTargetId ? referenceJobFor(document, referenceTargetId, taskSnapshot.batches) : null;
+  const removalPlan = assetRemoval ? planMotionComicAssetRemoval(document, assetRemoval.target) : null;
+
+  const assetCreateDialog = assetCreate ? <MotionComicAssetCreateDialog
+    open kind={assetCreate.kind} characterId={assetCreate.characterId}
+    characterName={document.characters.find(item => item.id === assetCreate.characterId)?.name}
+    busy={projectAction.busy || referenceAction.busy}
+    onOpenChange={open => { if (!open) setAssetCreate(null); }}
+    onSubmit={input => {
+      if (documentRef.current?.id !== assetCreate.projectId) throw new Error('项目已切换，请重新打开新增窗口。');
+      if (!input.name.trim()) throw new Error('请填写名称。');
+      if (input.kind === 'character') addCharacterAsset(input);
+      else if (input.kind === 'scene') addSceneAsset(input);
+      else if (input.kind === 'prop') addPropAsset(input);
+      else { if (!assetCreate.characterId) throw new Error('请先选择人物。'); addCharacterLook(assetCreate.characterId, input); }
+    }}
+  /> : null;
+
+  const libraryPicker = libraryTarget ? <LibraryPicker api={api} kind="image" title="选择项目参考图" actionLabel="导入为候选" onClose={() => setLibraryTarget(null)} onChoose={async (selection) => {
     if (documentRef.current?.id !== libraryTarget.projectId) throw new Error('项目已切换，请重新选择参考目标。');
-    await importReference(libraryTarget.kind, libraryTarget.id, selection);
+    if (!selection.imagePath) throw new Error('所选素材没有可用图片，请重新选择。');
+    if (libraryTarget.kind === 'look') await importGenerationReferences(libraryTarget.projectId, libraryTarget.id, [selection.imagePath]);
+    else await importReference(libraryTarget.kind, libraryTarget.id, selection);
   }} /> : null;
 
-  if (workflowStage === 'assets') return <div data-motion-comic-workbench="true"><ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={rendering} />{libraryPicker}<MotionComicProductionWorkspace
+  const assetRemoveDialog = assetRemoval ? <MotionComicAssetRemoveDialog
+    open
+    label={assetRemoval.kind === 'character' ? '人物' : assetRemoval.kind === 'look' ? '造型' : assetRemoval.kind === 'scene' ? '地点' : '道具'}
+    name={assetRemoval.name}
+    impact={assetRemoval.kind === 'character' || assetRemoval.kind === 'look'
+      ? '删除后该造型不再出现在分镜绑定与参考图生成中。'
+      : '删除后该资产不再出现在资产总览与分镜选择中。'}
+    notes={removalPlan?.notes}
+    blockedReason={removalPlan?.blocker?.message}
+    busy={removingAsset}
+    onOpenChange={(open) => { if (!open && !removingAsset) setAssetRemoval(null); }}
+    onConfirm={() => void confirmRemoveAsset()}
+  /> : null;
+
+  if (overviewOpen) return <div className="motion-comic-page">{projectControls}<MotionComicProjectOverview
+    document={document}
+    scriptSnapshot={taskSnapshot.scripts}
+    busy={rendering || projectAction.busy}
+    onBack={() => navigate?.(returnView)}
+    onContinue={() => setOverviewOpen(false)}
+    onOpenAssets={() => { setWorkflowStage('assets'); setOverviewOpen(false); }}
+    onOpenScript={(id) => { if (id) setSelectedSourceEpisodeId(id); setWorkflowStage('episodes'); setOverviewOpen(false); }}
+    onOpenEpisode={(id) => { selectEpisode(id); setWorkflowStage('scenes'); setOverviewOpen(false); }}
+  /></div>;
+
+  const renderFramesFn = (shotId: string, busy: boolean) => {
+    const canonical = activeEpisode?.scenes.flatMap((scene) => scene.shots).find((item) => item.id === shotId);
+    if (!canonical) return null;
+    const frameOptions = motionComicFrameAssets(document)
+      .map((asset, index) => ({ id: asset.id, label: `画面 ${index + 1}`, url: toLocalImageUrl(asset.localPath!) }));
+    const projectId = document.id;
+    const projectRequest = projectOpenRequestRef.current;
+    return <MotionComicFramePanel
+      key={`${projectId}:${projectRequest}:${shotId}`}
+      firstId={canonical.firstFrameAssetVersionId}
+      lastId={canonical.lastFrameAssetVersionId}
+      previousId={motionComicPreviousShotFrameId(document, shotId)}
+      options={frameOptions}
+      busy={busy}
+      onImport={(slot, signal, onPhase) => withHistoryCapacity({ assets: 1 }, () => importMotionComicFrame({
+        api, projectId, shotId, slot, signal, onPhase,
+        readCurrent: () => documentRef.current,
+        isCurrent: () => projectOpenRequestRef.current === projectRequest,
+        applyMutation: applyState,
+        enqueue: enqueueProjectMutation,
+      }))}
+      onSetFirst={(assetId) => mutateDocument((current) => setMotionComicShotFirstFrame(current, shotId, assetId))}
+      onSetLast={(assetId) => mutateDocument((current) => setMotionComicShotLastFrame(current, shotId, assetId))}
+      onUsePrevious={() => mutateDocument((current) => applyMotionComicPreviousFrameAsFirst(current, shotId))}
+    />;
+  };
+  const renderShotWorkflowFn = (shotId: string, busy: boolean, videoRunning: boolean, withFrames = true) => {
+          const shot = shots.find((candidate) => candidate.id === shotId);
+          if (!shot) return null;
+          const status = videoProviderStatuses.get(shotId) ?? selectedVideoProviderStatus;
+          const canonical=activeEpisode?.scenes.flatMap(scene=>scene.shots).find(item=>item.id===shotId);
+          const production=canonical?.videoProduction??{version:1 as const,referenceMode:'frames' as const,audioMode:'post-mix' as const};
+          let submittedReferences: Array<{assetVersionId:string;ownerId:string;kind:string;description:string}> = [];
+          let referenceError:string|undefined;
+          try { if(canonical&&production.referenceMode==='references') submittedReferences=motionComicVideoReferences(document,canonical); } catch(error) {referenceError=error instanceof Error?error.message:String(error);}
+          const selectedProvider=modelConfig.video.providers.find(provider=>provider.id===(status.providerId||modelConfig.video.activeProviderId));
+          let units:ReturnType<typeof planMotionComicProductionUnits>=[],unitError:string|undefined;
+          try {if(canonical&&selectedProvider)units=planMotionComicProductionUnits(document,canonical,selectedProvider);}catch(error){unitError=error instanceof Error?error.message:String(error);}
+          const updateProduction=(patch:Partial<typeof production>)=>mutateDocument(current=>({...current,episodes:current.episodes.map(episode=>({...episode,scenes:episode.scenes.map(scene=>({...scene,shots:scene.shots.map(item=>item.id===shotId?{...item,videoProduction:{...(item.videoProduction ?? {version:1 as const,referenceMode:'frames' as const,audioMode:'post-mix' as const}),...patch}}:item)}))}))}));
+          return <>{withFrames ? renderFramesFn(shotId, busy || videoRunning) : null}<MotionComicVideoReadiness
+            compact={!withFrames}
+            outputRatio={document.ratio}
+            shot={videoRunning ? { ...shot, videoJobStatus: 'running', videoJobError: undefined } : shot}
+            connected={status.connected}
+            providerLabel={status.label}
+            providerModel={status.model}
+            providerId={modelConfig.video.activeProviderId}
+            providerOptions={videoProviderOptions.map((provider) => ({
+              value: provider.providerId,
+              label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`,
+              disabled: !provider.connected,
+            }))}
+            unavailableReason={status.unavailableReason}
+            busy={busy}
+            remoteOnly={Boolean(document.sourceDocument)}
+            providerCapabilities={selectedProvider?.capabilities}
+            keyframeAsReference={Boolean(selectedProvider && /^minimax_h3_(?:768p-15s|1080p-10s|736p-12s)$/i.test(selectedProvider.model))}
+            production={production}
+            submittedReferences={submittedReferences.map((reference) => {
+              const ownerId = reference.ownerId;
+              const kind = reference.kind === 'character' ? 'look' : reference.kind === 'scene' ? 'scene' : reference.kind === 'object' ? 'prop' : undefined;
+              return { ...reference, ...(kind && ownerId ? { token: motionComicReferenceToken(kind, ownerId) } : {}) };
+            })}
+            onInsertReference={(token) => {
+              if (!canonical || busy || videoRunning) return;
+              updateShot(shotId, { motionPrompt: `${canonical.motionPrompt.trimEnd()}${canonical.motionPrompt.trim() ? ' ' : ''}${token} ` });
+            }}
+            referenceError={referenceError}
+            dialogue={canonical ? motionComicVideoDialogue(document,canonical) : []}
+            referenceAudioOptions={document.assets.filter(asset=>asset.kind==='audio'&&asset.localPath&&!asset.assetId.startsWith('character-voice-sample:')).map(asset=>({value:asset.id,label:`${asset.assetId} · ${asset.durationMs?`${(asset.durationMs/1000).toFixed(1)} 秒`:'时长待测'}`}))}
+            units={units}
+            unitError={unitError}
+            onProductionChange={updateProduction}
+            onSplitUnits={canonical&&selectedProvider&&units.some(unit=>units.length>1||unit.generationDurationSec>Math.ceil(canonical.durationMs/1000))?()=>mutateDocument(current=>splitMotionComicProductionUnits(current,shotId,selectedProvider)):undefined}
+            onStrategyChange={(strategy) => updateShot(shotId, { renderStrategy: strategy })}
+            onConfigureProvider={() => openSettings?.('video', 'motion-comic', document.id)}
+            onRecoverSubmission={async (resolution) => {
+              const current = documentRef.current;
+              const job = current && latestProductionProviderJob(current.providerJobs, shotId, 'image-to-video', canonical?.episodeId);
+              if (!current || !job) throw new Error('未找到待核对的视频任务。');
+              const pending = persistQueueRef.current.then(async () => {
+                const latest = documentRef.current;
+                if (!latest || latest.id !== current.id) throw new Error('项目已切换，请重新核对。');
+                const submitted = await persistProject(latest);
+                const response = await api.recoverMotionComicVideoSubmission({ id: submitted.id, shotId, jobId: job.id, expectedUpdatedAt: submitted.updatedAt, ...resolution });
+                if (response.mutation) applyState(response.mutation);
+                acceptSavedDocument(response.document, submitted);
+              });
+              persistQueueRef.current = pending.then(() => undefined, () => undefined);
+              await pending;
+            }}
+            onResumeVideo={() => withHistoryCapacity({ assets: 1 }, () => generateVideo(shotId, 'automatic', true))}
+          /></>;
+  };
+  const renderShotCandidatesFn = (shotId: string, busy: boolean, videoRunning: boolean) => {
+          const shot = shots.find(item => item.id === shotId);
+          const canonical = activeEpisode?.scenes.flatMap(scene => scene.shots).find(item => item.id === shotId);
+          if (!shot || !canonical) return null;
+          const status = videoProviderStatuses.get(shotId) ?? selectedVideoProviderStatus;
+          const selectedProvider = modelConfig.video.providers.find(provider => provider.id === (status.providerId || modelConfig.video.activeProviderId));
+          let inputError: string | undefined;
+          try {
+            if (canonical.videoProduction?.referenceMode === 'references') motionComicVideoReferences(document, canonical);
+            if (selectedProvider) planMotionComicProductionUnits(document, canonical, selectedProvider);
+          } catch (error) { inputError = error instanceof Error ? error.message : String(error); }
+          return <MotionComicVideoVersions
+            key={`${document.id}:${canonical.episodeId}:${canonical.id}`}
+            document={document} shot={canonical} busy={busy || videoRunning}
+            readVideo={path => api.getTaskMediaUrl(document.id, path)}
+            generationDisabledReason={canonical.renderStrategy !== 'remote-video' ? '请先切换为远程视频制作方式。'
+              : !status.connected ? status.unavailableReason || '请先配置并连接视频模型。'
+              : !shot.videoInputReady ? shot.videoInputUnavailableReason || '请先补全视频制作输入。'
+              : inputError}
+            onGenerateCandidate={() => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId, 'candidate'))}
+            onAdopt={versionId => adoptVideoVersion(canonical.episodeId, canonical.id, versionId)}
+          />;
+  };
+
+  const renderCandidateDockFn = (busy: boolean) => {
+    if (!activeEpisode) return null;
+    const canonicalShots = activeEpisode.scenes.flatMap(scene => scene.shots);
+    const dockShots = canonicalShots.map((canonical, index) => ({
+      id: canonical.id,
+      index: index + 1,
+      title: canonical.title,
+      thumbnailUrl: (() => {
+        const frameAsset = canonical.firstFrameAssetVersionId
+          ? document.assets.find(a => a.id === canonical.firstFrameAssetVersionId && a.kind === 'image' && a.localPath)
+          : undefined;
+        return frameAsset?.localPath ? toLocalImageUrl(frameAsset.localPath) : undefined;
+      })(),
+      candidates: motionComicVideoVersions(document, canonical).map(({ asset, current, unavailableReason }, versionIndex, all) => ({
+        id: asset.id,
+        label: `候选 ${all.length - versionIndex}`,
+        meta: `${asset.model || '模型未记录'} · ${asset.durationMs ? `${(asset.durationMs / 1000).toFixed(1)} 秒` : '时长未记录'}`,
+        current,
+        unavailableReason,
+        videoUrl: asset.localPath ? toLocalAssetUrl(asset.localPath) : undefined,
+      })),
+    }));
+    return <MotionComicCandidateDock shots={dockShots} selectedShotId={selectedShotId ?? ''} busy={busy} onSelectShot={setSelectedShotId} onAdopt={(shotId, versionId) => adoptVideoVersion(activeEpisode.id, shotId, versionId)} />;
+  };
+  const dropCandidateOnShot = (shotId: string, dataTransfer: DataTransfer) => {
+    const drag = readCandidateDrag(dataTransfer);
+    if (!drag || !activeEpisode) return;
+    void projectAction.run(async () => {
+      if (drag.shotId !== shotId) throw new Error('候选视频只能放到它所属镜头的视频条上。');
+      await adoptVideoVersion(activeEpisode.id, shotId, drag.versionId);
+    }, { successMessage: '已采用该候选视频，时间线已更新。' });
+  };
+
+  if (workflowStage === 'assets') return <div className="motion-comic-page">{assetCreateDialog}{libraryPicker}{assetRemoveDialog}<div data-motion-comic-workbench="true"><MotionComicProductionWorkspace
+    navigationMemory={workflowNavigationMemory}
     document={document}
     stage="assets"
+    headerActions={headerActions}
     stageState={stageState}
     dirty={dirty}
     busy={projectAction.busy || providerAction.busy || referenceAction.busy}
@@ -1713,16 +2299,16 @@ export function MotionComicPage({
     onStageChange={setWorkflowStage}
     onSave={() => void saveProject()}
     onNewProject={startCreate}
-    onBack={() => navigate?.(returnView)}
+    onBack={backWithinProject}
   ><div data-motion-comic-series-bible="true" className="director-series-page">
     <div className="director-series-layout">
       <Pane as="aside" tone="subtle" className="director-series-summary">
         <nav className="comic-asset-navigation" aria-label="资产分区">
-          {([{ id: 'characters', label: '人物', count: document.characters.length }, { id: 'scenes', label: '地点', count: document.sceneAssets.length }, { id: 'props', label: '道具', count: document.props.length }, { id: 'series', label: '系列设定', count: undefined }] as const).map((item) => <Button key={item.id} variant={assetSection === item.id ? 'secondary' : 'subtle'} aria-label={`查看${item.label}资产`} aria-pressed={assetSection === item.id} onClick={() => { setAssetSection(item.id); setAssetQuery(''); }}>{item.label}<span>{item.count}</span></Button>)}
+          {([{ id: 'characters', label: '人物', count: document.characters.length }, { id: 'scenes', label: '地点', count: document.sceneAssets.length }, { id: 'props', label: '道具', count: document.props.length }, { id: 'series', label: '系列设定', count: undefined }] as const).map((item) => <Button key={item.id} variant={assetSection === item.id ? 'secondary' : 'subtle'} aria-label={`查看${item.label}资产`} aria-pressed={assetSection === item.id} onClick={() => { setAssetSection(item.id); setAssetQuery(''); setAssetDisplay('gallery'); }}>{item.label}<span>{item.count}</span></Button>)}
         </nav>
         {assetSection !== 'series' ? <div className="comic-project-asset-list">
           <TextField label="搜索项目资产" placeholder="名称或人物别名" value={assetQuery} onChange={(_, data) => setAssetQuery(data.value)} />
-          <div aria-label="项目资产列表">{projectAssetItems.map((item) => <Button key={item.id} variant="subtle" aria-pressed={item.id === selectedProjectAssetId} onClick={() => setSelectedProjectAssets((current) => ({ ...current, [assetSection]: item.id }))}><strong>{item.label}</strong><small>{item.detail}</small></Button>)}{!projectAssetItems.length ? <small>没有符合条件的资产</small> : null}</div>
+          <div aria-label="项目资产列表">{projectAssetItems.map((item) => <Button key={item.id} variant="subtle" aria-pressed={item.id === selectedProjectAssetId} onClick={() => { setSelectedProjectAssets((current) => ({ ...current, [assetSection]: item.id })); setAssetDisplay('detail'); }}><strong>{item.label}</strong><small>{item.detail}</small></Button>)}{!projectAssetItems.length ? <small>没有符合条件的资产</small> : null}</div>
         </div> : null}
         <details className="comic-asset-settings"><summary>参考图生成服务</summary><section className="comic-asset-model" aria-label="参考图生成服务">
           <strong>项目生图模型：{providerStatus.label}</strong>
@@ -1731,7 +2317,7 @@ export function MotionComicPage({
           {!providerStatus.connected ? <p role="status">{providerStatus.unavailableReason}</p> : null}
           <Button variant="subtle" density="compact" icon={<Settings2 size={13} />} disabled={referenceAction.busy} onClick={() => openSettings?.('image', 'motion-comic', document.id)}>管理图片模型</Button>
         </section></details>
-        <details className="comic-asset-settings"><summary>第 {activeEpisode.number} 集 · 参考就绪情况</summary>
+        <details className="comic-asset-settings"><summary>{activeEpisode ? `第 ${activeEpisode.number} 集` : '项目'} · 参考就绪情况</summary>
         <div className={`motion-comic-readiness ${consistencySummary?.requiredTargetCount ? displayedConsistencyReady ? 'is-ready' : 'is-warning' : ''}`} role="status">
           {consistencySummary?.requiredTargetCount ? displayedConsistencyReady ? <CheckCircle2 size={16} /> : <CircleAlert size={16} /> : <Images size={16} />}
           <span><strong>{!consistencySummary?.requiredTargetCount ? '本集暂无分镜引用' : displayedConsistencyReady ? '一致性素材已就绪' : '一致性素材待补充'}</strong>{consistencySummary?.requiredTargetCount ? <small>{consistencySummary.readyTargetCount}/{consistencySummary.requiredTargetCount} 个引用目标已固定 · 单镜头最多 {consistencySummary.maxReferencesPerShot} 张</small> : null}</span>
@@ -1739,7 +2325,46 @@ export function MotionComicPage({
         {displayedMissingTargets.length > 0 ? <div className="motion-comic-missing-list"><strong>当前缺少</strong>{displayedMissingTargets.slice(0, 5).map((label) => <span key={label}>{label}</span>)}{displayedMissingTargets.length > 5 ? <small>另有 {displayedMissingTargets.length - 5} 项</small> : null}</div> : null}
         </details>
       </Pane>
-      <main className="director-series-editor">
+      <main className="director-series-editor" data-asset-display={assetSection === 'series' ? 'series' : assetDisplay}>
+        {assetSection !== 'series' && assetDisplay === 'gallery' ? <div className="director-series-section-heading comic-asset-page-heading"><div><h2>项目资产库 · {assetSection === 'characters' ? '人物' : assetSection === 'scenes' ? '地点' : '道具'}<span className="comic-asset-page-count">{assetSection === 'characters' ? document.characters.length : assetSection === 'scenes' ? document.sceneAssets.length : document.props.length}</span></h2><small>跨集共用 · 选择卡片查看定义、参考版本与引用</small></div><Button variant="primary" icon={<Plus size={14} />} onClick={assetSection === 'characters' ? addCharacterAsset : assetSection === 'scenes' ? addSceneAsset : addPropAsset}>新增{assetSection === 'characters' ? '人物' : assetSection === 'scenes' ? '地点' : '道具'}</Button></div> : null}
+        {assetSection !== 'series' && !providerStatus.connected ? <p className="comic-reference-batch__hint comic-asset-provider-note" role="status"><CircleAlert size={13} aria-hidden="true" />参考图生成：{providerStatus.unavailableReason || '请先配置参考图生成服务，再生成候选。'}</p> : null}
+        {assetSection !== 'series' ? <MotionComicReferenceBatch key={`${document.id}:${assetSection}:batch`} api={api} document={document} category={assetSection}
+          disabled={referenceAction.busy || providerAction.busy || !providerStatus.connected}
+          onPrepare={() => withSavedScriptProject(async (saved) => saved)}
+          onSubmit={(saved, targets) => {
+            if (documentRef.current?.id !== saved.id) throw new Error('项目已切换，请重新打开批量生成。');
+            return api.submitMotionComicReferenceBatch({ projectId: saved.id, expectedProjectUpdatedAt: saved.updatedAt, targets,
+              selectionMode: 'selected', concurrency: assetSection === 'characters' ? 3 : 1, composeMultiple: false });
+          }}
+          onControl={(id, action) => api.controlMotionComicReferenceBatch({ id, action })}
+          onRefresh={async () => {
+            const baseline = savedDocumentRef.current;
+            if (!baseline || baseline.id !== document.id) return;
+            const task = await api.getTaskDetail(baseline.id);
+            if (!task) throw new Error('参考图已生成，但项目暂时无法重新读取，请重新打开项目。');
+            if (documentRef.current?.id === baseline.id) acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), baseline);
+          }} /> : null}
+        {assetSection !== 'series' && assetDisplay === 'gallery' ? <MotionComicAssetGallery document={document} category={assetSection} query={assetQuery} onOpen={(id) => { setSelectedProjectAssets((current) => ({ ...current, [assetSection]: id })); setAssetDisplay('detail'); }} onAdd={assetSection === 'characters' ? addCharacterAsset : assetSection === 'scenes' ? addSceneAsset : addPropAsset} /> : null}
+        {assetSection !== 'series' && assetDisplay === 'detail' ? <Toolbar aria-label="资产详情导航">
+          <Button variant="subtle" density="compact" icon={<ArrowLeft size={13} />} onClick={() => setAssetDisplay('gallery')}>返回资产总览</Button>
+          <MotionComicAssetExtraction key={`${document.id}:${assetSection}`} document={document} category={assetSection} api={api} disabled={projectAction.busy}
+            onPrepare={() => withSavedScriptProject(async (saved) => saved)}
+            onPropose={(saved, input) => {
+              if (documentRef.current?.id !== saved.id) throw new Error('项目已切换，请重新确认提取范围。');
+              return api.proposeMotionComicAssetExtraction({ ...input, id: saved.id, expectedUpdatedAt: saved.updatedAt });
+            }}
+            onApply={(saved, input) => {
+              if (documentRef.current?.id !== saved.id) throw new Error('项目已切换，请重新打开候选。');
+              return api.applyMotionComicAssetExtraction({ ...input, id: saved.id, expectedUpdatedAt: saved.updatedAt });
+            }}
+            onRefresh={async () => {
+              const baseline = savedDocumentRef.current;
+              if (!baseline || baseline.id !== document.id) return;
+              const task = await api.getTaskDetail(baseline.id);
+              if (!task) throw new Error('资产已确认，但项目暂时无法重新读取，请重新打开项目。');
+              if (documentRef.current?.id === baseline.id) acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), baseline);
+            }} />
+        </Toolbar> : null}
         <section hidden={assetSection !== 'series'}><div className="director-series-section-heading"><div><h2>系列设定</h2><small>全项目共用</small></div></div><TextField label="系列名称" value={document.title} onChange={(_, data) => mutateDocument((current) => ({ ...current, title: data.value, series: { ...current.series, title: data.value } }))} /><div className="director-copy-field">
   <TextAreaField label="核心设定" value={document.series.premise} onChange={(_, data) => { mutateDocument((current) => ({ ...current, series: { ...current.series, premise: data.value } })); copyAction.clearFeedback(); }} resize="vertical" />
   <DirectorCopyAssist
@@ -1751,45 +2376,90 @@ export function MotionComicPage({
     onRevise={() => void runCopyAssist('revise')}
   />
 </div><div className="director-create-two-col"><TextField label="类型" value={document.series.genre} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, genre: data.value } }))} /><TextField label="基调" value={document.series.tone} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, tone: data.value } }))} /></div><TextField label="目标观众" value={document.series.audience} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, audience: data.value } }))} /><TextAreaField label="世界规则" value={document.series.worldRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, worldRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="视觉规则" value={document.series.visualRules.join('\n')} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, visualRules: data.value.split('\n').map((value) => value.trim()).filter(Boolean) } }))} resize="vertical" /><TextAreaField label="负面提示词" value={document.series.negativePrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, series: { ...current.series, negativePrompt: data.value } }))} resize="vertical" /></section>
-        <section hidden={assetSection !== 'characters'}>
-          <div className="director-series-section-heading"><div><h2>{document.characters.find((item) => item.id === selectedProjectAssetId)?.name ?? '人物'}</h2><small>人物 · 跨集共用</small></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addCharacterAsset}>新增人物</Button></div>
+        <section hidden={assetSection !== 'characters' || assetDisplay !== 'detail'}>
+          <div className="director-series-section-heading comic-asset-detail-heading comic-asset-pane-heading"><div><h2>{document.characters.find((item) => item.id === selectedProjectAssetId)?.name ?? '人物'}</h2><small>人物 · 跨集共用 · {document.characters.find((item) => item.id === selectedProjectAssetId)?.looks.length ?? 0} 个造型</small></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addCharacterAsset}>新增人物</Button></div>
           {document.characters.length === 0 ? <div className="motion-comic-asset-empty"><Users size={20} /><span><strong>当前没有人物</strong><small>空镜或道具特写可以继续制作；需要角色时在这里补录。</small></span></div> : null}
-          {document.characters.filter((character) => character.id === selectedProjectAssetId).map((character) => <div key={character.id} className="director-series-entity">
-            <small className="comic-project-asset-id">身份 ID · {character.id}</small>
-            {assetUsage}
-            <div className="comic-look-heading"><strong>{character.looks.length} 个角色造型</strong><Button variant="secondary" density="compact" icon={<Plus size={13} />} disabled={referenceAction.busy || character.looks.length >= 50} title={character.looks.length >= 50 ? '每个角色最多保留 50 个造型' : undefined} onClick={() => addCharacterLook(character.id)}>新增造型</Button></div>
-            {character.looks.map((look) => {
+          {document.characters.filter((character) => character.id === selectedProjectAssetId).map((character) => <div key={character.id} className="comic-asset-detail-pane">
+            {(() => { const portraitLook = [selectedLook, ...character.looks].find((look) => look && fixedMotionComicReferenceAsset(document, look.referenceAssetVersionIds)); const portrait = portraitLook ? fixedMotionComicReferenceAsset(document, portraitLook.referenceAssetVersionIds) : undefined; return <MotionComicCharacterProfile character={character} onManageReferences={() => { const region = globalThis.document.getElementById(`comic-reference-workspace-${character.id}`); region?.scrollIntoView({ block: 'start', behavior: 'smooth' }); region?.focus({ preventScroll: true }); }} portraitPath={portrait?.localPath} portraitLabel={portraitLook ? `${portraitLook.label} · 已固定` : undefined} fixedLooks={character.looks.filter((look) => fixedMotionComicReferenceAsset(document, look.referenceAssetVersionIds)).length} onChange={(patch: MotionComicCharacterProfilePatch) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, ...patch } : item) }))} />; })()}
+            <div className="comic-character-looks-heading"><strong>造型</strong><small>同一人物的不同服装或状态，每个造型单独固定参考图</small></div>
+            <div className="comic-look-tabs" role="tablist" aria-label="角色造型">
+              {character.looks.map((look) => {
+                const fixed = fixedMotionComicReferenceAsset(document, look.referenceAssetVersionIds);
+                const versions = motionComicReferenceAssets(document, look.referenceAssetVersionIds);
+                const selected = look.id === selectedCharacterLookId;
+                return <Button key={look.id} variant="subtle" className="comic-look-tab" role="tab" id={`comic-look-tab-${character.id}-${look.id}`} aria-selected={selected} aria-pressed={selected} tabIndex={selected ? 0 : -1} onClick={() => setActiveLookIds((current) => ({ ...current, [character.id]: look.id }))} onKeyDown={(event) => {
+                  const index = character.looks.findIndex((candidate) => candidate.id === look.id);
+                  const next = event.key === 'ArrowRight' ? (index + 1) % character.looks.length : event.key === 'ArrowLeft' ? (index - 1 + character.looks.length) % character.looks.length : event.key === 'Home' ? 0 : event.key === 'End' ? character.looks.length - 1 : -1;
+                  if (next < 0) return;
+                  event.preventDefault();
+                  const target = character.looks[next];
+                  setActiveLookIds((current) => ({ ...current, [character.id]: target.id }));
+                  globalThis.document.getElementById(`comic-look-tab-${character.id}-${target.id}`)?.focus();
+                }}>
+                  <span className="comic-look-tab__thumb">{(fixed ?? versions.at(-1))?.localPath ? <img src={toLocalImageUrl((fixed ?? versions.at(-1))!.localPath!)} alt="" loading="lazy" /> : <ImageOff size={14} aria-hidden="true" />}</span>
+                  <span><strong>{look.label || '未命名造型'}</strong><small>{selected ? '✓ 当前造型 · ' : ''}{fixed ? '已固定' : versions.length ? `${versions.length} 个候选待采用` : '缺少参考图'}</small></span>
+                </Button>;
+              })}
+              <Button variant="subtle" className="comic-look-tab is-add" disabled={referenceAction.busy || character.looks.length >= 50} title={character.looks.length >= 50 ? '每个角色最多保留 50 个造型' : '新增造型'} onClick={() => addCharacterLook(character.id)}><Plus size={14} aria-hidden="true" /><span><strong>新增造型</strong><small>沿用同一人物身份</small></span></Button>
+            </div>
+            {(selectedLook ? [selectedLook] : []).map((look) => {
               const target = { kind: 'look' as const, id: look.id };
               const targetKey = `look:${look.id}`;
               const versions = motionComicReferenceAssets(document, look.referenceAssetVersionIds);
               const fixed = fixedMotionComicReferenceAsset(document, look.referenceAssetVersionIds);
-              return <div key={look.id} className="director-series-look comic-asset-detail-layout">
-                <MotionComicReferenceEditor key={targetKey} label={`${character.name} · ${look.label}`} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} importControl={referenceImportControl('look', look.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
+              return <div key={look.id} id={`comic-reference-workspace-${character.id}`} tabIndex={-1} aria-label={`${look.label}参考图工作台`} className="comic-look-panel comic-asset-detail-layout">
+                <div className="comic-look-panel__stage">
+                  <MotionComicReferenceBoard key={targetKey} suggestedRoles={['front', 'side', 'back']} hideImport label={`${character.name} · ${look.label}`} versions={versions} slots={referenceSlots(document, look.referenceAssetVersionIds)} pending={pendingReferenceImports[targetKey] ?? []} importing={referenceImporting(targetKey)} busy={referenceAction.busy} active={referenceTargetId === targetKey} job={referenceTargetId === targetKey ? activeReferenceJob : null} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} maxImages={Math.max(1, providerStatus.maxReferenceImages || 6)} composeMultiple={referenceComposeTargets.has(targetKey)} onImport={() => void importReference('look', look.id)} onComposeChange={(value) => toggleReferenceCompose(targetKey, value)} onSetRole={(versionId, role) => setReferenceRole(target, versionId, role)} onUnpin={(versionId) => setReferenceRoleSilent(target, versionId, 'unpin')} onRemove={(versionId) => removeReferenceVersion(target, versionId)} onDiscard={(versionId) => discardReferenceImport(target, versionId)} onImageStatus={markReferenceFileStatus} />
+                  <div className="comic-reference-composer">
+                    <TextAreaField label="生成提示词" rows={4} resize="vertical" value={look.referencePrompt ?? defaultMotionComicLookReferencePrompt(character, look)} hint="已根据人物身份与右侧造型设定预填，可直接修改；一次生成正面、侧面、背面各一张。" onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, referencePrompt: data.value } : candidate) } : item) }))} />
+                    <Button density="compact" variant="subtle" onClick={() => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, referencePrompt: undefined } : candidate) } : item) }))}>重新填入当前设定</Button>
+                    <MotionComicGenerationReferences key={targetKey} paths={generationReferencePaths(document, look.id)} maxImages={providerStatus.maxReferenceImages} onImport={() => importGenerationReferences(document.id, look.id)} onLibrary={() => setLibraryTarget({ kind: 'look', id: look.id, projectId: document.id })} onRemove={(path) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => ({ ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, generationReferenceImagePaths: generationReferencePaths(current, look.id).filter((entry) => entry !== path) } : candidate) })) }))} />
+                  <div className="comic-look-panel__commands">
+                    <Button density="compact" variant="primary" icon={<Sparkles size={13} />} disabled={referenceGenerationPending(target) || providerAction.busy || !providerStatus.connected || Boolean(referenceGenerationIssue(target))} title={referenceGenerationIssue(target) ?? `使用 ${providerStatus.label} / ${providerStatus.model} 在后台生成三视图`} onClick={() => { setReferenceTargetId(targetKey); void generateReference('look', look.id); }}>{referenceGenerationPending(target) ? '三视图生成中…' : '生成三视图 · 3 张'}</Button>
+                  </div>
+                    {referenceGenerationStatus(target) ? <small role="status">{referenceGenerationStatus(target)}</small> : null}
+                    {referenceTargetId === targetKey ? <AsyncActionFeedback feedback={referenceGenerationAction.feedback} /> : null}
+                    <small className="comic-reference-composer__hint">后台分别生成正面、侧面、背面，可继续切换造型和编辑。核对并固定后用于分镜。</small>
+                  </div>
+                </div>
                 <div className="comic-asset-definition">
                 <TextField label="造型名称" value={look.label} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, label: data.value } : candidate) } : item) }))} />
-                <TextAreaField label="外观与服装" rows={2} value={`${look.appearancePrompt}\n${look.wardrobe}`} onChange={(_, data) => { const [appearancePrompt = '', ...wardrobe] = data.value.split('\n'); mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, appearancePrompt, wardrobe: wardrobe.join('\n') } : candidate) } : item) })); }} resize="vertical" />
-
+                <div className="comic-asset-definition__pair">
+                <TextAreaField label="外观特征" rows={3} value={look.appearancePrompt} hint="描述样貌、发型与辨识特征；换行不会改变字段归属。" onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, appearancePrompt: data.value } : candidate) } : item) }))} resize="vertical" />
+                <TextAreaField label="服装与配饰" rows={3} value={look.wardrobe} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, wardrobe: data.value } : candidate) } : item) }))} resize="vertical" />
                 <TextAreaField label="造型连续性要求" rows={2} value={look.continuityNotes} hint="记录跨镜头必须保持的发型、服装、配饰和辨识特征。" onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, looks: item.looks.map((candidate) => candidate.id === look.id ? { ...candidate, continuityNotes: data.value } : candidate) } : item) }))} />
+                </div>
+                <div className="comic-asset-definition__footer">
+                  <small className="comic-asset-definition__note">删除造型只影响当前项目；仍被镜头引用时会被阻止。</small>
+                  <Button variant="danger" density="compact" icon={<Trash2 size={13} />} disabled={referenceAction.busy || character.looks.length < 2} title={character.looks.length < 2 ? '人物至少保留一个造型' : undefined} onClick={() => openRemove('look', character, look)}>删除此造型</Button>
+                </div>
                 </div>
               </div>;
             })}
-            <details className="comic-character-details"><summary>人物定义与别名</summary>
-            <div className="comic-asset-definition">
-            <div className="director-create-two-col"><TextField label="人物名称" value={character.name} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, name: data.value } : item) }))} /><TextField label="戏剧作用" value={character.role} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, role: data.value } : item) }))} /></div>
-            <TextField label="人物别名" value={(character.aliases ?? []).join('、')} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, aliases: data.value.split(/[、,，\n]/).map((alias) => alias.trim()).filter(Boolean) } : item) }))} />
-            <TextAreaField label="身份提示词" rows={2} value={character.identityPrompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, identityPrompt: data.value } : item) }))} resize="vertical" />
-            </div></details>
-            <details className="comic-character-details"><summary>性格与角色配音</summary>
-            <div className="director-create-two-col"><TextAreaField label="性格与行为" value={character.personality} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, personality: data.value } : item) }))} resize="vertical" /><TextAreaField label="声音说明" value={character.voiceNotes} onChange={(_, data) => mutateDocument((current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, voiceNotes: data.value } : item) }))} resize="vertical" /></div>
+            <section className="comic-character-voice" aria-label="角色配音"><header><strong>角色配音</strong><small>音色和语速只影响之后生成的配音</small></header>
             <div className="director-create-two-col">
               <SelectField label={`${character.name}音色`} value={character.voiceId ?? ''} options={[{ value: '', label: '跟随镜头默认音色' }, ...voiceStatus.voices, ...(character.voiceId && !voiceStatus.voices.some((voice) => voice.value === character.voiceId) ? [{ value: character.voiceId, label: `${character.voiceId} · 已保存音色` }] : [])]} validationMessage={character.voiceProvider && character.voiceProvider !== voiceStatus.provider ? '该角色音色属于另一服务，请重新选择。' : undefined} onChange={(event) => mutateDocument((current) => updateMotionComicCharacterVoice(current, character.id, { voiceProvider: voiceStatus.provider, voiceId: event.target.value || undefined }))} />
               <SelectField label={`${character.name}语速`} value={String(character.voiceSpeed ?? '')} options={[{ value: '', label: '跟随镜头语速' }, { value: '0.8', label: '0.80x' }, { value: '1', label: '1.00x' }, { value: '1.2', label: '1.20x' }]} onChange={(event) => mutateDocument((current) => updateMotionComicCharacterVoice(current, character.id, { voiceProvider: character.voiceProvider ?? voiceStatus.provider, voiceSpeed: event.target.value ? Number(event.target.value) : undefined }))} />
             </div>
-            </details>
+            {assetSection === 'characters' && assetDisplay === 'detail' && selectedProjectAssetId === character.id ? <MotionComicCharacterVoiceSample key={`${document.id}:${character.id}`} characterName={character.name}
+              sample={document.assets.find((asset) => asset.id === character.voiceSampleAssetVersionId && asset.kind === 'audio')}
+              disabled={projectAction.busy}
+              getMediaUrl={(path) => api.getTaskMediaUrl(document.id, path)}
+              onImport={async () => { await withSavedScriptProject(async (saved) => {
+                const mutation = await api.importCharacterVoiceSample({ taskId: saved.id, characterId: character.id, expectedUpdatedAt: saved.updatedAt });
+                if (!mutation) return;
+                applyState(mutation);
+                const task = await api.getTaskDetail(saved.id);
+                if (!task) throw new Error('样本已导入，但项目暂时无法重新读取，请重新打开项目。');
+                acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), saved);
+              }); }}
+              onUnlink={async () => { await enqueueProjectMutation(document.id, (current) => ({ ...current, characters: current.characters.map((item) => item.id === character.id ? { ...item, voiceSampleAssetVersionId: undefined } : item) }), false); }} /> : null}
+            </section>
+            <details className="comic-character-details comic-asset-identity"><summary>身份与跨集引用</summary><small className="comic-project-asset-id">身份 ID · {character.id}</small>{assetUsage}</details>
           </div>)}
         </section>
-        <section hidden={assetSection !== 'scenes'}>
-          <div className="director-series-section-heading"><div><h2>{document.sceneAssets.find((item) => item.id === selectedProjectAssetId)?.label ?? '地点'}</h2><small>地点 · 跨集共用</small></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addSceneAsset}>新增场景</Button></div>
+        <section hidden={assetSection !== 'scenes' || assetDisplay !== 'detail'}>
+          <div className="director-series-section-heading comic-asset-detail-heading"><div><h2>{document.sceneAssets.find((item) => item.id === selectedProjectAssetId)?.label ?? '地点'}</h2><small>地点 · 跨集共用</small></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addSceneAsset}>新增场景</Button></div>
           {document.sceneAssets.length === 0 ? <div className="motion-comic-asset-empty"><ImagePlus size={20} /><span><strong>当前没有场景资产</strong><small>补录场景后可生成或导入固定参考图。</small></span></div> : null}
           {document.sceneAssets.filter((asset) => asset.id === selectedProjectAssetId).map((asset) => {
             const target = { kind: 'scene' as const, id: asset.id };
@@ -1800,18 +2470,31 @@ export function MotionComicPage({
               <small className="comic-project-asset-id">身份 ID · {asset.id}</small>
               {assetUsage}
               <div className="comic-asset-detail-layout">
-              <MotionComicReferenceEditor key={targetKey} label={asset.label} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} importControl={referenceImportControl('scene', asset.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
+              <div className="comic-look-panel__stage">
+                <MotionComicReferenceBoard key={targetKey} label={asset.label} versions={versions} slots={referenceSlots(document, asset.referenceAssetVersionIds)} pending={pendingReferenceImports[targetKey] ?? []} importing={referenceImporting(targetKey)} busy={referenceAction.busy} active={referenceTargetId === targetKey} job={referenceTargetId === targetKey ? activeReferenceJob : null} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} maxImages={Math.max(1, providerStatus.maxReferenceImages || 6)} composeMultiple={referenceComposeTargets.has(targetKey)} onImport={() => void importReference('scene', asset.id)} onComposeChange={(value) => toggleReferenceCompose(targetKey, value)} onSetRole={(versionId, role) => setReferenceRole(target, versionId, role)} onUnpin={(versionId) => setReferenceRoleSilent(target, versionId, 'unpin')} onRemove={(versionId) => removeReferenceVersion(target, versionId)} onDiscard={(versionId) => discardReferenceImport(target, versionId)} onImageStatus={markReferenceFileStatus} />
+                <div className="comic-look-panel__commands">
+                  <Button density="compact" variant="primary" icon={<Sparkles size={13} />} disabled={referenceGenerationPending(target) || providerAction.busy || !providerStatus.connected || Boolean(referenceGenerationIssue(target))} title={referenceGenerationIssue(target) ?? '在后台生成；只追加候选'} onClick={() => { setReferenceTargetId(targetKey); void generateReference('scene', asset.id); }}>{referenceGenerationPending(target) ? '后台生成中…' : '生成参考图'}</Button>
+                  {referenceGenerationStatus(target) ? <small role="status">{referenceGenerationStatus(target)}</small> : null}
+                  {referenceTargetId === targetKey ? <AsyncActionFeedback feedback={referenceGenerationAction.feedback} /> : null}
+                  <Button density="compact" variant="secondary" icon={<Upload size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => { setReferenceTargetId(targetKey); void importReference('scene', asset.id); }}>导入</Button>
+                  <Button density="compact" variant="subtle" icon={<Images size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => setLibraryTarget({ kind: 'scene', id: asset.id, projectId: document.id })}>素材库</Button>
+                </div>
+              </div>
               <div className="comic-asset-definition">
               <TextField label="场景名称" value={asset.label} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, label: data.value } : item) }))} />
               <TextAreaField label="场景说明" value={asset.description} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, description: data.value } : item) }))} resize="vertical" />
               <TextAreaField label="生成提示词" value={asset.prompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, prompt: data.value } : item) }))} resize="vertical" />
               <TextAreaField label="连续性说明" value={asset.continuityNotes} onChange={(_, data) => mutateDocument((current) => ({ ...current, sceneAssets: current.sceneAssets.map((item) => item.id === asset.id ? { ...item, continuityNotes: data.value } : item) }))} resize="vertical" />
+              <div className="comic-asset-definition__footer">
+                <small className="comic-asset-definition__note">仍被分场或分镜引用时不能删除。</small>
+                <Button variant="danger" density="compact" icon={<Trash2 size={13} />} disabled={referenceAction.busy} onClick={() => openRemove('scene', asset)}>删除此地点</Button>
+              </div>
               </div></div>
             </div>;
           })}
         </section>
-        <section hidden={assetSection !== 'props'}>
-          <div className="director-series-section-heading"><div><h2>{document.props.find((item) => item.id === selectedProjectAssetId)?.label ?? '道具'}</h2><small>道具 · 跨集共用</small></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addPropAsset}>新增道具</Button></div>
+        <section hidden={assetSection !== 'props' || assetDisplay !== 'detail'}>
+          <div className="director-series-section-heading comic-asset-detail-heading"><div><h2>{document.props.find((item) => item.id === selectedProjectAssetId)?.label ?? '道具'}</h2><small>道具 · 跨集共用</small></div><Button density="compact" variant="secondary" icon={<Plus size={13} />} onClick={addPropAsset}>新增道具</Button></div>
           {document.props.length === 0 ? <div className="motion-comic-asset-empty"><Plus size={20} /><span><strong>当前没有关键道具</strong><small>没有道具时无需补齐；需要连续性物件时可手动新增。</small></span></div> : null}
           {document.props.filter((asset) => asset.id === selectedProjectAssetId).map((asset) => {
             const target = { kind: 'prop' as const, id: asset.id };
@@ -1822,21 +2505,33 @@ export function MotionComicPage({
               <small className="comic-project-asset-id">身份 ID · {asset.id}</small>
               {assetUsage}
               <div className="comic-asset-detail-layout">
-              <MotionComicReferenceEditor key={targetKey} label={asset.label} versions={versions} fixedVersionId={fixed?.id} busy={referenceAction.busy} active={referenceTargetId === targetKey} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} importControl={referenceImportControl('prop', asset.id, versions.length > 0)} onSetFixed={(versionId) => setFixedReference(target, versionId)} onImageStatus={markReferenceFileStatus} />
+              <div className="comic-look-panel__stage">
+                <MotionComicReferenceBoard key={targetKey} label={asset.label} versions={versions} slots={referenceSlots(document, asset.referenceAssetVersionIds)} pending={pendingReferenceImports[targetKey] ?? []} importing={referenceImporting(targetKey)} busy={referenceAction.busy} active={referenceTargetId === targetKey} job={referenceTargetId === targetKey ? activeReferenceJob : null} feedback={referenceTargetId === targetKey ? referenceAction.feedback : null} generationHint={referenceGenerationIssue(target)} maxImages={Math.max(1, providerStatus.maxReferenceImages || 6)} composeMultiple={referenceComposeTargets.has(targetKey)} onImport={() => void importReference('prop', asset.id)} onComposeChange={(value) => toggleReferenceCompose(targetKey, value)} onSetRole={(versionId, role) => setReferenceRole(target, versionId, role)} onUnpin={(versionId) => setReferenceRoleSilent(target, versionId, 'unpin')} onRemove={(versionId) => removeReferenceVersion(target, versionId)} onDiscard={(versionId) => discardReferenceImport(target, versionId)} onImageStatus={markReferenceFileStatus} />
+                <div className="comic-look-panel__commands">
+                  <Button density="compact" variant="primary" icon={<Sparkles size={13} />} disabled={referenceGenerationPending(target) || providerAction.busy || !providerStatus.connected || Boolean(referenceGenerationIssue(target))} title={referenceGenerationIssue(target) ?? '在后台生成；只追加候选'} onClick={() => { setReferenceTargetId(targetKey); void generateReference('prop', asset.id); }}>{referenceGenerationPending(target) ? '后台生成中…' : '生成参考图'}</Button>
+                  {referenceGenerationStatus(target) ? <small role="status">{referenceGenerationStatus(target)}</small> : null}
+                  {referenceTargetId === targetKey ? <AsyncActionFeedback feedback={referenceGenerationAction.feedback} /> : null}
+                  <Button density="compact" variant="secondary" icon={<Upload size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => { setReferenceTargetId(targetKey); void importReference('prop', asset.id); }}>导入</Button>
+                  <Button density="compact" variant="subtle" icon={<Images size={13} />} disabled={referenceAction.busy || providerAction.busy} onClick={() => setLibraryTarget({ kind: 'prop', id: asset.id, projectId: document.id })}>素材库</Button>
+                </div>
+              </div>
               <div className="comic-asset-definition">
               <TextField label="道具名称" value={asset.label} onChange={(_, data) => mutateDocument((current) => ({ ...current, props: current.props.map((item) => item.id === asset.id ? { ...item, label: data.value } : item) }))} />
               <TextAreaField label="道具说明" value={asset.description} onChange={(_, data) => mutateDocument((current) => ({ ...current, props: current.props.map((item) => item.id === asset.id ? { ...item, description: data.value } : item) }))} resize="vertical" />
               <TextAreaField label="生成提示词" value={asset.prompt} onChange={(_, data) => mutateDocument((current) => ({ ...current, props: current.props.map((item) => item.id === asset.id ? { ...item, prompt: data.value } : item) }))} resize="vertical" />
+              <div className="comic-asset-definition__footer">
+                <small className="comic-asset-definition__note">仍被分镜引用时不能删除。</small>
+                <Button variant="danger" density="compact" icon={<Trash2 size={13} />} disabled={referenceAction.busy} onClick={() => openRemove('prop', asset)}>删除此道具</Button>
+              </div>
               </div></div>
             </div>;
           })}
         </section>
       </main>
     </div>
-  </div></MotionComicProductionWorkspace></div>;
+  </div></MotionComicProductionWorkspace></div></div>;
 
   return <div className="motion-comic-page">
-    <ProjectModelBar task={projectTask} config={state.config} api={api} onUpdated={applyState} disabled={rendering} />
     {libraryPicker}
     <MotionComicPlanDialog
       open={planOpen && !document.sourceDocument}
@@ -1873,25 +2568,28 @@ export function MotionComicPage({
     />
     <div data-motion-comic-workbench="true">
       <MotionComicProductionWorkspace
+        navigationMemory={workflowNavigationMemory}
         document={document}
         stage={workflowStage}
+        headerActions={headerActions}
         stageState={stageState}
         dirty={dirty}
         busy={rendering || projectAction.busy || providerAction.busy || planningAction.busy || planApplyAction.busy}
-        showProjectHeader={!['storyboard', 'video', 'audio', 'export'].includes(workflowStage)}
+        showProjectHeader
+        episodeLabel={activeEpisode ? `EP${String(activeEpisode.number).padStart(2, '0')} · ${activeEpisode.title}` : undefined}
         feedback={actionFeedback}
         errorMessage={actionError}
         onStageChange={(stage) => { if (scriptDraftGuardRef.current?.() !== false) setWorkflowStage(stage); }}
         onSave={() => void saveProject()}
         onNewProject={startCreate}
-        onBack={() => navigate?.(returnView)}
+        onBack={backWithinProject}
       >
         {workflowStage === 'source' ? <MotionComicSourcePanel document={document} onContinue={setWorkflowStage} /> : null}
         {workflowStage === 'episodes' && document.sourceDocument ? <MotionComicScriptWorkspace
           key={document.id}
           api={api}
           document={document}
-          model={state.config.llm.model}
+          model={modelConfig.llm.model}
           selectedSourceEpisodeId={selectedSourceEpisode?.id ?? ''}
           plannedSourceEpisodeIds={plannedSourceEpisodeIds}
           onSelectSourceEpisode={setSelectedSourceEpisodeId}
@@ -1911,18 +2609,74 @@ export function MotionComicPage({
           onSelectGeneratedEpisode={selectEpisode}
           onContinue={setWorkflowStage}
         /> : null}
-        {workflowStage === 'scenes' ? <MotionComicScenesPanel
+        {!activeEpisode && ['scenes', 'storyboard', 'video', 'audio', 'export'].includes(workflowStage) ? <div className="motion-comic-stage-empty" data-motion-comic-empty-episode>
+          <FileText size={22} aria-hidden="true" />
+          <strong>还没有可制作的分集</strong>
+          <span>请先到剧本创建或规划分集，确认结构后继续分场、分镜和生产。</span>
+          <Button variant="primary" onClick={() => setWorkflowStage('episodes')}>去剧本创建或规划分集</Button>
+        </div> : null}
+        {workflowStage === 'scenes' && activeEpisode ? <MotionComicScenesPanel
           document={document}
           activeEpisode={activeEpisode}
           onSelectEpisode={selectEpisode}
+          onBack={backWithinProject}
+          resolveMediaUrl={path => api.getTaskMediaUrl(document.id, path)}
+          onOpenAssets={() => { if (scriptDraftGuardRef.current?.() !== false) setWorkflowStage('assets'); }}
           onAddScene={addScene}
+          onDraftGuardChange={(guard) => { scriptDraftGuardRef.current = guard; }}
           onUpdateScene={updateScene}
+          onUpdateShot={(id, patch) => updateShot(id, { title: patch.title, prompt: patch.prompt, motionPrompt: patch.motionPrompt, framing: patch.framing, durationMs: patch.durationMs, ...('continuity' in patch ? { continuity: patch.continuity } : {}) })}
+          onUpdateCue={(cueId, patch) => mutateDocument(current => {
+            const owner = current.episodes.flatMap(episode => episode.scenes.flatMap(scene => scene.shots)).find(shot => shot.dialogueCueIds.includes(cueId));
+            return owner ? updateDirectorSubtitleCue(current, owner.id, cueId, { text: patch.text }) : current;
+          })}
           onSetActBoundary={setActBoundary}
           onRenameAct={renameAct}
           onPlanEpisode={(sourceEpisodeId) => openPlanDialog(sourceEpisodeId)}
           onContinue={setWorkflowStage}
         /> : null}
-        {['storyboard', 'video', 'audio', 'export'].includes(workflowStage) ? <DirectorDeskWorkspace
+        {workflowStage === 'storyboard' && activeEpisode && missingEpisodeReferenceTargets.length > 0 ? <MotionComicReferenceBatch
+          key={`${document.id}:${activeEpisode.id}:missing-references:${missingEpisodeReferenceTargets.map((target) => `${target.kind}:${target.id}`).sort().join('|')}`}
+          api={api} document={document} category="episode" targetKeys={missingEpisodeReferenceTargets.map((target) => `${target.kind}:${target.id}`)}
+          scopeLabel={`第 ${activeEpisode.number} 集缺失资产`} emptyHint="当前分镜没有可自动补齐的缺失资产；请检查未绑定场景或引用资产定义。"
+          disabled={projectAction.busy || providerAction.busy || !providerStatus.connected}
+          onPrepare={() => withSavedScriptProject(async (saved) => saved)}
+          onSubmit={(saved, targets) => {
+            if (documentRef.current?.id !== saved.id) throw new Error('项目已切换，请重新打开批量生成。');
+            return api.submitMotionComicReferenceBatch({ projectId: saved.id, expectedProjectUpdatedAt: saved.updatedAt, targets,
+              selectionMode: 'selected', concurrency: 3, composeMultiple: false });
+          }}
+          onControl={(id, action) => api.controlMotionComicReferenceBatch({ id, action })}
+          onRefresh={async () => {
+            const baseline = savedDocumentRef.current;
+            if (!baseline || baseline.id !== document.id) return;
+            const task = await api.getTaskDetail(baseline.id);
+            if (!task) throw new Error('参考图已生成，但项目暂时无法重新读取，请重新打开项目。');
+            if (documentRef.current?.id === baseline.id) acceptSavedDocument(parseMotionComicPipelineData(task.pipelineData), baseline);
+          }} /> : null}
+        {activeEpisode && (workflowStage === 'storyboard' || workflowStage === 'video') ? <MotionComicMakeWorkspace
+          key={`${document.id}:${activeEpisode.id}`}
+          episode={activeEpisode}
+          shots={shots}
+          selectedShotId={selectedShotId || shots[0]?.id || ''}
+          busy={rendering || projectAction.busy || providerAction.busy}
+          providerConnected={providerReady}
+          providerUnavailableReason={providerUnavailableReason}
+          onSelectShot={setSelectedShotId}
+          onUpdateShot={updateShot}
+          onUpdateSubtitleCue={(shotId, cueId, text) => mutateDocument(current => invalidateMotionComicShotVideo(updateDirectorSubtitleCue(current, shotId, cueId, { text }), shotId))}
+          onAddShot={addShot}
+          onRemoveShot={removeShot}
+          onMoveShot={moveShot}
+          onGenerateImage={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateShot(shotId))}
+          onGenerateVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
+          renderFrames={(shotId, busy) => renderFramesFn(shotId, busy)}
+          renderWorkflow={(shotId, busy) => renderShotWorkflowFn(shotId, busy, false, false)}
+          renderCandidates={(shotId, busy) => renderShotCandidatesFn(shotId, busy, false)}
+          assets={directorAssets.filter((asset) => asset.category === 'consistency')}
+          onToggleAsset={toggleConsistencyAsset}
+        /> : null}
+        {activeEpisode && ['audio', 'export'].includes(workflowStage) ? <DirectorDeskWorkspace
         mode="motion-comic"
         projectTitle={document.title}
         projectMeta={`${projects.length} 个系列项目`}
@@ -1968,6 +2722,7 @@ export function MotionComicPage({
         videoProviderId={modelConfig.video.activeProviderId}
         videoProviderOptions={videoProviderOptions.map((provider) => ({ value: provider.providerId, label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`, disabled: !provider.connected }))}
         outputUrl={outputAsset?.localPath ? toLocalAssetUrl(outputAsset.localPath) : undefined}
+        onExportOutputVersion={(assetVersionId) => api.exportMotionComicRender({ taskId: document.id, assetVersionId })}
         outputHistory={renderOutputs.history.map((asset) => ({ id: asset.id, url: asset.localPath ? toLocalAssetUrl(asset.localPath) : undefined, createdAt: asset.createdAt, current: asset.id === outputAsset?.id }))}
         qualityReview={qualityReview}
         finalFilmGate={finalFilmGate}
@@ -1983,11 +2738,16 @@ export function MotionComicPage({
         onAddShot={addShot}
         onRemoveShot={removeShot}
         onMoveShot={moveShot}
+        onReorderTimelineShot={reorderTimelineShot}
         onToggleAsset={toggleConsistencyAsset}
         onRestoreVersion={restoreVersion}
         onSelectShot={setSelectedShotId}
         onUpdateShot={updateShot}
         onUpdateSubtitleCue={(shotId, cueId, patch) => mutateDocument((current) => updateDirectorSubtitleCue(current, shotId, cueId, patch))}
+        onBatchApplySubtitleCues={(shotId, cues, mode) => {
+          if (!documentRef.current) throw new Error('项目已关闭，请重新打开后应用字幕。');
+          mutateDocument((current) => setDirectorSubtitleCues(current, shotId, cues, mode));
+        }}
         onAddSubtitleCue={(shotId) => mutateDocument((current) => addDirectorSubtitleCue(current, shotId, crypto.randomUUID()))}
         onRemoveSubtitleCue={(shotId, cueId) => mutateDocument((current) => removeDirectorSubtitleCue(current, shotId, cueId))}
         onAlignSubtitleCue={(shotId, cueId) => mutateDocument((current) => estimateDirectorSubtitleCue(current, shotId, cueId))}
@@ -2003,59 +2763,25 @@ export function MotionComicPage({
         onGenerateVoice={generateVoice}
         onGenerateDialogueVoice={generateVoice}
         onGenerateVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
-        onRetryVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId))}
+        onRetryVideo={(shotId) => withHistoryCapacity(PRODUCTION_MEDIA_HISTORY_DEMAND, () => generateVideo(shotId, 'automatic'))}
+        onResumeVideo={(shotId) => withHistoryCapacity({ assets: 1 }, () => generateVideo(shotId, 'automatic', true))}
 
-        renderShotWorkflow={(shotId, busy, videoRunning) => {
-          const shot = shots.find((candidate) => candidate.id === shotId);
-          if (!shot) return null;
-          const status = videoProviderStatuses.get(shotId) ?? selectedVideoProviderStatus;
-          const canonical=activeEpisode?.scenes.flatMap(scene=>scene.shots).find(item=>item.id===shotId);
-          const production=canonical?.videoProduction??{version:1 as const,referenceMode:'frames' as const,audioMode:'post-mix' as const};
-          let submittedReferences: Array<{assetVersionId:string;kind:string;description:string}> = [];
-          let referenceError:string|undefined;
-          try { if(canonical&&production.referenceMode==='references') submittedReferences=motionComicVideoReferences(document,canonical); } catch(error) {referenceError=error instanceof Error?error.message:String(error);}
-          const selectedProvider=modelConfig.video.providers.find(provider=>provider.id===(status.providerId||modelConfig.video.activeProviderId));
-          let units:ReturnType<typeof planMotionComicProductionUnits>=[],unitError:string|undefined;
-          try {if(canonical&&selectedProvider)units=planMotionComicProductionUnits(document,canonical,selectedProvider);}catch(error){unitError=error instanceof Error?error.message:String(error);}
-          const updateProduction=(patch:Partial<typeof production>)=>mutateDocument(current=>({...current,episodes:current.episodes.map(episode=>({...episode,scenes:episode.scenes.map(scene=>({...scene,shots:scene.shots.map(item=>item.id===shotId?{...item,videoProduction:{...production,...patch}}:item)}))}))}));
-          return <MotionComicVideoReadiness
-            shot={videoRunning ? { ...shot, videoJobStatus: 'running', videoJobError: undefined } : shot}
-            connected={status.connected}
-            providerLabel={status.label}
-            providerModel={status.model}
-            providerId={modelConfig.video.activeProviderId}
-            providerOptions={videoProviderOptions.map((provider) => ({
-              value: provider.providerId,
-              label: `${provider.label} · ${provider.model}${provider.connected ? '' : ` · ${provider.unavailableReason ?? '未连接'}`}`,
-              disabled: !provider.connected,
-            }))}
-            unavailableReason={status.unavailableReason}
-            busy={busy}
-            remoteOnly={Boolean(document.sourceDocument)}
-            providerCapabilities={selectedProvider?.capabilities}
-            keyframeAsReference={Boolean(selectedProvider && /^minimax_h3_(?:768p-15s|1080p-10s|736p-12s)$/i.test(selectedProvider.model))}
-            production={production}
-            submittedReferences={submittedReferences}
-            referenceError={referenceError}
-            dialogue={canonical ? motionComicVideoDialogue(document,canonical) : []}
-            referenceAudioOptions={document.assets.filter(asset=>asset.kind==='audio'&&asset.localPath).map(asset=>({value:asset.id,label:`${asset.assetId} · ${asset.durationMs?`${(asset.durationMs/1000).toFixed(1)} 秒`:'时长待测'}`}))}
-            units={units}
-            unitError={unitError}
-            onProductionChange={updateProduction}
-            onSplitUnits={canonical&&selectedProvider&&units.some(unit=>units.length>1||unit.generationDurationSec>Math.ceil(canonical.durationMs/1000))?()=>mutateDocument(current=>splitMotionComicProductionUnits(current,shotId,selectedProvider)):undefined}
-            onStrategyChange={(strategy) => updateShot(shotId, { renderStrategy: strategy })}
-            onConfigureProvider={() => openSettings?.('video', 'motion-comic', document.id)}
-          />;
-        }}
+        renderShotWorkflow={renderShotWorkflowFn}
+        renderShotCandidates={renderShotCandidatesFn}
+        renderCandidateDock={renderCandidateDockFn}
+        onDropCandidate={dropCandidateOnShot}
+        acceptsCandidateDrop={(dataTransfer) => Array.from(dataTransfer.types).includes(MOTION_COMIC_VIDEO_CANDIDATE_MIME)}
         onRender={() => withHistoryCapacity(PRODUCTION_RENDER_HISTORY_DEMAND, renderProject)}
         onCancelRender={() => api.cancelDirectorRender(document.id)}
         onOpenOutput={() => api.openTaskOutputDirectory(document.id)}
         onOpenSettings={() => setWorkflowStage('assets')}
         onConfigureProvider={() => openSettings?.('image', 'motion-comic', document.id)}
         onConfigureVideoProvider={() => openSettings?.('video', 'motion-comic', document.id)}
-        backToTasksLabel={navigationReturnLabel(returnView)}
-        onBackToTasks={() => navigate?.(returnView)}
+        backToTasksLabel={motionComicBackTarget(workflowStage).label}
+        onBackToTasks={backWithinProject}
         onStageChange={(stage) => {
+          if (stage === '分镜图') setWorkflowStage('storyboard');
+          if (stage === '视频生成') setWorkflowStage('video');
           if (stage === '配音字幕') setWorkflowStage('audio');
           if (stage === '导出' || stage === '审片') setWorkflowStage('export');
         }}
@@ -2066,49 +2792,42 @@ export function MotionComicPage({
   </div>;
 }
 
-function suggestMotionComicWorkflowStage(document: MotionComicPipelineData): MotionComicWorkflowStage {
-  const generatedEpisodes = document.episodes.filter((episode) => episode.scenes.length > 0);
-  const plannedSourceCount = document.sourceDocument ? plannedMotionComicSourceEpisodeIds(document).size : generatedEpisodes.length;
-  if (document.sourceDocument && plannedSourceCount < document.sourceDocument.episodes.length) return 'episodes';
-  if (generatedEpisodes.length === 0) return document.sourceDocument ? 'episodes' : 'source';
-  if (generatedEpisodes.some((episode) => {
-    const acts = episode.scenes.map((scene, index) => resolveMotionComicSceneAct(scene, index, episode.scenes.length));
-    return acts.some((act, index) => index === 0
-      ? act.actIndex !== 1
-      : act.actIndex !== acts[index - 1].actIndex && act.actIndex !== acts[index - 1].actIndex + 1);
-  })) return 'scenes';
-  if (!motionComicConsistencyReady(document)) return 'assets';
-  const shots = generatedEpisodes.flatMap((episode) => episode.scenes.flatMap((scene) => scene.shots));
-  if (shots.some((shot) => !shot.firstFrameAssetVersionId)) return 'storyboard';
-  if (shots.some((shot) => shot.renderStrategy === 'remote-video' && !shot.videoAssetVersionId)) return 'video';
-  const cues = generatedEpisodes.flatMap((episode) => episode.dialogueCues);
-  if (cues.some((cue) => !cue.voiceAssetVersionId && !cue.audioAssetVersionId)) return 'audio';
-  return 'export';
+export function assertMotionComicVideoRecovery(
+  current: MotionComicPipelineData['providerJobs'][number] | undefined,
+  original: MotionComicPipelineData['providerJobs'][number] | undefined,
+): void {
+  if (!current || !['running', 'failed'].includes(current.status) || current.id !== original?.id
+    || !current.remoteTaskId || current.remoteTaskId !== original.remoteTaskId) {
+    throw new Error('原视频任务在保存期间已变化，已停止恢复查询；本次不会重新提交生成。');
+  }
 }
 
 function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, shot: MotionComicShot, document: MotionComicPipelineData | null, videoProviderStatus?: DirectorVideoProviderStatus): DirectorShot {
-  const subtitle = shot.dialogueCueIds.map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text).filter(Boolean).join(' ');
-  const characterLabel = shot.characterLookIds.map((lookId) => document?.characters.flatMap((character) => character.looks).find((look) => look.id === lookId)?.label).filter(Boolean).join('、') || '角色待绑定';
+  const subtitle = shot.dialogueCueIds.map((cueId) => episode.dialogueCues.find((cue) => cue.id === cueId)?.text).filter((text): text is string => text !== undefined).join('\n');
+  const characterLabel = [...new Set(shot.characterLookIds.map((lookId) => document?.characters.find((character) => character.looks.some((look) => look.id === lookId))?.name).filter(Boolean))].join('、') || '未关联人物';
   const asset = shot.firstFrameAssetVersionId ? document?.assets.find((candidate) => candidate.id === shot.firstFrameAssetVersionId) : undefined;
   const cueVoiceIds = shot.dialogueCueIds.map((id) => episode.dialogueCues.find((cue) => cue.id === id)?.voiceAssetVersionId).filter((id): id is string => Boolean(id));
   const voiceAsset = document?.assets.find((candidate) => candidate.id === (cueVoiceIds[0] ?? shot.voiceAssetVersionId));
   const videoAsset = shot.videoAssetVersionId ? document?.assets.find((candidate) => candidate.id === shot.videoAssetVersionId && candidate.kind === 'video') : undefined;
-  const nativeAudio=shot.videoProduction?.audioMode==='native'||shot.videoProduction?.audioMode==='audio-driven';
-  const authoredAudioClips: DirectorPreviewAudioClip[] = (productionAudioClipsForShot(episode.timeline, shot) ?? [])
-    .filter(clip=>!nativeAudio||!['dialogue','narration'].includes(clip.trackType))
-    .flatMap((clip) => {
-      const asset = document?.assets.find((candidate) => candidate.id === clip.assetVersionId && candidate.kind === 'audio');
-      return asset?.localPath ? [{ id: clip.id, url: toLocalAssetUrl(asset.localPath), startMs: clip.startMs, durationMs: clip.durationMs ?? clip.sourceDurationMs ?? shot.durationMs, sourceStartMs: clip.sourceStartMs, sourceDurationMs: clip.sourceDurationMs, gainDb: clip.gainDb, fadeInMs: clip.fadeInMs, fadeOutMs: clip.fadeOutMs, muted: clip.muted }] : [];
-    });
-  const audioClips: DirectorPreviewAudioClip[] = [...(nativeAudio&&videoAsset?.localPath?[{id:`native-${shot.id}`,url:toLocalAssetUrl(videoAsset.localPath),startMs:episode.timeline.clips.find(c=>c.shotId===shot.id)?.startMs??0,durationMs:shot.durationMs}]:[]),...authoredAudioClips];
+  const nativeAudio = motionComicShotUsesNativeAudio(shot);
+  const audioClips = motionComicPreviewAudioClips(episode, shot, document);
   const job = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'text-to-image') : undefined;
   const voiceJob = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'text-to-speech') : undefined;
   const selectedVideoJob = shot.videoJobId
     ? document?.providerJobs.find((candidate) => candidate.id === shot.videoJobId && candidate.nodeId === shot.id && candidate.capability === 'image-to-video')
     : undefined;
   const latestVideoJob = document ? latestProductionProviderJob(document.providerJobs, shot.id, 'image-to-video', episode.id) : undefined;
-  const videoJob = latestVideoJob?.status === 'running' ? latestVideoJob : selectedVideoJob;
+  const videoJob = latestVideoJob && ['running', 'failed', 'cancelled'].includes(latestVideoJob.status) ? latestVideoJob : selectedVideoJob;
   const firstFrameReady = Boolean(asset?.localPath && asset.kind === 'image');
+  let videoInputReady = false;
+  let videoInputUnavailableReason: string | undefined;
+  try {
+    if (!document) throw new Error('请先打开项目。');
+    buildMotionComicShotVideoRequest(document, shot);
+    videoInputReady = true;
+  } catch (error) {
+    videoInputUnavailableReason = error instanceof Error ? error.message : '视频输入尚未就绪。';
+  }
   const videoReady = Boolean(videoAsset?.localPath && videoJob?.status === 'completed' && videoAsset.providerJobId === videoJob.id);
   const remoteVideo = shot.renderStrategy === 'remote-video';
   const activeJob = remoteVideo ? videoJob : job;
@@ -2138,6 +2857,10 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     soundClips: document ? directorSoundClips(document, shot.id) : [],
     voiceGenerationCount: document ? motionComicDialogueCuesToGenerate(document, shot.id).length : 0,
     imageReady: firstFrameReady,
+    videoInputReady,
+    videoFirstFrameReady: firstFrameReady,
+    videoUrl: videoReady && videoAsset?.localPath ? toLocalAssetUrl(videoAsset.localPath) : undefined,
+    videoJobStatus: videoJob?.status,
     voiceReady: nativeAudio ? videoReady : shot.dialogueCueIds.length === 0 || shot.dialogueCueIds.every((id) => {
       const cue = episode.dialogueCues.find((item) => item.id === id);
       return document?.assets.some((asset) => asset.id === (cue?.voiceAssetVersionId ?? shot.voiceAssetVersionId) && asset.kind === 'audio' && asset.localPath);
@@ -2150,15 +2873,13 @@ function directorShotFromComic(episode: MotionComicEpisode, sceneTitle: string, 
     seed: shot.seed,
     seedLocked: shot.seedLocked,
     renderStrategy: remoteVideo ? 'living-poster' : 'deterministic-layers',
-    videoInputReady: firstFrameReady,
-    videoFirstFrameReady: firstFrameReady,
     videoLastFrameReady: Boolean(shot.lastFrameAssetVersionId && document?.assets.some((candidate) => candidate.id === shot.lastFrameAssetVersionId && candidate.kind === 'image' && candidate.localPath)),
     videoRequiresLastFrame: false,
-    videoInputUnavailableReason: firstFrameReady ? undefined : '请先生成或选择一张可读取的关键帧图片。',
-    videoUrl: videoAsset?.localPath ? toLocalAssetUrl(videoAsset.localPath) : undefined,
+    videoInputUnavailableReason,
     videoJobId: shot.videoJobId,
     continuityAdvice: continuity ? { level: continuity.level, score: continuity.score } : undefined,
-    videoJobStatus: videoJob?.status ?? 'idle',
+    videoRecovery: videoJob?.remoteTaskId && ['running', 'failed'].includes(videoJob.status) ? 'resume' : videoJob?.status === 'running' ? 'unknown' : undefined,
+    videoHasAttempt: Boolean(latestVideoJob),
     videoJobError: videoJob?.error,
     videoEstimatedCost: videoJob && (videoJob.status === 'completed' || videoJob.status === 'running' || videoJob.providerId === videoProviderStatus?.providerId)
       ? videoJob.actualCost ?? videoJob.estimatedCost

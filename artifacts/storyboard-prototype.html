@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StoryDream 漫剧分镜编辑器原型</title>
+    <style>
+        :root {
+            --shell-bg: #101214;
+            --shell-surface: #15181b;
+            --shell-surface-raised: #1b1f23;
+            --shell-border: #343a40;
+            --shell-text: #f4f6f8;
+            --shell-muted: #b1b8be;
+            --shell-accent: #f2614b;
+            --panel: var(--shell-surface);
+            --panel-2: var(--shell-surface-raised);
+            --panel-3: #24292e;
+            --line: var(--shell-border);
+            --sd-radius: 6px;
+        }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--shell-bg); color: var(--shell-text); height: 100vh; display: flex; flex-direction: column; }
+        
+        /* 顶部栏 */
+        header { height: 44px; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 24px; font-weight: 600; justify-content: space-between; }
+        
+        /* 中间区域 */
+        .main-work { display: flex; flex: 1; overflow: hidden; }
+        .workspace { flex: 1; padding: 24px; display: flex; align-items: center; justify-content: center; }
+        .canvas-box { width: 80%; height: 80%; border: 2px dashed var(--line); border-radius: var(--sd-radius); display: flex; align-items: center; justify-content: center; color: var(--shell-muted); }
+        .inspector { width: 300px; border-left: 1px solid var(--line); padding: 16px; background: var(--panel); }
+        
+        /* 底部栏 */
+        .timeline { height: 160px; background: var(--panel-2); border-top: 1px solid var(--line); padding: 12px 24px; display: flex; align-items: center; gap: 12px; }
+        .card { width: 120px; height: 100%; background: var(--panel-3); border: 1px solid var(--line); border-radius: var(--sd-radius); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        
+        button { background: var(--shell-accent); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>漫剧分镜工作区</div>
+        <button>一键全部生成</button>
+    </header>
+    <div class="main-work">
+        <div class="workspace">
+            <div class="canvas-box">画布区域 - 分镜画面预览</div>
+        </div>
+        <div class="inspector">
+            <h3>分镜属性</h3>
+            <p style="color: var(--shell-muted);">请在时间轴选中画面以配置</p>
+        </div>
+    </div>
+    <div class="timeline">
+        <div class="card">分镜 1</div>
+        <div class="card">分镜 2</div>
+        <div class="card">分镜 3</div>
+        <button style="background: var(--shell-border);">+ 添加</button>
+    </div>
+</body>
+</html>

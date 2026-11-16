@@ -69,7 +69,7 @@ describe('motion comic workbench', () => {
     expect(page).toContain('api.saveMotionComic');
     expect(page).toContain('api.generateImageLab');
     expect(page).toContain('async function importReference');
-    expect(page).toContain('api.selectLocalImage()');
+    expect(page).toContain('api.selectLocalReferenceImages()');
     expect(page).toContain('api.addImageLabRecord({');
     expect(page).toContain('<ProjectModelBar');
     expect(page).toContain('useProjectModelConfig');
@@ -96,8 +96,10 @@ describe('motion comic workbench', () => {
     expect(page).toContain('onRatioChange={updateRatio}');
     expect(page).toContain("projectAction.feedback?.tone === 'error'");
     expect(page).toContain("providerAction.feedback?.tone === 'error'");
-    expect(page).toContain('系列圣经');
-    expect(page).toContain('个角色造型');
+    // Imports land as candidates; adoption into the series reference is a separate reviewed step.
+    expect(page).toContain('setFixed: false');
+    expect(page).toContain('参考图已导入。请为每张图选择用途');
+    expect(page).toContain('个造型');
     expect(page).not.toContain('onGenerateShot={() => undefined}');
     expect(page).toContain('onSave={() => void saveProject()}');
     // Render the AI 漫剧 desk: labelled save, per-shot generation, shot list, preview copy and scrubber,
@@ -176,7 +178,7 @@ describe('motion comic workbench', () => {
     // An unfixed version can only be fixed after its file has been verified readable; a version without a file reports it.
     const unfixed = referenceMarkup([version('v1', 'I:/refs/v1.png'), version('v2')]);
     expect(unfixed).toContain('data-motion-comic-reference="unfixed"');
-    const fixButton = markupButtons(unfixed).find((button) => markupText(button) === '固定此版本');
+    const fixButton = markupButtons(unfixed).find((button) => markupText(button) === '采用并固定此版本');
     expect(fixButton).toBeDefined();
     expect(/\sdisabled=""/u.test(openingTag(fixButton ?? ''))).toBe(true);
     expect(markupText(unfixed)).toContain('文件不可用');
@@ -184,9 +186,11 @@ describe('motion comic workbench', () => {
     const fixed = referenceMarkup([version('v1', 'I:/refs/v1.png'), version('v2', 'I:/refs/v2.png')], 'v1');
     expect(fixed).toContain('data-motion-comic-reference="fixed"');
     expect(markupButtons(fixed).some((button) => openingTag(button).includes('aria-label="取消固定参考版本"'))).toBe(true);
-    expect(markupButtons(fixed).some((button) => markupText(button) === '固定此版本')).toBe(false);
+    expect(markupButtons(fixed).some((button) => markupText(button) === '采用并固定此版本')).toBe(false);
     // Click handlers cannot be fired through server markup.
-    expect(reference).toContain('onSetFixed(preview.id)');
+    // Adoption goes through the review dialog and only fixes the reviewed version.
+    expect(reference).toContain('onSetFixed(adoptionVersion.id)');
+    expect(reference).toContain('确认采用并固定');
     expect(reference).toContain('onSetFixed(null)');
     expect(page).toContain('imageLabRecordIdFromMutation(imported)');
     expect(page).toContain('setDirty(true)');
@@ -198,7 +202,7 @@ describe('motion comic workbench', () => {
     expect(page).toContain('await api.readAssetDataUrl(path)');
     expect(page).not.toContain("smartMode: referenceImagePaths.length ? 'reference-edit' : 'video-narration'");
     expect(consistency).toContain('REFERENCE IMAGE ORDER:');
-    expect(consistency).toContain('selected === true && asset.pinned === true');
+    expect(consistency).toContain("referenceRole ?? 'design'");
     expect(css).toContain('.motion-comic-reference-versions');
     expect(css).toContain('.motion-comic-readiness');
   });

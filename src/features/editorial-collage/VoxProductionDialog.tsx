@@ -5,6 +5,8 @@ import { voxProductionInputErrors, voxProductionSettings, voxProductionSettingsS
 import type { EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { CreativeProductionFields } from './CreativeProductionFields';
 import { ProjectMusicFields } from './ProjectMusicFields';
+import { CodeVideoDurationStatus, CodeVideoPolicyFields } from './CodeVideoPolicyFields';
+import { newCodeVideoPolicy } from '../../shared/creative-animation/production-policy';
 import type { AppConfig, BgmItem } from '../../shared/types';
 import type { StoryDreamApi } from '../../shared/storydream-api';
 
@@ -20,9 +22,15 @@ export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, 
   /** L-4: project runtime config, only for the cost-budget pricing warning. */
   costConfig?: AppConfig;
 }) {
-  const [settings, setSettings] = useState(document.productionSettings ?? { ...voxProductionSettings(), authoring: { mode: 'ai-code' as const, styleId: 'auto' } });
+  const [settings, setSettings] = useState(document.productionSettings ?? { ...voxProductionSettings(), codeVideo: newCodeVideoPolicy(), authoring: { mode: 'ai-code' as const, styleId: 'auto' } });
+  const [policyValid, setPolicyValid] = useState(true);
   const parsed = voxProductionSettingsSchema.safeParse(settings);
-  const error = parsed.success ? voxProductionInputErrors(document, parsed.data).join(' ') : '请补齐名称、数值、来源和许可；坐标必须在有效范围内。';
+  const run = document.productionRun;
+  const actualDurationSeconds = run && document.piFilm?.runId === run.id ? document.piFilm.actualDurationSeconds
+    : run && document.upstreamFilm?.runId === run.id ? document.upstreamFilm.review?.durationSeconds : undefined;
+  const errors = parsed.success ? voxProductionInputErrors(document, parsed.data) : ['请补齐名称、数值、来源和许可；坐标必须在有效范围内。'];
+  const needsSourcePreparation = settings.authoring?.mode === 'ai-code' && errors.some(error => /^CODE_VIDEO_(SOURCE_OVER_TARGET|AUDIO_OVER_TARGET):/u.test(error));
+  const error = errors.filter(error => !needsSourcePreparation || !/^CODE_VIDEO_(SOURCE_OVER_TARGET|AUDIO_OVER_TARGET):/u.test(error)).join(' ');
   const nativeAuthoring = settings.authoring?.mode === 'ai-code';
   const shots = document.beats.flatMap(beat => beat.shots);
   const manualCode = shots.filter(shot => shot.animation && (shot.animation.mode === 'code' || shot.animation.code.source.trim()) && !shot.animation.authoring);
@@ -30,11 +38,17 @@ export function VoxProductionDialog({ document, busy, onClose, onStart, onSave, 
   const applyUnavailable = document.productionRun?.status === 'running' ? '请先暂停自动制作，再应用镜头风格。' : document.productionRun?.nodes.some(node => node.status === 'unknown') ? '请先在制作进度中核对待确认的云端结果，再应用风格。' : localError;
   return <Dialog open title="自动制作设置" onOpenChange={open => { if (!open && !busy) onClose(); }} actions={<>
     <Button disabled={busy} onClick={onClose}>取消</Button>
-    <Button disabled={busy || !parsed.success} onClick={() => parsed.success && void onSave(parsed.data)}>保存设置</Button>
-    {!nativeAuthoring && <Button disabled={busy || !parsed.success || Boolean(applyUnavailable)} onClick={() => parsed.success && void onApply(parsed.data)}>应用风格到现有镜头</Button>}
-    <Button variant="primary" disabled={busy || !parsed.success || Boolean(error)} onClick={() => parsed.success && void onStart(parsed.data)}>{busy ? '准备中…' : nativeAuthoring ? '按此风格创作全片' : '开始自动制作'}</Button>
+    <Button disabled={busy || !policyValid || !parsed.success} onClick={() => parsed.success && void onSave(parsed.data)}>保存设置</Button>
+    {!nativeAuthoring && <Button disabled={busy || !policyValid || !parsed.success || Boolean(applyUnavailable)} onClick={() => parsed.success && void onApply(parsed.data)}>应用风格到现有镜头</Button>}
+    <Button variant="primary" disabled={busy || !policyValid || !parsed.success || Boolean(error)} onClick={() => parsed.success && void onStart(parsed.data)}>{busy ? '准备中…' : needsSourcePreparation ? '准备长文案并审核' : nativeAuthoring ? '按此风格创作全片' : '开始自动制作'}</Button>
   </>}>
     <div className="director-batch-dialog vox-production-form">
+      {nativeAuthoring ? <>
+        <CodeVideoPolicyFields value={settings.codeVideo} busy={busy} authoringVersion={run?.authoringVersion} piMaxRequests={settings.piMaxRequests}
+          onPiMaxRequestsChange={piMaxRequests => setSettings(current => ({ ...current, piMaxRequests }))}
+          onValidityChange={setPolicyValid} onChange={codeVideo => setSettings(current => ({ ...current, codeVideo }))} />
+        {run ? <CodeVideoDurationStatus policy={run.settings.codeVideo} actualDurationSeconds={actualDurationSeconds} /> : null}
+      </> : null}
       <CreativeProductionFields settings={settings} onChange={setSettings} onOpenUrl={onOpenUrl} document={document} busy={busy} onImportAsset={onImportAsset} costConfig={costConfig} />
       <p className="vox-hint">{nativeAuthoring ? '保存设置只记录下一次制作的选择。点击“按此风格创作全片”，将用完整文案和所选风格重新编排画面、文字、材质与运动。已锁定镜头和手动代码会保留。' : '保存设置只记录下一次制作的选择。应用风格会更新现有镜头的构图、标题和运动，保留图片原材质；完整更新素材请开始自动制作。已锁定镜头和手动代码会保留。'}</p>
       {!nativeAuthoring && applyUnavailable && applyUnavailable !== error ? <p className="vox-hint" role="status">{applyUnavailable}</p> : null}

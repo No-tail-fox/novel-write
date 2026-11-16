@@ -73,7 +73,9 @@ export function buildMotionComicConsistencyPrompt(
     .join(' | ');
   return [
     shot.prompt,
-    `Layout: ${shot.layoutTemplate ?? '漫画分格 · 角色优先'}. Motion reference: ${shot.motionPreset ?? '轻微视差'}.`,
+    shot.renderStrategy === 'remote-video'
+      ? 'Single cinematic shot filling the entire frame. One camera view only. Do not create a contact sheet, storyboard grid, collage, inset, split screen, comic panels, borders, or multiple views. Reference images describe identity and assets only; integrate them into this one scene.'
+      : `Layout: ${shot.layoutTemplate ?? '漫画分格 · 角色优先'}. Motion reference: ${shot.motionPreset ?? '轻微视差'}.`,
     characters.length ? `CHARACTER IDENTITY LOCK: ${characters.join(' || ')}` : '',
     sceneContext ? `LOCATION CONTINUITY LOCK: ${sceneContext}` : '',
     props.length ? `PROP CONTINUITY LOCK: ${props.join(' || ')}` : '',
@@ -146,24 +148,28 @@ export function createMotionComicReferenceAsset(
   };
 }
 
-/** Append a version to the target history and make it the sole fixed version. */
+/** Append a version; imports adopt it by default, generated candidates opt out. */
 export function attachMotionComicReference(
   document: MotionComicPipelineData,
   target: MotionComicReferenceTarget,
   asset: ProductionAssetVersion,
+  options: { setFixed?: boolean } = {},
 ): MotionComicPipelineData {
   assertReferenceTarget(document, target);
+  const setFixed = options.setFixed !== false;
   const currentIds = referenceIdsForTarget(document, target);
   const hasAsset = document.assets.some((candidate) => candidate.id === asset.id);
   assertProductionHistoryCapacity(document, { assets: hasAsset ? 0 : 1 });
   const targetVersionIds = new Set([...currentIds, asset.id]);
   const assets = document.assets
     .map((candidate) => {
+      // Candidate attachment is append-only, including retries of an existing version.
+      if (!setFixed) return candidate;
       if (candidate.id === asset.id) return { ...candidate, ...asset, selected: true, pinned: true };
       if (targetVersionIds.has(candidate.id)) return { ...candidate, selected: false, pinned: false };
       return candidate;
     })
-    .concat(hasAsset ? [] : [{ ...asset, selected: true, pinned: true }]);
+    .concat(hasAsset ? [] : [{ ...asset, selected: setFixed, pinned: setFixed }]);
   const addReference = (ids: string[]) => Array.from(new Set([...ids, asset.id]));
   return updateTargetReferences(document, target, addReference(currentIds), assets);
 }
@@ -186,6 +192,78 @@ export function setMotionComicFixedReference(
   return { ...document, assets };
 }
 
+/** Card order for pinned references: a full design sheet first, then the profile angles. */
+export const MOTION_COMIC_REFERENCE_ROLE_ORDER = ['design', 'front', 'side', 'back', 'detail', 'outfit'] as const;
+export type MotionComicReferenceRole = typeof MOTION_COMIC_REFERENCE_ROLE_ORDER[number];
+export const MOTION_COMIC_REFERENCE_ROLE_LABELS: Record<MotionComicReferenceRole, string> = {
+  design: '设计稿', front: '正面', side: '侧面', back: '背面', detail: '细节特写', outfit: '服装',
+};
+
+/** Resolve the fixed reference set: one pinned image per role, ordered for the provider. */
+export function fixedMotionComicReferenceAssets(
+  document: MotionComicPipelineData,
+  referenceAssetVersionIds: readonly string[],
+): ProductionAssetVersion[] {
+  const references = motionComicReferenceAssets(document, referenceAssetVersionIds).filter((asset) => Boolean(asset.localPath?.trim()));
+  const byRole = new Map<MotionComicReferenceRole, ProductionAssetVersion>();
+  // Later ids win, so a freshly pinned image replaces the same role without changing order.
+  for (const asset of references) {
+    const role: MotionComicReferenceRole = asset.referenceRole ?? 'design';
+    if (asset.pinned === true) byRole.set(role, asset);
+  }
+  return MOTION_COMIC_REFERENCE_ROLE_ORDER.flatMap((role) => {
+    const asset = byRole.get(role);
+    return asset ? [asset] : [];
+  });
+}
+
+/** Every fixed path in provider order; used by generate-and-shot inputs. */
+export function fixedMotionComicReferencePaths(
+  document: MotionComicPipelineData,
+  referenceAssetVersionIds: readonly string[],
+): string[] {
+  return fixedMotionComicReferenceAssets(document, referenceAssetVersionIds)
+    .flatMap((asset) => (asset.localPath?.trim() ? [asset.localPath] : []));
+}
+
+export function motionComicReferenceRole(asset: ProductionAssetVersion): MotionComicReferenceRole {
+  return asset.referenceRole ?? 'design';
+}
+
+/** Pin an image as one role. Images that already cover another role stay fixed. */
+export function setMotionComicReferenceRole(
+  document: MotionComicPipelineData,
+  target: MotionComicReferenceTarget,
+  versionId: string,
+  role: MotionComicReferenceRole,
+): MotionComicPipelineData {
+  assertReferenceTarget(document, target);
+  const referenceIds = new Set(referenceIdsForTarget(document, target));
+  if (!referenceIds.has(versionId)) throw new Error(`MOTION_COMIC_REFERENCE_NOT_FOUND: ${versionId}`);
+  const assets = document.assets.map((asset) => {
+    if (!referenceIds.has(asset.id)) return asset;
+    if (asset.id === versionId) return { ...asset, referenceRole: role, selected: true, pinned: true };
+    if (asset.pinned === true && motionComicReferenceRole(asset) === role) return { ...asset, selected: false, pinned: false };
+    if (asset.pinned === true) return { ...asset, selected: false };
+    return asset;
+  });
+  return { ...document, assets };
+}
+
+/** Unpin one image; the other pinned roles stay. Returns the remaining fixed set. */
+export function unpinMotionComicReference(
+  document: MotionComicPipelineData,
+  target: MotionComicReferenceTarget,
+  versionId: string,
+): MotionComicPipelineData {
+  assertReferenceTarget(document, target);
+  const referenceIds = new Set(referenceIdsForTarget(document, target));
+  const assets = document.assets.map((asset) => (referenceIds.has(asset.id) && asset.id === versionId
+    ? { ...asset, selected: false, pinned: false }
+    : asset));
+  return { ...document, assets };
+}
+
 export function motionComicReferenceAssets(
   document: MotionComicPipelineData,
   referenceAssetVersionIds: readonly string[],
@@ -198,9 +276,8 @@ export function fixedMotionComicReferenceAsset(
   document: MotionComicPipelineData,
   referenceAssetVersionIds: readonly string[],
 ): ProductionAssetVersion | undefined {
-  const references = motionComicReferenceAssets(document, referenceAssetVersionIds).filter((asset) => Boolean(asset.localPath?.trim()));
-  return references.find((asset) => asset.selected === true && asset.pinned === true)
-    ?? [...references].reverse().find((asset) => asset.pinned === true);
+  // Usage checks, badges and shots read "the" fixed reference; the design sheet is the primary one.
+  return fixedMotionComicReferenceAssets(document, referenceAssetVersionIds)[0];
 }
 
 /** Retained for callers that previously asked for the latest visible reference. */
@@ -232,6 +309,13 @@ export function inspectMotionComicShotConsistency(
     missingTargets: Array.from(new Set(missingTargets)),
     exceedsProviderLimit,
   };
+}
+
+export function motionComicEpisodeMissingReferenceTargets(document: MotionComicPipelineData, episodeId: string): MotionComicReferenceTarget[] {
+  const episode = document.episodes.find((candidate) => candidate.id === episodeId);
+  if (!episode) return [];
+  return uniqueTargets(episode.scenes.flatMap((scene) => scene.shots.flatMap(shotReferenceTargets)))
+    .filter((target) => !fixedMotionComicReferenceAsset(document, referenceIdsForTarget(document, target)));
 }
 
 export function motionComicConsistencySummary(document: MotionComicPipelineData): MotionComicConsistencySummary {

@@ -6,6 +6,8 @@ import { generateImageLabRecord, selectImageLabProviderConfig } from '@shared/im
 import { defaultConfig, defaultCustomStyles } from '@shared/config';
 import type { AppConfig } from '@shared/types';
 
+const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -46,7 +48,7 @@ describe('image lab generation', () => {
 
   it('calls the configured image provider and returns a generated record with the real file path', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-'));
-    const imageBytes = Buffer.from('lab-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -79,7 +81,7 @@ describe('image lab generation', () => {
       expect(record.provider).toBe('gpt_image');
       expect(record.quality).toBe('high');
       expect(record.imagePath).toMatch(/provider-images/);
-      expect(await readFile(record.imagePath, 'utf8')).toBe('lab-image');
+      expect(await readFile(record.imagePath)).toEqual(pngBytes);
       expect(requests[0].url).toBe('https://image.example/v1/images/generations');
       expect(requests[0].body).toMatchObject({
         model: 'gpt-image-2',
@@ -123,7 +125,7 @@ describe('image lab generation', () => {
 
   it('builds a smart podcast cover prompt for image lab requests', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-smart-'));
-    const imageBytes = Buffer.from('smart-cover');
+    const imageBytes = pngBytes;
     const requests: Array<{ body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -162,7 +164,7 @@ describe('image lab generation', () => {
 
   it('uses a saved custom drawing template in the actual provider request', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storybound-image-lab-custom-style-'));
-    const imageBytes = Buffer.from('custom-style-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ body: Record<string, unknown> }> = [];
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
       requests.push({ body: JSON.parse(String(init.body)) });
@@ -209,7 +211,7 @@ describe('image lab generation', () => {
     const second = join(dir, 'second.webp');
     await writeFile(first, 'first-reference');
     await writeFile(second, 'second-reference');
-    const imageBytes = Buffer.from('edited-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; method: string; body: BodyInit | null | undefined }> = [];
     vi.stubGlobal(
       'fetch',
@@ -239,7 +241,7 @@ describe('image lab generation', () => {
       });
 
       expect(record.status).toBe('generated');
-      expect(await readFile(record.imagePath, 'utf8')).toBe('edited-image');
+      expect(await readFile(record.imagePath)).toEqual(pngBytes);
       expect(requests[0].url).toBe('https://image.example/v1/images/edits');
       expect(requests[0].method).toBe('POST');
       expect(requests[0].body).toBeInstanceOf(FormData);
@@ -263,7 +265,7 @@ describe('image lab generation', () => {
     const second = join(dir, 'second.webp');
     await writeFile(first, 'first-reference');
     await writeFile(second, 'second-reference');
-    const imageBytes = Buffer.from('smart-reference-image');
+    const imageBytes = pngBytes;
     const requests: Array<{ url: string; method: string; body: BodyInit | null | undefined }> = [];
     vi.stubGlobal(
       'fetch',
@@ -331,7 +333,7 @@ describe('image lab generation', () => {
       await writeFile(path, `reference-${index}`);
       return path;
     }));
-    const imageBytes = Buffer.from('ten-reference-image');
+    const imageBytes = pngBytes;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(JSON.stringify({ data: [{ b64_json: imageBytes.toString('base64') }] }), {

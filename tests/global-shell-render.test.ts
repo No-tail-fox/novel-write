@@ -85,6 +85,17 @@ describe('global shell rendered behavior', () => {
     expect(actions[0]).not.toContain('disabled');
   });
 
+  it('marks the short-video workspace independently from the new-project entry', () => {
+    const { buttons } = renderShell({ activeView: 'short-video' });
+    const shortVideo = buttons.filter((button) => button.includes('data-nav-view="short-video"'));
+    expect(shortVideo).toHaveLength(1);
+    expect(shortVideo[0]).toContain('aria-label="图文短片生成"');
+    expect(shortVideo[0]).toContain('aria-current="page"');
+    const entry = buttons.filter((button) => button.includes('data-nav-view="new-task"'));
+    expect(entry).toHaveLength(1);
+    expect(entry[0]).not.toContain('aria-current="page"');
+  });
+
   it('disables route actions while busy without removing destinations', () => {
     const { buttons } = renderShell({ busy: true });
     const actions = buttons.filter((button) => button.includes('data-nav-view='));

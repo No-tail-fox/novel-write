@@ -80,26 +80,38 @@ export function runBoundedProcess(
       options.signal?.removeEventListener('abort', abort);
     };
 
+    const settleNow = () => {
+      if (settled) return;
+      settled = true;
+      if (spawnError) { reject(spawnError); return; }
+      if (terminalError) { reject(terminalError); return; }
+      if (closeResult) {
+        resolve({
+          pid: child.pid ?? 0,
+          ...closeResult,
+          stdout: Buffer.concat(stdoutChunks, stdoutBytes).toString('utf8'),
+          stderr: Buffer.concat(stderrChunks, stderrBytes).toString('utf8'),
+        });
+      } else {
+        // Settled via watchdog before close arrived (orphan grandchildren held the pipes).
+        reject(terminalError ?? processError('PROCESS_TIMEOUT', 'Process did not close after termination.'));
+      }
+    };
+
     const settleAfterClose = async () => {
       if (settled || !closeResult) return;
       removeExternalTriggers();
       if (termination) await termination;
-      if (settled) return;
-      settled = true;
-      if (spawnError) {
-        reject(spawnError);
-        return;
-      }
-      if (terminalError) {
-        reject(terminalError);
-        return;
-      }
-      resolve({
-        pid: child.pid ?? 0,
-        ...closeResult,
-        stdout: Buffer.concat(stdoutChunks, stdoutBytes).toString('utf8'),
-        stderr: Buffer.concat(stderrChunks, stderrBytes).toString('utf8'),
-      });
+      settleNow();
+    };
+
+    // 'exit' fires when the root process exits even if grandchildren still hold the stdio pipes.
+    // This unblocks settlement when orphaned grandchildren keep 'close' from arriving.
+    const settleAfterExit = async () => {
+      if (settled || !terminalError) return; // only unblock on error paths; normal exit waits for 'close'
+      removeExternalTriggers();
+      if (termination) await termination;
+      settleNow();
     };
 
     const terminateWith = (error: BoundedProcessError) => {
@@ -107,12 +119,19 @@ export function runBoundedProcess(
       terminalError = error;
       removeExternalTriggers();
       termination = terminateProcessTree(child).catch(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {
+        try { child.kill('SIGKILL'); } catch {
           // The process already exited or the platform rejected the fallback signal.
         }
       });
+      // Watchdog: if orphaned grandchildren hold the pipes and 'close' never arrives,
+      // settle after a generous grace period so the caller is never permanently blocked.
+      const watchdog = setTimeout(async () => {
+        if (!settled) {
+          if (termination) await termination.catch(() => undefined);
+          settleNow();
+        }
+      }, 10_000);
+      watchdog.unref?.();
     };
 
     const capture = (
@@ -149,6 +168,9 @@ export function runBoundedProcess(
     child.once('close', (code, signal) => {
       closeResult = { code, signal };
       void settleAfterClose();
+    });
+    child.once('exit', () => {
+      void settleAfterExit();
     });
 
     timeout = setTimeout(() => {
@@ -192,13 +214,12 @@ async function terminateProcessTree(child: ChildProcess): Promise<void> {
   if (!pid) return;
   if (process.platform === 'win32') {
     await runTaskkill(pid);
-    if (isChildRunning(child)) {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // taskkill may already have reaped the process.
-      }
-    }
+    // Do NOT use isChildRunning() here: on Windows exitCode/signalCode are null until
+    // the 'close' event arrives (which may be delayed by grandchildren holding the pipes),
+    // so the check always returns true even after the root process has already exited.
+    // Instead, attempt a direct kill as a belt-and-suspenders fallback; ignore the error
+    // if taskkill already reaped it.
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
     return;
   }
 

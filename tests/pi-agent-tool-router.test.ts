@@ -31,5 +31,10 @@ it('executes only registered host operations and journals source mutations', asy
   expect(await readFile(join(projectRoot, 'index.html'), 'utf8')).toBe('new');
   await expect(router.execute('read_file', { scope: 'project', path: 'index.html', unexpected: true }, 'read1')).rejects.toThrow();
   expect(router.tools.map(tool => tool.name)).toEqual(['list_files', 'read_file', 'write_file']);
+  expect(router.tools.find(tool => tool.name === 'read_file')!.description).toContain('styles/impasto/STYLE.md');
+  expect(router.tools.find(tool => tool.name === 'read_file')!.description).toContain('core/README.md');
+  expect(router.tools.find(tool => tool.name === 'read_file')!.description).toContain('styles/impasto/demo/');
+  expect(router.tools.find(tool => tool.name === 'read_file')!.description).toContain('Read STYLE.md before treatment');
+  expect(router.tools.find(tool => tool.name === 'list_files')!.description).toContain('styles/impasto');
   expect(await router.execute('list_files', { scope: 'project', path: '.' }, 'list')).toEqual([{ name: 'index.html', directory: false }]);
 });

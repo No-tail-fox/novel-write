@@ -1,3 +1,6 @@
+import { motionComicVideoRecoveryInputSchema } from './motion-comic-video-recovery';
+import { motionComicAssetExtractSchema, motionComicAssetExtractionApplySchema } from './motion-comic-asset-extraction';
+import { importCharacterVoiceSampleSchema } from './character-voice-sample';
 import { shortVideoMaterialsSchema } from './short-video-materials';
 import { stockMediaCancelRequestSchema, stockMediaDownloadRequestSchema, stockMediaSearchRequestSchema } from './stock-media';
 import { pixelleRefSchema, pixelleOptionsSchema } from './pixelle-task';
@@ -54,6 +57,7 @@ import { motionComicCreateInputSchema, motionComicSaveInputSchema } from './moti
 import { motionComicEpisodePlanInputSchema } from './motion-comic-episode-planning';
 import { motionComicApplyPlanInputSchema, motionComicPlanInputSchema } from './motion-comic-planning';
 import { motionComicScriptEnqueueSchema, motionComicScriptControlSchema, motionComicScriptEditSchema, motionComicScriptApproveSchema, motionComicScriptRevisionSchema, motionComicScriptApplyStoryboardSchema } from './motion-comic-script-batch';
+import { motionComicScriptProposeSchema, motionComicScriptAdoptSchema, motionComicScriptRevertSchema } from './motion-comic-script-proposal';
 import { directorGenerateShotVideoRequestSchema } from './director-render';
 import { MAX_DIRECTOR_BATCH_SHOTS, MAX_DIRECTOR_BATCH_NODES, MAX_DIRECTOR_BATCH_DEPENDENCIES } from './director-batch-persistence';
 
@@ -198,6 +202,7 @@ const llmConfigSchema = bounded(
       model: z.string().max(1024),
       proxyUrl: z.string().max(MAX_IPC_TEXT),
       timeoutMs: z.number().finite().int().positive().max(3_600_000).optional(),
+      imageInputTokenLimit: z.number().finite().int().positive().max(2_000_000).optional(),
       requestParamsJson: optionalText(262_144),
       fallbackModels: z.array(z.string().max(200)).max(8).optional(),
     })
@@ -556,6 +561,7 @@ const taskHistoryListSchema = z.union([
       family: z.literal('task'),
       taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'template-animation', 'motion-comic']).optional(),
       favorite: z.boolean().optional(),
+      sort: z.enum(['newest', 'oldest', 'title']).optional(),
       status: taskStatusValueSchema.optional(),
     })
     .strict(),
@@ -565,6 +571,7 @@ const taskHistoryListSchema = z.union([
       family: z.literal('task'),
       taskType: z.enum(['story', 'music-mv', 'html-video', 'editorial-collage', 'template-animation', 'motion-comic']).optional(),
       favorite: z.boolean().optional(),
+      sort: z.enum(['newest', 'oldest', 'title']).optional(),
       statuses: taskHistoryStatusesSchema,
     })
     .strict(),
@@ -1072,7 +1079,11 @@ export const ipcInputSchemas = {
   'editorial-collage:save': editorialCollageSaveInputSchema,
   'vox-production:start': voxProductionStartSchema,
   'vox-production:control': voxProductionControlSchema,
+  'vox-production:agent-activity': z.object({ id: idSchema, runId: z.string().regex(/^[a-zA-Z0-9-]+$/u).max(200) }).strict(),
+  'vox-production:pi-activity': z.object({ id: idSchema, runId: z.string().regex(/^[a-zA-Z0-9-]+$/u).max(200) }).strict(),
   'director:generate-shot-video': directorGenerateShotVideoRequestSchema,
+  'director:resume-shot-video': directorGenerateShotVideoRequestSchema,
+  'motion-comic:recover-video-submission': motionComicVideoRecoveryInputSchema,
   'director:batch-create': z.object({
     id: idSchema.optional(), workflowKind: z.enum(['director', 'image-lab']), projectId: idSchema,
     episodeId: idSchema.nullable().optional(), status: z.enum(['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled']).optional(),
@@ -1085,15 +1096,28 @@ export const ipcInputSchemas = {
   'director:batch-list': z.object({ projectId: idSchema.optional(), episodeId: idSchema.nullable().optional(), statuses: z.array(z.enum(['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled'])).max(8).optional() }).strict(),
   'director:batch-update': z.object({ id: idSchema, patch: z.object({ expectedUpdatedAt: timestampSchema.optional(), status: z.enum(['draft', 'queued', 'running', 'paused', 'cancelling', 'completed', 'failed', 'cancelled']).optional(), concurrency: finiteNumber.optional(), pauseRequested: z.boolean().optional(), cancelRequested: z.boolean().optional(), recoveryRequired: z.boolean().optional(), recoveryReason: z.string().max(4096).optional(), plan: directorBatchPlanSchema.optional(), nodes: directorBatchNodesSchema.optional() }).strict() }).strict(),
   'director:batch-delete': idOnlySchema,
+  'motion-comic:reference-batch-submit': z.object({
+    projectId: idSchema, expectedProjectUpdatedAt: timestampSchema,
+    targets: z.array(z.object({ kind: z.enum(['look', 'scene', 'prop']), id: idSchema }).strict()).min(1).max(500),
+    selectionMode: z.enum(['category', 'selected']), concurrency: z.number().int().min(1).max(4).optional(), composeMultiple: z.boolean().optional(),
+  }).strict(),
+  'motion-comic:reference-batch-control': z.object({ id: idSchema, action: z.enum(['pause', 'resume', 'cancel', 'reconcile']) }).strict(),
   'motion-comic:create': motionComicCreateInputSchema,
   'motion-comic:save': motionComicSaveInputSchema,
+  'motion-comic:export-render': z.object({ taskId: idSchema, assetVersionId: idSchema }).strict(),
   'motion-comic:plan-episodes': motionComicEpisodePlanInputSchema,
   'motion-comic:plan': motionComicPlanInputSchema,
   'motion-comic:apply-plan': motionComicApplyPlanInputSchema,
+  'motion-comic:import-character-voice-sample': importCharacterVoiceSampleSchema,
   'motion-comic:scripts-get': z.string().trim().min(1).max(256),
   'motion-comic:scripts-enqueue': motionComicScriptEnqueueSchema,
   'motion-comic:scripts-control': motionComicScriptControlSchema,
   'motion-comic:scripts-edit': motionComicScriptEditSchema,
+  'motion-comic:scripts-propose': motionComicScriptProposeSchema,
+  'motion-comic:assets-extract': motionComicAssetExtractSchema,
+  'motion-comic:assets-extraction-apply': motionComicAssetExtractionApplySchema,
+  'motion-comic:scripts-adopt': motionComicScriptAdoptSchema,
+  'motion-comic:scripts-revert': motionComicScriptRevertSchema,
   'motion-comic:scripts-approve': motionComicScriptApproveSchema,
   'motion-comic:scripts-storyboard': motionComicScriptRevisionSchema,
   'motion-comic:scripts-apply-storyboard': motionComicScriptApplyStoryboardSchema,
@@ -1215,6 +1239,8 @@ export const ipcInputSchemas = {
   'task:final-film-gate': z.object({ id: idSchema, episodeId: idSchema.optional() }).strict(),
   'asset:read-data-url': pathSchema,
   'local-image:select': z.literal('video-reference').optional(),
+  'local-images:select': z.object({ max: z.number().int().positive().max(24).optional() }).strict().optional(),
+  'file:sha256': pathSchema,
   'pixelle:catalog': z.void(),
   'local-video:select': z.void(),
   'short-video-materials:select': z.void(),

@@ -6,3 +6,16 @@
 .project-model-note { margin-top: 12px; }
 .project-model-error { color: var(--danger); }
 .project-model-fields .project-model-route-hint { color: var(--warn); }
+
+/* Inline project models use the shared select and save each choice immediately. */
+.project-model-inline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.project-model-inline__field { min-width: 0; }
+.project-model-inline__field > .sd-field { display: flex; align-items: center; gap: 8px; }
+.project-model-inline__field .sd-field > label { margin: 0; flex-shrink: 0; color: var(--shell-muted); font-size: 12px; }
+.project-model-inline__field .sd-select { width: 148px; min-width: 0; }
+.project-model-inline__field .sd-select select { text-overflow: ellipsis; cursor: pointer; }
+.project-model-inline { flex-wrap: wrap; gap: 8px 16px; }
+.project-model-inline[aria-busy='true'] { opacity: .7; }
+.project-model-inline__status { color: var(--ok); font-size: 12px; white-space: nowrap; }
+.project-model-inline__error { max-width: 180px; overflow: hidden; color: var(--danger); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .project-model-inline__field { transition: none; } }

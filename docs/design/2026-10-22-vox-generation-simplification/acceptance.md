@@ -2,7 +2,7 @@
 
 **2026-10-24 续接：** 本页保留 10 月 23 日模板自动链的历史证据。新增的创意动画入口、Lemo 59 风格收录 / 6 适配、后台逐镜 AI 代码与最多一次修复、跨进程组件恢复和混合样片，见 [创意动画当前实施验收](../../plans/2026-10-24-creative-animation/acceptance.md)。新版代码真实组件验证已完成，正式产品 IPC 因本机 `LICENSE_REQUIRED` 尚未验收；不以组件集成替代正式入口。最新界面报告已更新为 **97 项 / 32 张截图**，下方 85 / 28 为历史次数。
 
-**同日质量收尾：** 当前审查为 v3，增加最终字号/背景约束，保存的 AI 镜头未通过。新输出 [四模板质量片](I:/opc/.artifacts/creative-quality-v3/creative-nasa-quality-v3.mp4) 为 23.88 秒 1080p，直切、−16 LUFS / −1.4 dBTP，完整解码和抽帧通过；不作为 AI 代码或整片审美通过证据。最新 168 项质量 + 52 项兼容、typecheck/build 通过，额外八项 shell 合同失败仍单列。此质量收尾未调整第三张页面布局。
+**同日质量收尾：** 当前审查为 v3，增加最终字号/背景约束，保存的 AI 镜头未通过。新输出 [四模板质量片](I:/项目/story-dream/.artifacts/creative-quality-v3/creative-nasa-quality-v3.mp4) 为 23.88 秒 1080p，直切、−16 LUFS / −1.4 dBTP，完整解码和抽帧通过；不作为 AI 代码或整片审美通过证据。最新 168 项质量 + 52 项兼容、typecheck/build 通过，额外八项 shell 合同失败仍单列。此质量收尾未调整第三张页面布局。
 
 更新：2026-10-23。按用户选择的第三张 process-outline 实施。页面减法、三预设契约、主进程任务链及定向恢复验证已完成；数据柱形图已完成真实完整自动链和基础媒体/人工抽帧验收。纸拼贴、地图与档案的完整样片仍未验收通过。
 
@@ -47,20 +47,20 @@ Vox 检查包含普通 1536×1024、紧凑 1040×720、窄窗口 860×720、深�
 - [Vox 当前界面报告（已更新为 97 项 / 32 张）](implementation-evidence/report.json)
 - [漫剧定向回归报告](implementation-evidence/comic-regression/report.json)
 - [历史同画布设计比较](design-qa.md)
-- [最新构建日志](I:/opc/.artifacts/vox-production-data/final-build.log)
+- [最新构建日志](I:/项目/story-dream/.artifacts/vox-production-data/final-build.log)
 
 界面预览中的城市图取自已选设计图，仅用于隔离夹具，不是生图质量证据。真正素材证据见下方样片。
 
-额外的只读正式项目预览检查已进入 `data-vox-ready=true`，首个桌面深色状态的页面溢出与主操作几何断言通过，但隐藏 Electron 窗口的 `Page.screenshot()` 超时，因此这次附加截图检查记为未完成，不计入上表的 85 项 / 28 张已通过界面回归。没有启动新的生成；持久化项目仍为 19/19 完成且无运行节点，已仅停止该隔离检查进程。详见 [附加预览检查记录](I:/opc/.artifacts/vox-production-data/ui-report.json)。
+额外的只读正式项目预览检查已进入 `data-vox-ready=true`，首个桌面深色状态的页面溢出与主操作几何断言通过，但隐藏 Electron 窗口的 `Page.screenshot()` 超时，因此这次附加截图检查记为未完成，不计入上表的 85 项 / 28 张已通过界面回归。没有启动新的生成；持久化项目仍为 19/19 完成且无运行节点，已仅停止该隔离检查进程。详见 [附加预览检查记录](I:/项目/story-dream/.artifacts/vox-production-data/ui-report.json)。
 
 ## 真实完整数据短片
 
-**[nasa-temperature-auto.mp4](I:/opc/.artifacts/vox-production-data/nasa-temperature-auto.mp4)**：23.88 秒、1920×1080、775,478 字节。SHA-256：`161fe8e24971b4eac42d227571c054c4c0fcf3196f7c091fe920c34a0087b3cd`。
+**[nasa-temperature-auto.mp4](I:/项目/story-dream/.artifacts/vox-production-data/nasa-temperature-auto.mp4)**：23.88 秒、1920×1080、775,478 字节。SHA-256：`161fe8e24971b4eac42d227571c054c4c0fcf3196f7c091fe920c34a0087b3cd`。
 
 | 证据 | 实际结果 |
 | --- | --- |
 | 项目 | `61d661ee-0892-472d-a9c2-863144ac4475`，原始旁白、数据与单位输入，4 镜头 |
-| 数据来源 | 已保存的 [NASA GISTEMP v4 CSV](I:/opc/.artifacts/vox-production-paper/gistemp-source.csv)；J-D 年平均异常以 1951–1980 为基期，2000 / 2010 / 2020 / 2024 年分别为 0.39 / 0.72 / 1.01 / 1.28 ℃，不是预测 |
+| 数据来源 | 已保存的 [NASA GISTEMP v4 CSV](I:/项目/story-dream/.artifacts/vox-production-paper/gistemp-source.csv)；J-D 年平均异常以 1951–1980 为基期，2000 / 2010 / 2020 / 2024 年分别为 0.39 / 0.72 / 1.01 / 1.28 ℃，不是预测 |
 | 自动链 | 原运行 `b4c2031a-3be4-4e66-9063-01c29e9c5bf2`；计划、4×旁白/排时/动画/编译、渲染、验证，共 19/19 节点完成；未点击局部生成按钮 |
 | 服务 | Moe `gemini-3.7-flash-high` 文本一次，火山 `seed-tts-2.0` 配音四次；不创建生图/抠图节点 |
 | 生命周期 | 离开 Vox 页并进入另一项目后继续运行；真实应用进程重启后复用已保存计划和首段旁白，原请求 ID 保持不变；另一项目内容未改变 |
@@ -72,7 +72,7 @@ Vox 检查包含普通 1536×1024、紧凑 1040×720、窄窗口 860×720、深�
 
 通过范围是**数据柱形图完整自动链、媒体有效性与基础可读性**。高亮/字幕为实测音频总时长上的句级估算，未验证逐词声画同步，未调用 VLM；人工抽帧不代替完整听审。图表仍采用预设模板，不是自动 AI 动画代码创作，也不证明纸拼贴、地图或档案预设已成熟。
 
-证据：[原始自动运行报告](I:/opc/.artifacts/vox-production-data/report.json)、[当前项目快照](I:/opc/.artifacts/vox-production-data/document.json)、[本地修正报告](I:/opc/.artifacts/vox-production-data/refinement-report.json)、[媒体与来源报告](I:/opc/.artifacts/vox-production-data/media-report.json)、[12 帧联系表](I:/opc/.artifacts/vox-production-data/contact-sheet.jpg)、[完整解码日志](I:/opc/.artifacts/vox-production-data/decode.log)。
+证据：[原始自动运行报告](I:/项目/story-dream/.artifacts/vox-production-data/report.json)、[当前项目快照](I:/项目/story-dream/.artifacts/vox-production-data/document.json)、[本地修正报告](I:/项目/story-dream/.artifacts/vox-production-data/refinement-report.json)、[媒体与来源报告](I:/项目/story-dream/.artifacts/vox-production-data/media-report.json)、[12 帧联系表](I:/项目/story-dream/.artifacts/vox-production-data/contact-sheet.jpg)、[完整解码日志](I:/项目/story-dream/.artifacts/vox-production-data/decode.log)。
 
 ## 纸拼贴受阻记录与可播放局部样片
 
@@ -88,7 +88,7 @@ Vox 检查包含普通 1536×1024、紧凑 1040×720、窄窗口 860×720、深�
 | 处理 | 保留 unknown，未重复提交。新增回执机制不能补回这次已丢失的旧响应 |
 | 局部导出 | 仅克隆已完成的 `shot-1` 与 `shot-2-a`，使用正式渲染器导出；未修改源项目/原运行，未调用模型 |
 
-样片：**[urban-heat-partial.mp4](I:/opc/.artifacts/vox-production-paper/saved-sample/urban-heat-partial.mp4)**。23.46 秒、1920×1080、5,146,706 字节，包含真实生图、透明主体、配音和语义动作。
+样片：**[urban-heat-partial.mp4](I:/项目/story-dream/.artifacts/vox-production-paper/saved-sample/urban-heat-partial.mp4)**。23.46 秒、1920×1080、5,146,706 字节，包含真实生图、透明主体、配音和语义动作。
 
 - 完整 ffmpeg 解码通过，存在视频和音轨，音轨非静音；峰值 −5.9 dB、综合响度约 −21 LUFS。
 - 未检测到黑屏区间；对首中末、转场等 10 个时点抽帧，未见明显缺图或字幕裁切。
@@ -96,12 +96,12 @@ Vox 检查包含普通 1536×1024、紧凑 1040×720、窄窗口 860×720、深�
 - **精度限制**：字幕为基于真实音频总时长估算的句级时间，语义动作标记为 estimated；未做词级对齐或 VLM 审片。
 - 这是已完成镜头的本地局部渲染，不能作为纸拼贴完整自动链成功证据。完整纸拼贴全片、地图与档案叙事的真实整片样片仍待完成；数据柱形图完整成功证据见上节。
 
-证据：[真实运行记录](I:/opc/.artifacts/vox-production-paper/report.json)、[源项目快照](I:/opc/.artifacts/vox-production-paper/document.json)、[局部样片/媒体报告](I:/opc/.artifacts/vox-production-paper/saved-sample/report.json)、[10 帧联系表](I:/opc/.artifacts/vox-production-paper/saved-sample/contact-sheet.jpg)、[解码日志](I:/opc/.artifacts/vox-production-paper/saved-sample/decode.log)。
+证据：[真实运行记录](I:/项目/story-dream/.artifacts/vox-production-paper/report.json)、[源项目快照](I:/项目/story-dream/.artifacts/vox-production-paper/document.json)、[局部样片/媒体报告](I:/项目/story-dream/.artifacts/vox-production-paper/saved-sample/report.json)、[10 帧联系表](I:/项目/story-dream/.artifacts/vox-production-paper/saved-sample/contact-sheet.jpg)、[解码日志](I:/项目/story-dream/.artifacts/vox-production-paper/saved-sample/decode.log)。
 
 ## 恢复验证及未验证项
 
 - 已以聚焦测试覆盖同步下载断开、异步轮询断开、有回执复用、无回执禁止恢复、提示词/参考图变化拒绝旧结果，验证恢复不产生第二次付费生成 POST。
-- 真实运行中的纯标点 TTS 请求已由服务商明确返回 `No readable text!`；仅在保存该无结果依据后恢复原运行，并增加可读文本保护。另一未知生图请求没有类似依据，仍保持锁定。[TTS 核对证据](I:/opc/.artifacts/vox-production-paper/speech-rejection-recovery.json)。
+- 真实运行中的纯标点 TTS 请求已由服务商明确返回 `No readable text!`；仅在保存该无结果依据后恢复原运行，并增加可读文本保护。另一未知生图请求没有类似依据，仍保持锁定。[TTS 核对证据](I:/项目/story-dream/.artifacts/vox-production-paper/speech-rejection-recovery.json)。
 - 尚未真实验证新回执机制在所有服务商及每种网络中断下的完整上传/下载恢复，也未验证供应商取消能力。回执恢复不等于完整字节级续传。
 - HTML 已有两次六镜 48.78 秒 1080p 基准通过，耗时约 303/366 秒、进程树私有内存峰值约 2.70/1.56 GB；4K 在 3.5 GiB 保护线上中止，24 镜、并发和新组件链未测。Vox 词级对齐与 VLM 审片未做；AI 漫剧远程角色连续性、口型、完整上传下载断点恢复仍未验证。
 - `tests/director-product-flow.test.ts` 有 4 条已对照 HEAD 的既有源码断言失败；旧 `qa-motion-comic.py` 期待 8 阶段而现有页为 7 阶段加项目资产标签。它们未计入通过范围，本次漫剧只做生产 Electron 定向回归。

@@ -123,7 +123,8 @@ describe('motion comic AI planning and remote video UI', () => {
       'resolveDirectorVideoProviderStatus',
       "job.capability === 'image-to-video'",
       "renderStrategy: remoteVideo ? 'living-poster' : 'deterministic-layers'",
-      'videoInputReady: firstFrameReady',
+      'buildMotionComicShotVideoRequest(document, shot)',
+      'videoInputReady,',
       'videoJobStatus: videoJob?.status',
       'videoEstimatedCost:',
       'onGenerateVideo=',
@@ -135,7 +136,7 @@ describe('motion comic AI planning and remote video UI', () => {
       'remoteOnly={Boolean(document.sourceDocument)}',
       "openSettings?.('video', 'motion-comic', document.id)",
       'invalidateMotionComicVideosForChangedInputs(current, update(current))',
-      'invalidateMotionComicVideosForChangedInputs(latest, attachMotionComicReference(latest, target, asset))',
+      'invalidateMotionComicVideosForChangedInputs(latest, attachMotionComicReference(latest, target, asset, { setFixed: false }))',
     ]) expect(page).toContain(marker);
     expect(page).not.toContain('onVideoProviderChange=');
     expect(readiness).toContain('项目视频模型：');
@@ -174,7 +175,10 @@ describe('motion comic AI planning and remote video UI', () => {
     expect(css).toContain('.comic-script-source-list__items');
     expect(css).toContain('.comic-script-source-list__filters');
     expect(css).toContain('@media (max-height: 760px) and (min-width: 761px)');
-    expect(css).toContain('.motion-comic-production:has(.comic-script-workspace)');
+    const shellCss = await source('src/features/motion-comic/motion-comic-project-controls.css');
+    expect(shellCss).toContain(".motion-comic-production[data-stage] > .motion-comic-production__stages[aria-label='剧本子流程']");
+    expect(shellCss).toContain('grid-template-columns: repeat(3, minmax(0, 180px))');
+    expect(css).not.toContain('.motion-comic-production:has(.comic-script-workspace)');
     expect(css).toContain('.comic-script-editor > .sd-toolbar { flex: 0 0 auto;');
     expect(css).not.toContain('var(--sd-radius-sm)');
   });

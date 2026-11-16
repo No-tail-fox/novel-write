@@ -44,6 +44,9 @@ export function formatOpenAiImageProviderError(input: {
           ? 'Image model test error'
           : 'Image provider API error';
   const detail = extractImageProviderErrorDetail(input.bodyText);
+  if (input.status === 400 && input.operation === 'generation' && /no usable image target|upload or identify the image/iu.test(detail)) {
+    return `${prefix} (${input.status}): 当前请求是从零生成图片，服务商却要求提供原图。请检查图片模型或切换图片服务；也可关闭自动生图，使用已有图片或文字图形模板继续制作。请勿直接重复提交相同请求。上游信息: ${detail}`;
+  }
   if (input.status === 400 && isImageProviderTextOnlyResponse(detail)) {
     return `${prefix} (${input.status}): 图片服务未生成图片，仅返回文字说明。可重试失败步骤；若反复发生，请切换图片服务或模型。上游信息: ${detail}`;
   }

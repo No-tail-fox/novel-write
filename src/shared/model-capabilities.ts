@@ -35,6 +35,8 @@ const RULES: Rule[] = [
   { pattern: /gpt-5[\d.]*-mini|gpt-4\.1-mini|gpt-4o(?!-mini)|o[134]-mini/iu, family: 'gpt-mid', tier: 'T2', vision: true, tools: true, maxOutputTokens: 16_384, contextTokens: 128_000 },
   { pattern: /gpt-5[\d.]*-nano|gpt-4\.1-nano|gpt-4o-mini|gpt-3\.5/iu, family: 'gpt-small', tier: 'T3', vision: true, tools: true, maxOutputTokens: 16_384, contextTokens: 128_000 },
   { pattern: /deepseek-(?:r1|reasoner)/iu, family: 'deepseek-reasoner', tier: 'T2', thinking: true, maxOutputTokens: 32_768, contextTokens: 128_000 },
+  // Measured against the relay's chat endpoint: this exact model accepts image input. Other deepseek ids stay text-only.
+  { pattern: /deepseek-v4\.1-flash/iu, family: 'deepseek', tier: 'T2', vision: true, tools: true, maxOutputTokens: 8_192, contextTokens: 128_000 },
   { pattern: /deepseek/iu, family: 'deepseek', tier: 'T2', tools: true, maxOutputTokens: 8_192, contextTokens: 128_000 },
   { pattern: /qwen[\d.]*-(?:max|plus)|qwen3-(?:coder|235b)|kimi-k2|glm-4\.[5-9]|glm-[5-9]/iu, family: 'open-frontier', tier: 'T2', tools: true, maxOutputTokens: 16_384, contextTokens: 128_000 },
   { pattern: /qwen|llama|mistral|glm|yi-|phi-|gemma/iu, family: 'open-small', tier: 'T3', maxOutputTokens: 8_192, contextTokens: 32_000 },

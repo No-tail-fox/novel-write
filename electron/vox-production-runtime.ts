@@ -1,16 +1,16 @@
+import { buildPiFilmNodes } from '../src/shared/pi-film-graph';
+import { piFilmReadyErrors } from '../src/shared/creative-animation/pi-film';
 import { buildLemoUpstreamNodes } from '../src/shared/lemo-upstream-graph';
 import { lemoReservedWindows } from '../src/shared/lemo-locked-shots';
 import { lemoAgentBudgetError, lemoAgentBudgetExhausted } from '../src/shared/creative-animation/upstream-agent';
 import { assertLemoUpstreamFilmCurrent } from './lemo-upstream-agent';
-import { reconcileLemoEditSessions } from './lemo-incremental-resume';
 import { workflowPrompt } from '../src/shared/workflow-prompt-runtime';
-import type { LlmTextResult } from '../src/shared/llm-provider';
-import { buildLemoProjectNodes } from '../src/shared/lemo-production-graph';
-import { isProjectRun, lemoProjectInput, executeLemoProject, lemoMaterialInput, applyLemoMaterialRecord } from './lemo-project-runtime';
-import { nativeProductionInput, executeNativeProduction, isNativeRun, activeNativeFilm } from './lemo-production-runtime';
+import { assertVoxProductionRunSupported } from './vox-production-service';
 import { resolveLemoAnimation } from '../src/shared/creative-animation/native-film';
 import { assembleCreativeShot } from '../src/shared/creative-animation/assemble';
 import { CREATIVE_RENDER_REVISION } from '../src/shared/creative-animation/render-spec';
+import { LlmJsonParseError, type LlmJsonResult } from '../src/shared/llm-provider';
+import { materializeProductionAudioClipsForShot } from '../src/shared/production-audio';
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { z } from 'zod';
@@ -20,7 +20,7 @@ import { fitEditorialNarrationTiming } from '../src/shared/editorial-narration-t
 import { validateVoxAnimation } from '../src/shared/vox-animation';
 import { directorDocumentRenderFingerprint, directorQualityReview, directorRenderOutputs, buildDirectorRenderScenes } from '../src/shared/director-render';
 import { directorImageInput, editorialVoiceInput, applyEditorialImageRecord, applyEditorialVoiceRecord, type DirectorVoiceProviderStatus } from '../src/features/director-desk/director-generation';
-import type { VoxProductionNode, VoxProductionSettings } from '../src/shared/vox-production';
+import type { VoxProductionNode } from '../src/shared/vox-production';
 import type { BackgroundRemovalMetadata, ImageLabRecord, VoiceLabRecord } from '../src/shared/types';
 import type { VoxProductionRuntime } from './vox-production-service';
 import { buildVoxProductionNodes, voxShotLocked, voxReadableNarration } from '../src/shared/vox-production';
@@ -39,7 +39,13 @@ const settingsFor = (d: Document) => d.productionRun!.settings;
 const planSchema = z.object({ shots: z.array(z.object({ id: z.string(), title: z.string().max(80), scenePrompt: z.string().min(10).max(5000) }).strict()).max(500) }).strict();
 
 export interface VoxProductionOperations {
-  nativePlanningVersion?: 1;
+  /** Explicit opt-in; existing upstream operations continue to create v3 runs. */
+  nativeWorkflowVersion?: 3 | 4;
+  piSegment?(document: Document, node: VoxProductionNode): Promise<Document>;
+  /** Reconcile the whole segment ledger without issuing paid requests. */
+  recoverPiSegment?(document: Document, node: VoxProductionNode): Promise<Document | undefined>;
+  piAudioMaster?(document: Document, node: VoxProductionNode): Promise<Document>;
+  interrupt?(reason: 'pause' | 'cancel'): void | Promise<void>;
   upstreamStep?(document: Document, node: VoxProductionNode): Promise<Document>;
   recoverUpstreamStep?(document: Document, node: VoxProductionNode): Promise<Document | undefined>;
   identity: string;
@@ -47,17 +53,15 @@ export interface VoxProductionOperations {
   voiceModel: string;
   voice: Pick<DirectorVoiceProviderStatus, 'provider' | 'voiceId' | 'voiceLabel' | 'speed'>;
   preflight: VoxProductionRuntime['preflight'];
-  plan(prompt: string): Promise<unknown>;
+  plan?(prompt: string): Promise<unknown>;
+  /** Preserve the provider reply before local schema/shot-ID validation. */
+  planWithReceipt?(prompt: string): Promise<LlmJsonResult>;
   image(input: ReturnType<typeof directorImageInput>, requestId: string): Promise<ImageLabRecord>;
   recoverImage?(input: ReturnType<typeof directorImageInput>, requestId: string): Promise<ImageLabRecord | undefined>;
   speech(input: ReturnType<typeof editorialVoiceInput>, requestId: string): Promise<{ record: VoiceLabRecord; durationMs: number }>;
   cutout(path: string): Promise<{ outputPath: string; metadata: BackgroundRemovalMetadata }>;
   render(d: Document): Promise<Document>;
   compileCode(source: string): { compiled: string; engine?: 'lemo-native' };
-  planFilm?(prompt: string, styleId: string, receipt?: { runId: string; requestId: string }): Promise<unknown>;
-  editFilmFile?(prompt: string, styleId: string, fileId: string): Promise<LlmTextResult>;
-  authorFilmFile?(prompt: string, styleId: string, fileId: string, repair: boolean): Promise<LlmTextResult>;
-  generateFilm?(prompt: string, styleId: string, source?: string): Promise<string>;
   generateCode?(input: VoxGenerateRequest, styleId: string, requestId: string): Promise<string>;
   previewCode?(document: Document, shotId: string, requestId: string): Promise<string[]>;
   verifyVideo(path: string, expectedDurationMs: number, requireAudio: boolean): Promise<void>;
@@ -67,29 +71,25 @@ export interface VoxProductionOperations {
 export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxProductionRuntime {
   return {
     identity: ops.identity,
-    reconcile: d => d.productionRun?.authoringVersion === 3 ? d : reconcileLemoEditSessions(d),
-    nativePlanningVersion: ops.nativePlanningVersion,
-    nativeWorkflowVersion: ops.upstreamStep ? 3 : ops.authorFilmFile || ops.editFilmFile ? 2 : undefined,
-    expand: d => d.productionRun?.authoringVersion === 3 ? buildLemoUpstreamNodes(d, d.productionRun.settings) : isProjectRun(d) ? (activeNativeFilm(d)?.project ? buildLemoProjectNodes(d, d.productionRun!.settings) : undefined)
-      : d.productionRun ? buildVoxProductionNodes(d, d.productionRun.settings, d.productionRun.engine ?? 'legacy', d.productionRun.authoringVersion) : undefined,
+    nativeWorkflowVersion: ops.nativeWorkflowVersion ?? (ops.upstreamStep ? 3 : undefined),
+    interrupt: ops.interrupt,
+    expand: d => {
+      assertVoxProductionRunSupported(d.productionRun);
+      return d.productionRun?.authoringVersion === 4 ? buildPiFilmNodes(d, d.productionRun.settings)
+        : d.productionRun?.authoringVersion === 3 ? buildLemoUpstreamNodes(d, d.productionRun.settings)
+        : d.productionRun ? buildVoxProductionNodes(d, d.productionRun.settings, 'legacy') : undefined;
+    },
     preflight: ops.preflight,
     isPaid: (d, node) => {
-      if (isProjectRun(d)) {
-        if (node.kind === 'film-edit' && /^(film-repair|film-sample-repair):/.test(node.editSession ?? '')) return !!activeNativeFilm(d)?.project?.repairFileIds.includes(node.fileId!);
-        if (node.kind === 'film-repair' || node.kind === 'film-sample-repair') return activeNativeFilm(d)?.project?.authoringMode !== 'incremental' && !!activeNativeFilm(d)?.project?.repairFileIds.includes(node.fileId!);
-        if (node.kind === 'film-material') return activeNativeFilm(d)?.project?.materials.find(m => m.id === node.materialId)?.kind === 'generated';
-      }
-      if (node.kind === 'film-repair') return activeNativeFilm(d)?.status === 'needs-repair' && (activeNativeFilm(d)?.attempts.length ?? 0) < 2;
+      assertVoxProductionRunSupported(d.productionRun);
       if (node.kind !== 'code-repair') return node.paid;
       const authoring = shotFor(d, node.shotId).animation?.authoring;
       return authoring?.status === 'needs-repair' && authoring.attempts.length < 2;
     },
     async recover(d, node) {
+      assertVoxProductionRunSupported(d.productionRun);
+      if (d.productionRun?.authoringVersion === 4 && node.kind === 'agent-segment') return ops.recoverPiSegment?.(d, node);
       if (d.productionRun?.authoringVersion === 3 && node.kind === 'film-edit') return ops.recoverUpstreamStep?.(d, node);
-      if (node.kind === 'film-material' && node.requestId && ops.recoverImage) {
-        const record = await ops.recoverImage(lemoMaterialInput(d, node), node.requestId);
-        return record ? applyLemoMaterialRecord(d, node, record, ops.imageModel) : undefined;
-      }
       if (node.kind !== 'image' || !node.requestId || !ops.recoverImage) return undefined;
       const input = directorImageInput(d, node.shotId!, node.layerId);
       const record = await ops.recoverImage(input, node.requestId);
@@ -98,6 +98,17 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       return applyEditorialImageRecord(d, node.shotId!, record, ops.imageModel, input);
     },
     input(d, node) {
+      assertVoxProductionRunSupported(d.productionRun);
+      if (d.productionRun?.authoringVersion === 4 && ['agent-segment', 'film-finalize', 'audio-master', 'render', 'verify'].includes(node.kind)) {
+        const { piMaxRequests: _requests, agentMaxTokens: _tokens, agentMaxCost: _cost, agentMaxTurns: _turns, ...settings } = d.productionRun.settings;
+        return { workflow: 4, runId: d.productionRun.id, node: node.id, identity: ops.identity,
+          source: d.sourceText, timeline: d.timeline, ratio: d.ratio, settings,
+          cues: d.beats.flatMap(b => b.subtitleCues), assets: d.assets,
+          reserved: lemoReservedWindows(d),
+          ...(node.kind !== 'agent-segment' ? { film: d.piFilm } : {}),
+          ...(node.kind === 'verify' ? { output: directorRenderOutputs(d).current?.sha256 } : {}),
+        };
+      }
       const upstream = d.productionRun?.authoringVersion === 3;
       if (upstream && node.kind === 'film-edit') return {
         workflow: 3, runId: d.productionRun!.id, turn: node.fileId, source: d.sourceText,
@@ -110,10 +121,6 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
         ...(lemoReservedWindows(d) ? { reserved: lemoReservedWindows(d) } : {}),
       };
       if (upstream && node.kind === 'film-finalize') return { runId: d.productionRun!.id, sourceHash: d.upstreamFilm?.sourceHash, duration: d.timeline?.durationMs };
-      const project = upstream ? undefined : lemoProjectInput(d, node);
-      if (project !== undefined) return { input: project, ...(node.kind === 'film-material' ? { model: ops.imageModel } : {}) };
-      const native = upstream ? undefined : nativeProductionInput(d, node);
-      if (native !== undefined) return native;
       const settings = settingsFor(d);
       // Default-on settings keep the hashes of journals saved before this option existed.
       // Lemo Agent budgets are spending limits, never part of a paid step's inputs.
@@ -148,6 +155,27 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       return { animation: shot.animation, layers: shot.layers, duration: shot.durationMs, ratio: d.ratio };
     },
     async execute(d, node) {
+      assertVoxProductionRunSupported(d.productionRun);
+      if (d.productionRun?.authoringVersion === 4) {
+        if (node.kind === 'agent-segment') {
+          if (!ops.piSegment) throw new Error('PI_AGENT_UNAVAILABLE');
+          return ops.piSegment(d, node);
+        }
+        if (['film-finalize', 'audio-master', 'render'].includes(node.kind)) {
+          const film = d.piFilm;
+          if (!film || film.runId !== d.productionRun.id) throw new Error('PI_FILM_NOT_READY');
+          const errors = piFilmReadyErrors(film);
+          if (errors.length) throw new Error(errors.join('; '));
+          if (node.kind === 'film-finalize') return d;
+          if (node.kind === 'audio-master') {
+            if (!ops.piAudioMaster) throw new Error('PI_AUDIO_MASTER_UNAVAILABLE');
+            return ops.piAudioMaster(d, node);
+          }
+          const master = film.audioMaster;
+          if (!master || master.sourceHash !== film.sourceHash || master.timelineHash !== film.timelineHash
+            || Math.abs(master.durationSeconds - film.actualDurationSeconds) > 1 / (film.evidence?.renderIdentity.fps ?? 30)) throw new Error('PI_AUDIO_MASTER_STALE');
+        }
+      }
       if (d.productionRun?.authoringVersion === 3 && node.kind === 'film-edit') {
         if (!ops.upstreamStep) throw new Error('LEMO_AGENT_UNAVAILABLE');
         return ops.upstreamStep(d, node);
@@ -160,8 +188,6 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
         await assertLemoUpstreamFilmCurrent(d.upstreamFilm, (d.timeline?.durationMs ?? 0) / 1000);
         return d;
       }
-      const native = d.productionRun?.authoringVersion === 3 ? undefined : isProjectRun(d) ? await executeLemoProject(d, node, ops) : await executeNativeProduction(d, node, ops);
-      if (native) return native;
       const settings = settingsFor(d);
       if (node.kind === 'plan') {
         const shots = d.beats.flatMap(b => b.shots.map(s => ({ id: s.id, narration: editorialVoiceInput(d, s.id, ops.voice).text })));
@@ -171,8 +197,20 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
             ? workflowPrompt("creative-strategy-2", `Use ONLY these sourced data rows: ${JSON.stringify(settings.data)}. Explain their meaning without inventing values or locations. Charts and routes will be built in code.`, { value1: (JSON.stringify(settings.data)) })
             : workflowPrompt("creative-strategy-3", `Use ONLY imported archive references: ${JSON.stringify(settings.archives)}. Never fabricate historical evidence. Plan short captions and neutral contextual backdrops, independent of art style or material.`, { value1: (JSON.stringify(settings.archives)) });
         const imageStrategy = settings.generateImages ? '' : workflowPrompt("creative-image-strategy-1", 'Image generation is disabled. Plan visuals achievable with code-drawn shapes, typography, diagrams and any existing imported images. Do not require new image assets or external downloads.');
-        const plan = planSchema.parse(await ops.plan(workflowPrompt("creative-plan", `Return JSON {"shots":[{"id":"exact input id","title":"short Chinese title","scenePrompt":"specific visual brief in English"}]}. One entry for EVERY input shot, no added or missing IDs. Preserve the exact narration; you only plan visuals. ${strategy} ${imageStrategy}\n${JSON.stringify(shots)}`, { strategy: (strategy), imageStrategy: (imageStrategy), value3: (JSON.stringify(shots)) })));
-        if (plan.shots.length !== shots.length || new Set(plan.shots.map(s => s.id)).size !== shots.length || plan.shots.some(s => !shots.some(input => input.id === s.id))) throw new Error('VOX_PLAN_IDS: 画面计划未完整对应现有镜头，已停止。');
+        const prompt = workflowPrompt("creative-plan", `Return JSON {"shots":[{"id":"exact input id","title":"short Chinese title","scenePrompt":"specific visual brief in English"}]}. One entry for EVERY input shot, no added or missing IDs. Preserve the exact narration; you only plan visuals. ${strategy} ${imageStrategy}\n${JSON.stringify(shots)}`, { strategy: (strategy), imageStrategy: (imageStrategy), value3: (JSON.stringify(shots)) });
+        if (!ops.planWithReceipt && !ops.plan) throw new Error('VOX_PLAN_UNAVAILABLE: 画面规划运行时不可用。');
+        // Transport failures remain unknown. Only wrap validation after the paid reply arrived.
+        const receipt = ops.planWithReceipt ? await ops.planWithReceipt(prompt) : undefined;
+        const rawPlan = receipt ? receipt.json : await ops.plan!(prompt);
+        let plan: z.infer<typeof planSchema>;
+        try {
+          plan = planSchema.parse(rawPlan);
+          if (plan.shots.length !== shots.length || new Set(plan.shots.map(s => s.id)).size !== shots.length || plan.shots.some(s => !shots.some(input => input.id === s.id))) throw new Error('VOX_PLAN_IDS: 画面计划未完整对应现有镜头，已停止。');
+        } catch (error) {
+          const raw = receipt?.raw ?? JSON.stringify(rawPlan) ?? String(rawPlan);
+          const detail = error instanceof z.ZodError ? `VOX_PLAN_SCHEMA: ${error.message}` : error instanceof Error ? error.message : String(error);
+          throw new LlmJsonParseError(detail, raw, { ...receipt, raw, text: raw, requestId: receipt?.requestId ?? null });
+        }
         return rebuildEditorialTimeline({ ...d, beats: d.beats.map(b => ({ ...b, shots: b.shots.map(s => {
           if (voxShotLocked(settings, s)) return s;
           const planned = plan.shots.find(p => p.id === s.id)!;
@@ -183,8 +221,13 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       if (node.kind === 'verify') {
         const output = directorRenderOutputs(d).current;
         if (!output?.localPath || directorQualityReview(d).report?.status !== 'passed') throw new Error('VOX_VERIFY_GATE: 当前成片未通过质量门控。');
-        const requireAudio = settings.narration || Boolean(settings.music?.path) || Boolean(d.timeline?.audioClips?.length);
-        await ops.verifyVideo(output.localPath, d.timeline?.durationMs ?? 0, requireAudio);
+        // Match the renderer's speech filtering; saved narration stays in the authoring timeline.
+        const retainedAudio = d.beats.flatMap(b => b.shots.flatMap(shot =>
+          materializeProductionAudioClipsForShot(d.timeline, shot).filter(clip =>
+            !clip.muted && clip.sourceDurationMs !== 0 && (clip.durationMs ?? shot.durationMs) > 0
+            && (settings.narration || settings.lockedShotIds.includes(shot.id) || !['narration', 'dialogue'].includes(clip.trackType)))));
+        const requireAudio = settings.narration || Boolean(settings.music?.path) || retainedAudio.length > 0;
+        await ops.verifyVideo(output.localPath, d.productionRun?.authoringVersion === 4 && d.piFilm ? d.piFilm.actualDurationSeconds * 1000 : d.timeline?.durationMs ?? 0, requireAudio);
         return { ...d, stage: 'completed' };
       }
       const shot = shotFor(d, node.shotId);
@@ -282,7 +325,7 @@ export function createVoxProductionRuntime(ops: VoxProductionOperations): VoxPro
       }
       if (node.kind === 'compile') {
         if (shot.animation?.native) {
-          if (!locked && activeNativeFilm(d)?.status !== 'reviewed') throw new Error('LEMO_NATIVE_NOT_REVIEWED: 原生全片尚未通过检查。');
+          if (!locked && d.creativeFilms?.find(f => f.id === d.productionRun?.filmId)?.status !== 'reviewed') throw new Error('LEMO_NATIVE_NOT_REVIEWED: 原生全片尚未通过检查。');
           if (shot.durationMs !== shot.animation.native.durationMs) throw new Error('LEMO_WINDOW_STALE: 镜头时长已修改，请重新制作全片。');
           const resolved = resolveLemoAnimation(shot.animation, d.creativeFilms)!;
           const compiled = ops.compileCode(resolved.code.source);

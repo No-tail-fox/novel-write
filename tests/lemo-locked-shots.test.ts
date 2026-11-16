@@ -4,7 +4,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { nativeDocument, nativeHarness, nativeSettings } from './lemo-native.fixture';
+import { nativeDocument, nativePictureDocument, nativeHarness, nativeSettings } from './lemo-native.fixture';
 import { stepLemoUpstreamAgent, recoverLemoUpstreamAgentTurn, type LemoAgentOptions } from '../electron/lemo-upstream-agent';
 import { LEMO_UPSTREAM_REVISION } from '../electron/lemo-upstream-source';
 import { assertLemoLockedShotsRenderable, lemoProductionContext } from '../electron/lemo-upstream-production';
@@ -111,19 +111,13 @@ const mainPreflight = (d: EditorialCollagePipelineData, s: VoxProductionSettings
   const upstream = (pending ?? []).some(n => n.id.startsWith('upstream-turn:')) || d.productionRun?.authoringVersion === 3;
   if (upstream && s.lockedShotIds.length) assertLemoLockedShotsRenderable(d, s);
 };
-async function producedNativeDocument() {
-  const d = nativeDocument();
-  const plan = async () => ({ shots: d.beats.flatMap(b => b.shots.map(s => ({ id: s.id, title: s.title || '热岛', scenePrompt: 'A shaded street beside a sunlit road, showing their relationship.' }))) });
-  const h = nativeHarness({ plan }, d); await h.start(); await h.idle();
-  expect(h.get().productionRun?.status, h.get().productionRun?.message).toBe('completed');
-  return h.get();
-}
+const producedNativeDocument = nativePictureDocument;
 
 describe('L-3 preflight: no blanket refusal; unrenderable locks fail early', () => {
   it('main.ts calls the renderability check instead of refusing every locked v3 run', async () => {
     const main = await readFile(resolve(__dirname, '..', 'electron', 'main.ts'), 'utf8');
     expect(main).not.toContain('LEMO_LOCKED_SHOTS:');
-    expect(main).toContain('if (upstream && settings.lockedShotIds.length) assertLemoLockedShotsRenderable(document, settings);');
+    expect(main).toContain('if ((upstream || usePi) && settings.lockedShotIds.length) assertLemoLockedShotsRenderable(document, settings);');
   });
   it('rejects a locked shot that has no per-shot picture with LEMO_LOCKED_SHOT_UNRENDERABLE before any paid step', async () => {
     const d = nativeDocument(), target = d.beats[0].shots[0];

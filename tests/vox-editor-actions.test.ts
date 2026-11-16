@@ -36,6 +36,20 @@ function deferred() { let resolve!: (value?: any) => void, reject!: (error: Erro
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 beforeEach(() => { hooks.values=[];hooks.refs=[];hooks.cursor=0;hooks.refCursor=0; });
 describe('Vox editor asynchronous controls', () => {
+  it('transfers a generated scene to the selected template and preserves subsequent authored content', () => {
+    const animation=createVoxAnimation('原场景标题');
+    animation.creativeStyle={styleId:'halftone-dossier',rendererRevision:1,upstreamRevision:'test',source:'production',composition:'scene'};
+    const input=props({animation});
+    button(render(input),'选择模板').props.onClick();
+    const catalog=render(input).find(n=>n.type==='catalog');
+    catalog.props.onApply('text-keywords');
+    const changed=(input.onChange as any).mock.calls.at(-1)[0];
+    expect(changed.template.id).toBe('text-keywords');
+    expect(changed.creativeStyle.composition).toBe('template');
+    const tree=render({...input,animation:changed});
+    tree.find(n=>n.type==='TextAreaField'&&n.props.label==='正文 / 补充说明').props.onChange(null,{value:'应显示的新正文'});
+    expect((input.onChange as any).mock.calls.at(-1)[0]).toMatchObject({creativeStyle:{composition:'template'},template:{props:{subtitle:'应显示的新正文'}}});
+  });
   it('locks duplicate image imports before a rerender, shows busy feedback and preserves the authored draft on failure', async () => {
     const pending=deferred(), onImportAsset=vi.fn(() => pending.promise as Promise<void>), input=props({ onImportAsset });
     const click=button(render(input),'导入图片').props.onClick;

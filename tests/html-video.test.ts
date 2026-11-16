@@ -1560,7 +1560,7 @@ describe('Electron HTML video capture contract', () => {
       const then = vi.spyOn(timeline, 'then').mockImplementation(() => { throw new Error('Must not await timeline playback'); });
       const ready = createReadyScriptExecutor([]);
       electronHarness.state.scriptExecutor = (script) => script.includes('timeline.seek(') || script.includes('window.__tl.seek(')
-        ? vm.runInNewContext(script, { document: { querySelectorAll: () => [] }, window: { __tl: timeline }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) })
+        ? vm.runInNewContext(script, { setTimeout, clearTimeout, document: { querySelectorAll: () => [] }, window: { __tl: timeline }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) })
         : ready(script);
       try {
         await expect(createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'gsap'))).resolves.toContain('gsap.jpg');
@@ -1578,7 +1578,7 @@ describe('Electron HTML video capture contract', () => {
       electronHarness.state.scriptExecutor = (script) => {
         if (!script.includes('timeline.seek(') && !script.includes('window.__tl.seek(')) return ready(script);
         started.resolve();
-        return vm.runInNewContext(script, { document: { querySelectorAll: () => [] }, window: { __tl: { seek: () => seek.promise } }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) });
+        return vm.runInNewContext(script, { setTimeout, clearTimeout, document: { querySelectorAll: () => [] }, window: { __tl: { seek: () => seek.promise } }, requestAnimationFrame: (callback: () => void) => queueMicrotask(callback) });
       };
       const pending = createElectronHtmlVideoRenderer().capturePreview(previewInput(workDir, 'async-seek'));
       await started.promise;

@@ -1,3 +1,5 @@
+import type { ReferenceBatchNodeData } from './reference-batch';
+
 export const MAX_DIRECTOR_BATCH_SHOTS = 500;
 export const MAX_DIRECTOR_BATCH_NODES = MAX_DIRECTOR_BATCH_SHOTS * 3 + 1;
 export const MAX_DIRECTOR_BATCH_DEPENDENCIES = MAX_DIRECTOR_BATCH_NODES - 1;
@@ -8,6 +10,7 @@ export interface DirectorBatchNodeSnapshot {
   id: string;
   capability: 'image' | 'video' | 'voice' | 'render';
   shotId?: string;
+  reference?: ReferenceBatchNodeData;
   title: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
   estimatedCost: number;
@@ -16,6 +19,9 @@ export interface DirectorBatchNodeSnapshot {
 }
 
 export interface DirectorBatchPlanSnapshot {
+  purpose?: 'reference-generation';
+  schemaVersion?: 1;
+  selectionMode?: 'category' | 'selected';
   scope: 'missing' | 'failed' | 'all';
   capabilities: Record<'image' | 'video' | 'voice' | 'render', boolean>;
   outputReady: boolean;

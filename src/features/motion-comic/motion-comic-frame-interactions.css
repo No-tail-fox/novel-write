@@ -1,0 +1,12 @@
+/* Slot interactions only: workspace/preview layout remains owned by motion-comic-make.css. */
+.comic-frame-slot .comic-frame-slot__import {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.comic-frame-slot__import [role='status'] {
+  color: var(--shell-muted);
+  font-size: 11px;
+}

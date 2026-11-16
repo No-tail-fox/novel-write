@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { LicenseService } from '../electron/license-service';
-import { compareVersions, LicenseTransport, verifyEnvelope, verifyRelease, type LicensePublicConfig } from '../electron/license-security';
+import { compareVersions, LicenseRemoteError, LicenseTransport, verifyEnvelope, verifyRelease, type LicensePublicConfig } from '../electron/license-security';
 import { UpdateService } from '../electron/update-service';
 import { resetGenerationAuthorization, setGenerationAuthorization } from '../src/shared/generation-authorization';
 import { fetchWithTimeout } from '../src/shared/http';
@@ -227,4 +227,90 @@ it('expires an offline lease, notifies the shell, and requires online verificati
     service.close(); restarted.close(); transport.mockRestore(); vi.useRealTimers();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+describe('offline grace on a persisted lease', () => {
+  const GRACE_SECONDS = 3600;
+  async function fixture() {
+    const directory = await mkdtemp(join(tmpdir(), 'storydream-lease-grace-'));
+    const keys = generateKeyPairSync('ed25519');
+    const config = { schemaVersion: 1, baseUrl: 'https://127.0.0.1:8443', caPem: 'x'.repeat(100), signingPublicKey: keys.publicKey.export({ format: 'pem', type: 'spki' }).toString() };
+    const options = { config, vaultPath: join(directory, 'vault'), packaged: true,
+      machineId: async () => createHash('sha256').update('grace-machine').digest('hex'),
+      encryption: { isEncryptionAvailable: () => true, encryptString: (value: string) => Buffer.from(value), decryptString: (value: Buffer) => value.toString() } };
+    const transport = vi.spyOn(LicenseTransport.prototype, 'json').mockImplementation(async (_path, request) => {
+      const device = JSON.parse(request!.payload);
+      const now = Math.floor(Date.now() / 1000);
+      const payload = JSON.stringify({ schemaVersion: 1, kind: 'lease', status: 'active', licenseId: '8b44aad6-98fe-4ca2-b93a-19d4ca453945',
+        deviceId: device.deviceId, keyHash: createHash('sha256').update(createPublicKey(device.publicKey).export({ format: 'der', type: 'spki' })).digest('hex'),
+        issuedAt: now, validUntil: now + 600, offlineGraceUntil: now + GRACE_SECONDS, expiresAt: now + 86400, maxDevices: 1,
+        devices: [{ deviceId: device.deviceId, label: 'Grace fixture', lastSeen: now }] });
+      return { payload, signature: sign(null, Buffer.from(payload), keys.privateKey).toString('base64') };
+    });
+    return { directory, options, transport };
+  }
+
+  it('restores a persisted lease after restart while offline and rejects it once the grace window ends', async () => {
+    const { directory, options, transport } = await fixture();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] });
+    const first = new LicenseService(options);
+    let restarted: LicenseService | undefined;
+    try {
+      await first.initialize();
+      expect(first.status().status).toBe('active');
+      first.close();
+      transport.mockRejectedValue(new Error('offline'));
+      await vi.advanceTimersByTimeAsync(700 * 1000);
+      restarted = new LicenseService(options);
+      await restarted.initialize();
+      expect(restarted.status().status).toBe('offline');
+      await expect(restarted.requireActive()).resolves.toBeUndefined();
+      await vi.advanceTimersByTimeAsync((GRACE_SECONDS + 10) * 1000);
+      expect(restarted.status().status).toBe('expired');
+      await expect(restarted.requireActive()).rejects.toMatchObject({ code: 'LICENSE_REQUIRED' });
+    } finally {
+      first.close(); restarted?.close(); transport.mockRestore(); vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a stored lease whose grace window has already passed at startup', async () => {
+    const { directory, options, transport } = await fixture();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] });
+    const first = new LicenseService(options);
+    let restarted: LicenseService | undefined;
+    try {
+      await first.initialize();
+      first.close();
+      transport.mockRejectedValue(new Error('offline'));
+      await vi.advanceTimersByTimeAsync((GRACE_SECONDS + 60) * 1000);
+      restarted = new LicenseService(options);
+      await restarted.initialize();
+      await expect(restarted.requireActive()).rejects.toMatchObject({ code: 'LICENSE_REQUIRED' });
+    } finally {
+      first.close(); restarted?.close(); transport.mockRestore(); vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('drops the stored lease when the server explicitly rejects the device', async () => {
+    const { directory, options, transport } = await fixture();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'performance'] });
+    const first = new LicenseService(options);
+    let restarted: LicenseService | undefined;
+    try {
+      await first.initialize();
+      transport.mockRejectedValue(new LicenseRemoteError('DEVICE_LOCKED', 403));
+      await expect(first.refresh()).rejects.toThrow();
+      expect(first.status().status).toBe('locked');
+      first.close();
+      transport.mockRejectedValue(new Error('offline'));
+      restarted = new LicenseService(options);
+      await restarted.initialize();
+      await expect(restarted.requireActive()).rejects.toMatchObject({ code: 'LICENSE_REQUIRED' });
+    } finally {
+      first.close(); restarted?.close(); transport.mockRestore(); vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

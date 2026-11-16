@@ -102,6 +102,10 @@ export function directorDocumentRenderFingerprint(document: DirectorRenderDocume
         ...(document.beats.some(beat => beat.shots.some(shot => shot.animation?.authoring)) ? { creativeRenderRevision: 2 } : {}),
         ...(document.upstreamFilm ? { upstream: { runId: document.upstreamFilm.runId, sourceHash: document.upstreamFilm.sourceHash, compositionRevision: 4,
           ...(lemoLockedPictureShotIds(document).size ? { lockedShotIds: [...lemoLockedPictureShotIds(document)] } : {}) } } : {}),
+        ...(document.piFilm ? { pi: { runId: document.piFilm.runId, sourceHash: document.piFilm.sourceHash,
+          timelineHash: document.piFilm.timelineHash, assetHash: document.piFilm.assetHash, policy: document.piFilm.policy,
+          actualDurationSeconds: document.piFilm.actualDurationSeconds, audioMasterHash: document.piFilm.audioMaster?.sha256,
+          renderIdentity: document.piFilm.evidence?.renderIdentity, compositionRevision: 1 } } : {}),
         id: document.id,
         ratio: document.ratio,
         title: document.title,
@@ -356,6 +360,8 @@ export interface DirectorGenerateShotVideoRequest {
   shotId: string;
   /** Revision token returned with the project document for optimistic concurrency. */
   expectedUpdatedAt: string;
+  /** Motion-comic only: preserve the current selection and save an unselected candidate. Defaults to automatic. */
+  adoption?: 'candidate' | 'automatic';
 }
 
 export interface DirectorGenerateShotVideoResult {
@@ -381,6 +387,7 @@ export const directorGenerateShotVideoRequestSchema = z
   .object({
     id: directorIdentifierSchema,
     shotId: directorIdentifierSchema,
+    adoption: z.enum(['candidate', 'automatic']).optional(),
     expectedUpdatedAt: z
       .string()
       .max(64)
@@ -434,6 +441,13 @@ export function directorNarrationAlignment(
   const shotById = new Map(shots.map((shot) => [shot.id, shot]));
   return measureProductionNarrationAlignment(scenes.map((scene) => {
     const shot = shotById.get(scene.id);
+    if (document.workflowKind === 'motion-comic' && shot?.renderStrategy === 'remote-video'
+      && 'videoProduction' in shot && (shot.videoProduction?.audioMode === 'native' || shot.videoProduction?.audioMode === 'audio-driven')) {
+      // Native output mixes speech and ambience. Neither its container duration
+      // nor unused standalone TTS tracks establish spoken cue boundaries.
+      return { id: scene.id, durationMs: scene.durationMs, subtitleCues: scene.subtitleCues,
+        audioAssetVersionIds: scene.videoAssetVersionId ? [scene.videoAssetVersionId] : [], speechTimingUnavailable: true };
+    }
     // Use authored timeline clips for evidence, including muted speech. The
     // resolved scene clips intentionally omit muted tracks for actual mixing,
     // but a muted narration asset still has a real source duration to measure.
@@ -632,7 +646,7 @@ export function buildDirectorRenderScenes(
         if (animation.native.width !== canvas.width || animation.native.height !== canvas.height || Math.abs(animation.native.durationMs - shot.durationMs) > .01) issues.push(`${shotLabel}：LEMO_FILM_STALE 原生画布或旁白时长已变更，请重新制作。`);
       }
       const sourceCues = shot.subtitleCueIds.flatMap(id => beat.subtitleCues.find(cue => cue.id === id) ?? []);
-      const semanticBeats = !native && shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined;
+      const semanticBeats = !native && animation?.creativeStyle?.composition !== 'template' && shot.cuePlan ? resolveEditorialCuePlan(shot.cuePlan, sourceCues, document.timeline?.clips.find(clip => clip.shotId === shot.id)?.startMs ?? beat.startMs, shot.durationMs) : undefined;
       const creativeScene = !native && animation?.creativeStyle?.composition === 'scene';
       const compiledLayers = semanticBeats && !creativeScene ? compileEditorialCueLayers(shot.layers, semanticBeats, shot.durationMs) : shot.layers;
       if (shot.renderStrategy === 'remotion') {
@@ -810,7 +824,7 @@ export function buildDirectorRenderScenes(
           videoAssetVersionId: shot.videoAssetVersionId,
           videoJobId: shot.videoJobId,
           audioPath,
-          ...(nativeAudio ? {audioClips:[{id:`native-${shot.id}`,assetVersionId:shot.videoAssetVersionId!,path:audioPath,trackType:'dialogue',startMs:0,durationMs:shot.durationMs},...(audioClips??[]).filter(clip=>!['dialogue','narration'].includes(clip.trackType))]} : hasExplicitAudioMix ? { audioClips } : {}),
+          ...(nativeAudio ? {audioClips:[{id:`native-${shot.id}`,assetVersionId:shot.videoAssetVersionId!,path:audioPath,trackType:dialogue.length > 0 ? 'dialogue' : 'ambience',startMs:0,durationMs:shot.durationMs},...(audioClips??[]).filter(clip=>!['dialogue','narration'].includes(clip.trackType))]} : hasExplicitAudioMix ? { audioClips } : {}),
           layoutTemplate: shot.layoutTemplate ?? '纪录片 · 纯画面',
           motionPreset: shot.motionPreset,
           subtitleStyle: shot.subtitleStyle,
@@ -1006,7 +1020,7 @@ export function evaluateDirectorQuality(
     label: '实际旁白时长与字幕规划可对齐',
     severity: truncatedNarration ? 'blocking' : 'manual',
     status: narrationAlignment.status === 'failed' ? 'failed' : narrationAlignment.status === 'pending' ? 'pending' : 'passed',
-    ...(narrationAlignment.status === 'failed' ? { detail: narrationAlignment.samples.filter((sample) => sample.status === 'mismatch').map((sample) => `${sample.shotId}：${sample.detail || '实测音频与规划时长不一致'}`).join('；') } : narrationAlignment.status === 'pending' ? { detail: '部分旁白资产缺少实测时长，当前语速仅能作为规划值。' } : {}),
+    ...(narrationAlignment.status === 'failed' ? { detail: narrationAlignment.samples.filter((sample) => sample.status === 'mismatch').map((sample) => `${sample.shotId}：${sample.detail || '实测音频与规划时长不一致'}`).join('；') } : narrationAlignment.status === 'pending' ? { detail: narrationAlignment.samples.filter((sample) => sample.status === 'unavailable').map((sample) => `${sample.shotId}：${sample.detail || '缺少实测语音时序，请人工核对。'}`).join('；') } : {}),
   });
 
   const expectedDurationMs = scenes.reduce((sum, scene) => sum + scene.durationMs, 0);

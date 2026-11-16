@@ -56,7 +56,9 @@ probe = ns['visual_continuity_metrics']
 execute = probe.__globals__['run_bounded_subprocess']
 calls = []
 def counted(command, **kwargs):
-    calls.append(command)
+    # Count actual decodes, excluding the cached FFmpeg filter-option capability probe.
+    if '-i' in command:
+        calls.append(command)
     return execute(command, **kwargs)
 probe.__globals__['run_bounded_subprocess'] = counted
 result = probe(video, 400, [index * 800 for index in range(1, 500)], 24)

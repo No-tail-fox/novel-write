@@ -78,7 +78,10 @@ describe('director product flow', () => {
     expect(vox).not.toContain('<DirectorProjectLibrary');
     expect(comic).not.toContain('<DirectorProjectLibrary');
     expect(vox).toContain('onBackToTasks={() => navigate?.(returnView)}');
-    expect(comic).toContain('onBackToTasks={() => navigate?.(returnView)}');
+    expect(comic).toContain('onBackToTasks={backWithinProject}');
+    expect(comic).toContain('const target = motionComicBackTarget(workflowStage)');
+    expect(comic).toContain('setOverviewOpen(true)');
+    expect(comic).toContain('onBack={() => navigate?.(returnView)}');
     // A missing project lands on the recovery state (not a route-local project library), and its only
     // action is creating a new project — returning to the task list stays with the unified task system.
     for (const [mode, action] of [['motion-comic', '新建 AI 漫剧系列'], ['vox', '新建 创意动画项目']] as const) {
@@ -178,7 +181,7 @@ describe('director product flow', () => {
     expect(comic).toContain('director-series-page');
     expect(comic).not.toContain('<Dialog');
     // The series bible is the full-page 项目资产 stage of the production workspace, saved via that page's save action.
-    expect(comic).toMatch(/<MotionComicProductionWorkspace\s+document=\{document\}\s+stage="assets"[^>]*?onSave=\{\(\) => void saveProject\(\)\}[\s\S]*?\n\s*>\s*<div data-motion-comic-series-bible="true" className="director-series-page">/);
+    expect(comic).toMatch(/<MotionComicProductionWorkspace\s+navigationMemory=\{workflowNavigationMemory\}\s+document=\{document\}\s+stage="assets"[^>]*?onSave=\{\(\) => void saveProject\(\)\}[\s\S]*?\n\s*>\s*<div data-motion-comic-series-bible="true" className="director-series-page">/);
     const document = motionComicProject();
     const stageState = Object.fromEntries(MOTION_COMIC_WORKFLOW_STAGES.map((stage) => [stage, { ready: true, complete: false, detail: '' }])) as Record<MotionComicWorkflowStage, MotionComicStageState>;
     const page = createElement(MotionComicProductionWorkspace, {
@@ -194,8 +197,9 @@ describe('director product flow', () => {
     expect(saveButton).toBeDefined();
     expect(saveButton?.slice(0, saveButton.indexOf('>') + 1)).not.toContain('disabled');
     // Scene (empty-shot) and prop reference images are managed on the same page.
-    expect(comic).toContain("referenceImportControl('scene', asset.id, versions.length > 0)");
-    expect(comic).toContain("referenceImportControl('prop', asset.id, versions.length > 0)");
+    expect(comic).toContain("onImport={() => void importReference('scene', asset.id)}");
+    expect(comic).toContain("onImport={() => void importReference('prop', asset.id)}");
+    expect(comic).toContain('onSetRole={(versionId, role) => setReferenceRole(target, versionId, role)}');
     const provider: DirectorImageProviderStatus = {
       profileId: 'image-profile', connected: true, provider: 'gpt_image', supportsReferenceImages: true,
       maxReferenceImages: 10, label: 'Configured image model', model: 'gpt-image-2.5', resolution: '2K', quality: 'high',
@@ -350,7 +354,7 @@ describe('director product flow', () => {
     expect(vox).toContain('qualityReview={qualityReview}');
     expect(comic).toContain('qualityReview={qualityReview}');
     expect(vox).toContain('directorQualityReview(document)');
-    expect(comic).toContain('directorQualityReview(document, activeEpisode?.id)');
+    expect(comic).toContain('document && activeEpisode ? directorQualityReview(document, activeEpisode.id) : undefined');
     expect(workspace).toContain('data-quality-freshness={qualityFreshness}');
     expect(workspace).toContain('resolveProductionQualityRecheckScope');
     expect(vox).toContain('onReviewQualityArtifact={reviewQualityArtifact}');

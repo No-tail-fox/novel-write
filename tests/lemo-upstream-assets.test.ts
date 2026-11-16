@@ -8,6 +8,7 @@ import { stepLemoUpstreamAgent, lemoAgentImagePrompt, type LemoAgentImages, type
 import { createFfmpegLemoAssetMedia, readLemoAssetManifest, stageLemoAssets, verifyLemoAssets, type LemoAssetMedia } from '../electron/lemo-upstream-assets';
 import { lemoUpstreamVideoInternals } from '../electron/lemo-upstream-video';
 import { LEMO_UPSTREAM_REVISION } from '../electron/lemo-upstream-source';
+import { resolveFinalFilmFfmpeg } from '../electron/final-film-gate-runner';
 import { lemoAgentAssetErrors, lemoAgentImagePolicy, lemoAttributionRequired, lemoMissingAttributions, lemoStyleRequiresRealMaterial } from '../src/shared/creative-animation/agent-assets';
 import { voxProductionSettingsSchema } from '../src/shared/vox-production';
 
@@ -203,8 +204,8 @@ describe('Lemo v3 optional illustration channel (P2-4)', () => {
   });
 });
 
-const bundledFfmpeg = resolve('vendor/python/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-win-x86_64-v7.1.exe');
-describe.skipIf(!existsSync(bundledFfmpeg))('bundled ffmpeg media adapter', () => {
+const bundledFfmpeg = (await resolveFinalFilmFfmpeg({ pythonRoot: resolve('vendor/python') }))?.ffmpegPath ?? '';
+describe.skipIf(!bundledFfmpeg)('bundled ffmpeg media adapter', () => {
   it('probes, extracts a deterministic 24 fps sequence and writes thumbnails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lemo-assets-ffmpeg-')); roots.push(root);
     const clip = join(root, 'clip.mp4'), still = join(root, 'still.png');

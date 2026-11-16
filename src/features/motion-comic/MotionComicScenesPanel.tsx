@@ -1,14 +1,21 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import { Layers3, Plus, Users, Sparkles } from 'lucide-react';
-import { Button, CheckboxField, Toolbar, TextField, TextAreaField } from '../../ui';
-import type { MotionComicPipelineData, MotionComicEpisode, MotionComicDramaticScene, MotionComicWorkflowStage } from '../../shared/motion-comic';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { ArrowLeft, Layers3, Plus, Users, Sparkles } from 'lucide-react';
+import { Button, CheckboxField, Toolbar, TextField, TextAreaField, SelectField } from '../../ui';
+import type { MotionComicPipelineData, MotionComicEpisode, MotionComicDramaticScene, MotionComicWorkflowStage, MotionComicShot, MotionComicDialogueCue } from '../../shared/motion-comic';
+import { MotionComicSceneShotEditor } from './MotionComicSceneShotEditor';
 import { resolveMotionComicSceneAct } from '../../shared/motion-comic';
 import { motionComicSourceEpisodeIdForEpisode } from '../../shared/motion-comic-planning';
+import { ScenePreview, sceneShotImage, type SceneMediaResolver } from './MotionComicScenePreview';
+import { MotionComicSceneReferences } from './MotionComicSceneReferences';
+import './motion-comic-scenes-workspace.css';
 
 export interface ScenesPanelProps {
   document: MotionComicPipelineData;
   activeEpisode: MotionComicEpisode;
   onSelectEpisode: (episodeId: string) => void;
+  onBack?: () => void;
+  resolveMediaUrl?: SceneMediaResolver;
+  onOpenAssets?: () => void;
   onAddScene: () => void;
   onAddSceneDefinition?: (scene: MotionComicDramaticScene) => void;
   onUpdateScene: (sceneId: string, updates: Partial<MotionComicDramaticScene>) => void;
@@ -16,235 +23,96 @@ export interface ScenesPanelProps {
   onRenameAct: (actIndex: number, title: string) => void;
   onPlanEpisode?: (sourceEpisodeId: string) => void;
   onContinue?: (stage: MotionComicWorkflowStage) => void;
+  onUpdateShot?: (shotId: string, updates: Partial<MotionComicShot>) => void;
+  onUpdateCue?: (cueId: string, updates: Partial<MotionComicDialogueCue>) => void;
+  onDraftGuardChange?: (guard: (() => boolean) | null) => void;
 }
-export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisode, onAddScene, onUpdateScene, onSetActBoundary, onRenameAct, onPlanEpisode, onContinue }: ScenesPanelProps): ReactElement {
-  const allSourceEpisodes = document.sourceDocument?.episodes ?? [];
-  const displayEpisodes = allSourceEpisodes.length > 0
-    ? allSourceEpisodes.map((sourceEp) => {
-        const generated = document.episodes.find((e) => motionComicSourceEpisodeIdForEpisode(document, e) === sourceEp.id);
-        return {
-          id: generated?.id ?? sourceEp.id,
-          sourceId: sourceEp.id,
-          number: sourceEp.number,
-          title: sourceEp.title,
-          isPlanned: Boolean(generated && generated.scenes.length > 0),
-          sceneCount: generated?.scenes.length ?? 0,
-          shotCount: generated?.scenes.flatMap((s) => s.shots).length ?? 0,
-          sourceText: sourceEp.sourceText,
-        };
-      })
-    : document.episodes.map((e) => ({
-        id: e.id,
-        sourceId: e.id,
-        number: e.number,
-        title: e.title,
-        isPlanned: e.scenes.length > 0,
-        sceneCount: e.scenes.length,
-        shotCount: e.scenes.flatMap((s) => s.shots).length,
-        sourceText: '',
-      }));
-
-  const CHUNK_SIZE = 20;
-  const totalEpisodes = displayEpisodes.length;
-  const chunkCount = Math.ceil(totalEpisodes / CHUNK_SIZE);
-  const activeEpisodeNumber = activeEpisode.number ?? 1;
-  const defaultChunk = chunkCount > 1 ? Math.floor((activeEpisodeNumber - 1) / CHUNK_SIZE) : -1;
-  const [selectedChunk, setSelectedChunk] = useState<number>(defaultChunk);
+export function MotionComicScenesPanel({ document, activeEpisode, onSelectEpisode, onBack, resolveMediaUrl, onOpenAssets, onAddScene, onUpdateScene, onSetActBoundary, onRenameAct, onPlanEpisode, onContinue, onUpdateShot, onUpdateCue, onDraftGuardChange }: ScenesPanelProps): ReactElement {
+  const [editingShotIds, setEditingShotIds] = useState<string[]>([]);
+  const hasPendingShotEdits = editingShotIds.length > 0;
+  const [draftWarning, setDraftWarning] = useState('');
+  const [selectedScenes, setSelectedScenes] = useState<Record<string, string>>({});
+  const pendingAddedScene = useRef<{ episodeId: string; ids: string[] } | null>(null);
+  const detailRef = useRef<HTMLElement>(null);
+  const [sceneInfoEditing, setSceneInfoEditing] = useState(false);
+  const [referencesOpen, setReferencesOpen] = useState(false);
   useEffect(() => {
-    setSelectedChunk((current) => current === -1 ? current : Math.floor((activeEpisodeNumber - 1) / CHUNK_SIZE));
-  }, [activeEpisodeNumber]);
-
-  const filteredEpisodes = selectedChunk === -1 || chunkCount <= 1
-    ? displayEpisodes
-    : displayEpisodes.slice(selectedChunk * CHUNK_SIZE, (selectedChunk + 1) * CHUNK_SIZE);
-
-  const isCurrentPlanned = activeEpisode.scenes.length > 0;
+    onDraftGuardChange?.(() => {
+      if (!hasPendingShotEdits) return true;
+      setDraftWarning('镜头仍在编辑，请先保存镜头或取消编辑后再切换。');
+      return false;
+    });
+    return () => onDraftGuardChange?.(null);
+  }, [hasPendingShotEdits, onDraftGuardChange]);
+  useEffect(() => { if (!hasPendingShotEdits) setDraftWarning(''); }, [hasPendingShotEdits]);
+  useEffect(() => {
+    const pending = pendingAddedScene.current;
+    if (!pending || pending.episodeId !== activeEpisode.id) return;
+    const added = activeEpisode.scenes.find(scene => !pending.ids.includes(scene.id));
+    if (added) {
+      setSelectedScenes(current => ({ ...current, [activeEpisode.id]: added.id }));
+      pendingAddedScene.current = null;
+    }
+  }, [activeEpisode.id, activeEpisode.scenes]);
+  const onShotEditingChange = (shotId: string, editing: boolean) => setEditingShotIds(current => editing ? [...new Set([...current, shotId])] : current.filter(id => id !== shotId));
   const resolvedScenes = activeEpisode.scenes.map((scene, position) => {
     const act = resolveMotionComicSceneAct(scene, position, activeEpisode.scenes.length);
-    const previousAct = position > 0
-      ? resolveMotionComicSceneAct(activeEpisode.scenes[position - 1], position - 1, activeEpisode.scenes.length)
-      : undefined;
+    const previousAct = position > 0 ? resolveMotionComicSceneAct(activeEpisode.scenes[position - 1], position - 1, activeEpisode.scenes.length) : undefined;
     return { scene, position, act, startsNewAct: position === 0 || act.actIndex !== previousAct?.actIndex };
   });
   const actGroups = new Map<number, typeof resolvedScenes>();
-  if (isCurrentPlanned) {
-    resolvedScenes.forEach((entry) => {
-      actGroups.set(entry.act.actIndex, [...(actGroups.get(entry.act.actIndex) ?? []), entry]);
-    });
-  }
-
+  resolvedScenes.forEach(entry => actGroups.set(entry.act.actIndex, [...(actGroups.get(entry.act.actIndex) ?? []), entry]));
+  const selected = resolvedScenes.find(entry => entry.scene.id === selectedScenes[activeEpisode.id]) ?? resolvedScenes[0];
+  useEffect(() => { detailRef.current?.scrollTo({ top: 0 }); setSceneInfoEditing(false); }, [activeEpisode.id, selected?.scene.id]);
   const sourceId = motionComicSourceEpisodeIdForEpisode(document, activeEpisode) ?? activeEpisode.id;
-  const currentSource = allSourceEpisodes.find((s) => s.id === sourceId);
-  const canPlan = Boolean(onPlanEpisode);
+  const currentSource = document.sourceDocument?.episodes.find(source => source.id === sourceId);
+  const sourceLabel = (source: string) => source === 'ai-planned' ? 'AI 规划' : source === 'manual' ? '人工调整' : '规则推断';
 
-  return <div className="motion-comic-stage-panel motion-comic-scenes-panel" data-motion-comic-stage-panel="scenes">
+  return <div className="motion-comic-stage-panel motion-comic-scenes-panel comic-scenes-workspace" data-motion-comic-stage-panel="scenes">
+    <div className="comic-scenes-breadcrumb"><span>打开本集剧本工作台</span><span>/</span><span>第 {activeEpisode.number} 集</span><span>/</span><strong>分幕与场次</strong></div>
     <header className="motion-comic-stage-panel__heading">
-      <span><Layers3 size={18} /></span>
-      <div>
-        <p>03 · 分幕分场</p>
-        <h1>{activeEpisode.title}</h1>
-        <small>
-          {isCurrentPlanned
-            ? `${actGroups.size} 幕 · ${activeEpisode.scenes.length} 场 · ${activeEpisode.scenes.flatMap((scene) => scene.shots).length} 镜头`
-            : '本集尚未应用分镜，请先审核剧本及分镜'}
-        </small>
-      </div>
+      {onBack ? <Button className="comic-scenes-back" icon={<ArrowLeft size={14} />} disabled={hasPendingShotEdits} onClick={onBack}>返回本集剧本</Button> : <span><Layers3 size={18} /></span>}
+      <div><p>分幕与场次</p><h1>第 {activeEpisode.number} 集 · {activeEpisode.title}</h1><small>{activeEpisode.scenes.length ? `${actGroups.size} 幕 · ${activeEpisode.scenes.length} 场 · ${activeEpisode.scenes.flatMap(scene => scene.shots).length} 镜头` : '本集尚未应用分镜，请先审核并应用本集分镜'}</small></div>
       <Toolbar aria-label="分幕分场操作">
-        {isCurrentPlanned ? <Button variant="secondary" icon={<Plus size={14} />} onClick={onAddScene}>新增场次</Button> : null}
-        {isCurrentPlanned && onContinue ? <Button variant="primary" icon={<Users size={14} />} onClick={() => onContinue('assets')}>确认并进入制作资产</Button> : null}
+        <SelectField label="当前分集" value={activeEpisode.id} disabled={hasPendingShotEdits} options={document.episodes.map(episode => ({ value: episode.id, label: `第 ${episode.number} 集 · ${episode.title}` }))} onChange={event => { if (!hasPendingShotEdits) onSelectEpisode(event.target.value); }} />
+        {activeEpisode.scenes.length ? <Button icon={<Plus size={14} />} disabled={hasPendingShotEdits} onClick={() => { pendingAddedScene.current = { episodeId: activeEpisode.id, ids: activeEpisode.scenes.map(scene => scene.id) }; onAddScene(); }}>新增场次</Button> : null}
+        {activeEpisode.scenes.length > 0 && onContinue ? <Button variant="primary" icon={<Users size={14} />} disabled={hasPendingShotEdits} onClick={() => onContinue('assets')}>进入制作资产</Button> : null}
       </Toolbar>
     </header>
-    {chunkCount > 1 ? (
-      <div className="motion-comic-scenes-panel__episodes-filter">
-        <Button
-          variant={selectedChunk === -1 ? 'primary' : 'subtle'}
-          density="compact"
-          onClick={() => setSelectedChunk(-1)}
-        >
-          全部 ({totalEpisodes})
-        </Button>
-        {Array.from({ length: chunkCount }).map((_, idx) => {
-          const startNum = idx * CHUNK_SIZE + 1;
-          const endNum = Math.min((idx + 1) * CHUNK_SIZE, totalEpisodes);
-          return (
-            <Button
-              key={idx}
-              variant={selectedChunk === idx ? 'primary' : 'subtle'}
-              density="compact"
-              onClick={() => setSelectedChunk(idx)}
-            >
-              {String(startNum).padStart(2, '0')}-{String(endNum).padStart(2, '0')} 集
-            </Button>
-          );
-        })}
-      </div>
-    ) : null}
-
-    <div className="motion-comic-scenes-panel__episodes" role="tablist" aria-label="选择分集">
-      {filteredEpisodes.map((ep) => {
-        const isActive = ep.id === activeEpisode.id;
-        return (
-          <Button
-            key={ep.id}
-            variant="subtle"
-            density="compact"
-            role="tab"
-            aria-selected={isActive}
-            className={isActive ? 'is-active' : ''}
-            onClick={() => onSelectEpisode(ep.id)}
-
-          >
-            <span>EP {String(ep.number).padStart(2, '0')} · {ep.title}</span>
-            {ep.isPlanned ? (
-              <span>({ep.sceneCount}场)</span>
-            ) : (
-              <span className="motion-comic-ep-pill">待分幕</span>
-            )}
-          </Button>
-        );
-      })}
-    </div>
-
-    {!isCurrentPlanned ? (
-      <div className="motion-comic-scenes-unplanned-box">
-        <h3>{activeEpisode.title} · 尚未生成分幕与分场</h3>
-        <p>
-          {currentSource?.sourceText ? `已保存本集原文（共 ${currentSource.sourceText.length} 字）。在剧本工作台批量生成、审核并批准，再单独生成和审核分镜。` : '可通过 AI 模型规划本集，或手动添加场次。'}
-        </p>
-        {currentSource?.sourceText ? (
-          <div className="motion-comic-scenes-source-preview" tabIndex={0} aria-label="本集原文">
-            {currentSource.sourceText}
-          </div>
-        ) : null}
-        <div>
-          <Button variant="primary" disabled={!canPlan} icon={<Sparkles size={14} />} onClick={() => onPlanEpisode?.(currentSource?.id ?? activeEpisode.id)}>{currentSource ? '打开本集剧本工作台' : '生成本集结构预览'}</Button>
-          {!currentSource ? <Button variant="secondary" icon={<Plus size={14} />} onClick={onAddScene}>手动添加第一场</Button> : null}
-        </div>
-      </div>
-    ) : (
-      <div className="motion-comic-scenes-board">
-        {Array.from(actGroups.entries()).map(([actIndex, entries]) => {
-          const actSource = entries.some((entry) => entry.act.actSource === 'manual')
-            ? 'manual'
-            : entries.every((entry) => entry.act.actSource === 'ai-planned') ? 'ai-planned' : 'rule-inferred';
-          const actSourceLabel = actSource === 'ai-planned' ? 'AI 规划' : actSource === 'manual' ? '人工调整' : '规则推断';
-          return <div key={actIndex} className="motion-comic-act-card" data-act-source={actSource}>
-            <div className="motion-comic-act-card__header">
-              <div>
-                <span className="motion-comic-act-card__badge">第 {actIndex} 幕</span>
-                <span className="motion-comic-act-card__source">{actSourceLabel}</span>
-              </div>
-              <span>{entries.length} 场 · {entries.flatMap(({ scene }) => scene.shots).length} 镜头</span>
-            </div>
-            <TextField
-              fieldClassName="motion-comic-act-card__title-field"
-              label="幕标题"
-              key={`${actIndex}-${entries[0]?.act.actTitle}`}
-              defaultValue={entries[0]?.act.actTitle ?? `第 ${actIndex} 幕`}
-              maxLength={512}
-              onBlur={(event) => {
-                const title = event.currentTarget.value.trim();
-                if (title && title !== entries[0]?.act.actTitle) onRenameAct(actIndex, title);
-              }}
-            />
-            <div className="motion-comic-scenes-panel__list">
-              {entries.map(({ scene, position, act, startsNewAct }) => {
-                const dialogueCount = activeEpisode.dialogueCues.filter((cue) => scene.shots.some((shot) => shot.dialogueCueIds.includes(cue.id))).length;
-                return (
-                  <div key={scene.id} className="motion-comic-scene-editor">
-                    <div>
-                      <strong>场次 {scene.index}</strong>
-                      <span>{scene.shots.length} 镜 · {dialogueCount} 句对白</span>
-                    </div>
-                    <div>
-                      <CheckboxField
-                        label={position === 0 ? '本集从此场开始第 1 幕' : '从本场开始新一幕'}
-                        checked={startsNewAct}
-                        disabled={position === 0}
-                        onChange={(_, data) => onSetActBoundary(scene.id, data.checked === true)}
-                      />
-                      <TextField label="场次标题" value={scene.title} onChange={(_, data) => onUpdateScene(scene.id, { title: data.value })} />
-                      <TextAreaField label="场次概要" value={scene.summary} rows={2} onChange={(_, data) => onUpdateScene(scene.id, { summary: data.value })} />
-                      <TextAreaField
-                        key={`${scene.id}-${act.actBoundaryReason}`}
-                        label="幕边界依据"
-                        defaultValue={act.actBoundaryReason}
-                        rows={2}
-                        resize="vertical"
-                        onBlur={(event) => {
-                          const reason = event.currentTarget.value.trim();
-                          if (reason && reason !== act.actBoundaryReason) onUpdateScene(scene.id, { actBoundaryReason: reason, actSource: 'manual' });
-                        }}
-                      />
-                    </div>
-                    <section className="comic-scene-shot-list" aria-label={`${scene.title}镜头内容`}>
-                      <header><strong>逐镜制作内容</strong><small>{scene.shots.reduce((total, shot) => total + shot.durationMs, 0) / 1000} 秒</small></header>
-                      {scene.shots.length === 0 ? <p>本场还没有镜头，请补充分镜后再制作。</p> : scene.shots.map((shot) => {
-                        const characters = shot.characterLookIds.flatMap((id) => document.characters.flatMap((character) => character.looks.filter((look) => look.id === id).map((look) => `${character.name} · ${look.label}`)));
-                        const location = document.sceneAssets.find((asset) => asset.id === shot.sceneAssetId);
-                        const props = shot.propAssetIds.flatMap((id) => document.props.filter((asset) => asset.id === id).map((asset) => asset.label));
-                        const cues = activeEpisode.dialogueCues.filter((cue) => shot.dialogueCueIds.includes(cue.id));
-                        return <article key={shot.id} className="comic-scene-shot" data-shot-content={shot.id}>
-                          <header><strong>镜头 {shot.index}</strong><span>{shot.framing || '景别待补充'} · {shot.durationMs / 1000} 秒</span></header>
-                          <h3>{shot.title || '镜头标题待补充'}</h3>
-                          <dl>
-                            <div><dt>画面</dt><dd>{shot.prompt || '待补充画面描述'}</dd></div>
-                            <div><dt>动作 / 运镜</dt><dd>{shot.motionPrompt || '待补充动作与运镜'}</dd></div>
-                            <div><dt>角色造型</dt><dd>{characters.join('、') || '无角色引用'}</dd></div>
-                            <div><dt>场景 / 道具</dt><dd>{location?.label || '场景待关联'}{props.length ? ` · ${props.join('、')}` : ' · 无道具引用'}</dd></div>
-                            {shot.continuity ? <div><dt>动作承接</dt><dd>{shot.continuity.startState} → {shot.continuity.endState}</dd></div> : null}
-                          </dl>
-                          <div className="comic-scene-dialogue"><strong>对白与旁白</strong>{cues.length ? cues.map((cue) => <p key={cue.id}><span>{cue.speakerName || document.characters.find((character) => character.id === cue.characterId)?.name || (cue.speakerRole === 'narrative' ? '旁白' : '未标注说话人')}{cue.emotion ? ` · ${cue.emotion}` : ''}</span>{cue.text}</p>) : <small>本镜未配置对白或旁白；无声动作镜头可留空。</small>}</div>
-                        </article>;
-                      })}
-                    </section>
-                  </div>
-                );
-              })}
-            </div>
-          </div>;
-        })}
-      </div>
-    )}
+    {hasPendingShotEdits ? <p className="comic-scenes-workspace__draft" role="status">有 {editingShotIds.length} 个镜头正在编辑，请保存或取消后再切换。</p> : null}
+    {draftWarning ? <p role="alert">{draftWarning}</p> : null}
+    {!selected ? <div className="motion-comic-scenes-unplanned-box">
+      <h3>本集尚未应用分镜</h3><p>请返回本集剧本，完成审核、生成分镜并确认应用后，再编辑幕、场次与镜头。</p>
+      {currentSource?.sourceText ? <div className="motion-comic-scenes-source-preview" tabIndex={0} aria-label="本集原文">{currentSource.sourceText}</div> : null}
+      <Button variant="primary" disabled={!onBack && !onPlanEpisode} icon={<Sparkles size={14} />} onClick={() => onBack ? onBack() : onPlanEpisode?.(sourceId)}>返回本集剧本</Button>
+    </div> : <div className={`comic-scenes-workspace__layout${referencesOpen ? ' is-references-open' : ''}`}>
+      <nav className="comic-scenes-directory" aria-label="本集幕与场次目录">
+        {Array.from(actGroups.entries()).map(([actIndex, entries]) => <section key={actIndex} aria-label={`第 ${actIndex} 幕`}>
+          <h2>第 {actIndex} 幕 · {entries[0].act.actTitle}</h2>
+          {entries.map(({ scene }) => <Button key={scene.id} variant="subtle" title={`场次 ${scene.index} · ${scene.title}`} aria-pressed={scene.id === selected.scene.id} disabled={hasPendingShotEdits && scene.id !== selected.scene.id} onClick={() => { if (!hasPendingShotEdits) setSelectedScenes(current => ({ ...current, [activeEpisode.id]: scene.id })); }}>
+            <ScenePreview path={sceneShotImage(document, scene.shots[0])?.localPath || sceneShotImage(document, scene.shots[0])?.uri} label={`${scene.title}场次画面`} resolveUrl={resolveMediaUrl} compact />
+            <span className="comic-scenes-directory__copy"><strong>场次 {scene.index}</strong><span>{scene.title}</span><small>{scene.shots.length} 镜头 · {activeEpisode.dialogueCues.filter(cue => scene.shots.some(shot => shot.dialogueCueIds.includes(cue.id))).length} 句对白</small></span>
+          </Button>)}
+        </section>)}
+      </nav>
+      <section ref={detailRef} className="comic-scenes-detail" aria-label="当前场次编辑" key={`${activeEpisode.id}:${selected.scene.id}`}>
+        <header className="comic-scenes-detail__heading"><div><h2>场次 {selected.scene.index} · {selected.scene.title}</h2><p>第 {selected.act.actIndex} 幕 {selected.act.actTitle} / {sourceLabel(selected.act.actSource)} / {selected.scene.shots.length} 镜头 · {selected.scene.shots.reduce((total, shot) => total + shot.durationMs, 0) / 1000} 秒</p></div><Button className="comic-scenes-reference-toggle" variant="subtle" density="compact" aria-expanded={referencesOpen} onClick={() => setReferencesOpen(current => !current)}>{referencesOpen ? '收起引用' : '场次引用'}</Button></header>
+        <details className="comic-scenes-info" open><summary>场次信息</summary>
+          <div className="comic-scenes-info__summary"><strong>场景概述：</strong><p>{selected.scene.summary || '尚未填写场次概要'}</p><Button variant="subtle" density="compact" aria-expanded={sceneInfoEditing} onClick={() => setSceneInfoEditing(current => !current)}>{sceneInfoEditing ? '完成编辑' : '编辑场次信息'}</Button></div>
+          {sceneInfoEditing ? <div className="comic-scenes-detail__fields">
+          <TextField label="幕标题" key={`${selected.act.actIndex}-${selected.act.actTitle}`} defaultValue={selected.act.actTitle} maxLength={512} onBlur={event => { const title = event.currentTarget.value.trim(); if (title && title !== selected.act.actTitle) onRenameAct(selected.act.actIndex, title); }} />
+          <TextField label="场次标题" value={selected.scene.title} onChange={(_, data) => onUpdateScene(selected.scene.id, { title: data.value })} />
+          <CheckboxField label={selected.position === 0 ? '本集从此场开始第 1 幕' : '从本场开始新一幕'} checked={selected.startsNewAct} disabled={selected.position === 0} onChange={(_, data) => onSetActBoundary(selected.scene.id, data.checked === true)} />
+          <TextAreaField label="场次概要" value={selected.scene.summary} rows={2} resize="vertical" onChange={(_, data) => onUpdateScene(selected.scene.id, { summary: data.value })} />
+          </div> : null}
+          <details className="comic-scenes-info__boundary"><summary>幕边界依据</summary><TextAreaField label="幕边界依据" key={`${selected.scene.id}-${selected.act.actBoundaryReason}`} defaultValue={selected.act.actBoundaryReason} rows={2} resize="vertical" onBlur={event => { const reason = event.currentTarget.value.trim(); if (reason && reason !== selected.act.actBoundaryReason) onUpdateScene(selected.scene.id, { actBoundaryReason: reason, actSource: 'manual' }); }} /></details>
+        </details>
+        <section className="comic-scene-shot-list" aria-label={`${selected.scene.title}镜头内容`}>
+          <header><strong>逐镜制作内容</strong><small>{selected.scene.shots.length} 镜头 · {selected.scene.shots.reduce((total, shot) => total + shot.durationMs, 0) / 1000} 秒</small></header>
+          {!selected.scene.shots.length ? <p>本场还没有镜头，请补充分镜后再制作。</p> : selected.scene.shots.map(shot => <MotionComicSceneShotEditor key={shot.id} document={document} shot={shot} hasPreview={Boolean(sceneShotImage(document, shot)?.localPath || sceneShotImage(document, shot)?.uri)} preview={<ScenePreview path={sceneShotImage(document, shot)?.localPath || sceneShotImage(document, shot)?.uri} label={`${shot.title}镜头画面`} resolveUrl={resolveMediaUrl} />} cues={activeEpisode.dialogueCues.filter(cue => shot.dialogueCueIds.includes(cue.id))} onUpdateShot={onUpdateShot} onUpdateCue={onUpdateCue} onEditingChange={onShotEditingChange} />)}
+        </section>
+      </section>
+      <MotionComicSceneReferences document={document} scene={selected.scene} resolveUrl={resolveMediaUrl} onOpenAssets={onOpenAssets} disabled={hasPendingShotEdits} />
+    </div>}
   </div>;
 }

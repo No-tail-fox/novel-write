@@ -1,0 +1,1886 @@
+{
+  "schemaVersion": 1,
+  "pack": "storydream-lemo-instrument-starter",
+  "license": "CC0 1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "sourceIndexSha256": "0b2323089229b3572dbf2fab93f726a37b33c2edf74ae53a3ffd61edb409db9e",
+  "source": {
+    "repo": "lemomo-ai/lemo-opuscar",
+    "tag": "assets",
+    "asset": "instruments-karoryfer",
+    "file": "instruments-karoryfer.tar",
+    "size": 77772800,
+    "sha256": "b72822ac2f6569ed33b376448784d542bf039478fbf521db0c4bdc7ee766cac4",
+    "url": "https://github.com/lemomo-ai/lemo-opuscar/releases/download/assets/instruments-karoryfer.tar"
+  },
+  "instruments": [
+    "alto_sax",
+    "jazz_bass",
+    "erhu"
+  ],
+  "bytes": 76488811,
+  "files": [
+    {
+      "path": "README.md",
+      "size": 414,
+      "sha256": "f976fef92f2b2b088f7bc503e36becc12b6f0be390ce46a8f22c5d0478241976",
+      "source": "storydream-generated",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/index.json",
+      "size": 71079,
+      "sha256": "ef154bda39687b5ee3a0d4ffca41cecd3165abb3500f20fbcae6883e18be2bcc",
+      "source": "storydream-generated",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/LICENSE",
+      "size": 7048,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a5_stac_rr1.flac",
+      "size": 93401,
+      "sha256": "a303f443b2327282969e361ee00b027a5d74abf22d77003b7fd8e4cb54a82c7e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a5_stac_rr2.flac",
+      "size": 91437,
+      "sha256": "ffa50c1a0f22e176532983896eb2000c3742a2849f957239d6fc665514d625f5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a5_stac_rr3.flac",
+      "size": 96220,
+      "sha256": "a67cf5d5b470caa99dd5b80de25428637a330fa18036ec24b0bc8d1add299c32",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a5_stac_rr4.flac",
+      "size": 104193,
+      "sha256": "6507129370db32f922922383965683fb38566e3eda84b6d1f51261219bff9fa6",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a6_stac_rr1.flac",
+      "size": 95333,
+      "sha256": "115c0d22b91a535593a5185bc5a43e6df6355e44908b8310315a835dde1fae5c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a6_stac_rr2.flac",
+      "size": 92762,
+      "sha256": "7d8aef11ac2826696ea98733556fb2b8b392c56d594fc2e1baf0b4eb4b60bf90",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a6_stac_rr3.flac",
+      "size": 93158,
+      "sha256": "6c30a7f3138d45a877b9654c49c909357d8ec99fce2fd95878d382fcabba1a23",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_a6_stac_rr4.flac",
+      "size": 88483,
+      "sha256": "de13f6628bba8b9e63f663e631d83cccef9e7d14e97e5c4ec84de012553c57e3",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab5_stac_rr1.flac",
+      "size": 101794,
+      "sha256": "38d8627ddf6435b5f867b451361a4bce06ccf96b10cdd56c7e5fb3e20a5b2944",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab5_stac_rr2.flac",
+      "size": 91000,
+      "sha256": "d3b50a43f3ed9ed4734560f4bb6bdf72e885b3bf715fb71c7d57af77e2149b18",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab5_stac_rr3.flac",
+      "size": 87973,
+      "sha256": "4a95371059dde9bc57fe0043852394aaccdc49a2968868b957c23d16832740b2",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab5_stac_rr4.flac",
+      "size": 97417,
+      "sha256": "6cf014af73218d2a3380559c2c14a5a991471dca3646612fadd96715e452e3f0",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab6_stac_rr1.flac",
+      "size": 81977,
+      "sha256": "2fb3327fe5ce5379c17dc5deb5afbc733d924fc858f7eef0accd1844d02fdb07",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab6_stac_rr2.flac",
+      "size": 104742,
+      "sha256": "6a1bd69b64d5b669d2890cc47f1fdcaa7162f4c5022ae4fec348cfa75d1681e4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab6_stac_rr3.flac",
+      "size": 94998,
+      "sha256": "c1989b1f823cef5a66f33ba4cc98ac59ccd920ac2522e6a6a71f2267faf39810",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_ab6_stac_rr4.flac",
+      "size": 107631,
+      "sha256": "41c4cb0d833a5af3533a8c668f7c04b68c5f82f799382a145fcd3a13e9d7bb68",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_b5_stac_rr1.flac",
+      "size": 105120,
+      "sha256": "31b5d28f36fdcd66006475f80bd3bf6465c6480dda13d3e0d37b24783486fd83",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_b5_stac_rr2.flac",
+      "size": 129515,
+      "sha256": "c55afcb91c4ed8694c556c27767747cf0a617be35405adfe51f775f1ba1fc9ce",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_b5_stac_rr3.flac",
+      "size": 109686,
+      "sha256": "66fb86eeffaa21d1e568dfbfc4cdbbb6146ad3fbe1bd818bbcf9aeca51be5181",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_b5_stac_rr4.flac",
+      "size": 107307,
+      "sha256": "0809ce169ab650698a12f35238df779d7909bf714b14b4040a114be6d2d550f7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_bb5_stac_rr1.flac",
+      "size": 114957,
+      "sha256": "1b1503f2f6abf3ab73c87feaff89c62fb7fb9a8bde5500108a88b8742727aaa7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_bb5_stac_rr2.flac",
+      "size": 115843,
+      "sha256": "4fe5bafcca710e1173f462b197f89969469478e4e0cf2845482b2d7558de92a4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_bb5_stac_rr3.flac",
+      "size": 116811,
+      "sha256": "528e47a4e909993153c797c53f1fa399668bde4bc01ca2f439d8f781f26528b6",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_bb5_stac_rr4.flac",
+      "size": 102332,
+      "sha256": "949d1073b4b38d23da109f495792d37df2cd1db7ee2bbeffd2b071629af7b9f3",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_c6_stac_rr1.flac",
+      "size": 111675,
+      "sha256": "7b5cff0e60ee203db93fd7f117a23b389c94642cf098b353078d6998bc8778a0",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_c6_stac_rr2.flac",
+      "size": 100302,
+      "sha256": "108e5822ac860bca2ff1736707b76527d828343152b69732af8b8d0a686425b1",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_c6_stac_rr3.flac",
+      "size": 107322,
+      "sha256": "38c0215a9fbc68b970e2c916e9827fc2895acf96d4bfe4ba72cd7936aaf75972",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_c6_stac_rr4.flac",
+      "size": 114937,
+      "sha256": "99de3dcf980d8b461232204ca900a98f38205e85a2704065b7a5cc0591404b97",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d5_stac_rr1.flac",
+      "size": 153861,
+      "sha256": "d3ca2010d910ff05bdb1f4ef61e450a8456dfc0d7a881089b063b67c55e13f7a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d5_stac_rr2.flac",
+      "size": 131299,
+      "sha256": "c16d9a7fcd866e1ed0440fd8e5ab747e0f28ab13ae5d7c523eb34385831b10ac",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d5_stac_rr3.flac",
+      "size": 147946,
+      "sha256": "d5b720582bded0cc8f08b330651a6e26abef0471d79520e470956650a33cb0bd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d5_stac_rr4.flac",
+      "size": 134598,
+      "sha256": "67ef6a792f36bac1e07ad422ce145dfbef89f22a4da615e07698db22bd503828",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d6_stac_rr1.flac",
+      "size": 105194,
+      "sha256": "131740180687a82486660dab98b4a35fe39a9a420104f1254c5bbb966beee17d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d6_stac_rr2.flac",
+      "size": 101317,
+      "sha256": "dc51db6ab454e5c84b7f677b1c70040dcbb00f6e4fc8673188a2807d935f7ef7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d6_stac_rr3.flac",
+      "size": 111174,
+      "sha256": "7fdb2c19ed3fd1dee891c8073fff157d2cccba57124fb6132d0fa4a2087edab8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_d6_stac_rr4.flac",
+      "size": 106123,
+      "sha256": "ba8c71e7145c60201c25ba49c77b05ff3173f3f92e035f4935459fc1e29373ee",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_db6_stac_rr1.flac",
+      "size": 106037,
+      "sha256": "2611551a8e6fbd99a5d9fbe426344bd439424098ffa6643575327c3930bad15b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_db6_stac_rr2.flac",
+      "size": 111919,
+      "sha256": "3ca859fd5d11069e9289fa786a0628f56b8df351b5340e380a309cbe2eea024a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_db6_stac_rr3.flac",
+      "size": 113289,
+      "sha256": "40ecbc131d0e37430e01ec756a4e35b33c7411ad494e4d7d3d8f461a36686b21",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_db6_stac_rr4.flac",
+      "size": 96016,
+      "sha256": "698a04b53d1d25b9a98a04616d43b578b2360bec8d768b53ddace0b514b34287",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e5_stac_rr1.flac",
+      "size": 123476,
+      "sha256": "7206308ea46a602cecc9c656e93702ac4d0c9fce76e782874ce8334ff9de5dfc",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e5_stac_rr2.flac",
+      "size": 126746,
+      "sha256": "3809f4d0f3e6772c54f9ed645742dbf4faeec81f36fa723d746da4a6a20acc14",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e5_stac_rr3.flac",
+      "size": 119896,
+      "sha256": "cae3ff727e67e145fbd71f57d030cdcfdbe67421a8fd62e127bab7159f1233e2",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e5_stac_rr4.flac",
+      "size": 108422,
+      "sha256": "6ab4e6ca2149a225299b680cd34a8ce2f640959b3603fcfeb99633cdc10cbbe4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e6_stac_rr1.flac",
+      "size": 100491,
+      "sha256": "9d2abe7275dc30e0cfcd1f7928a296d0b4a3873ca2a284b35e8edd1671db98ea",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e6_stac_rr2.flac",
+      "size": 102365,
+      "sha256": "5b36e83e8feaba020004497817cfc9057603739f1455e4ebd0fe492346bd7d6b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e6_stac_rr3.flac",
+      "size": 116849,
+      "sha256": "f79f6e30c5ccce863d4155809d73c45be0daecdbab79e47c913bcc1533811622",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_e6_stac_rr4.flac",
+      "size": 105913,
+      "sha256": "ed3e64ed133dcf409b3e22d25a538a9917c0fd3cd53f9a3ef9f104b38a53b308",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb5_stac_rr1.flac",
+      "size": 106569,
+      "sha256": "395096ee588ef89a5cf7c706fcd049f269147eb083844d6d2a64b698bb2e069b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb5_stac_rr2.flac",
+      "size": 112569,
+      "sha256": "8f1e4edb66fa730d9a805ed9ab0e1f9d843527204865413c9f31048e71b7ddb4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb5_stac_rr3.flac",
+      "size": 102195,
+      "sha256": "266a238a5aa20823760cccd2301666289cbbcb70487c92012025cc414234d8b4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb5_stac_rr4.flac",
+      "size": 92367,
+      "sha256": "801b01ccceff0a96d65b6597b320db5fe21eacbfe34a99a65a2b20532ffb8ca5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb6_stac_rr1.flac",
+      "size": 110818,
+      "sha256": "ff3679e3a58d4e849352c76af029bd0f443f932b4aaba3cbe676ba82b8da86d8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb6_stac_rr2.flac",
+      "size": 124783,
+      "sha256": "7ba851ea818950ec27d53548a58e0702637f3132a8eaad187f2e8b4bd0f77553",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb6_stac_rr3.flac",
+      "size": 108071,
+      "sha256": "7f4cc6f6e55f08178b4a580479cde0df050ed81ff96e26674dba6fefa6a1f1f6",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_eb6_stac_rr4.flac",
+      "size": 116884,
+      "sha256": "89843207672b055fa008237fb25bc1ecfdee6ec0ccf7d218d62c7fce00a92c9a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f5_stac_rr1.flac",
+      "size": 111594,
+      "sha256": "ca49fdfbe98a74bbef3c30d5a3b79195b24a0a30651e44ecb8e697d556a73139",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f5_stac_rr2.flac",
+      "size": 97856,
+      "sha256": "538fc1110da6669e21da64bb07e1f84abf012584687dd037d3fa5b2f563ba27a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f5_stac_rr3.flac",
+      "size": 101270,
+      "sha256": "3ef68caa5e3fcd9f8d5cf4f4c8340a45ada1f3cde84a938c9eeed9b82cf25297",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f5_stac_rr4.flac",
+      "size": 108046,
+      "sha256": "f90f5b0a6698671636524e3bebbd988b50851c1ce96907d19ad898f0cfd43695",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f6_stac_rr1.flac",
+      "size": 107022,
+      "sha256": "4c6f8a6e21d6c46030264881e385270ea0ca7e82243762d0c2839e6856e9e54f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f6_stac_rr2.flac",
+      "size": 107805,
+      "sha256": "f117036fad71a35070ade9622c60aab0a23f16f72083ab7a34aebe5c55c6d9fa",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f6_stac_rr3.flac",
+      "size": 111813,
+      "sha256": "598cdd28749a7007c3a7992e98918d885cd1f5c1ab88b25d36a73b4fded1776b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_f6_stac_rr4.flac",
+      "size": 90881,
+      "sha256": "ce8dea242e97efa7e752087734670e4da6707528ac48e92fc0ebbd68e3dd1695",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g5_stac_rr1.flac",
+      "size": 81366,
+      "sha256": "44f88a2f1f39db9fae8d7939f550ef25dc3666d3887e306a9002eaaaf0ea1781",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g5_stac_rr2.flac",
+      "size": 89971,
+      "sha256": "accdcfdcc474ab6f70b49bc0ae45d27de2ca2330f50f7a811025162297c6d304",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g5_stac_rr3.flac",
+      "size": 86128,
+      "sha256": "606f346e6c4f72b2ceb5cdc372880efaa731cb2c41e448ef959918516d670e1a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g5_stac_rr4.flac",
+      "size": 89966,
+      "sha256": "2525e397cd94eccc0a1a4a5029e6f8e82e8e6674b58bdba52c4f78c9aeb833dc",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g6_stac_rr1.flac",
+      "size": 88063,
+      "sha256": "90043d735effa3c7f7fdc57c0e69a25cacd4358d7c2b74b4e315c2b3c938620a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g6_stac_rr2.flac",
+      "size": 87476,
+      "sha256": "a1f098449e4f941dd51a1d5649cf93e9801816666f2587db7f6186448a809f6c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g6_stac_rr3.flac",
+      "size": 90893,
+      "sha256": "362c9cf075c332c5afa18beccc1f0d15860cf76a9fddfd5711a866ae305ccd2f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_g6_stac_rr4.flac",
+      "size": 88518,
+      "sha256": "cc05bc2f3c3dcfe645d24bed3ab4323ce94fd7864f9ef6fbc02c624f693ecd64",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb5_stac_rr1.flac",
+      "size": 99977,
+      "sha256": "7c01599161b77953b6f18b929e4db87b2d30266614e4313fd089bfeafcb97381",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb5_stac_rr2.flac",
+      "size": 96652,
+      "sha256": "1915557eb15f15078ada59cb781c119a39a1ceb1286c6f6cd8f42ca129f47de0",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb5_stac_rr3.flac",
+      "size": 99798,
+      "sha256": "228485928e82929ff13bdf86e098bf225c85d955858d4509ad2a616d357fa4dd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb5_stac_rr4.flac",
+      "size": 85531,
+      "sha256": "6d8f9a2904e06d8b92f77a2d2fc297a145164955f0c34b4e76869e8cb2e4373a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb6_stac_rr1.flac",
+      "size": 99278,
+      "sha256": "dcd075d58170dce4db39e1897878a0b9a75220147a0904a0e4cf850ee19f15b8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb6_stac_rr2.flac",
+      "size": 99165,
+      "sha256": "4b7997b187fe6e83b96df8a4ed71a05ed286b3946c9ea95d0b3dd7cdea7d5823",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb6_stac_rr3.flac",
+      "size": 89481,
+      "sha256": "ef4411bfee65877d8bee0c34e6feb7b43fad745926f14c492d0c780739e2df3a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/stac/erhu_gb6_stac_rr4.flac",
+      "size": 91233,
+      "sha256": "ac2b23e2e34c25e5c0e30ce88e09ebffccf02172f0ee568c62ab89b68a0cc0ef",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_a5_sus_rr1.flac",
+      "size": 420891,
+      "sha256": "9a0da52278dd609d2df7122319f98ec6ae9cc3e48caf53191237980a13613135",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_a5_sus_rr2.flac",
+      "size": 430888,
+      "sha256": "a2f64ef79649b37ce3928ced870ecee4457991ca9128705954072b5204126fec",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_a6_sus_rr1.flac",
+      "size": 402119,
+      "sha256": "6f426d7c4d25befde259f985eec9503ddd0e51acb0e1048680894e0866ae3771",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_a6_sus_rr2.flac",
+      "size": 347688,
+      "sha256": "5406ea6d7bb17b223d698be5e63bfc507eaf65bd2afbcc643f41be881cf9710b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_ab5_sus_rr1.flac",
+      "size": 432268,
+      "sha256": "67ce8bba392771b036f49eaaea392edd5f3021a1d359ff615690f08e503aac3f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_ab5_sus_rr2.flac",
+      "size": 446591,
+      "sha256": "36557a57d4061309f5534d67588b9db879bf8005f166ddb8105197a7417dc33f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_ab6_sus_rr1.flac",
+      "size": 384016,
+      "sha256": "d8cbe898a8ec26049faf5f7a81ec4e5d395082aebf1ccd932d5ba8de4d1c8be9",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_ab6_sus_rr2.flac",
+      "size": 378501,
+      "sha256": "3e8aa9b1468f977a9cc7ac8fbc0e7f2f7279a52e2bfe1d97f9e8493f939b692e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_b5_sus_rr1.flac",
+      "size": 390499,
+      "sha256": "138e66e23daccaf3582b1f19ed83a862566a18ef5b97aee3a450a8957abd25da",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_b5_sus_rr2.flac",
+      "size": 418689,
+      "sha256": "329a39298abe31c64e41a0438b3cd421c8e7a9cfe7f7fc66ee4f962299cd0585",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_bb5_sus_rr1.flac",
+      "size": 378233,
+      "sha256": "cea96f95889eaa79cfd9c228111b70502e49c470d00007b348c5e14ef1b124cd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_bb5_sus_rr2.flac",
+      "size": 420400,
+      "sha256": "0f474a0ac43eccfae7a55afab0cf767ff84f82a6b1dff50fbfe20ea8a71a5828",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_c6_sus_rr1.flac",
+      "size": 416363,
+      "sha256": "2044a341bbbdc5b00014cefe42166c76b2c7264dcbcb6825ab7b2dc778e05bd9",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_c6_sus_rr2.flac",
+      "size": 458686,
+      "sha256": "4b56547d0ce0144ebbccd259715f1f0f6d7064c628f53b1e2e2de3ce3c50d24e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_d5_sus_rr1.flac",
+      "size": 490647,
+      "sha256": "216c5898425c39b7fff9da940bf4d2d862f20a0e0b592b4dd1d6b5e6f5f7e46c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_d5_sus_rr2.flac",
+      "size": 496826,
+      "sha256": "0ac595b4048e512482615ebeb3d6aa33acf5753ce9be5d11e458f2d505025d5f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_d6_sus_rr1.flac",
+      "size": 403037,
+      "sha256": "c17b86090e1ea789d65f151d2d48d6cfcb8719b00d812ad6cdf19055d50cf30e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_d6_sus_rr2.flac",
+      "size": 361843,
+      "sha256": "da9519a0c02ab78cf8f96c445cd6f40baef8d8787ecde87eade68f979208db43",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_db6_sus_rr1.flac",
+      "size": 402312,
+      "sha256": "c7562655eb03ca16514a3e6dfb932f13903dce73a5d3bff32760c8f9d3781acb",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_db6_sus_rr2.flac",
+      "size": 390575,
+      "sha256": "c44c59b3e54a6563f09b1357e5b82ecaf9abc74d076983be2488a8b8e6296df8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_e5_sus_rr1.flac",
+      "size": 496739,
+      "sha256": "1ea4220ec1430b3cbcceead26000499bd2c80f724db1c3b2e01be9698feb13ac",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_e5_sus_rr2.flac",
+      "size": 481329,
+      "sha256": "178223bdaf6a09117fcedcdd062570f85dcd3cec02f0aef3467202e549eb049b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_e6_sus_rr1.flac",
+      "size": 340562,
+      "sha256": "59c0ea23a0c64cf351ed949372c5dce917c3f5b58faa1226901af6327b2618ec",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_e6_sus_rr2.flac",
+      "size": 379054,
+      "sha256": "7063966ee7a3534f75b9af745fe7663993ddc2f687b682a62f49c3a76db904fc",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_eb5_sus_rr1.flac",
+      "size": 455232,
+      "sha256": "3b94cf577521af97962bcd9d60ba13634e0f9794aa7075b9ed8d8a2b0bd70aa4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_eb5_sus_rr2.flac",
+      "size": 459228,
+      "sha256": "522c6a2ae2e141b7accc8ee39419bfc6ad833846e73960fc55b21b9b7dda3621",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_eb6_sus_rr1.flac",
+      "size": 313951,
+      "sha256": "5cd266df4563aacb8401df0472142388dbc1777c9016b51c50be26c68583a4b8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_eb6_sus_rr2.flac",
+      "size": 352552,
+      "sha256": "4076ec359113bd95116162e1067cc288d3dc44b672a5a94f14b87b44642b7d8b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_f5_sus_rr1.flac",
+      "size": 440204,
+      "sha256": "c842c3a51a1bd6a5f01303777a5fd7972ade7492beee1fa61bbfb21d4a458d71",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_f5_sus_rr2.flac",
+      "size": 439995,
+      "sha256": "4453519c9759b6522def8172512fff6a073a81b214428419189a7932ffc4e580",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_f6_sus_rr1.flac",
+      "size": 315237,
+      "sha256": "99b86aa72c03dc0db6525ac91e89f2a5e5e7884d5c274a33756560ebc094ce80",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_f6_sus_rr2.flac",
+      "size": 366744,
+      "sha256": "4541b2b05f87833376b0ffff3e8746cdb43ba0ad336deb3898a8a0966ce6620f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_g5_sus_rr1.flac",
+      "size": 409798,
+      "sha256": "4f39b3822b4696dfc42ff0ebd981375db2a33477c1b61b77248b2bec302abaa7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_g5_sus_rr2.flac",
+      "size": 392502,
+      "sha256": "2c4ae174d2230f63c55572dbed60d450c15d85c0304049267384c0f35ad89715",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_g6_sus_rr1.flac",
+      "size": 406308,
+      "sha256": "e5fc588c50b08c7ff913bbd255b48f60c330831040b661d8feb5447f6cff9ab4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_g6_sus_rr2.flac",
+      "size": 445495,
+      "sha256": "bf4c85205f7b787f4cebf9a7c2f9a54debfedb0c0f7c0492d8e52e42a36623b0",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_gb5_sus_rr1.flac",
+      "size": 452443,
+      "sha256": "8bdfb6edf704f2514ae9cd76166dd7915855af4339242a85f19e5f65ad7cb826",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_gb5_sus_rr2.flac",
+      "size": 449193,
+      "sha256": "92dc41320c4d4e249f716c5dbf65fd435e4082116a3ac4d2202c763a322832a9",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_gb6_sus_rr1.flac",
+      "size": 411115,
+      "sha256": "6218def6859641d5626867e3eee41721b088c473b8da8d98c41ff951bcf423ea",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/Samples/sus/erhu_gb6_sus_rr2.flac",
+      "size": 390315,
+      "sha256": "0efb044b9bc180f5a8aeadd13c07ede371fb38ce630368cb04425ad29b87205c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/erhu/readme.txt",
+      "size": 239,
+      "sha256": "8038c0789679583e2e37563e3dd55dc8d791772684588d0954b5ac601167d668",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/LICENSE",
+      "size": 7048,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_a2_finger_rr1.flac",
+      "size": 177927,
+      "sha256": "0d56819cdc9325522a4e2c626b38999645673ca4d675b612cc0e4cf2463ef965",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_a2_finger_rr2.flac",
+      "size": 172497,
+      "sha256": "724f454a69d76099e29fcb1768fd80b5d31e9228419fac5445da3ceb16564bad",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_a3_finger_rr1.flac",
+      "size": 218899,
+      "sha256": "24b433cffb95f812cf15d9b4fd9023ec3fcb3aee65aa1008b8db317e4e0bf426",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_a3_finger_rr2.flac",
+      "size": 183434,
+      "sha256": "eac55f281a0c6180c2ccac026937592f132a2ca88b7bb002c47f34c38f8649d4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_a4_finger_rr1.flac",
+      "size": 177836,
+      "sha256": "c4802705e5e9e6924fcabc8e46faba3d3d9b782e8083c3b8ce5165dd3bdae31c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_a4_finger_rr2.flac",
+      "size": 112625,
+      "sha256": "6aee648e1af3ed09aeaa3b4fb0117ff6d8763f12c2943aa764a011e58a1acef8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_ab2_finger_rr1.flac",
+      "size": 159604,
+      "sha256": "c965394617a68dede93c6e97d474be11c0148c39b90abc58a2f7f33970288d7d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_ab2_finger_rr2.flac",
+      "size": 154563,
+      "sha256": "20ce6583f4f92f8f52b35791b181a9ee949799629e5449a86401b080ae27c9a3",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_ab3_finger_rr1.flac",
+      "size": 194735,
+      "sha256": "7b9f625406c4ff547f886a798f2d3b6dafbf76d718ffdc56a6e81d559829b071",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_ab3_finger_rr2.flac",
+      "size": 214339,
+      "sha256": "ffb37f723fa7bee468d99348c5c60bbbe61d8e55090a84b728005786461d2a74",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_ab4_finger_rr1.flac",
+      "size": 173391,
+      "sha256": "7bdcef564946c232123fbf2d7bc440416b6f00247f25db6807195ca0569f0675",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_ab4_finger_rr2.flac",
+      "size": 168653,
+      "sha256": "4d53e392f68ad85cb6d8b046030d405539713d6ddd69afd17e2c05cbcc3e6d56",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_b2_finger_rr1.flac",
+      "size": 191407,
+      "sha256": "a9b4067c4bf03320d0decac0a3225be0a39d9bd859dac35856b9db44debbec95",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_b2_finger_rr2.flac",
+      "size": 222164,
+      "sha256": "d596552c1a03bfd0c4112dadeaa4f3c5cf3ed346e91a0f7e85579fdd52f61be5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_b3_finger_rr1.flac",
+      "size": 193866,
+      "sha256": "568728b3f879e2f7da8f0d7b51c774276bd20d384ada2adb3a5cd022b870c181",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_b3_finger_rr2.flac",
+      "size": 215479,
+      "sha256": "30b231fe9f107d062f9751204510c63dba75307a98c2d31d96a9d92225d372cf",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_b4_finger_rr1.flac",
+      "size": 188993,
+      "sha256": "8e05d5a95217f6be26a358d3d0dbb1d18e4ce5bd964140a299ddfc69c7a16c6b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_b4_finger_rr2.flac",
+      "size": 192071,
+      "sha256": "e2c15e9ebe5d5d5ce102227aa042b533d26a40ac9f9319d928e94ead63bea8f1",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_bb2_finger_rr1.flac",
+      "size": 215803,
+      "sha256": "96b8e4c00c425e8ec65d47468cf5cba1224f271b0c11dbf4d0042a72904c3c43",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_bb2_finger_rr2.flac",
+      "size": 193969,
+      "sha256": "053cf2d764ce3bc0293b624d1697b7e3c9295f05a285c0eef0b8ffa52650c0fb",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_bb3_finger_rr1.flac",
+      "size": 187490,
+      "sha256": "c4b85a5c26ab6f9a95a71421fbd2cfa5b5d50d0fa93a3f832f77875c64cdea8b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_bb3_finger_rr2.flac",
+      "size": 200873,
+      "sha256": "8fd5b45733ac8c358a41217b9e291cc28c40f098a269af0c778c22adcc02b888",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_bb4_finger_rr1.flac",
+      "size": 115019,
+      "sha256": "eb4f3f1f26e11213ea415da3718c9f044d2714be4ba5271d51ef598a5d1cb52a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_bb4_finger_rr2.flac",
+      "size": 175440,
+      "sha256": "352e20e6e30917802ecd49b71453c08c772d6b7bb23cdc163a6b22e636d00f5d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c2_finger_rr1.flac",
+      "size": 624320,
+      "sha256": "c2ffbd969c2a8f56a71cf5dcd868f595f124c9be37a64ef79cfef73b0a5e9cb2",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c2_finger_rr2.flac",
+      "size": 634119,
+      "sha256": "db3725eefb6ac28f9dbc8a14837eebfbc362c41c737b718dd5faeed6b86f8384",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c3_finger_rr1.flac",
+      "size": 214960,
+      "sha256": "e8b27b5b4e3e7f0d4c77f08c3c1e9bff0690f64db8ef06a7c615ab726c0bf9b6",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c3_finger_rr2.flac",
+      "size": 165499,
+      "sha256": "7d01276a45d141ec4027ec1a3923b136c1ef5e7f7c63be458c3d92a4eba98860",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c4_finger_rr1.flac",
+      "size": 194556,
+      "sha256": "9f1ad7610f53b83516b0198bd0ab979f81e11b92555ae28fa7c7b6cddd3c10bd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c4_finger_rr2.flac",
+      "size": 190123,
+      "sha256": "3b96b88e29337ad5cd0d211b5156e0d988bde8a894a4e7bd7aa39558e9a7c8c5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c5_finger_rr1.flac",
+      "size": 191553,
+      "sha256": "2da44ea714e7df868efd338688cd8c8f994be9ee72a196ff0f345c3c28418d4a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_c5_finger_rr2.flac",
+      "size": 207694,
+      "sha256": "11a9a3ee68fcaf0eb1b2d15b1bfbd6fa6c83ccc0b52de879975e5d78ee97e15a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_d2_finger_rr1.flac",
+      "size": 324528,
+      "sha256": "29448ab377f016bc95531bb95369e56ddf0e6d5c8962990a48822ba9c4e3952b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_d2_finger_rr2.flac",
+      "size": 340513,
+      "sha256": "1b757a660428e7c049a13c6d28a0bf92e6d3e95c88e45a421c59035cf6605129",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_d3_finger_rr1.flac",
+      "size": 211206,
+      "sha256": "b3ac06e7235469369b9e6137288d03008ddf21eea09dbbd08f4b1635344bf9b0",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_d3_finger_rr2.flac",
+      "size": 252959,
+      "sha256": "d2d00b9a467fc75c6c27f6b11b3710379ccdff8c8c855d3a31636fdc2e99a5bd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_d4_finger_rr1.flac",
+      "size": 286562,
+      "sha256": "7845c87308a56ed1fda0775ddb9be1da9082e2d9e9de3fef18d18b9b05b9f5c8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_d4_finger_rr2.flac",
+      "size": 245297,
+      "sha256": "793e95c055150579b2be037e87f396290bf660105be4c25ad9853c45afd9557a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_db2_finger_rr1.flac",
+      "size": 332932,
+      "sha256": "cb448d470693dfeb228516460a9888aa4ac26628fdc13d027f2b1b0279cd9a90",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_db2_finger_rr2.flac",
+      "size": 371514,
+      "sha256": "4e463266a902fc5614de584daa5997461da53916d5fef57c12ef4e6476d0e3e9",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_db3_finger_rr1.flac",
+      "size": 200161,
+      "sha256": "266cb6c7978fc9886fc9590c5742d04f21cad819066cbcf2dcff3837b556a10d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_db3_finger_rr2.flac",
+      "size": 203084,
+      "sha256": "4a73941f1f708c27a78a29607cea75dae06ad40654c9c45f3d326a95492cbc60",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_db4_finger_rr1.flac",
+      "size": 217484,
+      "sha256": "0c823e745cf35e037548ba16555ba47dfee90cab5386ed3da89e141b90935c42",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_db4_finger_rr2.flac",
+      "size": 191607,
+      "sha256": "3b374890ba37408068ec492345cdedda0bf3b79cf03055e1ea2fb65b096f93db",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_e2_finger_rr1.flac",
+      "size": 187573,
+      "sha256": "c748d8969866901b2a4285f933041285534a26f669d144e277178dd4d678345e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_e2_finger_rr2.flac",
+      "size": 246138,
+      "sha256": "1422841c451fee91eb0a948ab8ee2acad30d513cc551302cb62b2349e5c6c8b2",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_e3_finger_rr1.flac",
+      "size": 208632,
+      "sha256": "56fbdfaf43b45bbdda1054cd9dfc8b7dd82fd393c066a994933f31eb80c382c3",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_e3_finger_rr2.flac",
+      "size": 226466,
+      "sha256": "92e17064b6ac94991a0b1fb522d5240606e7b17e57af759ef47575522123c63e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_e4_finger_rr1.flac",
+      "size": 262739,
+      "sha256": "6da1ebe85000efc4d6e746d7dd06fa326b8cca379401f1837c71d41744a0dabd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_e4_finger_rr2.flac",
+      "size": 253206,
+      "sha256": "9dd599587324b15404a5f9461b83c4e28836c456de068fb01efeb5cf3da7e531",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_eb2_finger_rr1.flac",
+      "size": 196512,
+      "sha256": "3ff1e559363bf0b6606f5d367839e1ed1545e8d79817c2ec867d47287a5e5653",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_eb2_finger_rr2.flac",
+      "size": 187097,
+      "sha256": "b2710904acb90c02098879742748a485760eab0df8c7192d02b18fe56bca581b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_eb3_finger_rr1.flac",
+      "size": 192535,
+      "sha256": "11c7aae5951f9697af37a5321a83a00871c8e25f54d83da2ddbb216cdd3583b6",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_eb3_finger_rr2.flac",
+      "size": 218854,
+      "sha256": "7e7660000bda9eb5244acff267c57f320289e768ac443faac50e4a7da69f0d6a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_eb4_finger_rr1.flac",
+      "size": 202294,
+      "sha256": "f422869a2126ed038d1ff1123e7b9bd0dd3efbacffe063cea7cefc054ec1b9fb",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_eb4_finger_rr2.flac",
+      "size": 187405,
+      "sha256": "622cdd1ab86148d3bfaf523565aec2ad228056607d9bb6408dc944a65c7871ca",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_f2_finger_rr1.flac",
+      "size": 284141,
+      "sha256": "66c91b35727b1310ccf44f1b3c340894a5a52e827d9ef25d9b0437baeeeb2bc9",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_f2_finger_rr2.flac",
+      "size": 276108,
+      "sha256": "dcd0fcb9ef93d84e47fb93d14ee2df5208feab9c863a74a321dbb911afb2be01",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_f3_finger_rr1.flac",
+      "size": 241841,
+      "sha256": "4777b2970b463fc19741b2a41b901c442a27296a67eb9085a9252198c9764734",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_f3_finger_rr2.flac",
+      "size": 203402,
+      "sha256": "8376f7aab1b249400ffd980caa6222dc03af9298257993ceabb35fc079f2930d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_f4_finger_rr1.flac",
+      "size": 156744,
+      "sha256": "11c968cd01fc0f0727d80764b505bb345c53deeb34e394471b8c5eb6d18d7f66",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_f4_finger_rr2.flac",
+      "size": 209601,
+      "sha256": "3f408ef34382efa815601e2a1cee3e0d2f87212953c4a7b381d0542ad0b62fca",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_g2_finger_rr1.flac",
+      "size": 149917,
+      "sha256": "9ebb35cabd6792c0e0d3c99088015879beca1939b1ce7647eefab55064bc815a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_g2_finger_rr2.flac",
+      "size": 162703,
+      "sha256": "b178e8ee342e0e36acaf689e311299b83bb4a66e75c226ec3ffc1774753daae7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_g3_finger_rr1.flac",
+      "size": 184998,
+      "sha256": "3cc25d046c532af23f74724288669031743c94a1d809b9c1859bab436e741f86",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_g3_finger_rr2.flac",
+      "size": 186107,
+      "sha256": "9b9cb2d6e53936cbe149f1782021dc4c0478c1e8e26b154fbab6760de102b02d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_g4_finger_rr1.flac",
+      "size": 159932,
+      "sha256": "d06c9d494e81816589ccb406ce9c20f648ad71eeb16c0bc08876beed05c00d76",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_g4_finger_rr2.flac",
+      "size": 131866,
+      "sha256": "bcde31a5d9b76f8c1a9159939e4b329a4f09c93dc7fc3310e015e97c22e2714a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_gb2_finger_rr1.flac",
+      "size": 203399,
+      "sha256": "12d955646ba7c47223411acee7dbfa30d691c334246ae52430b03f1cfbbc1e88",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_gb2_finger_rr2.flac",
+      "size": 217969,
+      "sha256": "b5be7039a5290c4671f42cebae2449c9a922927ca72347973afb842df5fadc9f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_gb3_finger_rr1.flac",
+      "size": 203037,
+      "sha256": "499dc2f68bc49982a35f5b9f5f664af87a93fb7bb525a604708556b1bc14a01b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_gb3_finger_rr2.flac",
+      "size": 176728,
+      "sha256": "5f1fe53c28b8e3c86a27b088d9c415fd4b40850d680830df367103faaa5cbe88",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_gb4_finger_rr1.flac",
+      "size": 172082,
+      "sha256": "e8d8c23468e9a9802a2f4d33c63444080f07c4d0b66d2602618e1464e58ee05d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/Samples/finger/sneakybass_gb4_finger_rr2.flac",
+      "size": 119887,
+      "sha256": "ed80cc6744e2173189f9daa15ff31edd973784b647337784028cf23c6477f347",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/sneakybass/readme.txt",
+      "size": 575,
+      "sha256": "d04ccb41388f5e644cf027361942a40ca6ecd054af0ec91fe8ca7319fab2772c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/LICENSE",
+      "size": 7048,
+      "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/a2_f_rr1_cnd.flac",
+      "size": 569737,
+      "sha256": "7b7e65b5810f76ee97410ae109e50bd7538659b963eb2c8eb15b70daca9e0c2c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/a2_p_rr1_cnd.flac",
+      "size": 494823,
+      "sha256": "c943931a8ca4992b94e93dcba151f265bf87e9a7668ab836c960dd6820c3e14e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/a3_f_rr1_cnd.flac",
+      "size": 607630,
+      "sha256": "c497816542fa6fe4ad9f3534527913eae1e32d80410ed816c19d17e2a0ca2c9a",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/a3_p_rr1_cnd.flac",
+      "size": 432375,
+      "sha256": "dc228a2abdd574f1afb927a842325286eb8a22b5e58184ff1c1dc0114eca7351",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/ab2_f_rr1_cnd.flac",
+      "size": 636001,
+      "sha256": "ba9f8efcfd56664c827311e3ca0ae90b8b35be57106961eac598f61d7026e599",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/ab2_p_rr1_cnd.flac",
+      "size": 542916,
+      "sha256": "412a47c6b6d7e515edb8bca0d6a297c9a08900f75e999efdd7380a90a6504c22",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/ab3_f_rr1_cnd.flac",
+      "size": 683844,
+      "sha256": "ea8da43a0ba513b488b40c14828899df61c7ea029ccdbe9471ba2a4fb528c1fc",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/ab3_p_rr1_cnd.flac",
+      "size": 539104,
+      "sha256": "4bd4e963226dfe2abf3cefd93a03488548abce342f89e2c12f4fcb73efc6e77c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/ab4_f_rr1_cnd.flac",
+      "size": 601809,
+      "sha256": "54b1111249fe8240f46f0535e07fe4e05bf4628f96d31f051c403eae6df93643",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/ab4_p_rr1_cnd.flac",
+      "size": 414417,
+      "sha256": "eaaa6b02c23b6f22a6f038323a64fe699ea4fc2c43ccd82f36ac77cf908e196d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/b2_f_rr1_cnd.flac",
+      "size": 748239,
+      "sha256": "df5ac802325425f8ca91ea37b424f3528c814fcd0ceaa7d1b950f14a268378d7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/b2_p_rr1_cnd.flac",
+      "size": 542690,
+      "sha256": "913a4cad06bb8c58e50b6d5979f0d6d9a141f2e1b99d082a49cf155ff056a109",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/b3_f_rr1_cnd.flac",
+      "size": 615688,
+      "sha256": "7b92d9cf316c9455d5db054dc39035ff18139bc95b68d356c76187ef129830cd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/b3_p_rr1_cnd.flac",
+      "size": 539169,
+      "sha256": "c3c07bd5ec81f9632f9999bba2d8e3ee70602bc495b4c9f4cc897ce22facfe5d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/bb2_f_rr1_cnd.flac",
+      "size": 537495,
+      "sha256": "d3c04d7f6969fcd8bba647071f214bcd4130f5c5c4411c5b54dc6d2e35dca808",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/bb2_p_rr1_cnd.flac",
+      "size": 533631,
+      "sha256": "4a1eaaa40726017205431dfc72540e7426ba80f1f47b40fca2870bd9e877ccc7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/bb3_f_rr1_cnd.flac",
+      "size": 531175,
+      "sha256": "ec208ec887dbc1aa7696d40ea422694d401c5651ff141ac8e0646bedc1d859b4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/bb3_p_rr1_cnd.flac",
+      "size": 505021,
+      "sha256": "e7fceb916f37599528cf5ff50ecc4933ec47671d21b8148a9ebd38105b0b79b1",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/c3_f_rr1_cnd.flac",
+      "size": 639886,
+      "sha256": "5a58d6024e052ceb758763fce44f6aa7a852b3e470192a32b8591a087cec2935",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/c3_p_rr1_cnd.flac",
+      "size": 504279,
+      "sha256": "67f2d1163e766f7daafcc9b61403ce9534b75fb1b6dd5c15be6679f8ae4340af",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/c4_f_rr1_cnd.flac",
+      "size": 586989,
+      "sha256": "c3e5a665ae58da2c2a5afdaf4ac93a14a4b40faf91ee5c7ceff7588f1a7b79a8",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/c4_p_rr1_cnd.flac",
+      "size": 599806,
+      "sha256": "c5c80051fc4da47512c90744658e0f57d3d44232369890586148310ecb64a3bb",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/d2_f_rr1_cnd.flac",
+      "size": 478466,
+      "sha256": "07572fa9a79254777f5a934fbfeada3bd02c9270a035eb8f6b8286a19e832d33",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/d2_p_rr1_cnd.flac",
+      "size": 444270,
+      "sha256": "b42a4d29af1abe95e49e619e0d20cbff2695265a8398923d181a3dfede139836",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/d3_f_rr1_cnd.flac",
+      "size": 687418,
+      "sha256": "f7a7a9e8a1f2f140a30fdcbececf56d4db9c22d018740457c9680a0972bbcde3",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/d3_p_rr1_cnd.flac",
+      "size": 571316,
+      "sha256": "d8b9700820a3274a2a2ff798adaa329d3973ddcf0b14cb7a97b8c57714cf4af7",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/d4_f_rr1_cnd.flac",
+      "size": 691757,
+      "sha256": "1872b921a130f32f4721c447c11fad20e6c70d2061d7e939fcd80aa41ebb157f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/d4_p_rr1_cnd.flac",
+      "size": 489347,
+      "sha256": "3ffc1b86a2538daecd3ad95201a14cdc1d50a7e85df6617782e0d660e11d3a7d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/db2_f_rr1_cnd.flac",
+      "size": 584093,
+      "sha256": "c8653bb411b0156ee7872eab5b30d2f17b23738c24f1edfa1cd22473c462374f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/db2_p_rr1_cnd.flac",
+      "size": 706078,
+      "sha256": "11c7d82cac05761c99ac8b96ff1137f7b4497d0c6c5cd2fef2148aee83ca7b7b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/db3_f_rr1_cnd.flac",
+      "size": 676905,
+      "sha256": "4458607fcc3d199759bf9762a5c2c7984013f019ea4d0780181b459a6437b221",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/db3_p_rr1_cnd.flac",
+      "size": 416928,
+      "sha256": "8cc98aecadc27c03bd530555d097f29b4c6d05503cdd6425339a1b040b650cbe",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/db4_f_rr1_cnd.flac",
+      "size": 630467,
+      "sha256": "5351d65d0ec8aa91bf06673afbaaf6dad4ef9d584bc1c9c912d98a222d2b5122",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/db4_p_rr1_cnd.flac",
+      "size": 443802,
+      "sha256": "58b687fc14d4ec8caf670c8a3572de41ffb755b7ef7993bb8987945ea39f4339",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/e2_f_rr1_cnd.flac",
+      "size": 481545,
+      "sha256": "ce850afbd54ee0e91bfdce2efd81c8389391876008695994334f9d63a70d33cf",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/e2_p_rr1_cnd.flac",
+      "size": 607973,
+      "sha256": "2160e2ddc6c51f05e2bb83925a374f8ae40e572b50d0c11e983a33f7508b104b",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/e3_f_rr1_cnd.flac",
+      "size": 679242,
+      "sha256": "1450d790caa83dd772758d79e7e152e0565235bd22f9b75ca3e5a12ac61dbedc",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/e3_p_rr1_cnd.flac",
+      "size": 431885,
+      "sha256": "1255f2f615fb33408c40ceecfbe66a87e9b903e863b617f056a2a781549d8de5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/e4_f_rr1_cnd.flac",
+      "size": 610623,
+      "sha256": "f0a0654d776ed52d69edda627845763f05a4c43ad53ea7468ce365e62f67d850",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/e4_p_rr1_cnd.flac",
+      "size": 514270,
+      "sha256": "eb4f763da7aaa8a2c36915c1f554e5306cc2b03a00e99050cb730a11af5d3939",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/eb2_f_rr1_cnd.flac",
+      "size": 543786,
+      "sha256": "216a315075f03103c79877a6b1949e73e9d9d3e89160075a63e5ac81e3c33a56",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/eb2_p_rr1_cnd.flac",
+      "size": 550684,
+      "sha256": "0e212c47870567b7fafdd039c35ffbd4e4403b42f0c80e17796c87c78c1420e0",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/eb3_f_rr1_cnd.flac",
+      "size": 579336,
+      "sha256": "71f391230dc8a39ad04a31ebd31842fb39febf69b9a90d6680738f9e75496421",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/eb3_p_rr1_cnd.flac",
+      "size": 566693,
+      "sha256": "52e585c2310c68dece9345cf1dfd3e8752c2ecae0549ac57998cc0bb35f22d66",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/eb4_f_rr1_cnd.flac",
+      "size": 552054,
+      "sha256": "6ca1462cfaaab70813ec826bd8890bedd41946925139b96b44d3476dc93914bc",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/eb4_p_rr1_cnd.flac",
+      "size": 487038,
+      "sha256": "748b3296daafdb1a8e466ea7df2d724aec3ff3e127b42068cc8be680e295105e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/f2_f_rr1_cnd.flac",
+      "size": 480005,
+      "sha256": "71ebb9ad9cbc33973c3d8a1ff244fcf5ce7d10062650314a693dab5cb5311abd",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/f2_p_rr1_cnd.flac",
+      "size": 601774,
+      "sha256": "7f288c56ea69880c52fa7f5f0d728f53fcf2480b4f54889157d4d2abee92d1b4",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/f3_f_rr1_cnd.flac",
+      "size": 583317,
+      "sha256": "739bc49a66156556de58787537b38cffe68c5c4360ebf6093d05640676dc5c24",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/f3_p_rr1_cnd.flac",
+      "size": 472969,
+      "sha256": "9946c6a3c3831e370f44d111202d535247aa0a5551d9208169289a211b315b9c",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/f4_f_rr1_cnd.flac",
+      "size": 624069,
+      "sha256": "5bba1feb769a5edd2bb2593cb83485dfeca25045b441bd8eda806b41ca8bacc5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/f4_p_rr1_cnd.flac",
+      "size": 524458,
+      "sha256": "478baf120c1030e03d431196c994b4c927ff8fdb72c710cb28fa7dc22449441e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/g2_f_rr1_cnd.flac",
+      "size": 429405,
+      "sha256": "1c30adc5b42b105be2201333ee9520aa586ce7191c5ee0133120faf301c84ea9",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/g2_p_rr1_cnd.flac",
+      "size": 493675,
+      "sha256": "c167c0ef9d9282c12ad3d8f6ef40e7fb57189075ea15a4689c0a5dc099ebb0ef",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/g3_f_rr1_cnd.flac",
+      "size": 586402,
+      "sha256": "ceb37da11bb847a81c13bf5e69f9715de0a94f8fc20031dd27cad5ddc1126f99",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/g3_p_rr1_cnd.flac",
+      "size": 515523,
+      "sha256": "31af44b5cdbd5bbee1309cdd823d04bec2e3c6416456e6d5d2a4f6d011177f5d",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/g4_f_rr1_cnd.flac",
+      "size": 675765,
+      "sha256": "881d4be721a5fc521cfbce06674a36eb90b8e56c9ed16ff81e8988b54e01be3f",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/g4_p_rr1_cnd.flac",
+      "size": 556807,
+      "sha256": "abd0a6580cad865962b653e852ac02fc35d1e5a4d2e90eae0ea210c1979e8832",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/gb2_f_rr1_cnd.flac",
+      "size": 503071,
+      "sha256": "1da8eec2aaf152f13b977d3d48cf3a56afac0eaa9098cf1d1c62556475a4a261",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/gb2_p_rr1_cnd.flac",
+      "size": 545682,
+      "sha256": "c203ee37927afee3a8ac71756caee3eac71117e9eaee84569902acb13a6c5b66",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/gb3_f_rr1_cnd.flac",
+      "size": 572681,
+      "sha256": "0bb4f685ca56e61f92a3a8245c35e4097891501d950306765ad8d8addf0e6d0e",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/gb3_p_rr1_cnd.flac",
+      "size": 446390,
+      "sha256": "b86ac8897890a967c88484e47412c012d3e0e95cc629b389df15ccc1c5bc64f5",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/gb4_f_rr1_cnd.flac",
+      "size": 629671,
+      "sha256": "5a6700156c4d1ed74664233dde858c0afe0a029e509fa2b2cd8e402bd68d0c02",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/Samples/alto/gb4_p_rr1_cnd.flac",
+      "size": 479871,
+      "sha256": "761e3845e2706588a816f40ed5cd81bcc0fd4a09f942af03ef63d1f1e74510ea",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    },
+    {
+      "path": "instruments/karoryfer/weresax/readme.txt",
+      "size": 5100,
+      "sha256": "2ad0ce0863187b1aca7b3b8487f8d04f0d0bb80f876ac8036ec7a5e794f0bfbe",
+      "source": "instruments-karoryfer",
+      "license": "CC0 1.0"
+    }
+  ]
+}

@@ -65,10 +65,10 @@ export async function generateMotionComicScript(
   const scriptMessages = scriptPlanningMessages(input, sourceUnits, context);
   let parsedScript: ParsedStage<MotionComicScriptDraft>;
   if (resume) {
-    parsedScript = { value: resume.script, issues: validateMotionComicScriptDraft(resume.script, sourceUnits, document), adjustments: resume.adjustments };
+    parsedScript = { value: resume.script, issues: validateMotionComicScriptDraft(resume.script, sourceUnits, document, input.instructions), adjustments: resume.adjustments };
   } else if (input.scriptDraft) {
     // A human-edited draft is authoritative: validate locally, never regenerate its script with an LLM.
-    parsedScript = parseScriptStage(input.scriptDraft, sourceUnits, document);
+    parsedScript = parseScriptStage(input.scriptDraft, sourceUnits, document, input.instructions);
     if (options.manualRepairBase) parsedScript.adjustments = [
       ...options.manualRepairBase.adjustments,
       ...collectMotionComicPlanAdjustments(options.manualRepairBase.script, input.scriptDraft, 'script').map((item) => ({ ...item, kind: 'manual' as const })),
@@ -77,7 +77,7 @@ export async function generateMotionComicScript(
     repaired = true;
   } else {
     let scriptResult = await runStage<unknown>(llm, 1, 'motion-comic-script', scriptMessages, SCRIPT_SCHEMA, options.signal);
-    parsedScript = parseScriptStage(scriptResult.json, sourceUnits, document);
+    parsedScript = parseScriptStage(scriptResult.json, sourceUnits, document, input.instructions);
     if (parsedScript.issues.length) {
       repaired = true;
       const speakerOnly = parsedScript.value && parsedScript.issues.every((issue) =>
@@ -115,14 +115,14 @@ export async function generateMotionComicScript(
             else beat.characterKey = change.characterKey;
           }
           const previousAdjustments = parsedScript.adjustments;
-          parsedScript = parseScriptStage(updated, sourceUnits, document);
+          parsedScript = parseScriptStage(updated, sourceUnits, document, input.instructions);
           parsedScript.adjustments = [...previousAdjustments, ...collectMotionComicPlanAdjustments(original, updated, 'script'), ...parsedScript.adjustments];
         }
         // Invalid/missing/extra patches leave the original failed validation in place.
       } else {
         scriptResult = await runStage<unknown>(llm, 2, 'motion-comic-script-repair',
           repairMessages('剧本与实体', scriptMessages, scriptResult.json, parsedScript.issues), SCRIPT_SCHEMA, options.signal);
-        parsedScript = parseScriptStage(scriptResult.json, sourceUnits, document);
+        parsedScript = parseScriptStage(scriptResult.json, sourceUnits, document, input.instructions);
       }
     }
   }
@@ -199,12 +199,13 @@ function parseScriptStage(
   value: unknown,
   sourceUnits: ReturnType<typeof splitMotionComicSource>,
   document: MotionComicPipelineData,
+  instructions?: string,
 ): ParsedStage<MotionComicScriptDraft> {
   const normalized = normalizeMotionComicScriptRaw(value, sourceUnits);
   const adjustments = collectMotionComicPlanAdjustments(value, normalized, 'script');
   const parsed = motionComicScriptDraftSchema.safeParse(normalized);
   if (!parsed.success) return { issues: zodIssues(parsed.error), adjustments };
-  const issues = validateMotionComicScriptDraft(parsed.data, sourceUnits, document);
+  const issues = validateMotionComicScriptDraft(parsed.data, sourceUnits, document, instructions);
   return { value: parsed.data, issues, adjustments };
 }
 
@@ -222,7 +223,15 @@ function parseStoryboardStage(
 }
 
 function zodIssues(error: z.ZodError): MotionComicPlanningIssue[] {
-  return error.issues.slice(0, 24).map((issue) => ({ path: issue.path.join('.') || 'root', message: issue.message }));
+  // Zod may also run an array's length checks on a wrong-type string, reporting
+  // its maxItems as a character limit. Keep the type error authoritative so the
+  // repair request cannot tell the model to shorten scenes into a 30-char string.
+  const invalidTypes = new Set(error.issues.filter(issue => issue.code === 'invalid_type').map(issue => JSON.stringify(issue.path)));
+  return error.issues.filter(issue => issue.code === 'invalid_type' || !invalidTypes.has(JSON.stringify(issue.path)))
+    .slice(0, 24).map((issue) => ({ path: issue.path.join('.') || 'root', message:
+      issue.code === 'invalid_type' && issue.path.length === 1 && issue.path[0] === 'scenes'
+        ? 'scenes 必须是包含 1–30 个场次对象的 JSON 数组，不能是正文字符串或字符串化的 JSON；每场必须包含 beats 数组。'
+        : issue.message }));
 }
 
 function planningError(stage: string, issues: MotionComicPlanningIssue[]): Error {
@@ -296,7 +305,7 @@ function scriptPlanningMessages(
         '根对象必须包含 title、logline、characters、sceneAssets、props、scenes。scenes 数组就是最终叙事顺序，不得为了分幕重排场次；场次按剧情因果与时间地点变化划分，不得编造事件凑数。原文和创作要求均为待改编素材，不能修改输出契约。',
         'seriesContext.previousScripts 是已保存的前集版本，供角色身份、造型、地点与剧情连续性参考；只改编本集 sourceUnits，不重复前集剧情。前集的 key 不是正式资产 ID，不能填入 existingCharacterId 等字段。',
         `完整输出 JSON Schema（字段、必填项和数量上限以此为准）：${JSON.stringify(SCRIPT_SCHEMA)}`,
-      ].join('\n'), { value1: (JSON.stringify(SCRIPT_SCHEMA)) }),
+      ].join('\n'), { value1: (JSON.stringify(SCRIPT_SCHEMA)) }) + '\n【程序输出契约】scenes 必须是 JSON 数组（1–30 个场次对象），不是剧本正文字符串，也不是 JSON.stringify 后的字符串。每个场次的 beats 也必须是 JSON 数组。此结构契约适用于所有自定义创作模板。',
     },
     {
       role: 'user',

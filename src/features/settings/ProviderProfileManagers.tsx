@@ -165,6 +165,13 @@ export function LlmProfileManager({
           step={10}
           onChange={(value) => updateSelectedProfile({ ...selectedProfile, timeoutMs: value * 1000 })}
         />
+        <ConfigNumberInput
+          label="每图最大输入 token（选填，0 为不填）"
+          value={selectedProfile.imageInputTokenLimit ?? 0}
+          min={0}
+          step={100}
+          onChange={(value) => updateSelectedProfile({ ...selectedProfile, imageInputTokenLimit: value > 0 ? Math.round(value) : undefined })}
+        />
         <ConfigInput label="代理地址（选填）" value={selectedProfile.proxyUrl ?? ''} onChange={(value) => updateSelectedProfile({ ...selectedProfile, proxyUrl: value })} />
         <Segmented
           label="供应商"

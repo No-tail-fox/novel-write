@@ -13,6 +13,21 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 node "scripts/build-renderer.mjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[package] Building isolated Pi worker"
+$Node22 = Get-Command node22 -ErrorAction SilentlyContinue
+if ($Node22) { & $Node22.Source "services/pi-agent-worker/build.mjs" }
+else {
+  $PreviousElectronRunAsNode = $env:ELECTRON_RUN_AS_NODE
+  try {
+    $env:ELECTRON_RUN_AS_NODE = "1"
+    & (Join-Path $Root "node_modules\electron\dist\electron.exe") "services/pi-agent-worker/build.mjs"
+  } finally {
+    if ($null -eq $PreviousElectronRunAsNode) { Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue }
+    else { $env:ELECTRON_RUN_AS_NODE = $PreviousElectronRunAsNode }
+  }
+}
+if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath (Join-Path $Root "services\pi-agent-worker\dist\worker.mjs") -PathType Leaf)) { throw "Pi worker build failed or did not emit its entry file; Node >=22.19 is required." }
+
 Write-Host "[package] Building Electron main and preload"
 node "scripts/build-electron.mjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -27,9 +42,18 @@ Write-Host "[package] Preparing bundled Python runtime"
 & (Join-Path $Root "scripts\prepare-python-runtime.ps1")
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+$IntegrityManifest = Join-Path $Root (".tmp\package-integrity-" + [guid]::NewGuid().ToString('N') + ".json")
+Write-Host "[package] Verifying inputs and recording build-file hashes"
+node "scripts/verify-package-integrity.mjs" before $IntegrityManifest
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "[package] Creating Windows installer and unpacked package"
 node "node_modules/electron-builder/cli.js" --win nsis --x64 --publish=never
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[package] Verifying packaged files before accepting this release"
+node "scripts/verify-package-integrity.mjs" after $IntegrityManifest (Join-Path $Root "release\win-unpacked")
+if ($LASTEXITCODE -ne 0) { throw 'Package integrity failed. Do not distribute these output files.' }
 
 $Version = (Get-Content -LiteralPath (Join-Path $Root "package.json") -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $ReleaseDir = Join-Path $Root "release"

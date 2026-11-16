@@ -23,7 +23,7 @@ const version = z.string().regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-
 const leaseSchema = z.object({
   schemaVersion: z.literal(1), kind: z.literal('lease'), status: z.literal('active'),
   licenseId: z.string().uuid(), deviceId: hash, keyHash: hash, issuedAt: time, validUntil: time,
-  expiresAt: time, maxDevices: z.number().int().min(1).max(100),
+  expiresAt: time, offlineGraceUntil: time.optional(), maxDevices: z.number().int().min(1).max(100),
   devices: z.array(z.object({ deviceId: hash, label: z.string().max(120), lastSeen: time })).max(100),
 }).strict();
 const releaseSchema = z.object({
@@ -69,10 +69,17 @@ export function verifyEnvelope(value: unknown, publicKey: string): unknown {
   return JSON.parse(envelope.payload);
 }
 
-export function verifyLease(envelope: SignedEnvelope, config: LicensePublicConfig, deviceId: string, publicKey: string, now: number): LicenseLease {
+export const MAX_OFFLINE_GRACE_SECONDS = 7 * 86400;
+
+// stored=true re-validates a lease restored from disk: the short validUntil has normally passed, so it is only
+// accepted while the server-signed offlineGraceUntil is still in the future. Leases without that field never qualify.
+export function verifyLease(envelope: SignedEnvelope, config: LicensePublicConfig, deviceId: string, publicKey: string, now: number, stored = false): LicenseLease {
   const lease = leaseSchema.parse(verifyEnvelope(envelope, config.signingPublicKey));
   const keyHash = createHash('sha256').update(createPublicKey(publicKey).export({ format: 'der', type: 'spki' })).digest('hex');
-  if (lease.deviceId !== deviceId || lease.keyHash !== keyHash || lease.issuedAt > now + 60 || lease.validUntil <= now ||
+  const grace = lease.offlineGraceUntil;
+  const live = stored ? grace !== undefined && grace > now : lease.validUntil > now;
+  if (lease.deviceId !== deviceId || lease.keyHash !== keyHash || lease.issuedAt > now + 60 || !live ||
+      grace !== undefined && (grace < lease.validUntil || grace > lease.expiresAt || grace > lease.issuedAt + MAX_OFFLINE_GRACE_SECONDS) ||
       lease.validUntil > lease.issuedAt + 600 || lease.validUntil > lease.expiresAt || lease.issuedAt >= lease.validUntil ||
       !lease.devices.some((device) => device.deviceId === deviceId)) {
     throw new AppError('LICENSE_LEASE_INVALID', '设备授权已失效，请联网验证。');

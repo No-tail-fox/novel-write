@@ -34,9 +34,9 @@
 
 证据：
 
-- [真实成片审计](/I:/opc/.artifacts/vox-audio-sync-audit/README.md)
-- [实际波形与截尾数据](/I:/opc/.artifacts/vox-audio-sync-audit/actual-media-report.json)
-- [本地导出与历史副本验收](/I:/opc/.artifacts/vox-audio-sync-qa/run-P44a3p/report.json)
-- [校准后的隔离副本](/I:/opc/.artifacts/vox-audio-sync-qa/run-P44a3p/repaired-snapshot.json)
+- [真实成片审计](/I:/项目/story-dream/.artifacts/vox-audio-sync-audit/README.md)
+- [实际波形与截尾数据](/I:/项目/story-dream/.artifacts/vox-audio-sync-audit/actual-media-report.json)
+- [本地导出与历史副本验收](/I:/项目/story-dream/.artifacts/vox-audio-sync-qa/run-P44a3p/report.json)
+- [校准后的隔离副本](/I:/项目/story-dream/.artifacts/vox-audio-sync-qa/run-P44a3p/repaired-snapshot.json)
 
 代码已修复。已有 MP4 的缺失声音无法随代码更新自动恢复，需要用更新后的程序重新导出。

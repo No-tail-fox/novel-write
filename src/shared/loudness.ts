@@ -16,6 +16,15 @@ export interface LoudnessTarget {
 
 export const FINAL_FILM_LOUDNESS: LoudnessTarget = Object.freeze({ integratedLufs: -14, truePeakDb: -1, lra: 11 });
 
+/** AAC reconstruction can overshoot the PCM limiter. Reserve 0.5 dB before encoding;
+ * keep the published loudness goal and post-decode acceptance ceiling unchanged.
+ * Both normalization passes must use this target so their target_offset agrees.
+ */
+export const AAC_ENCODE_LOUDNESS: LoudnessTarget = Object.freeze({
+  ...FINAL_FILM_LOUDNESS,
+  truePeakDb: FINAL_FILM_LOUDNESS.truePeakDb - 0.5,
+});
+
 /** First-pass `loudnorm` JSON fields (ffmpeg names), as strings exactly as ffmpeg printed them. */
 export interface LoudnormMeasurement { input_i: string; input_tp: string; input_lra: string; input_thresh: string; target_offset: string }
 export const LOUDNORM_MEASUREMENT_KEYS = ['input_i', 'input_tp', 'input_lra', 'input_thresh', 'target_offset'] as const;

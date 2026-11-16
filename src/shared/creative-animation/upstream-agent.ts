@@ -93,15 +93,52 @@ const actionSchema = z.discriminatedUnion('tool', [
 ]);
 export type LemoAgentAction = z.infer<typeof actionSchema> & { body?: string };
 
+/** After a bare header only blank lines and fence markers may follow; a second action is never accepted. */
+const lemoTrailingFenceOnly = (rest: string) => rest.trim().split(/\r?\n/).every(line => !line.trim() || /^```[A-Za-z0-9_.-]*$/u.test(line.trim()));
+/** Index just past the JSON object that starts at `start`, respecting strings and escapes. */
+function lemoJsonObjectEnd(text: string, start: number): number {
+  let depth = 0, inString = false, escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === '{') depth++;
+    else if (char === '}' && --depth === 0) return index + 1;
+  }
+  return -1;
+}
+/**
+ * Providers often prefix a one-line plan ("I'll read the guidance first") or trail a stray closing fence.
+ * Accept exactly one leading JSON action in that shape. A second action is rejected below rather than
+ * silently dropped, so a reply that asks for two things still gets one clear correction turn.
+ */
+function lemoBareActionHeader(text: string): { json: string; tail: string } | undefined {
+  const start = text.indexOf('{');
+  if (start < 0) return undefined;
+  const end = lemoJsonObjectEnd(text, start);
+  return end < 0 ? undefined : { json: text.slice(start, end), tail: text.slice(end).trim() };
+}
+
 /** Only the small tool header is JSON. File bodies remain verbatim, without JSON escaping. */
 export function parseLemoAgentAction(text: string): LemoAgentAction {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('LEMO_AGENT_EMPTY_RESPONSE: The parsed model reply contains no visible text. An empty reply alone does not establish a JSON/tool-schema incompatibility. Return one complete tool action.');
   const header = /```json\s*\r?\n([\s\S]*?)\r?\n```/i.exec(trimmed);
-  const action = actionSchema.parse(JSON.parse(header ? header[1] : trimmed));
-  if (action.tool !== 'write_file') return action;
-  if (!header) throw new Error('LEMO_AGENT_BODY: write_file requires a separate fenced source body.');
-  const rest = trimmed.slice(header.index + header[0].length).trim();
+  const bare = header ? undefined : lemoBareActionHeader(trimmed);
+  const tail = header ? trimmed.slice(header.index + header[0].length).trim() : bare?.tail ?? '';
+  const action = actionSchema.parse(JSON.parse(header ? header[1] : bare?.json ?? trimmed));
+  if (action.tool !== 'write_file') {
+    // Fence markers alone are harmless noise; anything else would be a second, silently dropped action.
+    if (!lemoTrailingFenceOnly(tail)) throw new Error('LEMO_AGENT_ACTION: 一轮只能提交一个动作；已保存本轮回复，请只返回一个完整的工具动作。');
+    return action;
+  }
+  if (!header && !bare) throw new Error('LEMO_AGENT_BODY: write_file requires a separate fenced source body.');
+  const rest = tail;
   const start = /^```[^\r\n]*\r?\n/.exec(rest);
   const end = rest.lastIndexOf('\n```');
   if (!start || end < start[0].length || rest.slice(end + 4).trim()) throw new Error('LEMO_AGENT_BODY: source fence is incomplete.');

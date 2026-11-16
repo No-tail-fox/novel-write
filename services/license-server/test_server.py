@@ -56,6 +56,24 @@ class LicensingTests(unittest.TestCase):
             call()
         self.assertEqual(raised.exception.code, code)
 
+    def test_offline_grace_is_optional_clamped_and_bounded_by_expiry(self):
+        device = str(uuid.uuid4())
+        lease = json.loads(self.activate(device, Ed25519PrivateKey.generate())['payload'])
+        self.assertNotIn('offlineGraceUntil', lease)
+        for requested, expected in ((3600, 3600), (60, 600), (30 * 86400, 7 * 86400)):
+            self.store = LicenseStore(self.root / 'data', lambda: self.now, offline_grace=requested)
+            self.license = self.store.issue(days=30, max_devices=1)
+            issued = json.loads(self.activate(str(uuid.uuid4()), Ed25519PrivateKey.generate())['payload'])
+            self.assertEqual(issued['offlineGraceUntil'] - issued['issuedAt'], expected)
+            self.assertGreaterEqual(issued['offlineGraceUntil'], issued['validUntil'])
+            self.assertLessEqual(issued['offlineGraceUntil'], issued['expiresAt'])
+        # A license that ends sooner than the requested grace must cap the grace at its own expiry.
+        self.store = LicenseStore(self.root / 'data', lambda: self.now, offline_grace=7 * 86400)
+        self.license = self.store.issue(days=1, max_devices=1)
+        short = json.loads(self.activate(str(uuid.uuid4()), Ed25519PrivateKey.generate())['payload'])
+        self.assertEqual(short['offlineGraceUntil'], short['expiresAt'])
+        self.assertEqual(short['expiresAt'] - short['issuedAt'], 86400)
+
     def test_activation_replay_key_binding_lock_release_expiry(self):
         device = str(uuid.uuid4())
         key = Ed25519PrivateKey.generate()

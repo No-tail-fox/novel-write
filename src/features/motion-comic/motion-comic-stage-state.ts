@@ -58,7 +58,7 @@ export function motionComicDialogueCueAudioReady(
   cue: MotionComicDialogueCue,
   shot?: MotionComicShot,
 ): boolean {
-  if(shot&&(shot.videoProduction?.audioMode==='native'||shot.videoProduction?.audioMode==='audio-driven'))return motionComicShotVideoReady(document,shot);
+  if(shot?.renderStrategy==='remote-video'&&(shot.videoProduction?.audioMode==='native'||shot.videoProduction?.audioMode==='audio-driven'))return motionComicShotVideoReady(document,shot);
   const candidateIds = [cue.audioAssetVersionId, cue.voiceAssetVersionId, shot?.voiceAssetVersionId]
     .filter((id): id is string => Boolean(id));
   return candidateIds.some((id) => hasUsableAsset(document, id, 'audio'));
@@ -71,7 +71,9 @@ export function resolveMotionComicActiveEpisodeReadiness(
   const shots = episode?.scenes.flatMap((scene) => scene.shots) ?? [];
   const shotById = new Map(shots.map((shot) => [shot.id, shot]));
   const cues = episode?.dialogueCues.filter((cue) => shotById.has(cue.shotId)) ?? [];
-  const storyboardReadyCount = shots.filter((shot) => motionComicShotStoryboardReady(document, shot)).length;
+  const storyboardReadyCount = shots.filter((shot) => shot.renderStrategy === 'remote-video'
+    ? motionComicShotVideoReady(document, shot)
+    : motionComicShotStoryboardReady(document, shot)).length;
   const videoReadyCount = shots.filter((shot) => motionComicShotVideoReady(document, shot)).length;
   const audioReadyCount = cues.filter((cue) => motionComicDialogueCueAudioReady(document, cue, shotById.get(cue.shotId))).length;
   const consistencyComplete = shots.length > 0 && shots.every((shot) => inspectMotionComicShotConsistency(document, shot).ready);
@@ -79,8 +81,9 @@ export function resolveMotionComicActiveEpisodeReadiness(
   const videoComplete = shots.length > 0 && videoReadyCount === shots.length;
   const audioComplete = shots.length > 0 && audioReadyCount === cues.length;
   const generationComplete = shots.length > 0 && shots.every((shot) => (
-    motionComicShotStoryboardReady(document, shot)
-    && (shot.renderStrategy !== 'remote-video' || motionComicShotVideoReady(document, shot))
+    shot.renderStrategy === 'remote-video'
+      ? motionComicShotVideoReady(document, shot)
+      : motionComicShotStoryboardReady(document, shot)
   ));
   return {
     episode,
@@ -115,6 +118,9 @@ export function resolveMotionComicStageState(
       : act.actIndex === resolvedActs[index - 1].actIndex || act.actIndex === resolvedActs[index - 1].actIndex + 1
   ));
   const audioStageComplete = readiness.videoComplete && readiness.audioComplete;
+  const storyboardDetail = activeScenes.some((scene) => scene.shots.some((shot) => shot.renderStrategy === 'remote-video'))
+    ? `${readiness.videoReadyCount}/${readiness.shotCount} 远程视频已就绪`
+    : `${readiness.storyboardReadyCount}/${readiness.shotCount} 镜头图已就绪`;
   return {
     source: { ready: true, complete: sourceReady, detail: sourceReady ? '源文已保存' : '等待导入源文' },
     episodes: {
@@ -133,12 +139,14 @@ export function resolveMotionComicStageState(
       detail: `${document.characters.length} 人物 · ${document.sceneAssets.length} 地点 · ${document.props.length} 道具`,
     },
     storyboard: {
-      ready: readiness.consistencyComplete,
+      // Editing shot structure does not submit generation; missing references are checked at submission.
+      ready: scenesReady && readiness.shotCount > 0,
       complete: readiness.storyboardComplete,
-      detail: `${readiness.storyboardReadyCount}/${readiness.shotCount} 镜头图已就绪`,
+      detail: storyboardDetail,
     },
     video: {
-      ready: readiness.storyboardReadyCount > 0,
+      // Users must be able to configure reference mode before any inputs are ready.
+      ready: scenesReady && readiness.shotCount > 0,
       complete: readiness.videoComplete,
       detail: `${readiness.videoReadyCount}/${readiness.shotCount} 远程视频已就绪`,
     },
@@ -148,9 +156,10 @@ export function resolveMotionComicStageState(
       detail: `${readiness.audioReadyCount}/${readiness.cueCount} 句已配音`,
     },
     export: {
-      ready: readiness.videoComplete && readiness.audioComplete,
+      // Preview is an editing destination; render submission retains its own media checks.
+      ready: scenesReady && readiness.shotCount > 0,
       complete: outputReady,
-      detail: outputReady ? '已有可播放成片' : '等待合成与审片',
+      detail: outputReady ? '已有可播放成片' : readiness.videoComplete && readiness.audioComplete ? '可合成与审片' : '可预览时间线 · 素材待补齐',
     },
   };
 }

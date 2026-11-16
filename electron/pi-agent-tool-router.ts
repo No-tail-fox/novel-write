@@ -14,11 +14,14 @@ export function createPiToolRouter(options: {
 }) {
   const files = createPiAgentFiles(options);
   const receipts = createPiToolReceiptStore(options.receiptDirectory);
+  const libraryPaths = [`styles/${options.styleSlug}/STYLE.md`, `styles/${options.styleSlug}/DEMO.md`,
+    `styles/${options.styleSlug}/demo/`, 'DIRECTOR.md', 'TECHNIQUE.md', 'AGENTS.md', 'core/README.md'];
+  const libraryDirectories = [`styles/${options.styleSlug}`, `styles/${options.styleSlug}/demo`, 'core'];
   const operations = new Map<string, PiHostOperation>(Object.entries(options.operations));
   if (['read_file', 'write_file', 'list_files'].some(name => operations.has(name))) throw new Error('PI_TOOL_RESERVED');
-  operations.set('list_files', { description: 'List one allowed project or library directory. Use path . for the project root.', parameters: z.toJSONSchema(listSchema),
+  operations.set('list_files', { description: `List one allowed project or library directory. Project root path is .; library root listing is restricted. Allowed library directories: ${libraryDirectories.join(', ')}.`, parameters: z.toJSONSchema(listSchema),
     mutates: false, execute: async input => { const p = listSchema.parse(input); return files.list(p.scope, p.path); } });
-  operations.set('read_file', { description: 'Read bounded UTF-8 project source or selected read-only Lemo library guidance.', parameters: z.toJSONSchema(readSchema),
+  operations.set('read_file', { description: `Read bounded UTF-8 project source or selected read-only Lemo guidance. Allowed library files: ${libraryPaths.join(', ')}. Read STYLE.md before treatment; read demo guidance/code only after writing TREATMENT.md.`, parameters: z.toJSONSchema(readSchema),
     mutates: false, execute: async input => { const p = readSchema.parse(input); return files.read(p.scope, p.path, p.offset, p.limit); } });
   operations.set('write_file', { description: 'Write UTF-8 project source. Does not execute code. Host-owned narration/material/output are immutable.', parameters: z.toJSONSchema(writeSchema),
     mutates: true, execute: async input => { const p = writeSchema.parse(input); return files.write(p.path, p.text); } });

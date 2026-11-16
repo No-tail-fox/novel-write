@@ -9,8 +9,6 @@ import { buildVoxProductionNodes, recoverVoxProductionRun, voxProductionControlS
 import { VoxProductionService, voxInputHash, type VoxProductionRuntime, type VoxProductionServiceOptions } from '../electron/vox-production-service';
 import { createVoxProductionRuntime, type VoxProductionOperations } from '../electron/vox-production-runtime';
 import { FileDatabase } from '../src/shared/storage';
-import { nativeHtml } from './lemo-native.fixture';
-import { compileVoxCode } from '../electron/vox-animation-runtime';
 import { directorDocumentRenderFingerprint } from '../src/shared/director-render';
 
 const document = () => createEditorialCollageStarterPlan(createEditorialCollageDraft({ id: 'vox', title: '城市热岛', ratio: '16:9' }), '道路与建筑吸收阳光。树荫可以降低地表温度。', '2026-10-23T00:00:00.000Z', 15000);
@@ -40,6 +38,10 @@ describe('Vox preset contracts', () => {
     const mixed = { ...voxProductionSettings('data-map'), data: [{ label: 'A', value: 1, source: 'source', lat: 20, lng: 100 }, { label: 'B', value: 2, source: 'source' }] };
     expect(voxProductionInputErrors(doc, mixed).join()).toContain('每条');
     expect(voxProductionControlSchema.safeParse({ id: doc.id, runId: 'run', action: 'confirm-no-result' }).success).toBe(false);
+    expect(voxProductionControlSchema.safeParse({ id: doc.id, runId: 'run', action: 'confirm-human-review' }).success).toBe(true);
+    expect(voxProductionControlSchema.safeParse({ id: doc.id, runId: 'run', action: 'confirm-human-review', nodeId: 'pi-segment:1' }).success).toBe(false);
+    expect(voxProductionControlSchema.safeParse({ id: doc.id, runId: 'run', action: 'confirm-human-review', evidence: 'looks fine to me' }).success).toBe(false);
+    expect(voxProductionControlSchema.safeParse({ id: doc.id, runId: 'run', action: 'confirm-human-review', budget: { piMaxRequests: 5 } }).success).toBe(false);
   });
   it('requires cutout for archival-shaped paper actors and never generates imported evidence', () => {
     const doc = document(), shot = doc.beats[0].shots[0]; shot.layers.find(l => l.kind === 'subject')!.kind = 'archival';
@@ -54,13 +56,13 @@ describe('Vox preset contracts', () => {
     const d = document(), settings = { ...voxProductionSettings(), generateImages: false, authoring: { mode: 'ai-code' as const, styleId: 'auto' } };
     const nodes = buildVoxProductionNodes(d, settings);
     expect(nodes.some(node => ['image', 'cutout'].includes(node.kind))).toBe(false);
-    for (const kind of ['plan', 'voice', 'film-code', 'film-review', 'film-repair', 'film-finalize', 'compile', 'render', 'verify']) expect(nodes.some(node => node.kind === kind), kind).toBe(true);
+    for (const kind of ['voice', 'film-edit', 'film-finalize', 'render', 'verify']) expect(nodes.some(node => node.kind === kind), kind).toBe(true);
     expect(voxProductionNeedsTextModel(nodes)).toBe(true);
     expect(nodes.every(node => node.dependencies.every(dependency => nodes.some(parent => parent.id === dependency)))).toBe(true);
-    expect(nodes.find(node => node.kind === 'voice')?.dependencies).toEqual(['plan']);
+    expect(nodes.find(node => node.kind === 'voice')?.dependencies).toEqual([]);
     expect(voxProductionInputErrors(d, settings)).toEqual([]);
     expect(buildVoxProductionNodes(d, { ...settings, narration: false }).some(node => node.kind === 'voice')).toBe(false);
-    expect(buildVoxProductionNodes(d, { ...settings, lockedShotIds: [d.beats[0].shots[0].id] }).filter(node => node.shotId === d.beats[0].shots[0].id).map(node => node.kind)).toEqual(['compile']);
+    expect(buildVoxProductionNodes(d, { ...settings, lockedShotIds: [d.beats[0].shots[0].id] }).filter(node => node.shotId === d.beats[0].shots[0].id).map(node => node.kind)).toEqual(['timing', 'compile']);
   });
   it('defaults older settings to image generation and reads the retired existing-assets choice', () => {
     const { generateImages: _generateImages, ...legacy } = voxProductionSettings();
@@ -385,28 +387,27 @@ describe('Vox runtime gates', () => {
       const path = join(directory, 'voice.wav'); await writeFile(path, 'local voice fixture');
       const settings: VoxProductionSettings = { ...voxProductionSettings(), generateImages: false, authoring: { mode: 'ai-code', styleId: 'auto' } };
       const now = document().createdAt;
-      const planFilm = vi.fn(async () => ({ treatment: '在同一连续镜头中展开城市街道的热岛机制，画面先呈现道路蓄热，再以树荫覆盖街道来表达降温，文字配合实测旁白推进。', fps: 24 }));
       const image = vi.fn(async () => { throw new Error('image generation must stay disabled'); });
       const cutout = vi.fn(async () => { throw new Error('background removal must stay disabled'); });
       const speech = vi.fn(async (input, requestId) => ({ durationMs: 4200, record: { id: requestId, text: input.text, provider: input.provider, voiceId: input.voiceId,
         voiceLabel: input.voiceLabel, speed: input.speed, audioPath: path, status: 'generated' as const, errorMessage: '', createdAt: now, finishedAt: now } }));
-      const generateFilm = vi.fn(async (prompt: string) => nativeHtml(JSON.parse(prompt).durationMs));
-      const runtime = createVoxProductionRuntime(operations({ planFilm, image, cutout, speech, generateFilm, compileCode: compileVoxCode, previewCode: async () => ['preview.png'] }));
+      const upstreamStep = vi.fn(async (d: EditorialCollagePipelineData) => d);
+      const runtime = createVoxProductionRuntime(operations({ image, cutout, speech, upstreamStep }));
       const h = harness();
       h.runtime.identity = runtime.identity;
+      h.runtime.nativeWorkflowVersion = 3;
       h.runtime.input = (d, node) => runtime.input(d, node);
-      h.runtime.execute = (d, node) => ['render', 'verify'].includes(node.kind) ? Promise.resolve(d) : runtime.execute(d, node);
+      h.runtime.execute = (d, node) => ['film-finalize', 'compile', 'render', 'verify'].includes(node.kind) ? Promise.resolve(d) : runtime.execute(d, node);
 
       const started = await h.start(settings); await h.service.idle('vox');
 
       expect(h.get().productionRun, h.get().productionRun?.message).toMatchObject({ id: started.id, status: 'completed', settings: { generateImages: false, narration: true, authoring: { mode: 'ai-code' } } });
-      expect(planFilm).toHaveBeenCalledOnce();
       expect(speech).toHaveBeenCalled();
-      expect(generateFilm).toHaveBeenCalledOnce();
+      expect(upstreamStep).toHaveBeenCalledOnce();
       expect(image).not.toHaveBeenCalled();
       expect(cutout).not.toHaveBeenCalled();
       expect(h.get().productionRun!.nodes.some(node => node.kind === 'image' || node.kind === 'cutout')).toBe(false);
-      expect(h.get().productionRun!.nodes.some(node => node.kind === 'film-code' && node.status === 'completed')).toBe(true);
+      expect(h.get().productionRun!.nodes.some(node => node.kind === 'film-edit' && node.status === 'completed')).toBe(true);
       expect(h.errors).toEqual([]);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
@@ -522,6 +523,29 @@ describe('Vox runtime gates', () => {
     verifyVideo.mockRejectedValueOnce(new Error('missing audio'));
     await expect(runtime.execute(d, node)).rejects.toThrow('missing audio');
   });
+  it.each([
+    { trackType: 'narration' as const, locked: false, muted: false, legacy: false, requireAudio: false },
+    { trackType: 'dialogue' as const, locked: false, muted: false, legacy: false, requireAudio: false },
+    { trackType: 'narration' as const, locked: true, muted: false, legacy: false, requireAudio: true },
+    { trackType: 'narration' as const, locked: true, muted: true, legacy: false, requireAudio: false },
+    { trackType: 'sfx' as const, locked: false, muted: false, legacy: false, requireAudio: true },
+    { trackType: 'narration' as const, locked: false, muted: false, legacy: true, requireAudio: false },
+    { trackType: 'narration' as const, locked: true, muted: false, legacy: true, requireAudio: true },
+  ])('verifies the retained audio mix after disabling narration: %j', async ({ trackType, locked, muted, legacy, requireAudio }) => {
+    const d = document(), shot = d.beats[0].shots[0];
+    const settings = { ...voxProductionSettings(), narration: false, lockedShotIds: locked ? [shot.id] : [] };
+    d.productionRun = { version: 1, id: 'r', status: 'running', settings, sourceHash: '', runtimeIdentity: '', nodes: [], createdAt: d.createdAt, updatedAt: d.updatedAt };
+    shot.voiceAssetVersionId = 'old-voice';
+    d.timeline!.audioClips = legacy ? [] : [{ id: 'old-audio', shotId: shot.id, trackType, assetVersionId: 'old-voice', startMs: 0, durationMs: 4200, muted }];
+    d.assets.push({ id: 'final', assetId: 'director-final-video', kind: 'video', localPath: 'final.mp4', selected: true, renderFingerprint: directorDocumentRenderFingerprint(d), createdAt: d.createdAt });
+    d.qualityReports.push({ id: 'quality', workflowKind: d.workflowKind, stage: 'export', status: 'passed', checks: [], createdAt: d.createdAt });
+    const before = structuredClone(d), verifyVideo = vi.fn(async () => {});
+    const runtime = createVoxProductionRuntime(operations({ verifyVideo }));
+    const result = await runtime.execute(d, buildVoxProductionNodes(d, settings).find(n => n.kind === 'verify')!);
+    expect(verifyVideo).toHaveBeenCalledWith('final.mp4', d.timeline!.durationMs, requireAudio);
+    expect(result.stage).toBe('completed');
+    expect(d).toEqual(before);
+  });
   it('keeps existing narration and subtitle alignment when new narration is disabled', async () => {
     const d = document(), settings = { ...voxProductionSettings(), narration: false }, shot = d.beats[0].shots[0];
     d.productionRun = { version: 1, id: 'r', status: 'running', settings, sourceHash: '', runtimeIdentity: '', nodes: [], createdAt: d.createdAt, updatedAt: d.updatedAt };
@@ -556,6 +580,35 @@ describe('Vox production storage ownership', () => {
 
 
 describe('planner failure receipts', () => {
+  it.each(['schema', 'missing', 'duplicate', 'extra', 'wrong'] as const)('saves completed planner replies that fail %s validation as definite failures', async failure => {
+    const before = document();
+    const shots = before.beats.flatMap(b => b.shots.map(s => ({ id: s.id, title: '城市热岛', scenePrompt: 'Concrete city with separate subjects and environment' })));
+    const json = failure === 'schema' ? { shots: [{ ...shots[0], scenePrompt: 'short' }] }
+      : { shots: failure === 'missing' ? shots.slice(1) : failure === 'duplicate' ? shots.map(() => shots[0])
+        : failure === 'extra' ? [...shots, { ...shots[0], id: 'extra' }] : shots.map((s, i) => i ? s : { ...s, id: 'wrong' }) };
+    const raw = `\n ${JSON.stringify(json, null, 2)}\n`;
+    const receipt = { json, raw, requestId: 'complete-reply', finishReason: 'stop', usage: { output_tokens: 99 } };
+    const planWithReceipt = vi.fn(async () => receipt);
+    const runtime = createVoxProductionRuntime(operations({ planWithReceipt }));
+    const h = harness((d, n) => runtime.execute(d, n));
+    await h.start(); await h.service.idle('vox');
+    const failed = h.get(), node = failed.productionRun!.nodes[0];
+    expect(node).toMatchObject({ kind: 'plan', status: 'failed', resultReceived: true,
+      llmResponse: { text: raw, truncated: false, requestId: receipt.requestId, finishReason: 'stop', usage: receipt.usage } });
+    expect(node.error).toContain(failure === 'schema' ? 'VOX_PLAN_SCHEMA:' : 'VOX_PLAN_IDS:');
+    expect(failed.beats).toEqual(before.beats);
+    expect(parseEditorialCollagePipelineData(failed).productionRun!.nodes[0].llmResponse).toEqual(node.llmResponse);
+    expect((await h.store.recover('vox', node))?.productionRun?.nodes[0]).toEqual(node);
+    expect(planWithReceipt).toHaveBeenCalledOnce(); expect(h.calls).toEqual(['plan']); expect(h.errors).toEqual([]);
+  });
+  it('retains a completed legacy planner result when only parsed JSON is available', async () => {
+    const json = { shots: [] }, plan = vi.fn(async () => json);
+    const runtime = createVoxProductionRuntime(operations({ plan }));
+    const h = harness((d, n) => runtime.execute(d, n));
+    await h.start(); await h.service.idle('vox');
+    expect(h.get().productionRun!.nodes[0]).toMatchObject({ status: 'failed', resultReceived: true, llmResponse: { text: JSON.stringify(json), requestId: null } });
+    expect(plan).toHaveBeenCalledOnce();
+  });
  it.each([true, false])('retains the original paid reply without changing the film or resending (complete=%s)', async complete => {
   const raw = '{"treatment":"partial original text';
   const result = { raw, text: raw, requestId: 'provider-plan-receipt', ...(complete ? { finishReason: 'max_tokens' } : {}), usage: { output_tokens: 4096 } };

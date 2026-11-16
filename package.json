@@ -87,6 +87,10 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": "vendor/lemo-instrument-starter", "to": "lemo-instrument-starter" },
+      { "from": "services/lemo-audio", "to": "lemo-audio", "filter": ["*.py", "requirements.txt", "README.md"] },
+      { "from": "services/pi-agent-worker", "to": "pi-agent-worker", "filter": ["dist/**/*", "package.json", "package-lock.json", "README.md"] },
+      { "from": "services/pi-agent-worker/node_modules", "to": "pi-agent-worker/node_modules" },
       { "from": "vendor/pixelle-upstream", "to": "pixelle-upstream" },
       { "from": "services/pixelle-worker", "to": "pixelle-worker", "filter": ["**/*.py"] },
       {

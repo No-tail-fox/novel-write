@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDirectorCopyAssistRequest, normalizeDirectorCopyAssistError } from '../src/features/director-desk/director-copy-assist';
+import { buildDirectorCopyAssistRequest, directorCopyRequestedCharacters, normalizeDirectorCopyAssistError, resolveDirectorCopyAssistTarget } from '../src/features/director-desk/director-copy-assist';
 import { composeCopyFromSources } from '../src/shared/research';
 import { EDITORIAL_WRITING_STYLES } from '../src/shared/editorial-writing-styles';
 
@@ -63,9 +63,10 @@ describe('Director create copy assistance', () => {
       keyword: '城市旧书店为何消失',
       selectedSources: [],
       useBuiltinKnowledge: true,
-      targetLength: 90,
+      targetLength: 100,
     });
     expect(request.extraRequirements).toContain('30 秒解释型视频');
+    expect(request.extraRequirements).toContain('不少于 100 字，目标约 100 字');
     expect(request.extraRequirements).toContain('按所选风格组织开场、信息推进和收束');
     expect(request.extraRequirements).not.toContain('结构必须包含钩子、背景、证据和结论');
   });
@@ -90,10 +91,52 @@ describe('Director create copy assistance', () => {
   it('scales VOX copy guidance with the selected starter duration', () => {
     const short = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '短片', copy: '', durationMs: 15_000 });
     const long = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '长片', copy: '', durationMs: 60_000 });
-    expect(short.targetLength).toBe(45);
+    // 15 秒约 45 字低于文案可用下限，按 100 字处理；60 秒仍按每秒 3 字估算。
+    expect(short.targetLength).toBe(100);
     expect(short.extraRequirements).toContain('15 秒解释型视频');
+    expect(short.extraRequirements).toContain('不少于 100 字，目标约 100 字');
     expect(long.targetLength).toBe(180);
     expect(long.extraRequirements).toContain('60 秒解释型视频');
+    expect(long.extraRequirements).toContain('不少于 162 字，目标约 180 字');
+  });
+
+  it('honours a word count written in the creator direction instead of the duration preset', () => {
+    const request = buildDirectorCopyAssistRequest({
+      mode: 'vox', intent: 'create', title: '奶头乐', copy: '', requirements: '奶头乐得介绍，1500字', durationMs: 'auto',
+    });
+    expect(directorCopyRequestedCharacters('奶头乐得介绍，1500字')).toBe(1500);
+    expect(request.targetLength).toBe(1500);
+    expect(request.extraRequirements).toContain('不少于 1350 字，目标约 1500 字');
+    expect(request.extraRequirements).toContain('1500字');
+    expect(request.extraRequirements).not.toContain('约 90 字');
+    expect(request.extraRequirements).toContain('字数要求同样以用户要求为准');
+  });
+
+  it('lets the direction override an explicit duration preset and keeps revisions long enough', () => {
+    const created = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '奶头乐', copy: '', requirements: '请写满 1500 个字', durationMs: 30_000 });
+    expect(created.targetLength).toBe(1500);
+    const revised = buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'revise', title: '奶头乐', copy: '短稿。', requirements: '1500 字', durationMs: 'auto' });
+    expect(revised.targetLength).toBe(1500);
+    expect(revised.extraRequirements).toContain('不少于 1350 字');
+  });
+
+  it('ignores ambiguous, tiny or oversized counts in the direction', () => {
+    expect(directorCopyRequestedCharacters('')).toBeNull();
+    expect(directorCopyRequestedCharacters('面向年轻读者，节奏快一些。')).toBeNull();
+    expect(directorCopyRequestedCharacters('写 1500 字或 2000 字')).toBeNull();
+    expect(directorCopyRequestedCharacters('300 字以内')).toBeNull();
+    expect(resolveDirectorCopyAssistTarget('auto', null)).toMatchObject({ targetLength: 100, fromRequirements: false });
+    expect(buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '标题', copy: '', requirements: '300 字以内' }).targetLength).toBe(100);
+  });
+
+  it('sends the resolved word count to the text model prompt', async () => {
+    let prompt = '';
+    await composeCopyFromSources({ protocol: 'anthropic', run: async (request) => {
+      prompt = request.messages.map(message => message.content).join('\n');
+      return { text: '正文。', raw: 'text', requestId: null };
+    } }, buildDirectorCopyAssistRequest({ mode: 'vox', intent: 'create', title: '奶头乐', copy: '', requirements: '奶头乐得介绍，1500字', durationMs: 'auto' }));
+    expect(prompt).toContain('全文字数不少于 1350 字，目标约 1500 字');
+    expect(prompt).toContain('不得用重复句');
   });
 
   it('keeps full-length revisions tied to the complete source instead of a short preset', () => {

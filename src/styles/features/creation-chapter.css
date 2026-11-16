@@ -1,0 +1,59 @@
+/* Chapter confirmation owns one scroll area; the footer stays outside it. */
+.motion-comic-create[data-step='1'] .motion-comic-create__layout {
+  overflow: hidden;
+  align-items: stretch;
+}
+.motion-comic-create[data-step='1'] .motion-comic-create__main {
+  min-height: 0 !important;
+  overflow: hidden;
+}
+.motion-comic-create[data-step='1'] .motion-comic-create__fields {
+  flex: 1 1 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  gap: 12px;
+}
+.motion-comic-create[data-step='1'] .motion-comic-create__footer {
+  position: static;
+  flex: 0 0 auto;
+  padding-top: 12px;
+}
+.motion-comic-create[data-step='1'] .motion-comic-create__summary { overflow: auto; }
+.creation-chapters { min-width: 0; border: 1px solid var(--shell-border); border-radius: 8px; }
+.creation-chapters__heading { padding: 10px 14px; }
+.creation-chapters__heading h2 { margin: 0; font-size: 16px; color: var(--shell-text); }
+.creation-chapters__heading p { margin: 6px 0 0; color: var(--shell-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.creation-chapters__columns,
+.creation-chapters__row { display: grid; grid-template-columns: 36px minmax(0, 1fr) 64px 84px 86px; gap: 12px; align-items: center; padding: 10px 14px; }
+.creation-chapters__columns { background: var(--shell-hover); border-top: 1px solid var(--shell-border); font-size: 12px; color: var(--shell-muted); }
+.creation-chapters__item { border-top: 1px solid var(--shell-border); }
+.creation-chapters__row { min-height: 56px; padding-block: 7px; font-size: 13px; }
+.creation-chapters__item[data-expanded='true'] { background: var(--shell-hover); }
+.creation-chapters__number { color: var(--shell-muted); font-variant-numeric: tabular-nums; }
+.creation-chapters__title { min-width: 0; overflow-wrap: anywhere; color: var(--shell-text); font-weight: 500; }
+.creation-chapters__count { font-variant-numeric: tabular-nums; color: var(--shell-text); }
+.creation-chapters__unit { display: none; }
+.creation-chapters__status { justify-self: start; padding: 4px 6px; border-radius: 4px; font-size: 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.creation-chapters__status[data-valid='true'] { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.creation-chapters__row button { min-width: 0; width: 100%; min-height: 40px; padding-inline: 6px; }
+.creation-chapters__row button:focus-visible { outline: 2px solid var(--shell-accent); outline-offset: 2px; }
+.creation-chapters__editor { display: grid; gap: 12px; padding: 4px 16px 16px; }
+.creation-chapters__editor textarea { min-height: 180px; line-height: 1.7; }
+.creation-chapters__editor textarea[readonly] { cursor: text; }
+.creation-chapters__issue, .creation-chapters__empty { margin: 0; padding: 12px 16px; font-size: 12px; color: var(--warn); }
+@media (max-width: 1100px) {
+  .motion-comic-create[data-step='1'] .motion-comic-create__layout { grid-template-columns: minmax(0, 1fr) 230px; gap: 12px; }
+  .creation-chapters__columns, .creation-chapters__row { grid-template-columns: 28px minmax(0, 1fr) 52px 76px 78px; gap: 8px; padding-inline: 10px; }
+}
+@media (max-width: 800px) {
+  .motion-comic-create[data-step='1'] .motion-comic-create__layout { grid-template-columns: minmax(0, 1fr); }
+  .motion-comic-create[data-step='1'] .motion-comic-create__summary { display: none; }
+}
+@media (max-width: 480px) {
+  .creation-chapters__columns { display: none; }
+  .creation-chapters__row { grid-template-columns: 28px minmax(0, 1fr) 78px; }
+  .creation-chapters__count { grid-column: 2; grid-row: 2; }
+  .creation-chapters__status { grid-column: 3; grid-row: 2; }
+  .creation-chapters__row button { grid-column: 3; grid-row: 1; }
+  .creation-chapters__unit { display: inline; }
+}

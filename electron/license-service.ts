@@ -17,6 +17,8 @@ interface Encryption {
 const vaultSchema = z.object({
   version: z.literal(1), deviceId: z.string().regex(/^[a-f0-9]{64}$/), privateKey: z.string().max(4096),
   lastClock: z.number().nonnegative(), releaseSequence: z.number().int().nonnegative(), releaseHash: z.string(),
+  // Last server-signed lease envelope, kept so a restart can use the offline grace window. Re-verified on every load.
+  lease: z.object({ payload: z.string().max(65536), signature: z.string().max(128) }).strict().optional(),
 }).strict();
 type MachineVault = z.infer<typeof vaultSchema>;
 const messages: Record<string, string> = {
@@ -83,22 +85,60 @@ export class LicenseService {
       this.state.deviceId = deviceId;
       this.state.status = 'inactive';
       this.state.message = '本机尚未激活。';
+      await this.restoreStoredLease();
       await this.refresh().catch(() => undefined);
       this.timer = setInterval(() => { void this.refresh().catch(() => undefined); }, 120000);
       this.timer.unref();
-    } catch {
+    } catch (error) {
+      // Surface the real cause (no secrets): the three failure modes below look identical to the user otherwise.
+      const reason = error instanceof z.ZodError ? 'VAULT_SCHEMA_INVALID:' + error.issues.slice(0, 3).map((issue) => issue.path.join('.') + ' ' + issue.code).join(',')
+        : error instanceof Error ? (error.message.split('\n')[0] ?? '').slice(0, 120) : 'UNKNOWN';
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
       this.vault = null;
       this.state.status = 'error';
-      this.state.message = '无法读取本机加密凭据，请检查系统加密功能或联系管理员。';
+      this.state.message = '无法读取本机加密凭据，请检查系统加密功能或联系管理员。（原因：' + reason + (code ? ' / ' + code : '') + '）';
+      await mkdir(dirname(this.options.vaultPath), { recursive: true }).catch(() => undefined);
+      await writeFile(this.options.vaultPath + '.error.log', new Date().toISOString() + ' ' + reason + ' ' + (code ?? '') + '\n', { flag: 'a' }).catch(() => undefined);
     }
     await this.notify();
   }
 
+  // Restores the persisted lease after a restart. It is re-verified (signature, device binding, grace window) and
+  // only gives an offline state; the next successful refresh replaces it with a fresh online lease.
+  private async restoreStoredLease(): Promise<void> {
+    const stored = this.vault?.lease;
+    if (!stored || !this.vault || !this.config) return;
+    try {
+      const lease = verifyLease(stored, this.config, this.vault.deviceId, this.publicKey(), this.now(), true);
+      this.lease = lease;
+      this.lastCheck = 0;
+      this.state = { ...this.state, status: 'offline', expiresAt: new Date(lease.expiresAt * 1000).toISOString(), validUntil: new Date(this.deadline(lease) * 1000).toISOString(), devices: lease.devices, message: '已使用本机保存的授权，请尽快联网验证。' };
+      clearTimeout(this.expiryTimer);
+      this.expiryTimer = setTimeout(() => {
+        this.clearLease('expired', '联网授权已过期，请重新验证。');
+        void this.notify().catch(() => undefined);
+      }, Math.max(0, (this.deadline(lease) - this.now()) * 1000));
+      this.expiryTimer.unref();
+    } catch {
+      delete this.vault.lease;
+      await this.persist().catch(() => undefined);
+    }
+  }
+
   close(): void { clearInterval(this.timer); clearTimeout(this.expiryTimer); }
+  // Latest moment a lease may be used: the short online window, or the server-signed offline grace if it is longer.
+  private deadline(lease: LicenseLease): number { return Math.max(lease.validUntil, lease.offlineGraceUntil ?? 0); }
+
   status(): LicenseStatus {
     const result = structuredClone(this.state);
-    if (this.lease && this.lease.validUntil <= this.now() && ['active', 'offline'].includes(result.status)) {
-      result.status = 'expired'; result.message = '联网授权已过期，请重新验证。';
+    if (this.lease && ['active', 'offline'].includes(result.status)) {
+      const now = this.now();
+      if (this.deadline(this.lease) <= now) {
+        result.status = 'expired'; result.message = '联网授权已过期，请重新验证。';
+      } else if (this.lease.validUntil <= now) {
+        result.status = 'offline';
+        result.message = '暂时无法连接授权服务，离线宽限期将于 ' + new Date(this.deadline(this.lease) * 1000).toLocaleString() + ' 结束，请尽快联网验证。';
+      }
     }
     return result;
   }
@@ -107,7 +147,7 @@ export class LicenseService {
     if (!this.enforced) return;
     if (this.lease && this.lease.validUntil > this.now() && performance.now() - this.lastCheck < 120000) return;
     await this.refresh().catch(() => undefined);
-    if (!this.lease || this.lease.validUntil <= this.now()) throw new AppError('LICENSE_REQUIRED', this.status().message);
+    if (!this.lease || this.deadline(this.lease) <= this.now()) throw new AppError('LICENSE_REQUIRED', this.status().message);
   }
 
   activate(code: string): Promise<LicenseStatus> { return this.exclusive(() => this.exchange('/v1/license/activate', { code: code.trim(), label: this.state.deviceLabel })); }
@@ -116,6 +156,7 @@ export class LicenseService {
     return this.exclusive(async () => {
       try {
         await this.send('/v1/license/release');
+        if (this.vault?.lease) { delete this.vault.lease; await this.persist().catch(() => undefined); }
         this.clearLease('inactive', '本机已解绑。');
         await this.notify();
         return this.status();
@@ -148,6 +189,8 @@ export class LicenseService {
       const envelope = await this.send(path, extra);
       const lease = verifyLease(envelope, this.config!, this.vault!.deviceId, this.publicKey(), this.now());
       this.vault!.lastClock = Math.max(this.vault!.lastClock, lease.issuedAt);
+      if (lease.offlineGraceUntil !== undefined) this.vault!.lease = { payload: envelope.payload, signature: envelope.signature };
+      else delete this.vault!.lease;
       await this.persist();
       this.lease = lease;
       this.lastCheck = performance.now();
@@ -156,7 +199,7 @@ export class LicenseService {
       this.expiryTimer = setTimeout(() => {
         this.clearLease('expired', '联网授权已过期，请重新验证。');
         void this.notify().catch(() => undefined);
-      }, Math.max(0, (lease.validUntil - this.now()) * 1000));
+      }, Math.max(0, (this.deadline(lease) - this.now()) * 1000));
       this.expiryTimer.unref();
       await this.notify();
       return this.status();
@@ -167,9 +210,15 @@ export class LicenseService {
   }
   private async handleError(error: unknown): Promise<void> {
     if (error instanceof LicenseRemoteError && error.status >= 400 && error.status < 500 && error.status !== 429) {
+      // An explicit server rejection must also drop the stored lease, or a restart while offline would resurrect it.
+      if (this.vault?.lease) { delete this.vault.lease; await this.persist().catch(() => undefined); }
       this.clearLease(['DEVICE_LOCKED', 'LICENSE_REVOKED'].includes(error.code) ? 'locked' : error.code === 'LICENSE_EXPIRED' ? 'expired' : 'inactive', messages[error.code] ?? '设备验证失败，请联系管理员。');
-    } else if (this.lease && this.lease.validUntil > this.now()) {
-      this.state.status = 'offline'; this.state.message = '暂时无法连接授权服务，当前授权将于 ' + new Date(this.lease.validUntil * 1000).toLocaleTimeString() + ' 失效。';
+    } else if (this.lease && this.deadline(this.lease) > this.now()) {
+      const inGrace = this.lease.validUntil <= this.now();
+      this.state.status = 'offline';
+      this.state.message = inGrace
+        ? '暂时无法连接授权服务，离线宽限期将于 ' + new Date(this.deadline(this.lease) * 1000).toLocaleString() + ' 结束，请尽快联网验证。'
+        : '暂时无法连接授权服务，当前授权将于 ' + new Date(this.lease.validUntil * 1000).toLocaleTimeString() + ' 失效。';
     } else {
       this.clearLease(this.config ? 'error' : 'unconfigured', error instanceof AppError ? error.message : messages[(error as LicenseRemoteError).code] ?? '无法连接授权服务，请检查网络和系统时间。');
     }

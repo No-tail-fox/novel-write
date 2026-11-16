@@ -750,7 +750,7 @@ describe('task runtime providers', () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
       requests.push({ url, body: JSON.parse(String(init.body)) });
-      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('task-image').toString('base64') }] }), {
+      return new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=' }] }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });

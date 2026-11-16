@@ -1063,10 +1063,11 @@ def open_series_bible(page: Page) -> None:
     expect(page.get_by_role("button", name="保存系列圣经", exact=True)).to_be_visible()
 
 
-def create_offline_electron_entry(profile: Path) -> Path:
+def create_offline_electron_entry(profile: Path, main_bundle: Path | None = None) -> Path:
     """Launch the production bundle behind a main-process external-fetch guard."""
     audit_path = profile / "network-audit.jsonl"
     hook_path = profile / "offline-main.cjs"
+    entry = main_bundle or (ROOT / "dist-electron/electron/main.js")
     hook_path.write_text(
         "const fs = require('node:fs');\n"
         "const path = require('node:path');\n"
@@ -1086,7 +1087,7 @@ def create_offline_electron_entry(profile: Path) -> Path:
         "  append({ kind: 'blocked-external-fetch', method: init.method || 'GET', url: url.href });\n"
         "  return Promise.reject(new Error('QA_EXTERNAL_FETCH_BLOCKED: ' + url.origin));\n"
         "};\n"
-        "import(pathToFileURL(path.join(appRoot, 'dist-electron/electron/main.js')).href);\n",
+        f"import(pathToFileURL({json.dumps(str(entry))}).href);\n",
         encoding="utf-8",
     )
     (profile / "package.json").write_text(
@@ -1185,8 +1186,18 @@ def inspect_director_workspace_layout(page: Page, expected_stage: str) -> dict[s
           const center = root.querySelector('.director-center-pane');
           const preview = root.querySelector('.director-preview-surface');
           const inspector = root.querySelector('.director-inspector-pane');
+          const leftPane = root.querySelector('.director-left-pane');
+          const statusBar = root.querySelector('.director-shot-status-bar');
+          const shotList = root.querySelector('.director-shot-list');
+          const shotRows = [...root.querySelectorAll('.director-shot-row')];
           return {
             root: rect(root),
+            leftPane: rect(leftPane),
+            leftHorizontalOverflow: leftPane ? leftPane.scrollWidth - leftPane.clientWidth : 0,
+            statusBar: rect(statusBar),
+            statusBarText: statusBar ? statusBar.textContent.replace(/\s+/g, ' ').trim() : '',
+            shotList: rect(shotList),
+            shotRowHeights: shotRows.map(row => row.getBoundingClientRect().height),
             grid: rect(grid),
             center: rect(center),
             preview: rect(preview),
@@ -1223,6 +1234,24 @@ def inspect_director_workspace_layout(page: Page, expected_stage: str) -> dict[s
         raise AssertionError(f"{expected_stage} director preview is outside the visible viewport: {snapshot}")
     if float(snapshot.get("inspectorIntersection", 0)) <= 0:
         raise AssertionError(f"{expected_stage} director inspector is outside the visible viewport: {snapshot}")
+    status_bar = snapshot.get("statusBar")
+    left_pane = snapshot.get("leftPane")
+    if (
+        expected_stage == "video"
+        and isinstance(status_bar, dict)
+        and isinstance(left_pane, dict)
+        and float(left_pane.get("height", 0)) > 0
+    ):
+        if float(status_bar.get("height", 0)) <= 0 or float(status_bar.get("bottom", 0)) > float(left_pane.get("bottom", 0)) + 1:
+            raise AssertionError(f"video shot status bar is clipped by the shot strip: {snapshot}")
+        row_heights = [float(value) for value in snapshot.get("shotRowHeights", [])]
+        if not row_heights or min(row_heights) < 40:
+            raise AssertionError(f"video shot cards are squeezed out by the status bar: {snapshot}")
+        if float(snapshot.get("leftHorizontalOverflow", 0)) > 1:
+            raise AssertionError(f"video shot strip overflows horizontally: {snapshot}")
+        bar_text = str(snapshot.get("statusBarText", ""))
+        if "待生成" not in bar_text or not ("批量制作" in bar_text or "查看制作任务" in bar_text):
+            raise AssertionError(f"video shot status bar is missing its counts or batch entry: {snapshot}")
     return snapshot
 
 
@@ -1918,7 +1947,8 @@ def main() -> None:
     profile = Path(tempfile.mkdtemp(prefix="motion-comic-eight-stage-", dir=qa_temp_root))
     fixture_image = create_reference_fixtures(profile / "qa-reference-inputs")[0]
     fixture_video = create_video_fixture(fixture_image, profile / "qa-reference-inputs" / "remote-video-fixture.mp4")
-    network_audit_path = create_offline_electron_entry(profile)
+    qa_main_bundle = Path(os.environ['STORYDREAM_QA_MAIN_BUNDLE']) if os.environ.get('STORYDREAM_QA_MAIN_BUNDLE') else None
+    network_audit_path = create_offline_electron_entry(profile, qa_main_bundle)
     port = available_port()
     env = os.environ.copy()
     env["NODE_ENV"] = "production"
@@ -1968,7 +1998,7 @@ def main() -> None:
         with sync_playwright() as playwright:
             browser = playwright.chromium.connect_over_cdp(endpoint)
             context = browser.contexts[0]
-            page = context.pages[0]
+            page = context.pages[0] if context.pages else context.wait_for_event("page", timeout=30_000)
 
             def guard_renderer_request(route, request) -> None:
                 if external_http_url(request.url):

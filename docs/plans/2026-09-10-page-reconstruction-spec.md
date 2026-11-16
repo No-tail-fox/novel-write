@@ -16,8 +16,8 @@
 
 - 使用已读取的 `ui-ux-pro-max` 与 `storydream-ui` 规则：复用 Fluent 与项目 `src/ui`，语义 tokens、Lucide 图标、稳定的创作工作区、真实视觉回归。
 - [首轮设计说明](../design/storydream-web-redesign/review.md)记录了概念图与验证边界。
-- [项目首页概念图](I:/opc/.artifacts/storydream-web-redesign/projects-1536x1024.png)用于导航、留白和项目集合的方向沟通。
-- [编辑器概念图](I:/opc/.artifacts/storydream-web-redesign/workspace-1024x1024.png)用于工作区关系沟通；正式编辑器采用横向布局，不照搬方形画幅。
+- [项目首页概念图](I:/项目/story-dream/.artifacts/storydream-web-redesign/projects-1536x1024.png)用于导航、留白和项目集合的方向沟通。
+- [编辑器概念图](I:/项目/story-dream/.artifacts/storydream-web-redesign/workspace-1024x1024.png)用于工作区关系沟通；正式编辑器采用横向布局，不照搬方形画幅。
 - 图片中的项目名、头像、时间、封面和状态是设计示意，不能放进生产界面当成真实数据。
 
 ### 1.2 当前问题与已完成边界

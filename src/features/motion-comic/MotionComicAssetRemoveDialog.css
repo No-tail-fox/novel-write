@@ -1,0 +1,24 @@
+.comic-asset-remove {
+  display: grid;
+  gap: 10px;
+  max-width: 52ch;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.comic-asset-remove p { margin: 0; }
+
+.comic-asset-remove ul { display: grid; gap: 4px; margin: 0; padding-inline-start: 18px; color: var(--shell-muted); }
+
+.comic-asset-remove small { color: var(--shell-muted); font-size: 12px; }
+
+.comic-asset-remove__blocked {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-inline-start: 3px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--shell-text);
+}

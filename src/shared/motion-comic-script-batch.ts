@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { MotionComicScriptOriginal, MotionComicScriptProposal } from './motion-comic-script-proposal';
 import { motionComicScriptDraftSchema, motionComicPlanAdjustmentSchema, motionComicPlanningIssueSchema, motionComicPlanDraftSchema } from './motion-comic-planning';
 
 export const MOTION_COMIC_SCRIPT_PROMPT_VERSION = 'novel-script-batch-v1';
@@ -46,6 +47,9 @@ export interface MotionComicScriptSnapshot {
   candidates: MotionComicScriptCandidate[];
   approvals: MotionComicScriptApproval[];
   storyboards: MotionComicScriptStoryboard[];
+  originals?: MotionComicScriptOriginal[];
+  proposals?: MotionComicScriptProposal[];
+  assetExtractions?: import('./motion-comic-asset-extraction').MotionComicAssetExtractionCandidate[];
 }
 export const motionComicScriptEnqueueSchema = z.object({
   id, expectedUpdatedAt: timestamp, scope: z.enum(['missing', 'selected', 'failed']),

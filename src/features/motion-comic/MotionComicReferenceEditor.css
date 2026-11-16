@@ -1,0 +1,345 @@
+.motion-comic-reference .comic-reference-preview { min-height: 220px; background: var(--shell-bg); border-radius: 12px; }
+.motion-comic-reference .comic-reference-preview .motion-comic-reference-image { min-height: 220px; }
+.motion-comic-reference .comic-reference-preview img { max-height: 420px; object-fit: contain; }
+.motion-comic-reference .motion-comic-reference-header { flex-wrap: wrap; gap: 12px; }
+.motion-comic-reference .comic-reference-version-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; padding: 6px 2px 12px; }
+.motion-comic-reference .comic-reference-version { flex: 0 0 112px; min-width: 0; }
+.motion-comic-reference .comic-reference-candidates-heading { margin-top: 20px; }
+
+/* Reference state reads from one quiet chip next to the heading; the heavy black
+   bar came from actions sitting inside the header strip. */
+.comic-reference-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  border: 1px solid var(--shell-border);
+  background: transparent;
+  color: var(--shell-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.comic-reference-chip.is-fixed { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.comic-reference-chip.is-candidate { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.comic-reference-chip.is-missing { color: var(--shell-muted); }
+
+.motion-comic-reference .comic-reference-preview { position: relative; }
+.comic-reference-job-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  border-radius: var(--sd-radius, 8px);
+  background: color-mix(in srgb, var(--shell-bg) 78%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--shell-text);
+  text-align: center;
+}
+.comic-reference-job-overlay strong { font-size: 13px; font-weight: 650; }
+.comic-reference-job-overlay small { max-width: 34ch; color: var(--shell-muted); font-size: 12px; line-height: 1.5; }
+
+.comic-reference-job {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(80px, 160px);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--shell-border);
+  border-inline-start: 3px solid var(--shell-accent);
+  border-radius: 6px;
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  font-size: 12px;
+}
+.comic-reference-job > svg { color: var(--shell-accent-strong); }
+.comic-reference-job > span { display: grid; gap: 2px; min-width: 0; }
+.comic-reference-job strong { font-weight: 600; }
+.comic-reference-job small { color: var(--shell-muted); font-size: 11px; overflow-wrap: anywhere; }
+.comic-reference-job__bar { display: block; height: 4px; overflow: hidden; border-radius: 2px; background: var(--shell-bg); }
+.comic-reference-job__bar > i { display: block; height: 100%; border-radius: inherit; background: var(--shell-accent); transition: inline-size 300ms ease; }
+.comic-reference-version.is-job { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 116px; border: 1px dashed var(--shell-border); border-radius: var(--sd-radius, 8px); color: var(--shell-muted); font-size: 10px; }
+.comic-reference-version.is-job .motion-comic-reference-image { height: 48px; aspect-ratio: auto; border: 0; background: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .comic-reference-job__bar > i { transition: none; }
+}
+@media (max-width: 600px) {
+  .comic-reference-job { grid-template-columns: auto minmax(0, 1fr); }
+  .comic-reference-job__bar { grid-column: 1 / -1; }
+}
+.comic-reference-adoption-dialog { width: min(620px, calc(100vw - 32px)); }
+.comic-reference-adoption { display: grid; gap: 16px; min-width: 0; }
+.comic-reference-adoption p { margin: 0; line-height: 1.65; overflow-wrap: anywhere; }
+.comic-reference-adoption > img { display: block; width: 100%; max-height: 340px; object-fit: contain; border-radius: 10px; background: var(--shell-bg); }
+@media (max-width: 600px) {
+  .motion-comic-reference .comic-reference-preview, .motion-comic-reference .comic-reference-preview .motion-comic-reference-image { min-height: 180px; }
+  .motion-comic-reference .comic-reference-version { flex-basis: 96px; }
+}
+
+/* Multi-angle reference board: fixed slots stay in provider order, then pending
+   confirmations, in-progress imports and the add tile. One row, wrapping at 4. */
+.comic-reference-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.comic-reference-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.comic-reference-slot__frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: var(--shell-bg);
+}
+.comic-reference-slot__frame .motion-comic-reference-image { inline-size: 100%; block-size: 100%; }
+.comic-reference-slot__frame img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.comic-reference-slot.is-fixed .comic-reference-slot__frame { border-color: color-mix(in srgb, var(--ok) 45%, var(--shell-border)); }
+.comic-reference-slot__role {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-start: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--shell-bg) 82%, transparent);
+  color: var(--ok);
+  font-size: 11px;
+  font-weight: 650;
+}
+.comic-reference-slot__badge {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-start: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--warn) 22%, var(--shell-bg));
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 650;
+}
+.comic-reference-slot__pending {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-end: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--shell-bg) 82%, transparent);
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+.comic-reference-slot__bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding-inline: 2px;
+}
+/* Fluent buttons ship a 96px min-width; inside a 132px tile that alone breaks the row. */
+.comic-reference-slot__bar > .sd-icon-button { flex: 0 0 26px; min-inline-size: 26px; inline-size: 26px; padding-inline: 0; }
+.comic-reference-slot__bar strong { flex: 1 1 auto; }
+.comic-reference-slot__bar strong { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--shell-muted); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.comic-reference-slot__roles { display: flex; flex-wrap: wrap; gap: 2px; }
+.comic-reference-slot__roles .sd-button { min-inline-size: 0; padding-inline: 5px; font-size: 11px; }
+.comic-reference-slot.is-pending .comic-reference-slot__frame { border-color: color-mix(in srgb, var(--warn) 50%, var(--shell-border)); }
+.comic-reference-slot.is-loading .comic-reference-slot__frame,
+.comic-reference-slot.is-job .comic-reference-slot__frame { border-style: dashed; color: var(--shell-muted); }
+.comic-reference-slot.is-job .comic-reference-slot__bar strong { color: var(--shell-accent-strong); }
+.comic-reference-slot.is-add .comic-reference-slot__add {
+  flex: 1 1 auto;
+  aspect-ratio: 3 / 4;
+  block-size: auto;
+  min-block-size: 0;
+  flex-direction: column;
+  border: 1px dashed var(--shell-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--shell-muted);
+}
+.comic-reference-slot.is-add.is-full .comic-reference-slot__add { border-style: solid; opacity: .6; }
+
+.comic-reference-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: var(--shell-surface);
+}
+.comic-reference-compose small { color: var(--shell-muted); font-size: 11px; line-height: 1.5; }
+/* One fixed reference cannot be composed: show the reason instead of a dead switch. */
+.comic-reference-compose.is-idle { gap: 0; padding-block: 7px; }
+
+.comic-reference-candidate { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.comic-reference-candidate__preview { position: relative; display: block; padding: 0; block-size: auto; }
+.comic-reference-candidate__preview .motion-comic-reference-image { aspect-ratio: 3 / 4; }
+.comic-reference-candidate__preview img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.comic-reference-candidate__meta { display: flex; align-items: baseline; justify-content: flex-start; gap: 8px; min-block-size: 18px; }
+.comic-reference-candidate__meta strong { font-size: 11px; font-weight: 650; }
+.comic-reference-candidate__meta small { color: var(--shell-muted); font-size: 10px; }
+.comic-reference-candidate__actions { display: flex; flex-wrap: nowrap; gap: 2px; }
+.comic-reference-candidate__roles { display: flex; flex-wrap: wrap; gap: 2px; padding-block: 2px; }
+.comic-reference-empty-hint { margin: 0 0 4px; color: var(--shell-muted); font-size: 12px; line-height: 1.5; }
+
+/* Pending imports: a full-width row per image, because six role buttons never fit a tile. */
+.comic-reference-pending { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.comic-reference-pending__row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto 26px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 46%, var(--shell-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 7%, var(--shell-surface));
+}
+.comic-reference-pending__thumb .motion-comic-reference-image { inline-size: 44px; block-size: 56px; border-radius: 6px; overflow: hidden; }
+.comic-reference-pending__thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.comic-reference-pending__text { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.comic-reference-pending__text strong { font-size: 12px; font-weight: 650; }
+.comic-reference-pending__text small { color: var(--shell-muted); font-size: 11px; line-height: 1.4; }
+.comic-reference-pending__roles { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.comic-reference-pending__roles > .sd-button { min-inline-size: 0; padding-inline: 7px; font-size: 11px; }
+.comic-reference-pending__row > .sd-icon-button { min-inline-size: 26px; inline-size: 26px; padding-inline: 0; }
+@media (max-width: 1080px) {
+  .comic-reference-pending__row { grid-template-columns: 40px minmax(0, 1fr) 26px; }
+  .comic-reference-pending__roles { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* Legacy strip rules target the old .comic-reference-version cards, but the board's
+   candidate cards live in the same strip. Reset them with one higher-specificity pass
+   so a candidate is a 3:4 preview plus a single compact action row. */
+.comic-reference-version-strip > .comic-reference-candidate { flex: 0 0 auto; max-inline-size: none; }
+.comic-reference-version-strip .comic-reference-candidate .sd-button__content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: auto;
+}
+.comic-reference-version-strip .comic-reference-candidate .motion-comic-reference-image {
+  block-size: auto;
+  aspect-ratio: 3 / 4;
+}
+.comic-reference-candidate__actions > .sd-button,
+.comic-reference-candidate__roles > .sd-button {
+  flex: 1 1 auto;
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  margin: 0;
+  padding-inline: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.comic-reference-candidate__actions > .sd-button .sd-button__content,
+.comic-reference-candidate__roles > .sd-button .sd-button__content {
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.comic-reference-candidate__actions > .sd-icon-button {
+  flex: 0 0 26px;
+  inline-size: 26px;
+  min-inline-size: 26px;
+  margin: 0;
+  padding-inline: 0;
+}
+.comic-reference-pending__roles > .sd-button { flex: 0 0 auto; inline-size: auto; max-inline-size: 100%; margin: 0; white-space: nowrap; }
+
+/* Look rail: each tab is a full-width button, so the width has to be reset here
+   instead of only on the content box — otherwise one big button paints a bar. */
+.comic-look-tabs > .comic-look-tab.sd-button {
+  flex: 0 0 168px;
+  inline-size: 168px;
+  max-inline-size: none;
+  block-size: auto;
+  min-block-size: 56px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  background: var(--shell-surface);
+  text-align: start;
+}
+.comic-look-tabs > .comic-look-tab.sd-button .sd-button__content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+@media (max-width: 720px) {
+  .comic-look-tabs > .comic-look-tab.sd-button { flex-basis: 150px; inline-size: 150px; }
+}
+
+/* Only real images occupy tiles. Empty states and commands use the entire pane. */
+.motion-comic-reference .comic-reference-slots { grid-template-columns: repeat(auto-fill, minmax(112px, 144px)); align-items: start; }
+.comic-reference-header__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.motion-comic-reference-header .comic-reference-header__actions > .sd-button { width: auto; flex: 0 0 auto; }
+.comic-reference-empty-state { grid-column: 1 / -1; display: grid; gap: 6px; padding-block: 12px; color: var(--shell-muted); }
+.comic-reference-empty-state strong { color: var(--shell-text); font-size: 12px; }
+.comic-reference-empty-state small { font-size: 12px; line-height: 1.6; }
+.comic-reference-composer { display: grid; gap: 8px; min-width: 0; margin-top: 12px; }
+.comic-reference-composer__hint { color: var(--shell-muted); font-size: 11px; line-height: 1.5; }
+.comic-reference-composer .comic-look-panel__commands { margin-top: 0; }
+.comic-reference-composer .comic-look-panel__commands > .sd-button { flex: 0 1 auto; width: auto; }
+.comic-reference-slot__frame .motion-comic-reference-image img { object-fit: contain; }
+
+.comic-generation-references { display: grid; gap: 8px; min-inline-size: 0; margin-block: 12px; }
+.comic-generation-references__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.comic-generation-references__heading > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.comic-generation-references__heading .sd-button { inline-size: auto; margin: 0; }
+.comic-generation-references__heading strong { font-size: 12px; }
+.comic-generation-references small { color: var(--shell-muted); font-size: 11px; line-height: 1.5; }
+.comic-generation-references__images { display: flex; flex-wrap: wrap; gap: 8px; }
+.comic-generation-references__image { position: relative; inline-size: 80px; block-size: 96px; border: 1px solid var(--shell-border); border-radius: var(--sd-radius); overflow: hidden; background: var(--shell-bg); }
+.comic-generation-references__image img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+.comic-generation-references__image > .sd-icon-button { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; inline-size: 24px; min-inline-size: 24px; margin: 0; padding: 0; background: var(--shell-surface-raised); }
+
+/* Character turnarounds keep their role locations even before any image exists. */
+.comic-reference-role-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 12px; margin-top: 12px; }
+.comic-reference-role-column { display: grid; align-content: start; gap: 10px; min-inline-size: 0; }
+.comic-reference-role-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px; }
+.comic-reference-role-heading strong { font-size: 12px; color: var(--shell-text); }
+.comic-reference-role-heading small { font-size: 11px; color: var(--shell-muted); }
+.comic-reference-role-empty { display: grid; justify-items: center; gap: 8px; padding: 12px; text-align: center; color: var(--shell-muted); }
+.comic-reference-role-empty strong { color: var(--shell-text); font-size: 12px; }
+.comic-reference-role-empty small { font-size: 11px; line-height: 1.5; }
+.comic-reference-slot.is-empty .comic-reference-slot__frame { border-style: dashed; }
+.comic-reference-role-column .comic-reference-candidate__preview { inline-size: 100%; min-inline-size: 0; margin: 0; padding: 0; }
+.comic-reference-role-column .comic-reference-candidate__preview .sd-button__content { display: flex; inline-size: 100%; min-inline-size: 0; block-size: auto; }
+.comic-reference-role-column .comic-reference-candidate__preview .motion-comic-reference-image { inline-size: 100%; block-size: auto; aspect-ratio: 3 / 4; }
+.comic-reference-role-column .comic-reference-candidate__preview img { object-fit: contain; }
+.comic-reference-role-column .comic-reference-candidate__actions { flex-wrap: wrap; }
+.comic-reference-role-column .comic-reference-candidate__meta { flex-wrap: wrap; gap: 4px; }
+@media (max-width: 720px) {
+  .comic-reference-role-board { gap: 8px; }
+  .comic-reference-role-empty { gap: 6px; padding: 8px; }
+}
+

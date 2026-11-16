@@ -40,7 +40,7 @@ describe('Pi v4 production boundary', () => {
     expect(isVoxProductionSubmissionRejection(segment, 'HTTP 429 rate limit')).toBe(false);
   });
 
-  it('routes segment/recovery without shot lookup and binds configuration and media inputs', async () => {
+  it('routes segment/recovery without shot lookup and excludes v4 spending limits from content identity', async () => {
     const piSegment = vi.fn(async (d: EditorialCollagePipelineData) => ready(d));
     const recoverPiSegment = vi.fn(async (d: EditorialCollagePipelineData) => ready(d));
     const runtime = createVoxProductionRuntime(operations({ piSegment, recoverPiSegment })), d = document();
@@ -51,6 +51,8 @@ describe('Pi v4 production boundary', () => {
     expect(voxInputHash(runtime.input({ ...d, sourceText: 'changed' }, segment))).not.toBe(input);
     expect(voxInputHash(runtime.input({ ...d, timeline: { ...d.timeline!, durationMs: 18000 } }, segment))).not.toBe(input);
     expect(voxInputHash(createVoxProductionRuntime(operations({ identity: 'other/protocol/reasoning' })).input(d, segment))).not.toBe(input);
+    const budgetChanged = { ...d, productionRun: { ...d.productionRun!, settings: { ...d.productionRun!.settings, piMaxRequests: 240, agentMaxTokens: 2_000_000, agentMaxCost: 20, agentMaxTurns: 12 } } };
+    expect(voxInputHash(runtime.input(budgetChanged, segment))).toBe(input);
   });
 
   it('checks final evidence and requires a current audio master before render', async () => {
@@ -102,11 +104,15 @@ describe('Pi v4 production boundary', () => {
   it('expands multiple segments through finalization, audio master and render without paid providers', async () => {
     const calls: string[] = [];
     const d = document();
+    d.sourceText = '道'.repeat(12_001);
+    d.productionRun!.sourceHash = voxInputHash(d.sourceText);
+    let segmentRuns = 0;
     const h = harness(d, operations({
       piSegment: async (value, node) => {
         calls.push(node.id);
+        segmentRuns++;
         const film = ready(value).piFilm;
-        return { ...value, piFilm: { ...film, segment: node.id === 'pi-segment:1' ? 1 : 2, phase: node.id === 'pi-segment:1' ? 'authoring' : 'ready' } };
+        return { ...value, piFilm: { ...film, segment: segmentRuns > 1 ? 2 : 1, ...(segmentRuns > 1 ? { phase: 'ready' as const, audioMaster: { path: 'master.wav', sha256: hash, sourceHash: hash, timelineHash: hash, durationSeconds: 15, sampleRate: 48000 as const, channels: 2 as const } } : { phase: 'paused' as const }) } };
       },
       piAudioMaster: async value => { calls.push('master'); return { ...value, piFilm: { ...value.piFilm!, audioMaster: { path: 'master.wav', sha256: hash, sourceHash: hash, timelineHash: hash, durationSeconds: 15, sampleRate: 48000, channels: 2 } } }; },
       render: async value => { calls.push('render'); return value; },
@@ -120,7 +126,7 @@ describe('Pi v4 production boundary', () => {
     await h.service.control({ id: d.id, runId: 'run', action: 'resume' });
     await h.service.idle(d.id);
     expect(h.get().productionRun!.status).toBe('completed');
-    expect(calls).toEqual(['pi-segment:1', 'pi-segment:2', 'master', 'render']);
+    expect(calls).toEqual(['pi-segment:1', 'pi-segment:1', 'pi-segment:2', 'master', 'render']);
     expect(h.get().productionRun!.nodes.every(node => node.status === 'completed')).toBe(true);
   });
 

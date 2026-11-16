@@ -75,7 +75,7 @@
 
 ## 页面逐步结论与截图
 
-本轮截图位于 `I:/opc/.artifacts/motion-comic-workbench/`，完整机器报告见 [report.json](I:/opc/.artifacts/motion-comic-workbench/report.json)。截图里的图像是离线测试素材，不代表实际漫剧成片。
+本轮截图位于 `I:/opc/.artifacts/motion-comic-workbench/`，完整机器报告见 [report.json](I:/项目/story-dream/.artifacts/motion-comic-workbench/report.json)。截图里的图像是离线测试素材，不代表实际漫剧成片。
 
 | 步骤 | 页面与检查结论 | 当前证据 |
 | --- | --- | --- |
@@ -116,7 +116,7 @@
 
 规划预览沿用软件现有的索引/详情结构，幕数和边界依据在紧凑窗口中仍完整可读：
 
-![紧凑窗口规划预览](I:/opc/.artifacts/motion-comic-plan-dialog/light-preview-compact-1040x720.png)
+![紧凑窗口规划预览](I:/项目/story-dream/.artifacts/motion-comic-plan-dialog/light-preview-compact-1040x720.png)
 
 ## 2026-09-27 规划失败恢复与补齐审核验收
 

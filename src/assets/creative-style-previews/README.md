@@ -9,7 +9,8 @@
 重建（显式执行才联网；已有原图缓存优先复用，无付费 API 调用）：
 
 ```powershell
-& I:/opc/vendor/python/python.exe I:/opc/scripts/build-creative-style-previews.py
+# 在 StoryDream 仓库根目录运行：
+& ./vendor/python/python.exe ./scripts/build-creative-style-previews.py
 ```
 
 普通构建直接打包这些 WebP，不需要联网。

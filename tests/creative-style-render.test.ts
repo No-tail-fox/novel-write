@@ -47,7 +47,7 @@ describe('applied creative style renderer',()=>{
     d.productionSettings=settings('watercolor');
     expect(directorDocumentRenderFingerprint(d)).toBe(base);
     const applied=applyCreativeStyleToDocument(d,settings('whiteboard'));
-    expect(shot(applied).animation?.creativeStyle).toEqual({styleId:'whiteboard',rendererRevision:1,upstreamRevision:LEMO_REVISION,source:'local',composition:'scene'});
+    expect(shot(applied).animation?.creativeStyle).toEqual({styleId:'whiteboard',rendererRevision:1,upstreamRevision:LEMO_REVISION,source:'local',composition:'template'});
     expect(directorDocumentRenderFingerprint(applied)).not.toBe(base);
     expect(editorialCollagePipelineSchema.safeParse(applied).success).toBe(true);
     expect(voxAnimationSchema.safeParse(createVoxAnimation()).success).toBe(true);
@@ -87,15 +87,18 @@ describe('applied creative style renderer',()=>{
     d.productionRun.status='running';expect(()=>applyCreativeStyleToDocument(d,config)).toThrow('暂停');
     d.productionRun.status='paused';d.productionRun.nodes[0].status='unknown';expect(()=>applyCreativeStyleToDocument(d,config)).toThrow('核对');
   });
-  it('exports actual creative layers even without an image cue plan and preserves subsequent authored geometry',()=>{
+  it('uses the selected no-image template instead of exporting empty semantic layers',()=>{
     const d=applyCreativeStyleToDocument(fixture(),{...settings('blueprint'),generateImages:false});
     const s=shot(d);expect(s.cuePlan).toBeUndefined();
     const label=s.layers.find(l=>l.content)!;
     label.visible=false;label.motion=[{atMs:0,x:.33,y:.22,scale:.9,rotation:3,opacity:.7}];
     s.voiceAssetVersionId='voice';d.assets.push({id:'voice',assetId:'voice',kind:'audio',localPath:'I:/fixtures/voice.wav',createdAt:d.createdAt});
     const scene=buildDirectorRenderScenes(rebuildEditorialTimeline(d),undefined,{shotIds:[s.id]})[0];
-    expect(scene.layers.map(l=>l.id)).toEqual(s.layers.map(l=>l.id));
-    expect(scene.layers.find(l=>l.id===label.id)).toMatchObject({visible:false,motion:label.motion});
+    expect(scene.animation?.creativeStyle?.composition).toBe('template');
+    expect(scene.animation?.template.props.items.length).toBeGreaterThan(0);
+    expect(scene.layers).toEqual([]);
+    expect(scene.semanticBeats).toBeUndefined();
+    expect(s.layers.find(l=>l.id===label.id)).toMatchObject({visible:false,motion:label.motion});
   });
   it('keeps stepped poses separate from smooth camera motion and holds the resolved ending',()=>{
     const spec=creativeRenderSpec('pixel-rpg');

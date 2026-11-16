@@ -28,7 +28,7 @@ async function fixture(lifecycle: (o: SessionOptions, call: (name: string, input
     if (overrides.durable !== false) await writeFile(sessionFile, '{"type":"session"}\n');
     const router = createPiToolRouter({ ...o, receiptDirectory: join(o.stateRoot, 'tools') }); let id = 0;
     return { sessionFile, prompt: async () => lifecycle(o, (name, input = {}) => router.execute(name, input, 'call-' + ++id)),
-      compact: vi.fn(), abort: vi.fn(), close: vi.fn(), summary: () => ({ forwardedRequests: 1, blockedRequests: 0, requests: 1, received: overrides.unknown ? 0 : 1, rejected: 0, unknown: overrides.unknown ? 1 : 0, usageUnknown: 0, blocked: !!overrides.unknown }) };
+      compact: vi.fn(), abort: vi.fn(), close: vi.fn(), summary: () => ({ forwardedRequests: 1, blockedRequests: 0, requests: 1, received: overrides.unknown ? 0 : 1, rejected: 0, unknown: overrides.unknown ? 1 : 0, usageUnknown: 0, blocked: !!overrides.unknown, inputTokens: 12, outputTokens: 8 }) };
   });
   const options: PiFilmOperationsOptions = { library: { upstreamRoot: library, threeRoot: root, pythonRoot: root, cacheDir: root }, work: root, workerPath: 'unused', starterPackRoot: root,
     config: {} as PiFilmOperationsOptions['config'], capabilities: { images: false } as PiFilmOperationsOptions['capabilities'], pricing: { inputPerMillion: 1, outputPerMillion: 1 }, resolveAudioPath: async () => { throw new Error('No speech expected'); }, sessionFactory: factory };
@@ -37,6 +37,17 @@ async function fixture(lifecycle: (o: SessionOptions, call: (name: string, input
 const treatment = 'Three structures. Chosen choice. Logline. Emotional arc. Shot list. Beat sheet. Cue map. Sound design. Caption design. Benchmark: a named reference film. Differs from the demo in subject, palette, camera and sound. ' + 'A complete treatment with concrete creative decisions. '.repeat(5);
 
 describe('Pi film production assembly', () => {
+  it('resumes the current paused segment and never fabricates a continuation window', async () => {
+    const f = await fixture(async () => {});
+    const ops = createPiFilmOperations(f.options);
+    const first = await ops.piSegment(f.d, node);
+    expect(first.piFilm).toMatchObject({ phase: 'paused', segment: 1 });
+    expect(await ops.recoverPiSegment(f.d, node)).toBeUndefined();
+    const resumed = await ops.piSegment(first, node);
+    expect(resumed.piFilm).toMatchObject({ phase: 'paused', segment: 1 });
+    expect(f.factory).toHaveBeenCalledTimes(2);
+  });
+
   it('stops naturally, checkpoints durable session, and recovers without model replay', async () => {
     const f = await fixture(async (_o, call) => {
       await call('write_file', { path: 'index.html', text: '<html>film</html>' });
@@ -48,7 +59,7 @@ describe('Pi film production assembly', () => {
     expect(result.piFilm).toMatchObject({ phase: 'paused', segment: 1, completedModelRequests: 1, sessionRef: 'sessions/session.jsonl' });
     expect(result.piFilm!.actualDurationSeconds).toBe(f.d.timeline!.durationMs / 1000);
     expect(f.d).toEqual(original);
-    expect(await ops.recoverPiSegment(f.d, node)).toEqual(result);
+    expect(await ops.recoverPiSegment(f.d, node)).toBeUndefined();
     expect(f.factory).toHaveBeenCalledOnce();
     expect(await ops.recoverPiSegment(f.d, { ...node, id: 'pi-segment:2' })).toBeUndefined();
   });

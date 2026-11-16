@@ -39,7 +39,7 @@ describe('创意动画 / 模板动画 split', () => {
       const lemo = await db.createEditorialCollageTask({ title: 'Lemo', sourceText: '第一段。第二段。', durationMs: 15000, productionRoute: 'lemo' });
       const template = await db.createEditorialCollageTask({ title: 'Template', sourceText: '第一段。第二段。', durationMs: 15000, productionRoute: 'template' });
       const legacy = await db.createEditorialCollageTask({ title: 'Legacy Vox', sourceText: '第一段。第二段。', durationMs: 15000 });
-      expect(parseEditorialCollagePipelineData(lemo.pipelineData).productionSettings?.authoring).toMatchObject({ mode: 'ai-code', styleId: 'auto' });
+      expect(parseEditorialCollagePipelineData(lemo.pipelineData).productionSettings).toMatchObject({ authoring: { mode: 'ai-code', styleId: 'auto' }, codeVideo: { targetDurationSeconds: 60, captionMode: 'film' }, piMaxRequests: 120 });
       expect(parseEditorialCollagePipelineData(template.pipelineData).productionSettings?.authoring).toMatchObject({ mode: 'template' });
       expect(parseEditorialCollagePipelineData(legacy.pipelineData).productionSettings).toBeUndefined();
       // Old template-mode projects saved before the split.

@@ -1,6 +1,6 @@
 import { AppError, normalizeAppError } from '../../shared/app-error';
-export { buildDirectorCopyAssistRequest } from '../../shared/director-copy-assist';
-export type { DirectorCopyAssistIntent, DirectorCopyAssistMode, DirectorCopyAssistRequestInput } from '../../shared/director-copy-assist';
+export { buildDirectorCopyAssistRequest, directorCopyRequestedCharacters, resolveDirectorCopyAssistTarget } from '../../shared/director-copy-assist';
+export type { DirectorCopyAssistIntent, DirectorCopyAssistMode, DirectorCopyAssistRequestInput, DirectorCopyAssistTarget } from '../../shared/director-copy-assist';
 
 export function normalizeDirectorCopyAssistError(error: unknown): AppError {
   const normalized = normalizeAppError(error);

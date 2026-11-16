@@ -109,6 +109,17 @@ describe('Pi native raw gateway (local mocks only)', () => {
     expect((await h.send({ ...body(protocol), metadata: { next: true } })).status).toBe(400);
     expect(h.gateway.summary().forwardedRequests).toBe(1);
   });
+  it('preserves only sanitized host admission codes before submission', async () => {
+    for (const [error, expected] of [[new Error('PI_INPUT_CONTEXT_LIMIT'), 'PI_INPUT_CONTEXT_LIMIT'], [new Error('secret details 123'), 'PI_GATEWAY_ADMISSION_REJECTED']] as const) {
+      const h = await setup('anthropic', (_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(result('anthropic', false)); }, 10, 2000, () => { throw error; });
+      const response = await h.send(body('anthropic'));
+      expect(response.status).toBe(400);
+      const text = await response.text();
+      expect(text).toContain(expected);
+      expect(text).not.toContain('secret details');
+      expect(h.gateway.summary()).toMatchObject({ requests: 0, unknown: 0, blocked: false });
+    }
+  });
   it('rejects host admission before submission and preserves bytes despite hook mutation', async () => {
     let calls = 0; let admit = false; let raw = '';
     const h = await setup('openai-responses', async (req, res) => { calls++; for await (const chunk of req) raw += chunk;

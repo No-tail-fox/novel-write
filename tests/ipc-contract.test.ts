@@ -13,6 +13,15 @@ async function loadStoryDreamApiContract() {
 }
 
 describe('IPC runtime contract', () => {
+  it('validates v4 Pi activity read requests without accepting extra fields', async () => {
+    const contract = await loadContract();
+    expect(contract).not.toBeNull();
+    if (!contract) return;
+    const schema = contract.ipcInputSchemas['vox-production:pi-activity'];
+    expect(schema.parse({ id: 'task-id', runId: 'run-1' })).toEqual({ id: 'task-id', runId: 'run-1' });
+    expect(() => schema.parse({ id: 'task-id', runId: 'run-1', prompt: 'secret' })).toThrow();
+  });
+
   it('validates hot board refresh and public-link requests', async () => {
     const contract = await loadContract();
     expect(contract).not.toBeNull();
@@ -427,6 +436,11 @@ describe('IPC runtime contract', () => {
     const taskRequest = { family: 'task', filter: 'active' };
 
     expect(parseIpcInput('task:list', taskRequest)).toEqual(taskRequest);
+    for (const sort of ['newest', 'oldest', 'title']) {
+      expect(parseIpcInput('task:list', { ...taskRequest, sort })).toMatchObject({ sort });
+      expect(parseIpcInput('task:list', { ...taskRequest, sort, statuses: ['completed'] })).toMatchObject({ sort });
+    }
+    expect(() => parseIpcInput('task:list', { ...taskRequest, sort: 'title DESC' })).toThrow();
     expect(parseIpcInput('task:list', { ...taskRequest, taskType: 'html-video', statuses: ['pending', 'running'] })).toMatchObject({
       family: 'task',
       taskType: 'html-video',

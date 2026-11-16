@@ -390,7 +390,7 @@ describe('image provider (OpenAI-compatible /images/generations)', () => {
   const generate = (cfg: AppConfig) => createConfiguredImageGenerator(cfg, dir)([scene], [prompt], task);
 
   it('saves a normal b64 image', async () => {
-    relay.enqueue({ kind: 'json', body: { data: [{ b64_json: Buffer.from('png-bytes').toString('base64') }] } });
+    relay.enqueue({ kind: 'json', body: { data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=' }] } });
     const assets = await generate(config());
     expect(assets).toHaveLength(1);
     expect(relay.requests).toHaveLength(1);

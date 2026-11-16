@@ -55,8 +55,12 @@ export const VOX_TEMPLATES: readonly VoxTemplate[] = [...[
   minImages: ['paper-actors','compare-slider','book-3d'].includes(t.id) ? 2 : ['paper-polaroids','paper-popup','evidence-focus','book-identity','book-reading-list','gallery-grid','gallery-space'].includes(t.id) ? 1 : 0,
   audio: ['audio-podcast','audio-spectrum'].includes(t.id),
 })), ...SHOTCRAFT_TEMPLATES];
+// Up to 24 items are summed for shares; signed chart spans and ranking deltas
+// also subtract opposite extremes. Leave headroom for those operations.
+export const VOX_DATA_VALUE_MAX = Number.MAX_VALUE / 32;
+export const voxDataValueSchema = z.number().finite().min(-VOX_DATA_VALUE_MAX).max(VOX_DATA_VALUE_MAX);
 export const voxItemSchema = z.object({
-  label:z.string().max(160), detail:z.string().max(1200).default(''), value:z.number().finite().min(-1e12).max(1e12).default(0),
+  label:z.string().max(160), detail:z.string().max(1200).default(''), value:voxDataValueSchema.default(0),
   date:z.string().max(80).default(''), lat:z.number().min(-90).max(90).default(0), lng:z.number().min(-180).max(180).default(0),
 }).strict();
 export const voxPropsSchema = z.object({
@@ -78,7 +82,7 @@ export const voxAnimationSchema = z.object({
   template:z.object({id:z.string().min(1).max(120),revision:z.literal(1).optional(),props:voxPropsSchema}).strict(),
   code:z.object({source:z.string().max(500000).default(''), compiled:z.string().max(800000).default(''), prompt:z.string().max(10000).default(''), engine:z.literal('lemo-native').optional()}).strict(),
   native:z.object({filmId:z.string().max(256),startMs:z.number().nonnegative(),durationMs:z.number().positive(),sourceDurationMs:z.number().positive().optional(),filmDurationMs:z.number().positive(),width:z.number().int().positive(),height:z.number().int().positive(),fps:z.number().int().min(12).max(60),assetIds:z.array(z.string().max(256)).max(500)}).strict().optional(),
-  creativeStyle:z.object({styleId:z.string().min(1).max(120),rendererRevision:z.literal(1),upstreamRevision:z.string().max(64),source:z.enum(['production','local']),composition:z.enum(['scene','data'])}).strict().optional(),
+  creativeStyle:z.object({styleId:z.string().min(1).max(120),rendererRevision:z.literal(1),upstreamRevision:z.string().max(64),source:z.enum(['production','local']),composition:z.enum(['scene','data','template'])}).strict().optional(),
   authoring:z.object({
     owner:z.literal('creative-production'), revision:z.literal(1), styleId:z.string().max(120), upstreamRevision:z.string().max(64),
     status:z.enum(['generated','reviewed','needs-repair','repaired','fallback']),

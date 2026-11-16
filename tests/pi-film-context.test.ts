@@ -19,6 +19,14 @@ describe('Pi narration-window context', () => {
     expect(() => buildPiSegmentPrompt({ globalPlan: '{}', narration: 'x', segment: 2, segmentCount: 1 })).toThrow('PI_CONTEXT_SEGMENT_RANGE');
     expect(() => buildPiSegmentPrompt({ globalPlan: '{}', narration: 'x', segment: 1, segmentCount: 1, previousSummary: 'x'.repeat(4001) })).toThrow('PI_CONTEXT_SUMMARY_TOO_LARGE');
   });
+  it('distinguishes disabled voiceover, host captions, and film-authored visual text', () => {
+    const prompt = buildPiSegmentPrompt({ globalPlan: '{}', narration: 'Original source line.', segment: 1, segmentCount: 1, narrationEnabled: false, captionMode: 'host' });
+    expect(prompt).toContain('NO NARRATION AUDIO');
+    expect(prompt).toContain('only cues that exist in material/narration/cues.json');
+    expect(prompt).toContain('Source text is not captioned by the host when there are no narration cues');
+    expect(prompt).toContain('Visual text');
+    expect(prompt).not.toContain('CURRENT NARRATION WINDOW');
+  });
   it('requires a bounded explicit handoff section in each completed treatment', () => {
     expect(parsePiSegmentHandoff('# Treatment\nArc...\n\n## Segment handoff\nPalette: red and black.\nNext: reveal the archive.')).toContain('Palette: red');
     expect(() => parsePiSegmentHandoff('# Treatment\nNo continuity notes')).toThrow('PI_SEGMENT_HANDOFF_REQUIRED');

@@ -1,0 +1,178 @@
+/* Script workspace hierarchy (approved plate 04): page → section header → cards.
+   Surfaces: page = --shell-bg, cards = --shell-surface-raised, card chrome = borders.
+   Type scale: episode 20 / card title 15 / reading 16 / meta 12. */
+
+.comic-script-workspace { background: var(--shell-bg); }
+
+/* Section header: one line, title carries weight, queue numbers are secondary. */
+.comic-script-workspace .comic-script-command-row { padding: 12px 4px 12px; border-bottom: 1px solid var(--shell-border); gap: 10px 20px; }
+.comic-script-workspace .comic-script-command-row > .motion-comic-stage-panel__heading h1 { font-size: 17px; font-weight: 650; letter-spacing: 0; }
+.comic-script-workspace .comic-script-command-row > .motion-comic-stage-panel__heading > span { border-radius: 8px; }
+.comic-script-workspace .comic-script-queue-summary summary { color: var(--shell-muted); }
+.comic-script-workspace .comic-script-workspace__toolbar { gap: 8px; }
+.comic-script-workspace .comic-script-task-status { margin-inline-start: auto; color: var(--shell-muted); font-size: 12px; }
+
+/* Episode list: status is a coloured dot, the selected row is a filled surface. */
+.comic-script-workspace .comic-script-source-row { border-radius: 8px; padding: 8px 10px; }
+.comic-script-workspace .comic-script-source-row .sd-button__content { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.comic-script-workspace .comic-script-source-row .sd-button__content > span { min-width: 0; }
+.comic-script-workspace .comic-script-source-row .director-spin { flex: 0 0 auto; color: var(--shell-accent-strong); }
+.comic-script-workspace .comic-script-source-row[aria-pressed='true'] { background: var(--shell-selected); box-shadow: inset 3px 0 var(--shell-accent); }
+.comic-script-workspace .comic-script-source-row small { display: inline-flex; align-items: center; gap: 6px; color: var(--shell-muted); font-size: 12px; }
+.comic-script-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--shell-muted); opacity: .55; }
+.comic-script-source-row[data-tone='active'] .comic-script-dot { background: var(--shell-accent); opacity: 1; }
+.comic-script-source-row[data-tone='review'] .comic-script-dot { background: var(--reel-amber); opacity: 1; }
+.comic-script-source-row[data-tone='ok'] .comic-script-dot { background: var(--ok); opacity: 1; }
+.comic-script-source-row[data-tone='warn'] .comic-script-dot { background: var(--warn); opacity: 1; }
+.comic-script-source-row[data-tone='danger'] .comic-script-dot { background: var(--danger); opacity: 1; }
+.comic-script-source-row[data-tone='review'] small, .comic-script-source-row[data-tone='danger'] small { color: var(--shell-text); }
+
+/* Episode heading: the title is the strongest element in the content area. */
+.comic-script-workspace .comic-script-episode-row { padding-block: 14px 6px; }
+.comic-script-detail__title { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+.comic-script-workspace .comic-script-detail__heading .comic-script-detail__title strong { font-size: 20px; font-weight: 650; line-height: 1.35; }
+.comic-script-workspace .comic-script-detail__heading small { color: var(--shell-muted); font-size: 12px; }
+
+.comic-script-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; border: 1px solid var(--shell-border); color: var(--shell-muted); background: var(--shell-surface); }
+.comic-script-chip[data-tone='active'] { color: var(--shell-accent-strong); border-color: color-mix(in srgb, var(--shell-accent) 45%, transparent); background: color-mix(in srgb, var(--shell-accent) 12%, var(--shell-surface)); }
+.comic-script-chip[data-tone='review'] { color: var(--reel-amber); border-color: color-mix(in srgb, var(--reel-amber) 45%, transparent); background: color-mix(in srgb, var(--reel-amber) 12%, var(--shell-surface)); }
+.comic-script-chip[data-tone='ok'] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 12%, var(--shell-surface)); }
+.comic-script-chip[data-tone='warn'] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 12%, var(--shell-surface)); }
+.comic-script-chip[data-tone='danger'] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); background: color-mix(in srgb, var(--danger) 12%, var(--shell-surface)); }
+
+/* Two-card draft area. Each card scrolls its own body; headers and footers stay put. */
+.comic-script-workspace .comic-script-detail { display: flex; flex-direction: column; min-height: 0; }
+.comic-script-draft-grid { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(300px, .92fr); gap: 16px; padding-block: 6px 12px; }
+.comic-script-card { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--shell-border); border-radius: 10px; background: var(--shell-surface-raised); overflow: hidden; }
+.comic-script-card__head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 0 20px; border-bottom: 1px solid var(--shell-border); }
+.comic-script-card__head strong { font-size: 15px; font-weight: 650; }
+.comic-script-card__head small { color: var(--shell-muted); font-size: 12px; }
+.comic-script-card__body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 24px 28px; }
+.comic-script-card__foot { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 12px 20px; border-top: 1px solid var(--shell-border); color: var(--shell-muted); font-size: 12px; line-height: 1.6; }
+.comic-script-card__empty { color: var(--shell-muted); }
+
+/* Reading: eyebrow → title → numbered paragraphs at a comfortable measure. */
+.comic-script-eyebrow { margin: 0 0 6px; color: var(--shell-accent-strong); font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+.comic-script-source-card__title { margin: 0 0 18px; font-size: 19px; font-weight: 650; line-height: 1.45; overflow-wrap: anywhere; }
+.comic-script-paragraphs { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; max-width: 42em; }
+.comic-script-paragraphs li { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: baseline; }
+.comic-script-paragraphs li > span { color: var(--shell-muted); opacity: .7; font-size: 11px; font-variant-numeric: tabular-nums; }
+.comic-script-paragraphs p { margin: 0; font-size: 16px; line-height: 1.9; color: var(--shell-text); overflow-wrap: anywhere; }
+
+/* Draft status card: one icon, one sentence, facts in a quiet list. */
+.comic-script-awaiting-card__body { display: flex; flex-direction: column; align-items: flex-start; }
+.comic-script-awaiting-card__icon { display: grid; place-items: center; width: 56px; height: 56px; margin: 12px 0 16px; border-radius: 14px; color: var(--shell-muted); background: var(--shell-surface); border: 1px solid var(--shell-border); }
+.comic-script-awaiting-card__body[data-tone='active'] .comic-script-awaiting-card__icon { color: var(--shell-accent-strong); border-color: color-mix(in srgb, var(--shell-accent) 40%, transparent); }
+.comic-script-awaiting-card__body[data-tone='warn'] .comic-script-awaiting-card__icon { color: var(--warn); }
+.comic-script-awaiting-card__body[data-tone='danger'] .comic-script-awaiting-card__icon { color: var(--danger); }
+.comic-script-awaiting-card__body h3 { margin: 0 0 8px; font-size: 18px; font-weight: 650; }
+.comic-script-awaiting-card__body > p { margin: 0; max-width: 32em; color: var(--shell-muted); font-size: 14px; line-height: 1.8; }
+.comic-script-progress { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 360px; margin-top: 16px; }
+.comic-script-progress__track { flex: 1; height: 6px; border-radius: 3px; background: var(--shell-surface); border: 1px solid var(--shell-border); overflow: hidden; }
+.comic-script-progress__track > span { display: block; height: 100%; background: var(--shell-accent); }
+.comic-script-progress small { color: var(--shell-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.comic-script-awaiting-card__error { margin-top: 14px; font-size: 13px; }
+.comic-script-awaiting-card__error summary { cursor: pointer; color: var(--danger); }
+.comic-script-facts { width: 100%; margin: 28px 0 0; padding-top: 16px; border-top: 1px solid var(--shell-border); display: grid; gap: 10px; }
+.comic-script-facts > div { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; }
+.comic-script-facts dt { color: var(--shell-muted); }
+.comic-script-facts dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+
+.comic-script-boundary section + section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--shell-border); }
+.comic-script-boundary h4 { margin: 0 0 8px; font-size: 13px; color: var(--shell-muted); font-weight: 600; }
+.comic-script-boundary p { margin: 0; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
+
+.comic-script-workspace :is(.comic-script-card__body, .comic-script-awaiting-card__error summary):focus-visible { outline: 2px solid var(--shell-focus); outline-offset: -2px; }
+
+/* Review editor: beats are cards on the page surface; text first, type second, citation last. */
+.motion-comic-script-review .motion-comic-script-beats { background: var(--shell-bg); padding: 4px 4px 12px; }
+.motion-comic-script-review .comic-script-scene-picker { position: sticky; top: 0; z-index: 1; padding: 10px 12px; background: var(--shell-bg); border-bottom: 1px solid var(--shell-border); }
+.motion-comic-script-review .motion-comic-script-beat { margin: 10px 8px 0; padding: 14px 16px 12px; border: 1px solid var(--shell-border); border-inline-start: 3px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface-raised); }
+.motion-comic-script-review .motion-comic-script-beat[data-kind='dialogue'] { border-inline-start-color: var(--shell-accent); }
+.motion-comic-script-review .motion-comic-script-beat[data-kind='narration'] { border-inline-start-color: var(--media-timeline-blue); }
+.motion-comic-script-review .motion-comic-script-beat[data-kind='action'] { border-inline-start-color: var(--reel-amber); }
+.motion-comic-script-review .motion-comic-script-beat:hover { border-color: color-mix(in srgb, var(--shell-text) 22%, var(--shell-border)); }
+.motion-comic-script-review .comic-script-beat-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.motion-comic-script-review .comic-script-beat-heading > strong { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.comic-script-beat-index { color: var(--shell-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.comic-script-beat-kind { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; font-size: 12px; color: var(--shell-muted); background: var(--shell-surface); }
+.motion-comic-script-beat[data-kind='dialogue'] .comic-script-beat-kind { color: var(--shell-accent-strong); background: color-mix(in srgb, var(--shell-accent) 14%, transparent); }
+.motion-comic-script-beat[data-kind='narration'] .comic-script-beat-kind { color: #8cc0ea; background: color-mix(in srgb, var(--media-timeline-blue) 18%, transparent); }
+.motion-comic-script-beat[data-kind='action'] .comic-script-beat-kind { color: var(--reel-amber); background: color-mix(in srgb, var(--reel-amber) 14%, transparent); }
+.motion-comic-script-review .comic-script-beat-reading { display: block; width: 100%; padding: 2px 0; border: 0; background: none; color: var(--shell-text); font: inherit; font-size: 16px; line-height: 1.8; text-align: start; cursor: text; }
+.motion-comic-script-review .comic-script-beat-reading:disabled { cursor: default; }
+.motion-comic-script-review .comic-script-beat-citation { display: block; margin-top: 6px; color: var(--shell-muted); font-size: 12px; opacity: .85; }
+.motion-comic-script-review .comic-script-evidence { background: var(--shell-surface); }
+
+[data-theme='light'] .motion-comic-script-beat[data-kind='narration'] .comic-script-beat-kind { color: #1f5f93; }
+
+@media (max-width: 1180px) {
+  .comic-script-draft-grid { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .comic-script-draft-grid .comic-script-card { min-height: 320px; }
+  .comic-script-draft-grid .comic-script-card__body { flex: 0 0 auto; overflow: visible; }
+  .comic-script-draft-grid > .comic-script-awaiting-card { order: -1; min-height: 0; }
+  .comic-script-card__body { padding: 18px 20px; }
+}
+
+/* Script workspace · 人物/场景/道具: avatar list with binding chips + profile-style detail. */
+.comic-script-assets-v2 { --bind-reuse: var(--ok, #65b883); --bind-new: var(--media-timeline-blue, #5b9bf0); --bind-pending: var(--reel-amber, #e0a34c); --bind-local: var(--shell-muted); }
+.comic-script-assets-v2 [data-binding='reuse'] { --bind: var(--bind-reuse); }
+.comic-script-assets-v2 [data-binding='new'] { --bind: var(--bind-new); }
+.comic-script-assets-v2 [data-binding='pending'] { --bind: var(--bind-pending); }
+.comic-script-assets-v2 [data-binding='local'] { --bind: var(--bind-local); }
+.comic-script-assets-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.comic-script-assets-list-heading small { color: var(--shell-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.comic-script-assets-v2 .motion-comic-plan-scene-list { gap: 4px; padding: 8px; }
+.comic-script-assets-v2 .comic-script-asset-row { display: grid; width: 100%; color: var(--shell-text); background: transparent; font: inherit; cursor: pointer; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; text-align: start; }
+.comic-script-assets-v2 .comic-script-asset-row:hover { background: var(--shell-surface-raised); }
+.comic-script-assets-v2 .comic-script-asset-row:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 1px; }
+.comic-script-assets-v2 .comic-script-asset-row[aria-pressed='true'] { background: var(--shell-selected); border-color: color-mix(in srgb, var(--shell-accent) 45%, transparent); box-shadow: inset 3px 0 0 var(--shell-accent); }
+.comic-script-asset-row__copy { display: grid; gap: 2px; min-width: 0; }
+.comic-script-asset-row__copy strong { overflow: hidden; color: var(--shell-text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.comic-script-asset-row__copy small { overflow: hidden; color: var(--shell-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.comic-script-asset-avatar { display: grid; place-items: center; overflow: hidden; flex-shrink: 0; border-radius: 50%; color: var(--shell-accent); background: color-mix(in srgb, var(--shell-accent) 16%, var(--shell-bg)); }
+.comic-script-assets-v2:not([data-kind='characters']) .comic-script-asset-avatar { border-radius: 8px; color: var(--reel-amber); background: color-mix(in srgb, var(--reel-amber) 14%, var(--shell-bg)); }
+.comic-script-asset-avatar[data-size='sm'] { width: 36px; height: 36px; }
+.comic-script-asset-avatar[data-size='lg'] { width: 88px; height: 88px; border-radius: 14px; box-shadow: 0 0 0 1px var(--shell-border); }
+.comic-script-assets-v2:not([data-kind='characters']) .comic-script-asset-avatar[data-size='lg'] { width: 120px; height: 88px; }
+.comic-script-asset-avatar b { font-size: 15px; font-weight: 700; line-height: 1; }
+.comic-script-asset-avatar[data-size='lg'] b { font-size: 34px; }
+.comic-script-asset-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.comic-script-asset-chip { display: inline-flex; align-items: center; flex-shrink: 0; padding: 1px 7px; border-radius: 4px; color: var(--bind); background: color-mix(in srgb, var(--bind) 14%, transparent); font-size: 11px; font-weight: 650; line-height: 1.6; white-space: nowrap; }
+.comic-script-assets-v2 .motion-comic-script-asset-detail { display: grid; align-content: start; gap: 12px; padding: 16px; background: var(--shell-bg); }
+.comic-script-asset-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 16px; padding: 16px; border: 1px solid var(--shell-border); border-radius: 12px; background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 7%, var(--shell-surface-raised)), var(--shell-surface-raised) 60%); }
+.comic-script-asset-hero__copy { display: grid; gap: 6px; min-width: 0; }
+.comic-script-asset-hero__title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.comic-script-asset-hero__title h2 { margin: 0; font-size: 20px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.comic-script-asset-hero__copy > p { margin: 0; color: color-mix(in srgb, var(--shell-text) 80%, var(--shell-muted)); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.comic-script-asset-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.comic-script-asset-tags > span { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--shell-border); border-radius: 12px; color: var(--shell-muted); font-size: 11px; }
+.comic-script-assets-v2 .comic-script-asset-hero__open { align-self: start; }
+.comic-script-asset-card { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--shell-border); border-radius: 10px; background: var(--shell-surface-raised); }
+.comic-script-assets-v2 .comic-script-asset-card.comic-script-asset-binding { border-bottom: 1px solid var(--shell-border); box-shadow: inset 3px 0 0 var(--bind); }
+.comic-script-asset-card__heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.comic-script-asset-card__heading strong { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 650; }
+.comic-script-asset-card__heading strong svg { color: var(--shell-accent); }
+.comic-script-asset-card__heading small { color: var(--shell-muted); font-size: 12px; }
+.comic-script-assets-v2 .comic-script-canonical { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: var(--shell-bg); }
+.comic-script-assets-v2 .comic-script-canonical > span { color: var(--bind-reuse); font-size: 11px; font-weight: 650; }
+.comic-script-assets-v2 .comic-script-canonical p { margin: 0; font-size: 13px; line-height: 1.65; }
+.comic-script-assets-v2 .motion-comic-script-asset-detail dl.comic-script-asset-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; }
+.comic-script-assets-v2 .motion-comic-script-asset-detail .comic-script-asset-fields > div { display: grid; grid-template-columns: none; align-content: start; gap: 4px; padding: 10px 12px; border-radius: 8px; background: var(--shell-bg); }
+.comic-script-assets-v2 .comic-script-asset-fields > div[data-wide] { grid-column: 1 / -1; }
+.comic-script-assets-v2 .comic-script-asset-fields dt { color: var(--shell-muted); font-size: 11px; font-weight: 600; }
+.comic-script-assets-v2 .comic-script-asset-fields dd { margin: 0; color: var(--shell-text); font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comic-script-assets-v2 .comic-script-asset-fields dd[data-empty] { color: var(--shell-muted); font-style: italic; }
+.comic-script-asset-section-title { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.comic-script-asset-section-title strong { font-size: 14px; font-weight: 650; }
+.comic-script-asset-section-title span { padding: 0 7px; border-radius: 9px; background: var(--shell-surface-raised); color: var(--shell-muted); font-size: 11px; }
+.comic-script-assets-v2 .motion-comic-script-asset-look { border-top: 1px solid var(--shell-border); }
+.comic-script-asset-scenes { display: flex; flex-wrap: wrap; gap: 6px; }
+.comic-script-asset-muted { margin: 0; color: var(--shell-muted); font-size: 12px; }
+@media (max-width: 1180px) {
+  .comic-script-asset-hero { grid-template-columns: auto minmax(0, 1fr); }
+  .comic-script-assets-v2 .comic-script-asset-hero__open { grid-column: 1 / -1; justify-self: start; }
+  .comic-script-asset-avatar[data-size='lg'] { width: 64px; height: 64px; }
+  .comic-script-assets-v2:not([data-kind='characters']) .comic-script-asset-avatar[data-size='lg'] { width: 88px; height: 64px; }
+  .comic-script-assets-v2 .motion-comic-script-asset-detail dl.comic-script-asset-fields { grid-template-columns: minmax(0, 1fr); }
+}

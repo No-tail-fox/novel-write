@@ -1,0 +1,10 @@
+.comic-asset-create-dialog { width: min(560px, calc(100vw - 32px)); }
+.comic-asset-create-form { display: grid; gap: 12px; min-width: 0; color: var(--shell-text); }
+.comic-asset-create-form p { margin: 0 0 8px; line-height: 1.65; overflow-wrap: anywhere; }
+.comic-asset-create-form label { font-weight: 600; }
+.comic-asset-create-form label span, .comic-asset-create-hint { color: var(--shell-muted); font-weight: 400; }
+.comic-asset-create-form input, .comic-asset-create-form textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-bg); color: var(--shell-text); font: inherit; line-height: 1.5; }
+.comic-asset-create-form input { min-height: 44px; }
+.comic-asset-create-form textarea { resize: vertical; min-height: 120px; }
+.comic-asset-create-form input:focus-visible, .comic-asset-create-form textarea:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 2px; }
+.comic-asset-create-form [role='alert'] { font-weight: 600; }

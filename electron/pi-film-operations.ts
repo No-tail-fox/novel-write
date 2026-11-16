@@ -17,6 +17,8 @@ import type { PiHostOperation } from './pi-agent-tool-router';
 import type { PiModelCapabilities } from './pi-model-config';
 import { piMeasureFrameFiles } from './pi-film-frame-metrics';
 import type { PiBudgetLimits } from './pi-agent-budget';
+import { publishPiLiveActivity } from './pi-live-activity';
+import type { PiLiveActivity } from '../src/shared/creative-animation/pi-activity';
 import { piProductionPaths } from './pi-production-paths';
 import { piFilmCheckpoints } from './pi-film-checkpoint';
 import { piDataHash, piFilmSourceHash } from './pi-film-fingerprint';
@@ -71,7 +73,8 @@ export function createPiFilmOperations(options: PiFilmOperationsOptions) {
   const recoverPiSegment = async (d: Document, node: VoxProductionNode): Promise<Document | undefined> => {
     if (!d.productionRun) throw new Error('PI_RUN_REQUIRED');
     const film = await piFilmCheckpoints(piProductionPaths(options.work, d.productionRun.id).state).load(segmentNumber(node), d.productionRun.id);
-    return film ? { ...d, piFilm: film } : undefined;
+    // Only a ready checkpoint is a completed node result; paused/authoring checkpoints resume the session.
+    return film?.phase === 'ready' ? { ...d, piFilm: film } : undefined;
   };
   const piSegment = async (d: Document, node: VoxProductionNode): Promise<Document> => {
     if (busy) throw new Error('PI_SEGMENT_BUSY');
@@ -82,7 +85,7 @@ export function createPiFilmOperations(options: PiFilmOperationsOptions) {
       if (!run || run.authoringVersion !== 4 || !run.settings.codeVideo) throw new Error('PI_RUN_POLICY_REQUIRED');
       const segment = segmentNumber(node), paths = piProductionPaths(options.work, run.id);
       const saved = await recoverPiSegment(d, node); if (saved) return saved;
-      if (segment !== (d.piFilm?.segment ?? 0) + 1) throw new Error('PI_SEGMENT_SEQUENCE');
+      if (segment !== (d.piFilm?.phase === 'ready' ? d.piFilm.segment + 1 : d.piFilm?.segment ?? 1)) throw new Error('PI_SEGMENT_SEQUENCE');
       if (d.piFilm && (d.piFilm.runId !== run.id || d.piFilm.phase === 'reconciliation-required')) throw new Error('PI_RECONCILIATION_REQUIRED');
       await Promise.all([paths.project, paths.state, paths.reviews, paths.audio].map(p => mkdir(p, { recursive: true })));
       const style = resolveCreativeStyle(run.settings.authoring?.styleId, run.settings.presetId);
@@ -95,15 +98,16 @@ export function createPiFilmOperations(options: PiFilmOperationsOptions) {
       if (timeline.durationMs > policy.targetDurationSeconds * 1100) throw new Error('PI_NARRATION_OVER_TARGET: 实测旁白超过目标时长容差，请提高目标时长或编辑原文后重新制作。');
       const narrationText = timeline.cues.length ? timeline.cues.map(cue => cue.text).join(' ') : (d.sourceText ?? '');
        const narrationWindows = splitPiNarration(narrationText);
-       const segmentCount = Math.max(narrationWindows.length, (d.piFilm?.segment ?? 0) + 1);
+       const segmentCount = Math.max(1, narrationWindows.length);
        if (!segmentCount || segment > segmentCount) throw new Error('PI_SEGMENT_NARRATION_RANGE');
        if (segment !== 1 && !d.piFilm) throw new Error('PI_SEGMENT_HANDOFF_REQUIRED');
-       if (d.piFilm && d.piFilm.segment + 1 !== segment) throw new Error('PI_SEGMENT_SEQUENCE');
-       const narrationWindowText = narrationWindows[segment - 1] ?? (segment === 1 ? d.sourceText ?? '' : 'Continuation window; use the authoritative cue file and do not repeat prior narration.');
+       if (d.piFilm && (d.piFilm.phase === 'ready' ? d.piFilm.segment + 1 !== segment : d.piFilm.segment !== segment)) throw new Error('PI_SEGMENT_SEQUENCE');
+       const narrationWindowText = narrationWindows[segment - 1] ?? d.sourceText ?? '';
        const globalPlan = buildPiGlobalPlan(d, timeline.durationMs, segmentCount, policy);
        const previousSummary = d.piFilm?.segmentHandoff;
-       const segmentContext = buildPiSegmentPrompt({ globalPlan, narration: narrationWindowText, segment, segmentCount, previousSummary });
-       if (!segmentContext.includes(`CURRENT NARRATION WINDOW ${segment}/${segmentCount}:`)) throw new Error('PI_SEGMENT_CONTEXT_INVALID');
+       const segmentContext = buildPiSegmentPrompt({ globalPlan, narration: narrationWindowText, segment, segmentCount, previousSummary,
+          narrationEnabled: run.settings.narration !== false, captionMode: policy.captionMode });
+       if (!segmentContext.includes(run.settings.narration === false ? `SOURCE TEXT WINDOW ${segment}/${segmentCount} (NO NARRATION AUDIO):` : `CURRENT NARRATION WINDOW ${segment}/${segmentCount}:`)) throw new Error('PI_SEGMENT_CONTEXT_INVALID');
        const publishTimeline = () => writeFile(join(paths.narration, 'cues.json'), JSON.stringify(timeline, null, 2), 'utf8');
       await publishTimeline();
       let assetMedia: Awaited<ReturnType<typeof lemoMaterialContext>>['assetHost'] | undefined;
@@ -117,6 +121,7 @@ export function createPiFilmOperations(options: PiFilmOperationsOptions) {
       let identity = { sourceHash: '', timelineHash: '', assetHash: '' }, key = '';
       let contacts = 0, visualContacts = 0, technical = false, reading = false, credits = false;
       let previewRef: string | undefined, audioMaster: PiFilmState['audioMaster'];
+      let sdkTurnError: string | undefined;
       let lookProofs = 0; // process record: deliberately not reset by source edits
       let score: { key: string; result: Awaited<ReturnType<typeof renderPiScore>> } | undefined;
       let accepted = false, acceptedKey = '';
@@ -237,20 +242,43 @@ export function createPiFilmOperations(options: PiFilmOperationsOptions) {
         accepted = true; acceptedKey = key; return { accepted: true, visuallyReviewed: visualContacts >= 2, humanReviewed: false };
       });
       await refresh();
+      const activity: PiLiveActivity = { runId: run.id, updatedAt: new Date().toISOString(), phase: 'starting', modelRequests: d.piFilm?.completedModelRequests ?? 0, received: 0, inputTokens: 0, outputTokens: 0, maxRequests: run.settings.piMaxRequests ?? 120, maxTokens: run.settings.agentMaxTokens };
+      const emitActivity = () => publishPiLiveActivity(d.id, { ...activity, updatedAt: new Date().toISOString() });
+      emitActivity();
       active = await (options.sessionFactory ?? openPiFilmSession)({ workerPath: options.workerPath, projectRoot: paths.project, libraryRoot: options.library.upstreamRoot,
         stateRoot: paths.state, styleSlug: style.slug, config: options.config, capabilities: options.capabilities, policy,
         limits: options.limits ?? { maxRequests: run.settings.piMaxRequests ?? 120, maxTokens: run.settings.agentMaxTokens, maxCost: run.settings.agentMaxCost }, pricing: options.pricing,
         sessionFile: d.piFilm ? join(paths.state, d.piFilm.sessionRef) : undefined, operations,
         beforeTool: () => { if (acceptedKey) throw new Error('PI_FINISH_ACCEPTED'); },
-        beforeSubmit: async () => { if (acceptedKey) throw new Error('PI_FINISH_ACCEPTED'); await refresh(); } });
+        beforeSubmit: async () => { if (acceptedKey) throw new Error('PI_FINISH_ACCEPTED'); await refresh(); },
+         onEvent: event => {
+           if (!event || typeof event !== 'object') return;
+           const value = event as { type?: unknown; error?: unknown; toolName?: unknown; message?: { role?: unknown; errorMessage?: unknown; stopReason?: unknown } };
+           const detail = typeof value.message?.errorMessage === 'string' ? value.message.errorMessage : typeof value.error === 'string' ? value.error : undefined;
+           if (detail && (value.type === 'agent_end' || value.type === 'message_end' || value.type === 'turn_end')) {
+             sdkTurnError = /^PI_[A-Z0-9_]+$/.test(detail) ? detail : 'PI_AGENT_SDK_ERROR';
+             activity.phase = 'error'; activity.error = sdkTurnError;
+           }
+           if (value.type === 'message_start' && value.message?.role === 'assistant') { activity.modelRequests++; activity.phase = 'waiting-model'; }
+           if (value.type === 'tool_execution_start' && typeof value.toolName === 'string') { activity.latestTool = value.toolName.slice(0, 80); activity.phase = 'running-tool'; }
+           if (value.type === 'message_end' && value.message?.role === 'assistant') activity.phase = value.message.stopReason === 'error' ? 'error' : 'waiting-model';
+           if (value.type === 'agent_settled') activity.phase = 'idle';
+           emitActivity();
+         } });
       const globalPlanHash = createHash('sha256').update(globalPlan).digest('hex');
-       await active.prompt([`SEGMENT ${segment}/${segmentCount}; GLOBAL PLAN SHA-256 ${globalPlanHash}. This is a runtime segment, not an independently timed video chapter.`, segmentContext, `STYLE REFERENCE: ${context.styleId}; canvas ${context.width}x${context.height}; duration ${context.durationSeconds}s.`,
+await active.prompt([`SEGMENT ${segment}/${segmentCount}; GLOBAL PLAN SHA-256 ${globalPlanHash}. This is a runtime segment, not an independently timed video chapter.`, segmentContext, `STYLE REFERENCE: ${context.styleId}; canvas ${context.width}x${context.height}; duration ${context.durationSeconds}s.`,
          'TREATMENT.md must end with a concise ## Segment handoff section containing visual grammar, established facts/assets already introduced, transition motif and open setup for the next window; max 4000 characters.',
          'The complete authoritative narration clock is material/narration/cues.json; this segment may read it for timing, but may author visuals only for its supplied narration window.',
         'Create TREATMENT.md, index.html and film source. Audio mix is audio/mix.json. Only render_score executes trusted data-only synthesis; authored code cannot run.',
         'Use host tools for evidence. In segment 1, call look_proof once the visual system exists. Call review_frames twice, reading_check, audio_check and render_preview before finish. Self-reported flags are not accepted.',
         `Authoritative duration: ${timeline.durationMs / 1000}s. Caption mode: ${policy.captionMode}.`, styleReference ?? ''].join('\n'), options.promptTimeoutMs ?? 1_800_000);
-      const summary = active.summary();
+      if (sdkTurnError) throw new Error(sdkTurnError);
+       const summary = active.summary();
+       activity.received = summary.received;
+       activity.inputTokens = summary.inputTokens;
+       activity.outputTokens = summary.outputTokens;
+       activity.phase = 'idle';
+       emitActivity();
       if (summary.blocked || summary.unknown || summary.rejected || summary.usageUnknown) throw new Error('PI_RECONCILIATION_REQUIRED');
        const treatmentPath = join(paths.project, 'TREATMENT.md');
        let segmentHandoff: string | undefined;

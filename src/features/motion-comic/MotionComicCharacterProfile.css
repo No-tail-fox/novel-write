@@ -1,0 +1,56 @@
+/* Character profile: always-open identity card above the look tabs (shared by every look). */
+.comic-character-profile { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 20px; padding: 16px; border: 1px solid var(--shell-border); border-radius: 12px; background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 6%, var(--shell-surface-raised)), var(--shell-surface-raised) 55%); }
+.comic-character-profile__portrait { display: grid; grid-template-rows: auto auto; align-self: start; gap: 8px; margin: 0; min-width: 0; }
+.comic-character-profile__portrait > img, .comic-character-profile__portrait > span { width: 100%; aspect-ratio: 3 / 4; border-radius: 10px; box-shadow: 0 0 0 1px var(--shell-border); }
+.comic-character-profile__portrait > img { object-fit: cover; object-position: top center; background: var(--shell-bg); }
+.comic-character-profile__portrait > span { display: grid; place-items: center; color: var(--shell-accent); background: color-mix(in srgb, var(--shell-accent) 12%, var(--shell-bg)); }
+.comic-character-profile__portrait > span b { font-size: 48px; font-weight: 700; line-height: 1; }
+.comic-character-profile__portrait figcaption { color: var(--shell-muted); font-size: 11px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comic-character-profile__portrait[data-empty] figcaption { color: var(--shell-muted); white-space: normal; line-height: 1.5; }
+.comic-character-profile__portrait[data-empty] > span { aspect-ratio: auto; min-height: 72px; box-shadow: none; color: var(--shell-muted); background: transparent; }
+.comic-character-profile__portrait > .sd-button { width: 100%; white-space: normal; }
+.comic-character-profile:has(.comic-character-profile__portrait[data-empty]) { background: var(--shell-surface); }
+.comic-character-profile__body { display: grid; align-content: start; gap: 12px; min-width: 0; }
+.comic-character-profile__heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+.comic-character-profile__heading > div:first-child { display: grid; gap: 2px; }
+.comic-character-profile__heading strong { font-size: 15px; font-weight: 650; }
+.comic-character-profile__heading small { color: var(--shell-muted); font-size: 12px; }
+.comic-character-profile__stats { display: flex; flex-wrap: wrap; gap: 6px; }
+.comic-character-profile__stats > span { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--shell-border); border-radius: 12px; color: var(--shell-muted); font-size: 11px; white-space: nowrap; }
+.comic-character-profile__stats > span[data-tone='ok'] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--shell-border)); }
+.comic-character-profile__stats > span[data-tone='warn'] { color: var(--reel-amber); border-color: color-mix(in srgb, var(--reel-amber) 40%, var(--shell-border)); }
+.comic-character-profile__fields { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px 14px; min-width: 0; }
+.comic-character-profile__fields > * { grid-column: span 2; min-width: 0; }
+.comic-character-profile__fields > .comic-character-profile__wide { grid-column: 1 / -1; }
+.comic-character-profile__fields > .comic-character-profile__half { grid-column: span 3; }
+.comic-character-profile__fields textarea { min-height: 76px; }
+.comic-character-looks-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-top: 4px; }
+.comic-character-looks-heading strong { font-size: 15px; font-weight: 650; }
+.comic-character-looks-heading small { color: var(--shell-muted); font-size: 12px; }
+.comic-character-voice { display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--shell-border); border-radius: 12px; background: var(--shell-surface-raised); }
+.comic-character-voice > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.comic-character-voice > header strong { font-size: 15px; font-weight: 650; }
+.comic-character-voice > header small { color: var(--shell-muted); font-size: 12px; }
+@media (max-width: 1180px) {
+  .comic-character-profile { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; }
+  .comic-character-profile__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .comic-character-profile__fields > *, .comic-character-profile__fields > .comic-character-profile__half { grid-column: span 1; }
+  .comic-character-profile__fields > :nth-child(3) { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .comic-character-profile { grid-template-columns: minmax(0, 1fr); }
+  .comic-character-profile__portrait { grid-template-columns: 88px minmax(0, 1fr); grid-template-rows: none; align-items: center; }
+  .comic-character-profile__portrait figcaption { text-align: start; }
+  .comic-character-profile__fields { grid-template-columns: minmax(0, 1fr); }
+  .comic-character-profile__fields > * { grid-column: 1 / -1 !important; }
+}
+
+/* Turnaround placeholders inside the reference board: labelled empty slots for 正面/侧面/背面. */
+.comic-reference-slot.is-missing-role .comic-reference-slot__placeholder.sd-button { flex: none; inline-size: 100%; min-inline-size: 0; block-size: auto; min-block-size: 0; aspect-ratio: 3 / 4; flex-direction: column; gap: 6px; padding: 0; border: 1px dashed color-mix(in srgb, var(--reel-amber) 45%, var(--shell-border)); border-radius: 8px; background: color-mix(in srgb, var(--reel-amber) 5%, var(--shell-bg)); color: var(--shell-muted); }
+.comic-reference-slot.is-missing-role .comic-reference-slot__placeholder.sd-button:hover:not(:disabled) { border-color: var(--reel-amber); color: var(--shell-text); }
+.comic-reference-slot.is-missing-role .comic-reference-slot__placeholder .sd-button__content { display: grid; justify-items: center; gap: 6px; }
+.comic-reference-slot.is-missing-role .comic-reference-slot__role { color: var(--reel-amber); }
+.comic-reference-slot.is-missing-role small { font-size: 11px; }
+.comic-reference-slot.is-missing-role .comic-reference-slot__bar strong { color: var(--reel-amber); font-weight: 500; }
+/* Five slots per row in the look panel so 设计稿 + 正面/侧面/背面 + 添加 stay on one line. */
+.comic-look-panel .comic-reference-slots { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }

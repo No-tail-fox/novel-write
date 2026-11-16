@@ -32,7 +32,7 @@ import {
   motionComicPlanRecoverySchema,
   motionComicScriptCheckpointSchema,
 } from '@shared/motion-comic-planning';
-import { generateMotionComicPlan } from '@shared/motion-comic-planner';
+import { generateMotionComicPlan, generateMotionComicScript } from '@shared/motion-comic-planner';
 import { MotionComicPlanningService } from '../electron/motion-comic-planning-service';
 
 const now = '2026-09-18T00:00:00.000Z';
@@ -64,6 +64,58 @@ function script(): MotionComicScriptDraft {
     }],
   };
 }
+
+describe('explicit narration and structural heading constraints', () => {
+  it('rejects forbidden narration after both initial generation and repair', async () => {
+    const run = vi.fn().mockResolvedValue({ json: script() });
+    await expect(generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText, instructions: '只保留原文对白，不引入其他人物或旁白。' }, document(), { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test' })).rejects.toThrow('明确禁止旁白');
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1][0].messages.at(-1).content).toContain('明确禁止旁白');
+  });
+  it('validates manual and resumed drafts without silently rewriting authoritative content', async () => {
+    const run = vi.fn();
+    for (const extra of [{ scriptDraft: script() }, { }]) {
+      await expect(generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText, instructions: '无旁白', ...extra }, document(), { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test', ...(!('scriptDraft' in extra) ? { resume: { script: script(), repaired: false, adjustments: [] } } : {}) })).rejects.toThrow('明确禁止旁白');
+    }
+    expect(run).not.toHaveBeenCalled();
+  });
+  it('rejects narrated chapter headings while allowing their non-spoken structural coverage', () => {
+    const draft = script(); draft.scenes[0].beats[0].kind = 'narration'; draft.scenes[0].beats[0].text = '第1集 雨夜投信。夜晚，小雨。';
+    const units = splitMotionComicSource('第1集 雨夜投信\n夜晚，小雨。她投入信封。');
+    expect(validateMotionComicScriptDraft(draft, units).some(i => i.code === 'STRUCTURAL_TITLE_NARRATED')).toBe(true);
+    draft.scenes[0].beats[0].kind = 'action';
+    expect(validateMotionComicScriptDraft(draft, units).some(i => i.code === 'STRUCTURAL_TITLE_NARRATED')).toBe(false);
+    expect(validateMotionComicScriptDraft(script(), splitMotionComicSource(sourceText)).some(i => i.code === 'NARRATION_FORBIDDEN')).toBe(false);
+  });
+});
+
+describe('script response array contract', () => {
+  it('rejects string scenes without misleading character limits in the repair request', async () => {
+    const invalid = { ...script(), scenes: JSON.stringify(script().scenes) };
+    const run = vi.fn().mockResolvedValue({ json: invalid });
+    const onScriptInvalid = vi.fn();
+    await expect(generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText }, document(),
+      { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test', onScriptInvalid }))
+      .rejects.toThrow('scenes 必须是包含 1–30 个场次对象的 JSON 数组');
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(onScriptInvalid).not.toHaveBeenCalled();
+    const repair = run.mock.calls[1][0].messages.at(-1).content;
+    expect(repair).toContain('不能是正文字符串或字符串化的 JSON');
+    expect(repair).not.toContain('characters');
+    expect(repair).not.toContain('Too big');
+    expect(run.mock.calls[0][0].messages[0].content).toContain('【程序输出契约】scenes 必须是 JSON 数组');
+  });
+
+  it('accepts a valid array returned by the existing single repair attempt', async () => {
+    const run = vi.fn().mockResolvedValueOnce({ json: { ...script(), scenes: '这是不符合协议的自然语言剧本正文。'.repeat(4) } })
+      .mockResolvedValueOnce({ json: script() });
+    const result = await generateMotionComicScript({ id: document().id, expectedUpdatedAt: now, sourceText }, document(),
+      { protocol: 'openai', run } as unknown as ConfiguredJsonLlm, { model: 'offline-test' });
+    expect(result.script).toEqual(script());
+    expect(result.repaired).toBe(true);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+});
 
 function storyboard(): MotionComicStoryboardDraft {
   return { shots: [
@@ -325,6 +377,8 @@ describe('motion comic AI planning', () => {
       actSource: 'ai-planned',
     });
     expect(appended.episodes[1].scenes[0].shots.every((shot) => shot.renderStrategy === 'remote-video')).toBe(true);
+    expect(appended.episodes[1].scenes[0].shots.every((shot) => shot.videoProduction?.referenceMode === 'references')).toBe(true);
+    expect(appended.episodes[0]).toEqual(original.episodes[0]);
     expect(parseMotionComicPipelineData(appended)).toEqual(appended);
 
     const replaced = applyMotionComicPlan(original, draft, { episodeId: 'generated-first', replaceStarter: true });

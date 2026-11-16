@@ -1,6 +1,8 @@
 import { AspectRatioField } from '../../components/AspectRatioField';
 import { CreationPageHeader } from '../../components/CreationPageHeader';
-import type { ReactElement, ReactNode } from 'react';
+import { useId, useState, type ReactElement, type ReactNode } from 'react';
+import '../../styles/features/creation-chapter.css';
+import { defaultCustomStyles } from '../../shared/config';
 import {
   ArrowLeft,
   ArrowRight,
@@ -19,7 +21,11 @@ import type {
   MotionComicSplitStrategy,
 } from '../../shared/motion-comic';
 import type { MotionComicSourceSplitEvidence } from '../../shared/motion-comic-episode-planning';
-import { Button, Pane, SegmentedControl, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, Pane, SegmentedControl, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
+
+const VISUAL_STYLES = ['photo-real', 'modern-film', 'ghibli', 'watercolor', 'pixar-3d', 'ink']
+  .flatMap((id) => defaultCustomStyles.filter((style) => style.id === id))
+  .map((style) => ({ label: style.name, value: `${style.name}：${style.prefix}；${style.suffix}` }));
 
 export interface MotionComicEpisodeDraft {
   title: string;
@@ -34,6 +40,8 @@ interface MotionComicCreateFlowProps {
   step: number;
   title: string;
   ratio: MotionComicPipelineData['ratio'];
+  visualStyle?: string;
+  onVisualStyleChange?: (value: string) => void;
   sourceKind: MotionComicSourceKind;
   adaptationMode: MotionComicAdaptationMode;
   sourceFileName: string;
@@ -75,6 +83,8 @@ export function MotionComicCreateFlow({
   step,
   title,
   ratio,
+  visualStyle = '',
+  onVisualStyleChange,
   sourceKind,
   adaptationMode,
   sourceFileName,
@@ -105,6 +115,11 @@ export function MotionComicCreateFlow({
   onPrepareEpisodes,
   onCreate,
 }: MotionComicCreateFlowProps): ReactElement {
+  const [customStyleSelected, setCustomStyleSelected] = useState(false);
+  const [expandedEpisode, setExpandedEpisode] = useState<number | null>(null);
+  const chapterListId = useId();
+  const selectedStyle = VISUAL_STYLES.find((style) => style.value === visualStyle);
+  const customStyle = customStyleSelected || Boolean(visualStyle && !selectedStyle);
   const sourceReady = Boolean(title.trim() && sourceText.trim());
   const aiSplit = splitStrategy === 'ai-story';
   const episodesReady = episodes.length > 0
@@ -163,6 +178,25 @@ export function MotionComicCreateFlow({
                 <TextField label="项目名称" value={title} placeholder="例如：雨夜来信" onChange={(_, data) => onTitleChange(data.value)} />
                 <AspectRatioField label="成片画幅" value={ratio} onChange={onRatioChange} />
               </div>
+              <SelectField
+                label="视觉风格（可选）"
+                value={customStyle ? 'custom' : visualStyle}
+                options={[{ value: '', label: '暂不指定' }, ...VISUAL_STYLES, { value: 'custom', label: '自定义' }]}
+                hint="将用于角色、场景参考图和视频生成；创建后可在系列视觉规则中修改。"
+                disabled={busy}
+                onChange={(_, data) => {
+                  setCustomStyleSelected(data.value === 'custom');
+                  onVisualStyleChange?.(data.value === 'custom' ? '' : data.value);
+                }}
+              />
+              {customStyle ? <TextField
+                label="自定义视觉风格（可选）"
+                value={visualStyle}
+                maxLength={4000}
+                placeholder="描述画面质感、色彩或绘画方式"
+                disabled={busy}
+                onChange={(_, data) => onVisualStyleChange?.(data.value)}
+              /> : null}
               <div className="motion-comic-create__row">
                 <SegmentedControl label="源文类型" value={sourceKind} options={[
                   { value: 'script', label: '剧本' },
@@ -190,6 +224,8 @@ export function MotionComicCreateFlow({
             </div> : null}
 
             {step === 1 ? <div className="motion-comic-create__fields">
+              <details className="motion-comic-split-options" open={aiSplit}>
+                <summary>拆分设置 · {splitStrategyLabel} · {episodes.length} 集（点击调整）</summary>
               <div className="motion-comic-split-toolbar">
                 <SegmentedControl
                   label="拆分规则"
@@ -242,28 +278,51 @@ export function MotionComicCreateFlow({
               {splitWarnings.length > 0 ? <div className="motion-comic-ai-split-warnings">
                 {splitWarnings.map((warning) => <span key={warning}>{warning}</span>)}
               </div> : null}
-              <div className="motion-comic-episode-drafts">
-                {episodes.map((episode, index) => (
-                  <section key={index} className="motion-comic-episode-draft">
-                    <header>
-                      <span>EP {String(index + 1).padStart(2, '0')}</span>
-                      <strong>{episode.startUnitId && episode.endUnitId ? `${episode.startUnitId} → ${episode.endUnitId} · ` : ''}{episode.sourceText.length.toLocaleString('zh-CN')} 字</strong>
-                    </header>
-                    <TextField label={`第 ${index + 1} 集标题`} value={episode.title} onChange={(_, data) => onEpisodeChange(index, { title: data.value })} />
-                    {aiSplit ? <div className="motion-comic-episode-draft__evidence">
-                      <span><strong>拆分依据</strong><small>{episode.splitReason}</small></span>
-                      <span><strong>尾钩与承接</strong><small>{episode.continuityHook}</small></span>
+              </details>
+              <section className="creation-chapters" aria-label="分集草稿">
+                <div className="creation-chapters__heading">
+                  <h2>确认拆分后的章节</h2>
+                  <p>{sourceFileName || '粘贴正文'} · 共 {episodes.length} 集 · 展开逐集核对，创建时保留全部分集</p>
+                </div>
+                <div className="creation-chapters__columns" aria-hidden="true">
+                  <span>集号</span><span>章节标题</span><span>字数</span><span>检查</span><span>操作</span>
+                </div>
+                {episodes.length === 0 ? <p className="creation-chapters__empty">尚未拆分章节，请展开拆分设置并生成分集。</p> : null}
+                {episodes.map((episode, index) => {
+                  const expanded = expandedEpisode === index;
+                  const issue = !episode.title.trim() ? '标题待补充' : !episode.sourceText.trim() ? '正文待补充'
+                    : aiSplit && !(splitEvidence?.strategy === 'ai-story' && episode.startUnitId && episode.endUnitId && episode.splitReason?.trim() && episode.continuityHook?.trim()) ? '边界待校验' : '';
+                  const editorId = `${chapterListId}-episode-${index}`;
+                  return <section key={index} className="creation-chapters__item" data-expanded={expanded}>
+                    <div className="creation-chapters__row">
+                      <span className="creation-chapters__number">{String(index + 1).padStart(2, '0')}</span>
+                      <strong className="creation-chapters__title">{episode.title.trim() || '未命名章节'}</strong>
+                      <span className="creation-chapters__count">{episode.sourceText.length.toLocaleString('zh-CN')}<span className="creation-chapters__unit"> 字</span></span>
+                      <span className="creation-chapters__status" data-valid={!issue}>{issue || '内容完整'}</span>
+                      <Button variant="secondary" aria-expanded={expanded} aria-controls={expanded ? editorId : undefined}
+                        aria-label={`${expanded ? '收起' : '预览编辑'}第 ${index + 1} 集`}
+                        onClick={() => setExpandedEpisode(expanded ? null : index)}>{expanded ? '收起' : '预览编辑'}</Button>
+                    </div>
+                    {expanded ? <div id={editorId} className="creation-chapters__editor">
+                      <TextField label={`第 ${index + 1} 集标题`} value={episode.title} disabled={busy} onChange={(_, data) => onEpisodeChange(index, { title: data.value })} />
+                      {aiSplit ? <div className="motion-comic-episode-draft__evidence">
+                        <span><strong>原文边界</strong><small>{episode.startUnitId || '待校验'} → {episode.endUnitId || '待校验'} · 正文只读</small></span>
+                        <span><strong>拆分依据</strong><small>{episode.splitReason}</small></span>
+                        <span><strong>尾钩与承接</strong><small>{episode.continuityHook}</small></span>
+                      </div> : null}
+                      <TextAreaField
+                        label={`第 ${index + 1} 集源文${aiSplit ? '（按边界重建）' : ''}`}
+                        value={episode.sourceText}
+                        readOnly={aiSplit}
+                        disabled={busy}
+                        resize="vertical"
+                        onChange={aiSplit ? undefined : (_, data) => onEpisodeChange(index, { sourceText: data.value })}
+                      />
+                      {issue ? <p className="creation-chapters__issue" role="status">{issue}，请{issue === '边界待校验' ? '重新生成 AI 分集并通过校验' : '补充后再继续'}。</p> : null}
                     </div> : null}
-                    <TextAreaField
-                      label={`第 ${index + 1} 集源文${aiSplit ? '（按边界重建）' : ''}`}
-                      value={episode.sourceText}
-                      readOnly={aiSplit}
-                      resize="vertical"
-                      onChange={aiSplit ? undefined : (_, data) => onEpisodeChange(index, { sourceText: data.value })}
-                    />
-                  </section>
-                ))}
-              </div>
+                  </section>;
+                })}
+              </section>
             </div> : null}
 
             {step === 2 ? <div className="motion-comic-create__review">
@@ -291,6 +350,7 @@ export function MotionComicCreateFlow({
               <div><dt>拆分</dt><dd>{splitStrategyLabel}</dd></div>
               <div><dt>分集</dt><dd>{episodes.length || '待拆分'}</dd></div>
               <div><dt>画幅</dt><dd>{ratio}</dd></div>
+              <div><dt>风格</dt><dd>{selectedStyle?.label || visualStyle.trim() || '暂不指定'}</dd></div>
             </dl>
             {services.length > 0 ? <section className="motion-comic-create__services" aria-label="制作服务就绪情况">
               <strong>制作服务</strong>
@@ -304,7 +364,8 @@ export function MotionComicCreateFlow({
             </section> : null}
             <div className="motion-comic-create__route">
               <strong>后续流程</strong>
-              <span>分集 → 分幕分场 → 制作资产 → 分镜图 → 远程视频 → 配音合成 → 导出</span>
+              <span>分集 → 分幕分场与分镜 → 资产参考图 → 视频生成 → 配音合成 → 导出</span>
+              <small>默认使用角色、场景和道具参考图直接生成视频；分镜图按需制作。</small>
             </div>
           </aside>
         </div>

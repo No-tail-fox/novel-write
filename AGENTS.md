@@ -1,3 +1,10 @@
+# Project Scope
+
+- This directory is the StoryDream project root. Keep StoryDream source, plans, QA evidence, and release work within this project.
+- The previous mixed workspace was `I:\opc`; do not create new StoryDream files there.
+- `.local-archive/` contains local migration evidence and development/release archives. It is excluded from Git and may contain private test configuration; do not publish it.
+- Keep unrelated document projects and machine maintenance tasks outside this repository.
+
 # Encoding Rules
 
 - Keep all source, config, and documentation files in UTF-8.

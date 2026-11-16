@@ -18,6 +18,12 @@ describe('vite config', () => {
     expect(rendererManualChunk('/repo/src/app/App.tsx')).toBeUndefined();
   });
 
+  it('keeps the icon library outside the renderer entry on Windows and POSIX paths', () => {
+    expect(rendererManualChunk('D:\\repo\\node_modules\\lucide-react\\dist\\cjs\\lucide-react.js')).toBe('lucide-react');
+    expect(rendererManualChunk('/repo/node_modules/lucide-react/dist/esm/lucide-react.js')).toBe('lucide-react');
+    expect(rendererManualChunk('/repo/node_modules/lucide-react-extra/index.js')).toBeUndefined();
+  });
+
   it('keeps the shared validation runtime outside the renderer entry', () => {
     expect(rendererManualChunk('/repo/node_modules/zod/v4/index.js')).toBe('zod');
   });

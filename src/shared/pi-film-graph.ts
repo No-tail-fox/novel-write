@@ -3,15 +3,17 @@ import type { VoxProductionNode, VoxProductionSettings } from './vox-production'
 import { buildLemoUpstreamNodes } from './lemo-upstream-graph';
 import { splitPiNarration } from './pi-film-context';
 
+
 /** Separate v4 graph. A segment may contain many ledger-recorded requests and is never a single-request retry node. */
 export function buildPiFilmNodes(document: EditorialCollagePipelineData, settings: VoxProductionSettings): VoxProductionNode[] {
   const legacy = buildLemoUpstreamNodes(document, settings);
   const nodes = legacy.filter(node => ['voice', 'timing', 'compile'].includes(node.kind));
   const timings = nodes.filter(node => node.kind === 'timing').map(node => node.id);
   const compile = nodes.filter(node => node.kind === 'compile').map(node => node.id);
-  const film = document.piFilm?.runId === document.productionRun?.id ? document.piFilm : undefined;
   const narration = document.sourceText || document.beats.flatMap(beat => beat.subtitleCues).map(cue => cue.text).join(' ');
-   const count = Math.max(1, splitPiNarration(narration).length, (film?.segment ?? 0) + (film?.phase === 'ready' ? 0 : 1));
+   // Runtime state is not narration content: a paused segment resumes at its existing node.
+  // Only a ready segment advances to the next window, and only within the real source windows.
+  const count = Math.max(1, splitPiNarration(narration).length);
   if (count > 1000) throw new Error('PI_SEGMENT_LIMIT');
   const add = (id: string, kind: VoxProductionNode['kind'], dependencies: string[], paid = false) => {
     nodes.push({ id, kind, dependencies, paid, status: 'pending', attempt: 0 }); return id;

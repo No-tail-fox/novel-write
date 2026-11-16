@@ -24,6 +24,8 @@ function fixture() {
   const otherShot = episode.scenes.at(-1)!.shots[0];
   shot.renderStrategy = 'remote-video';
   otherShot.renderStrategy = 'remote-video';
+  shot.videoProduction = { version: 1, referenceMode: 'frames', audioMode: 'post-mix' };
+  otherShot.videoProduction = { version: 1, referenceMode: 'frames', audioMode: 'post-mix' };
   shot.firstFrameAssetVersionId = 'frame-current';
   otherShot.firstFrameAssetVersionId = 'frame-other';
   shot.videoAssetVersionId = 'video-current';

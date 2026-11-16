@@ -517,83 +517,6 @@ export const workflowPromptCatalog: readonly WorkflowPromptDescriptor[] = [
     "variables": {}
   },
   {
-    "slot": "lemo-batch-1",
-    "name": "Lemo · Create reusable canvas, palette, typography, prepared assets and dra",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-incremental-authoring.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-batch-2",
-    "name": "Lemo · Compose scenes and transitions over absolute time; aggregate active ",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-incremental-authoring.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-batch-3",
-    "name": "Lemo · Implement only assigned shot windows using shared APIs (target <=600",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-incremental-authoring.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-batch-4",
-    "name": "Lemo · Return strict JSON {baseHash, edits:[{search,replace}], done:boolean",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-incremental-authoring.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-batch-5",
-    "name": "Lemo · Factory parameters (input,shared,scenes,core,THREE). Shared returns ",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-incremental-authoring.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-file-1",
-    "name": "创意动画 · 工程文件协议 1",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-project-runtime.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-file-2",
-    "name": "创意动画 · 工程文件协议 2",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-project-runtime.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-file-3",
-    "name": "创意动画 · 工程文件协议 3",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-project-runtime.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-file-4",
-    "name": "创意动画 · 工程文件协议 4",
-    "channel": "editorial-collage",
-    "source": "electron/lemo-project-runtime.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-host-1",
-    "name": "创意动画 · 分批创作宿主 1",
-    "channel": "editorial-collage",
-    "source": "electron/main.ts",
-    "variables": {}
-  },
-  {
-    "slot": "lemo-host-2",
-    "name": "创意动画 · 分批创作宿主 2",
-    "channel": "editorial-collage",
-    "source": "electron/main.ts",
-    "variables": {}
-  },
-  {
     "slot": "director-copy-1",
     "name": "创意动画 · 完整原稿篇幅规则",
     "channel": "shared",
@@ -1136,8 +1059,7 @@ export const workflowPromptCatalog: readonly WorkflowPromptDescriptor[] = [
     "source": "src/shared/director-copy-assist.ts",
     "variables": {
       "voxSeconds": "voxSeconds",
-      "voxTargetLength": "voxTargetLength",
-      "value3": "运行时根据当前项目计算"
+      "value1": "运行时根据当前项目计算"
     }
   },
   {

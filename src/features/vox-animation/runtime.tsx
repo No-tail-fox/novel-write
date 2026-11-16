@@ -10,7 +10,7 @@ import { getAudioData } from '@remotion/media-utils';
 import { VoxComposition, voxAudioCache } from './VoxComposition';
 import type { VoxAnimationPayload } from '../../shared/vox-animation';
 
-const runtimeWindow = window as unknown as Window & { VoxRuntime: { require: (id:string)=>unknown; mount:(payload:VoxAnimationPayload,component?:React.ComponentType<any>)=>void }; __ready:boolean; __htmlVideoMediaError?:string };
+const runtimeWindow = window as unknown as Window & { VoxRuntime: { require: (id:string)=>unknown; mount:(payload:VoxAnimationPayload,component?:React.ComponentType<any>)=>void }; __ready:boolean; __htmlVideoMediaError?:string; remotion_delayRenderHandles?:number[]; remotion_cancelledError?:unknown; __voxRender?:{requested:number;completed:number;frame:number} };
 const fail = (error:unknown) => { const message='CREATIVE_CODE_RUNTIME: '+(error instanceof Error?error.message:String(error)); runtimeWindow.__htmlVideoMediaError=message; parent.postMessage({type:'vox-error',message},'*'); };
 const runtimeRequire=(id:string)=>{if(id==='react')return ReactModule;if(id==='remotion')return Remotion;throw new Error(`不支持的依赖：${id}`);};
 class Boundary extends React.Component<{children:React.ReactNode},{error:string}>{
@@ -38,21 +38,41 @@ runtimeWindow.VoxRuntime={require:runtimeRequire,mount(payload,Custom){
   const root=createRoot(document.getElementById('root')!);
   const ref=React.createRef<PlayerRef>();
   const durationInFrames=Math.max(1,Math.ceil(payload.durationMs*payload.fps/1000));
-  const Composition=()=> <Boundary><Remotion.AbsoluteFill className="frame" style={{backgroundColor:payload.animation.template.props.background}}>{Custom?<Custom {...payload.animation.template.props} assets={payload.assets} cues={payload.cues}/>:<VoxComposition {...payload}/>}<Subtitles payload={payload}/></Remotion.AbsoluteFill></Boundary>;
+  const commit=runtimeWindow.__voxRender={requested:0,completed:0,frame:-1};
+  const FrameCommit=()=>{const frame=Remotion.useCurrentFrame();React.useLayoutEffect(()=>{commit.frame=frame;},[frame]);return null;};
+  const Composition=()=> <Boundary><Remotion.AbsoluteFill className="frame" style={{backgroundColor:payload.animation.template.props.background}}>{Custom?<Custom {...payload.animation.template.props} assets={payload.assets} cues={payload.cues}/>:<VoxComposition {...payload}/>}<Subtitles payload={payload}/><FrameCommit/></Remotion.AbsoluteFill></Boundary>;
   flushSync(()=>root.render(<Player ref={ref} component={Composition} compositionWidth={payload.width} compositionHeight={payload.height} fps={payload.fps} durationInFrames={durationInFrames} controls={false} clickToPlay={false} style={{width:'100%',height:'100%'}} errorFallback={({error})=>{fail(error);return <div>{error.message}</div>;}}/>));
   const ready=Promise.all(payload.assets.filter(x=>x.kind==='audio').map(async a=>{voxAudioCache.set(a.url,await getAudioData(a.url));}));
   let lastFrame=-1;
-  const seek=async(seconds:number)=>{
+  let seekQueue=Promise.resolve();
+  const render=async(seconds:number,token:number)=>{
     await ready;
     if(runtimeWindow.__htmlVideoMediaError)throw new Error(runtimeWindow.__htmlVideoMediaError);
     const target=Math.min(durationInFrames-1,Math.max(0,Math.floor(seconds*payload.fps+1e-6)));
     if(target!==lastFrame){flushSync(()=>ref.current?.seekTo(target));lastFrame=target;}
-    await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+    const deadline=performance.now()+15000;
+    const paint=()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+    // delayRender/continueRender are the authored async-work contract. A paint alone
+    // cannot acknowledge a frame whose effects are still drawing or loading data.
+    do {
+      if(performance.now()>deadline)throw new Error('CREATIVE_CODE_RUNTIME: frame render timed out');
+      if(runtimeWindow.remotion_cancelledError)throw new Error(String(runtimeWindow.remotion_cancelledError));
+      await paint();
+    } while(commit.frame!==target||(runtimeWindow.remotion_delayRenderHandles?.length??0)>0);
+    await paint();
     await document.fonts.ready;
     await Promise.all(Array.from(document.images).map(image=>image.decode()));
     document.querySelectorAll<HTMLElement>('.caption').forEach(el=>{el.hidden=seconds*1000<Number(el.dataset.cueStart)||seconds*1000>=Number(el.dataset.cueEnd);});
     document.querySelectorAll<HTMLElement>('[data-word-start]').forEach(el=>{el.style.color=seconds*1000>=Number(el.dataset.wordStart)&&seconds*1000<Number(el.dataset.wordEnd)?payload.animation.template.props.accent:'';});
     if(runtimeWindow.__htmlVideoMediaError)throw new Error(runtimeWindow.__htmlVideoMediaError);
+    commit.completed=token;
+  };
+  // Each returned promise acknowledges this request, including repeated/backward seeks.
+  const seek=(seconds:number)=>{
+    const token=++commit.requested;
+    const pending=seekQueue.then(()=>render(seconds,token));
+    seekQueue=pending.catch(()=>{});
+    return pending;
   };
   window.__tl={seek};
   ready.then(()=>seek(0)).then(()=>{runtimeWindow.__ready=true;parent.postMessage({type:'vox-ready'},'*');}).catch(fail);

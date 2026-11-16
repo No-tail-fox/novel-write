@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { encodeHtmlFrames } from './html-video-frame-stream';
+import { renderLemoUpstreamStills } from './lemo-upstream-stills';
 import { htmlVideoFrameCaptureTimeoutMs } from '../src/shared/video-render-budget';
 import { readLemoUpstreamManifest, serveLemoUpstreamProject, type LemoSourceOptions } from './lemo-upstream-source';
 import {
@@ -13,6 +14,10 @@ import {
 export interface LemoUpstreamReviewOptions extends LemoSourceOptions {
   outputDir: string;
   times: number[];
+  /** Pi review provides the host-attested duration; legacy review keeps its Electron probe. */
+  durationSeconds?: number;
+  reviewEngine?: 'upstream' | 'electron';
+  captions?: 0 | 1;
   width?: number;
   height?: number;
   timeoutMs?: number;
@@ -31,7 +36,7 @@ export interface LemoUpstreamReviewReceipt {
   technicalPassed: boolean;
   aestheticReview: false;
   /** Set by the export path: which picture engine produced the film. */
-  engine?: 'upstream-video.mjs' | 'electron';
+  engine?: 'upstream-video.mjs' | 'upstream-still.mjs' | 'electron';
   /** Upstream engine only: full video.mjs stdout/stderr, page warnings, wall-clock render time. */
   logPath?: string;
   warnings?: string[];
@@ -101,7 +106,7 @@ async function runUpstreamVideoExport(options: LemoUpstreamExportOptions & { tim
     receipt.logPath = logPath;
     const started = Date.now();
     const result = await runLemoUpstreamVideo({ runtime, upstreamRoot: root, filmDir: options.filmDir, outPath: video.outputPath, fps: video.fps,
-      workers: options.workers, width, height, signal: options.signal, timeoutMs: options.timeoutMs, logPath, scratchDir: join(cacheDir, 'out') });
+      workers: options.workers, captions: options.captions, width, height, signal: options.signal, timeoutMs: options.timeoutMs, logPath, scratchDir: join(cacheDir, 'out') });
     receipt.renderSeconds = (Date.now() - started) / 1000;
     const page = parseUpstreamPageLog(result.stderr);
     receipt.missingResources = page.missingResources;
@@ -128,8 +133,17 @@ async function runUpstreamVideoExport(options: LemoUpstreamExportOptions & { tim
   return receipt;
 }
 
-export function reviewLemoUpstreamProject(options: LemoUpstreamReviewOptions): Promise<LemoUpstreamReviewReceipt> {
-  return runLemoUpstreamProject(options);
+export async function reviewLemoUpstreamProject(options: LemoUpstreamReviewOptions): Promise<LemoUpstreamReviewReceipt> {
+  if (options.reviewEngine !== 'upstream') return runLemoUpstreamProject(options);
+  if (!options.durationSeconds || !Number.isFinite(options.durationSeconds)) throw new Error('LEMO_REVIEW_DURATION_REQUIRED');
+  const cacheDir = defaultLemoUpstreamRenderCacheDir();
+  const runtime = await resolveLemoUpstreamRenderRuntime({ pythonRoot: defaultLemoUpstreamPythonRoot(options.upstreamRoot), cacheDir });
+  const root = await stageLemoUpstreamRenderRoot({ upstreamRoot: options.upstreamRoot, threeRoot: options.threeRoot,
+    resourceRoot: options.resourceRoot, playwrightCorePath: runtime.playwrightCorePath, cacheDir });
+  const receipt = await renderLemoUpstreamStills({ runtime, upstreamRoot: root, filmDir: options.filmDir, outputDir: options.outputDir,
+    times: options.times, durationSeconds: options.durationSeconds, width: options.width ?? 1920, height: options.height ?? 1080,
+    captions: options.captions, signal: options.signal, timeoutMs: options.timeoutMs, scratchDir: join(cacheDir, 'out') });
+  return { ...receipt, failedFonts: [] };
 }
 
 /** Run an unchanged upstream/native film with Electron's bundled Chromium, without a second browser installation. */

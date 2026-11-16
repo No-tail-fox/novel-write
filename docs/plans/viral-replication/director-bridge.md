@@ -8,15 +8,15 @@
 
 | 已核实接点 | 现有实际能力 | 本次需要补充 |
 | --- | --- | --- |
-| [editorial-collage.ts](/I:/opc/src/shared/editorial-collage.ts:438)：`createEditorialCollageDraft`、`createEditorialCollageStarterPlan`、`rebuildEditorialTimeline` | 建立 VOX 文档、按普通文本分镜、连续排列镜头；字幕及音轨使用毫秒 | 蓝图直接编译为分镜，保留语义 ID/来源映射；不能把蓝图重新拼回普通 `sourceText` 再走启发式 starter |
+| [editorial-collage.ts](/I:/项目/story-dream/src/shared/editorial-collage.ts:438)：`createEditorialCollageDraft`、`createEditorialCollageStarterPlan`、`rebuildEditorialTimeline` | 建立 VOX 文档、按普通文本分镜、连续排列镜头；字幕及音轨使用毫秒 | 蓝图直接编译为分镜，保留语义 ID/来源映射；不能把蓝图重新拼回普通 `sourceText` 再走启发式 starter |
 | 同文件：`EditorialCollageShot`、`EditorialCollageLayer` | 本地图片/文字层、逐层关键帧、相机关键帧；每镜最多 6 层、15 秒；顶层最多 12 个 beat | 语义事件绑定到层/相机/字幕/音效及模板标记；超限必须拆分或提示，不能截断 |
-| [audio-alignment.ts](/I:/opc/src/shared/audio-alignment.ts:157) | 中英数字 token 化、导入 JSON/SRT/VTT、时间校验、估算及失效指纹 | 获取新配音真实对齐证据的服务；稳定词范围到对齐 token 的匹配；语义事件时间求解 |
-| [director-generation.ts](/I:/opc/src/features/director-desk/director-generation.ts:658)：`applyEditorialVoiceRecord` | 保存配音版本、比对生成请求是否过期、记录实测时长 | 当前 `refreshShotCueAlignment` 是清除旧对齐，并未自动获得新的逐词时间；必须补一个显式对齐步骤 |
-| [editorial-narration-timing.ts](/I:/opc/src/shared/editorial-narration-timing.ts:27)：`fitEditorialNarrationTiming` | 按整镜配音实测时长调整镜头；平移有效字幕；无真实时间时按比例重排；保留尾音 | 现有逻辑会按镜头时长缩放层/相机关键帧。新语义绑定镜头需要专用求解，避免把人工关键帧和词级事件都按比例拉伸 |
-| [production-audio.ts](/I:/opc/src/shared/production-audio.ts:17)、[director-audio-edit.ts](/I:/opc/src/shared/director-audio-edit.ts:55) | 旁白、对白、音乐、音效、环境声、拟音；源裁切、音量、淡入淡出；每片段有镜头归属 | 从语义事件编译音效位置；跨镜头音乐按同一源时间连续切片，不能每镜从头播放 |
-| [director-render.ts](/I:/opc/src/shared/director-render.ts:484)：`buildDirectorRenderScenes`；[director-renderer.ts](/I:/opc/electron/director-renderer.ts:23)：`renderDirectorVideo` | 从项目时间转换为镜头时间，复用预览/导出路径、字幕与多音轨混音、导出 QA | 消费已经解析好的时序；新增语义对齐质量门禁；不在渲染时调用模型或重新解释台词 |
-| [storage.ts](/I:/opc/src/shared/storage.ts:2477)：`createEditorialCollageTask`、`saveEditorialCollageTask` | `tasks.pipeline_data` 保存完整文档；`expectedUpdatedAt` 防止旧版本覆盖；资产与作业记录 | 原子创建蓝图工程、绑定关系与生成基线；工程重建的三方合并、变体共享素材引用 |
-| [director-document-sync.ts](/I:/opc/src/shared/director-document-sync.ts:24)：`mergeDirectorSavedDocument` | 异步保存回来时合并资产/作业/QA记录，保留用户当前文档编辑 | 不是蓝图重建合并器；需新增字段级来源与冲突规则 |
+| [audio-alignment.ts](/I:/项目/story-dream/src/shared/audio-alignment.ts:157) | 中英数字 token 化、导入 JSON/SRT/VTT、时间校验、估算及失效指纹 | 获取新配音真实对齐证据的服务；稳定词范围到对齐 token 的匹配；语义事件时间求解 |
+| [director-generation.ts](/I:/项目/story-dream/src/features/director-desk/director-generation.ts:658)：`applyEditorialVoiceRecord` | 保存配音版本、比对生成请求是否过期、记录实测时长 | 当前 `refreshShotCueAlignment` 是清除旧对齐，并未自动获得新的逐词时间；必须补一个显式对齐步骤 |
+| [editorial-narration-timing.ts](/I:/项目/story-dream/src/shared/editorial-narration-timing.ts:27)：`fitEditorialNarrationTiming` | 按整镜配音实测时长调整镜头；平移有效字幕；无真实时间时按比例重排；保留尾音 | 现有逻辑会按镜头时长缩放层/相机关键帧。新语义绑定镜头需要专用求解，避免把人工关键帧和词级事件都按比例拉伸 |
+| [production-audio.ts](/I:/项目/story-dream/src/shared/production-audio.ts:17)、[director-audio-edit.ts](/I:/项目/story-dream/src/shared/director-audio-edit.ts:55) | 旁白、对白、音乐、音效、环境声、拟音；源裁切、音量、淡入淡出；每片段有镜头归属 | 从语义事件编译音效位置；跨镜头音乐按同一源时间连续切片，不能每镜从头播放 |
+| [director-render.ts](/I:/项目/story-dream/src/shared/director-render.ts:484)：`buildDirectorRenderScenes`；[director-renderer.ts](/I:/项目/story-dream/electron/director-renderer.ts:23)：`renderDirectorVideo` | 从项目时间转换为镜头时间，复用预览/导出路径、字幕与多音轨混音、导出 QA | 消费已经解析好的时序；新增语义对齐质量门禁；不在渲染时调用模型或重新解释台词 |
+| [storage.ts](/I:/项目/story-dream/src/shared/storage.ts:2477)：`createEditorialCollageTask`、`saveEditorialCollageTask` | `tasks.pipeline_data` 保存完整文档；`expectedUpdatedAt` 防止旧版本覆盖；资产与作业记录 | 原子创建蓝图工程、绑定关系与生成基线；工程重建的三方合并、变体共享素材引用 |
+| [director-document-sync.ts](/I:/项目/story-dream/src/shared/director-document-sync.ts:24)：`mergeDirectorSavedDocument` | 异步保存回来时合并资产/作业/QA记录，保留用户当前文档编辑 | 不是蓝图重建合并器；需新增字段级来源与冲突规则 |
 
 现有 `ProductionNarrationAlignmentEvidence` 检查计划旁白长度与实测音频时长/语速，不是词级声学对齐证据。验收中必须分别报告“旁白未截断”和“事件确实跟随台词”，不能用前者替代后者。
 

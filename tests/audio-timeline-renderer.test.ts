@@ -117,7 +117,7 @@ describe.skipIf(!ffmpegPath)('renderAudioTimeline with the bundled ffmpeg', () =
         expect(last).toBe(12 * perFrame - 1);
         expect(pcm[first * 2]).toBe(16384);
       }
-      // A long timeline (graph > 6000 chars) goes through -filter_complex_script.
+      // A long timeline (graph > 6000 chars) uses the installed FFmpeg's file-valued graph option.
       const clips = Array.from({ length: 40 }, (_, index) => ({ id: `x${index}`, ref: 'dc.wav', startFrame: index * 2, durationFrames: 1, gainDb: -12 }));
       const long: VideoSpecInput = {
         specVersion: VIDEO_SPEC_VERSION, route: 'template', canvas: { width: 320, height: 180, fps: 30 }, durationFrames: 90,

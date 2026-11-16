@@ -702,3 +702,87 @@
     flex-direction: column;
   }
 }
+
+/* Short-video editor chrome matches the shared creation wizard; entry stays independent. */
+.new-task-create {
+  padding: 0 max(22px, calc((100% - 1180px) / 2)) 40px;
+}
+
+.new-task-create-steps.creation-page-steps {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 0 14px;
+  margin: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.new-task-create .new-task-workbench {
+  gap: 20px;
+  padding-top: 20px;
+}
+
+.new-task-create .new-task-editor {
+  padding: 22px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-surface);
+}
+
+.new-task-create .new-task-stage-heading {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 13px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.new-task-create .new-task-stage-heading > span {
+  color: var(--shell-accent-strong);
+  font-size: 11px;
+}
+
+.new-task-create .new-task-stage-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-inline: -22px;
+  padding: 10px 22px 2px;
+  background: var(--shell-surface);
+}
+
+.new-task-create .new-task-summary {
+  position: static;
+  padding: 0;
+  border: 0;
+}
+
+.new-task-create .new-task-summary-card {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 17px;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-surface);
+}
+
+.new-task-create .new-task-summary-card h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.new-task-create .new-task-summary dl { gap: 9px; }
+.new-task-create .new-task-summary dl div { font-size: 11px; }
+.new-task-create .new-task-summary-title strong { font-size: 14px; }
+
+@media (max-width: 760px) {
+  .new-task-create { padding: 0 14px 28px; }
+  .new-task-create .new-task-editor { padding: 16px; }
+  .new-task-create .new-task-stage-footer { margin-inline: -16px; padding-inline: 16px; }
+}
+

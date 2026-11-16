@@ -1,0 +1,9 @@
+# Runtime-only sampler/sfx dependencies. Install into the application's private
+# Python distribution; never pip-install into the immutable upstream library.
+numpy==2.3.5
+scipy==1.16.3
+soundfile==0.13.1
+soxr==1.0.0
+cffi==2.1.1
+pycparser==3.12
+# numba is intentionally optional: pluck presets must not be advertised unless installed.

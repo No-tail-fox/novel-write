@@ -9,7 +9,7 @@ import './vox-animation.css';
 export function VoxAnimationEditor({projectId,shotId,animation,title,subtitle,api,assets,ratio,durationMs,busy,onChange:onCommit,onImportAsset,previewReady,onExport,onCancelExport}:{projectId?:string;shotId:string;animation?:VoxAnimation;title:string;subtitle:string;api:VoxApi;assets:readonly VoxLocalAsset[];ratio:string;durationMs:number;busy:boolean;previewReady?:boolean;onExport?:()=>Promise<boolean>;onCancelExport?:()=>Promise<void>;onChange:(a:VoxAnimation)=>void;onImportAsset?:(kind:'image'|'audio')=>Promise<void>}){
   // Editing transfers ownership to the author. Automatic production must lock
   // this code rather than treating it as replaceable generated material.
-  const onChange=(next:VoxAnimation)=>onCommit({...next,authoring:undefined});
+  const onChange=(next:VoxAnimation)=>onCommit({...next,authoring:undefined,...(next.creativeStyle?{creativeStyle:{...next.creativeStyle,composition:'template' as const}}:{})});
   const value=animation??createVoxAnimation(title,subtitle),p=value.template.props,t=voxTemplate(value.template.id)!;
   const [catalogOpen,setCatalogOpen]=useState(false),[exporting,setExporting]=useState(false);
   const [saved,setSaved]=useState<VoxSavedTemplate[]>([]),[name,setName]=useState(''),[showCode,setShowCode]=useState(false),[running,setRunning]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');

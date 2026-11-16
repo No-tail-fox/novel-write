@@ -42,6 +42,7 @@ import type {
   HistoryFamily,
   HistoryListInput,
   HistoryPage,
+  ProjectSort,
   HtmlVideoConfigChange,
   HtmlVideoCompositionSnapshot,
   HtmlVideoCompositionSourceSaveInput,
@@ -144,6 +145,7 @@ import { draftTemplates, normalizeDraftTemplate } from './templates';
 import { builtinDraftTemplateUpdates } from './draft-template-migration';
 import { normalizeTaskOutputTargets } from './task-output';
 import { voxProductionSettings } from './vox-production';
+import { newCodeVideoPolicy, DEFAULT_PI_MAX_REQUESTS } from './creative-animation/production-policy';
 import { TEMPLATE_ANIMATION_CATEGORY, editorialTemplateRouteSql, editorialProductionRoute, editorialProductionRouteFromPipelineData, type EditorialProductionRoute } from './creative-animation/production-route';
 import { isOrdinaryTask, parseOrdinaryCoverMode, resolveOrdinaryCoverTemplate } from '../features/tasks/task-control-manifest';
 import {
@@ -462,6 +464,7 @@ interface HistoryCursorBinding {
   statuses: string;
   taskType: string;
   queryHash: string;
+  order?: Exclude<ProjectSort, 'newest'>;
 }
 
 interface HistorySortCursor {
@@ -507,6 +510,7 @@ function historyCursorBinding(input: {
   statuses?: readonly string[];
   taskType?: string;
   query?: string;
+  sort?: ProjectSort;
 }): HistoryCursorBinding {
   return {
     version: 2,
@@ -517,6 +521,7 @@ function historyCursorBinding(input: {
     statuses: input.statuses?.join(',') ?? '',
     taskType: input.taskType ?? '',
     queryHash: historyQueryHash(normalizeHistoryQuery(input.query)),
+    ...(input.sort === 'oldest' || input.sort === 'title' ? { order: input.sort } : {}),
   };
 }
 
@@ -526,7 +531,7 @@ function parseHistoryCursor(
 ): HistorySortCursor | null {
   const parsed = decodeCursor(cursor);
   if (!parsed) return null;
-  const expectedKeys = ['family', 'favorite', 'filter', 'id', 'queryHash', 'sort', 'status', 'statuses', 'taskType', 'version'];
+  const expectedKeys = [...Object.keys(expected), 'sort', 'id'].sort();
   if (
     Object.keys(parsed).sort().join(',') !== expectedKeys.join(',')
     || parsed.version !== expected.version
@@ -537,6 +542,7 @@ function parseHistoryCursor(
     || parsed.statuses !== expected.statuses
     || parsed.taskType !== expected.taskType
     || parsed.queryHash !== expected.queryHash
+    || parsed.order !== expected.order
     || typeof parsed.sort !== 'string'
     || typeof parsed.id !== 'string'
   ) {
@@ -687,6 +693,30 @@ export async function atomicWriteDatabase(
     } catch {
       // Preserve the primary persistence error.
     }
+    throw error;
+  }
+}
+
+/** Preserve the disk image before the script proposal/original tables are introduced. */
+async function backupBeforeScriptProposalMigration(
+  file: string,
+  bytes: Uint8Array,
+  database: Database,
+  dependencies: FileDatabaseDependencies,
+): Promise<void> {
+  const tables = new Set(getRows<{ name: string }>(database,
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+  ).map((row) => row.name));
+  if (tables.size === 0 || (tables.has('motion_comic_script_originals') && tables.has('motion_comic_script_proposals'))) return;
+
+  const backup = `${file}.pre-script-proposals-${Date.now()}-${randomUUID()}.bak`;
+  // Reserve exclusively: atomic replacement alone could overwrite an existing backup.
+  // Keep reservation outside the cleanup block so EEXIST never deletes another file.
+  await dependencies.writeTempFile(backup, new Uint8Array());
+  try {
+    await atomicWriteDatabase(backup, bytes, dependencies);
+  } catch (error) {
+    try { await dependencies.removeFile(backup); } catch { /* Preserve the backup failure. */ }
     throw error;
   }
 }
@@ -873,10 +903,13 @@ export class FileDatabase {
     const [SQL, defaultPromptTemplates] = await Promise.all([loadSql(), loadDefaultPromptTemplates()]);
     const dependencies = resolveFileDatabaseDependencies(overrides);
     let database: Database | null = null;
+    let primaryBytes: Uint8Array | null = null;
     let primaryExists = true;
     let quarantinedPath: string | null = null;
     try {
-      database = openValidatedDatabase(SQL, await dependencies.readFile(file));
+      const bytes = await dependencies.readFile(file);
+      database = openValidatedDatabase(SQL, bytes);
+      primaryBytes = bytes;
     } catch (error) {
       if (isErrno(error, 'ENOENT')) {
         primaryExists = false;
@@ -902,6 +935,7 @@ export class FileDatabase {
     const instance = new FileDatabase(file, resolve(artifactDirectory), database, SQL, dependencies, defaultPromptTemplates);
     instance.recoveryEvent = recoveryEvent;
     try {
+      if (primaryBytes) await backupBeforeScriptProposalMigration(file, primaryBytes, database, dependencies);
       instance.migrate();
       await instance.persist();
       await removeStaleDatabaseTemps(file, dependencies);
@@ -1645,6 +1679,10 @@ export class FileDatabase {
         ON tasks(created_at DESC, id DESC) WHERE archived_at IS NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_archived_history
         ON tasks(archived_at DESC, id DESC) WHERE archived_at IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_tasks_active_title_history
+        ON tasks(COALESCE(title, '') ASC, id ASC) WHERE archived_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_tasks_archived_title_history
+        ON tasks(COALESCE(title, '') ASC, id ASC) WHERE archived_at IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_favorite_history
         ON tasks(is_favorite, created_at DESC, id DESC) WHERE archived_at IS NULL AND is_favorite = 1;
       CREATE INDEX IF NOT EXISTS idx_viral_analyses_active_history
@@ -2688,7 +2726,7 @@ export class FileDatabase {
       if (!row) throw new Error(`TASK_NOT_FOUND: ${id}`);
       const task = rowToTask(row);
       if (task.archivedAt) throw new Error('HISTORY_ARCHIVED: 已归档项目只可查看。');
-      if (task.status === 'running' || task.status === 'paused' || [...this.projectActivities.values()].some(activity => activity.id === id)) {
+      if (task.taskType !== MOTION_COMIC_TASK_TYPE && (task.status === 'running' || task.status === 'paused' || [...this.projectActivities.values()].some(activity => activity.id === id))) {
         throw new Error('PROJECT_MODELS_BUSY: 请等待项目生成任务结束后再修改模型。');
       }
       const configRow = getFirstRow<{ data: string }>(this.db, 'SELECT data FROM config WHERE id = 1');
@@ -2742,7 +2780,7 @@ export class FileDatabase {
       });
       const starter = createEditorialCollageStarterPlan(draft, validated.sourceText, task.createdAt, validated.durationMs);
       const document = validated.productionRoute
-        ? { ...starter, productionSettings: { ...voxProductionSettings(), authoring: { mode: validated.productionRoute === 'template' ? 'template' as const : 'ai-code' as const, styleId: 'auto' } } }
+        ? { ...starter, productionSettings: { ...voxProductionSettings(), authoring: { mode: validated.productionRoute === 'template' ? 'template' as const : 'ai-code' as const, styleId: 'auto' }, ...(validated.productionRoute === 'lemo' ? { codeVideo: newCodeVideoPolicy(), piMaxRequests: DEFAULT_PI_MAX_REQUESTS } : {}) } }
         : starter;
       this.db.run(
         `UPDATE tasks SET status = 'draft', pipeline_step = ?, pipeline_data = ? WHERE id = ?`,
@@ -2775,6 +2813,9 @@ export class FileDatabase {
       const current = parseEditorialCollagePipelineData(task.pipelineData);
       if (current.productionRun?.status === 'running' && current.productionRun.id !== productionOwner) {
         throw new Error('VOX_PRODUCTION_ACTIVE: 自动制作正在后台执行，请暂停后编辑。');
+      }
+      if (!productionOwner && JSON.stringify(current.piFilm) !== JSON.stringify(validated.document.piFilm)) {
+        throw new Error('PI_PRODUCTION_JOURNAL: Pi 制作证据只能由后台服务更新。');
       }
       if (!productionOwner && JSON.stringify(current.productionRun) !== JSON.stringify(validated.document.productionRun)) {
         throw new Error('VOX_PRODUCTION_JOURNAL: 制作记录只能由后台服务更新。');
@@ -2839,6 +2880,7 @@ export class FileDatabase {
         title: validated.title,
         premise: validated.premise,
         ratio: validated.ratio,
+        visualStyle: validated.visualStyle,
         now: task.createdAt,
       });
       const document = validated.source
@@ -4141,6 +4183,7 @@ export class FileDatabase {
         taskType: request.taskType,
         favorite: request.favorite,
         query: request.query,
+        sort: request.sort,
       }),
       filters,
     });
@@ -4598,14 +4641,18 @@ export class FileDatabase {
     columns: string;
     searchColumns: string[];
     mapRow: (row: Record<string, unknown>) => T;
-    request: { filter?: 'active' | 'archived'; query?: string; cursor?: string | null; limit?: number };
+    request: { filter?: 'active' | 'archived'; query?: string; sort?: ProjectSort; cursor?: string | null; limit?: number };
     binding: HistoryCursorBinding;
     filters: HistorySqlFilter[];
   }): Promise<HistoryPage<F, T>> {
     await this.waitForWrites();
     const limit = clampPageLimit(input.request.limit);
     const filter = input.request.filter ?? 'active';
-    const sortColumn = filter === 'archived' ? 'archived_at' : 'created_at';
+    // SQL identifiers/directions come only from this allowlist, never request text.
+    const sort = input.family === 'task' ? input.request.sort ?? 'newest' : 'newest';
+    const sortColumn = sort === 'title' ? "COALESCE(title, '')" : filter === 'archived' ? 'archived_at' : 'created_at';
+    const direction = sort === 'oldest' || sort === 'title' ? 'ASC' : 'DESC';
+    const comparison = direction === 'ASC' ? '>' : '<';
     const clauses = [filter === 'archived' ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'];
     const params: SqlValue[] = [];
     for (const sqlFilter of input.filters) {
@@ -4626,20 +4673,20 @@ export class FileDatabase {
     const pageClauses = [...clauses];
     const pageParams = [...params];
     if (cursor) {
-      pageClauses.push(`(${sortColumn} < ? OR (${sortColumn} = ? AND id < ?))`);
+      pageClauses.push(`(${sortColumn} ${comparison} ? OR (${sortColumn} = ? AND id ${comparison} ?))`);
       pageParams.push(cursor.sort, cursor.sort, cursor.id);
     }
     pageParams.push(limit + 1);
     const rows = getRows<Record<string, unknown>>(
       this.db,
-      `SELECT ${input.columns} FROM ${input.table} WHERE ${pageClauses.join(' AND ')} ORDER BY ${sortColumn} DESC, id DESC LIMIT ?`,
+      `SELECT ${input.columns} FROM ${input.table} WHERE ${pageClauses.join(' AND ')} ORDER BY ${sortColumn} ${direction}, id ${direction} LIMIT ?`,
       pageParams,
     );
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
     const last = pageRows.at(-1);
     const nextCursor = hasMore && last
-      ? encodeHistoryCursor(input.binding, { sort: String(last[sortColumn]), id: String(last.id) })
+      ? encodeHistoryCursor(input.binding, { sort: sort === 'title' ? String(last.title ?? '') : String(last[sortColumn]), id: String(last.id) })
       : null;
     return {
       family: input.family,

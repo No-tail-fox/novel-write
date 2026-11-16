@@ -7,7 +7,7 @@
  *   sha256-verified staged copy of the library instead of from vendor/ directly.
  * - Mux: a TypeScript port of `core/render/mux.sh` that needs only ffmpeg (no ffprobe).
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { createWriteStream, existsSync } from 'node:fs';
 import { copyFile, cp, link, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
@@ -22,6 +22,33 @@ export { parseLoudnormJson, type LoudnormMeasurement };
 
 const isWindows = process.platform === 'win32';
 const envError = (detail: string) => new Error(`LEMO_UPSTREAM_RENDER_ENV: ${detail}`);
+
+// ——— orphan-process guard ————————————————————————————————————————————
+// Every child spawned via runProcess() registers its PID here so that
+// shutdownApplication() and the synchronous process 'exit' handler can
+// reap any children that survive an abnormal Electron main-process exit.
+const trackedChildPids = new Set<number>();
+
+/** Kill all still-tracked children synchronously (safe inside process.on('exit')). */
+export function drainTrackedChildrenSync(): void {
+  for (const pid of trackedChildPids) {
+    try {
+      if (isWindows) {
+        spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+      } else {
+        try { process.kill(-pid, 'SIGKILL'); } catch { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
+      }
+    } catch { /* already gone */ }
+  }
+  trackedChildPids.clear();
+}
+
+/** Kill all still-tracked children and await the kills settling (for async shutdown). */
+export async function drainTrackedChildren(): Promise<void> {
+  const pids = [...trackedChildPids];
+  trackedChildPids.clear();
+  await Promise.allSettled(pids.map(pid => killTree(pid, true)));
+}
 
 // ———————————————————————————————————————— runtime ————————————————————————————————————————
 
@@ -106,6 +133,7 @@ async function ensureFfmpegAlias(ffmpegPath: string, cacheDir: string): Promise<
 
 const STAGE_VERSION = 1;
 const STAGE_MARKER = '.storydream-render-root.json';
+const STAGE_BUILDING = '.storydream-render-root.building';
 const STAGED_PREFIXES = ['core/', 'styles/'];
 const CRITICAL = ['core/render/video.mjs', 'core/render/page.mjs', 'core/render/serve.mjs', 'core/render/browser.mjs'];
 const sha256 = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
@@ -139,15 +167,29 @@ export async function stageLemoUpstreamRenderRoot(options: LemoRenderRootOptions
   const finalDir = join(parent, key);
   const expected = new Map(manifest.files.map(file => [file.path, file.sha256]));
   if (await validStage(finalDir, key, expected)) return finalDir;
+  // A stage is claimed before its dependency junctions are created. Another caller must
+  // wait for that build window instead of treating the marker-less directory as stale.
+  if (await waitForBuildingStage(finalDir, key, expected)) return finalDir;
 
   await mkdir(parent, { recursive: true });
-  const temp = join(parent, `.tmp-${randomUUID()}`);
+  let claimed = false;
   try {
+    // Claim the deterministic final directory directly. The building sentinel protects
+    // it from concurrent callers until the readiness marker is published.
+    try { await mkdir(finalDir); claimed = true; }
+    catch {
+      if (await validStage(finalDir, key, expected) || await waitForBuildingStage(finalDir, key, expected)) return finalDir;
+      if (await isBuildingStage(finalDir, key)) throw envError(`上游渲染目录正在由另一个进程准备：${finalDir}`);
+      // Never remove an existing marker-less directory: another caller may have won
+      // mkdir and be between claiming the path and writing its sentinel.
+      throw envError(`上游渲染目录已存在但未完成：${finalDir}`);
+    }
+    await writeFile(join(finalDir, STAGE_BUILDING), JSON.stringify({ version: STAGE_VERSION, key, startedAt: new Date().toISOString(), ownerPid: process.pid }));
     const files = manifest.files.filter(file => file.path === 'package.json' || STAGED_PREFIXES.some(prefix => file.path.startsWith(prefix)));
     await mapLimit(files, 16, async file => {
       const data = await readFile(join(upstreamRoot, ...file.path.split('/')));
       if (sha256(data) !== file.sha256) throw new Error(`LEMO_UPSTREAM_INTEGRITY: ${file.path}`);
-      const target = join(temp, ...file.path.split('/'));
+      const target = join(finalDir, ...file.path.split('/'));
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, data);
     });
@@ -155,28 +197,22 @@ export async function stageLemoUpstreamRenderRoot(options: LemoRenderRootOptions
       const index = JSON.parse(resourceIndexText) as { revision: string; files: Array<{ path: string; sha256: string }> };
       if (index.revision !== manifest.revision) throw new Error('LEMO_RESOURCE_VERSION');
       for (const item of index.files) {
-        // @film/ fallbacks belong to the film mount, which upstream serves straight from the film folder.
         if (!STAGED_PREFIXES.some(prefix => item.path.startsWith(prefix)) || item.path.split('/').some(part => part === '..' || part === '.')) continue;
         const data = await readFile(join(resourceRoot, ...item.path.split('/')));
         if (sha256(data) !== item.sha256) throw new Error(`LEMO_RESOURCE_INTEGRITY: ${item.path}`);
-        const target = join(temp, ...item.path.split('/'));
-        if (existsSync(target)) continue; // tracked file wins, as in serveLemoUpstreamProject
+        const target = join(finalDir, ...item.path.split('/'));
+        if (existsSync(target)) continue;
         await mkdir(dirname(target), { recursive: true });
         await writeFile(target, data);
       }
     }
-    await mkdir(join(temp, 'node_modules'), { recursive: true });
-    await linkDirectory(threeRoot, join(temp, 'node_modules', 'three'));
-    await linkDirectory(playwrightCorePath, join(temp, 'node_modules', 'playwright-core'));
-    await writeFile(join(temp, STAGE_MARKER), JSON.stringify({ version: STAGE_VERSION, key, revision: manifest.revision, threeRoot, playwrightCorePath }, null, 2));
-    try { await rename(temp, finalDir); } catch (error) {
-      if (await validStage(finalDir, key, expected)) { await removeStage(temp); return finalDir; }
-      // An invalid leftover: replace it.
-      await removeStage(finalDir);
-      await rename(temp, finalDir).catch(() => { throw error; });
-    }
+    await mkdir(join(finalDir, 'node_modules'), { recursive: true });
+    await linkDirectory(threeRoot, join(finalDir, 'node_modules', 'three'));
+    await linkDirectory(playwrightCorePath, join(finalDir, 'node_modules', 'playwright-core'));
+    await writeFile(join(finalDir, STAGE_MARKER), JSON.stringify({ version: STAGE_VERSION, key, revision: manifest.revision, threeRoot, playwrightCorePath }, null, 2));
+    await unlink(join(finalDir, STAGE_BUILDING));
   } catch (error) {
-    await removeStage(temp);
+    if (claimed) await removeStage(finalDir);
     if (error instanceof Error && /^LEMO_/.test(error.message)) throw error;
     throw envError(`无法准备上游渲染目录（${finalDir}）：${error instanceof Error ? error.message : String(error)}`);
   }
@@ -191,6 +227,45 @@ async function validStage(dir: string, key: string, expected: Map<string, string
     for (const path of CRITICAL) if (sha256(await readFile(join(dir, ...path.split('/')))) !== expected.get(path)) return false;
     return await isFile(join(dir, 'node_modules', 'playwright-core', 'index.mjs')) && await isDir(join(dir, 'node_modules', 'three'));
   } catch { return false; }
+}
+
+/** Wait for a stage whose directory claim won the race; never remove it while marked building. */
+async function isBuildingStage(dir: string, key: string) {
+  try {
+    const building = JSON.parse(await readFile(join(dir, STAGE_BUILDING), 'utf8')) as { version?: number; key?: string; ownerPid?: number };
+    return building.version === STAGE_VERSION && building.key === key ? building : undefined;
+  } catch { return undefined; }
+}
+
+function processIsAlive(pid: number) {
+  if (pid === process.pid) return true;
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+}
+
+async function reclaimDeadStage(dir: string, key: string, ownerPid: number) {
+  const building = await isBuildingStage(dir, key);
+  if (building?.ownerPid !== ownerPid || processIsAlive(ownerPid)) return false;
+  const staleDir = `${dir}.stale-${process.pid}-${randomUUID()}`;
+  try { await rename(dir, staleDir); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true; return false; }
+  await removeStage(staleDir);
+  return true;
+}
+
+async function waitForBuildingStage(dir: string, key: string, expected: Map<string, string>) {
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < deadline) {
+    if (await validStage(dir, key, expected)) return true;
+    const building = await isBuildingStage(dir, key);
+    if (!building) return false;
+    if (typeof building.ownerPid === 'number' && Number.isInteger(building.ownerPid) && building.ownerPid > 0 && !processIsAlive(building.ownerPid)) {
+      await reclaimDeadStage(dir, key, building.ownerPid);
+      return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return false;
 }
 
 async function linkDirectory(target: string, path: string) {
@@ -239,6 +314,7 @@ function runProcess(command: string, args: string[], options: ProcessOptions = {
     const keep = options.keep ?? 4 * 1024 * 1024;
     let stdout = '', stderr = '', stopped: unknown, killed: Promise<void> = Promise.resolve();
     const child = spawn(command, args, { cwd: options.cwd, env: options.env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows && !!options.tree });
+    if (child.pid !== undefined) trackedChildPids.add(child.pid);
     const stop = (reason: unknown) => { if (stopped !== undefined) return; stopped = reason; killed = killTree(child.pid, !!options.tree); };
     const onAbort = () => stop(options.signal?.reason ?? new Error('aborted'));
     options.signal?.addEventListener('abort', onAbort, { once: true });
@@ -249,7 +325,7 @@ function runProcess(command: string, args: string[], options: ProcessOptions = {
     const finish = () => { if (timer) clearTimeout(timer); options.signal?.removeEventListener('abort', onAbort); };
     child.on('error', error => { finish(); void killed.then(() => reject(stopped ?? error)); });
     // After a stop, settle only once the whole tree (browsers, ffmpeg) has been killed.
-    child.on('close', code => { finish(); if (stopped !== undefined) void killed.then(() => reject(stopped)); else resolvePromise({ code, stdout, stderr }); });
+    child.on('close', code => { if (child.pid !== undefined) trackedChildPids.delete(child.pid); finish(); if (stopped !== undefined) void killed.then(() => reject(stopped)); else resolvePromise({ code, stdout, stderr }); });
     // A surviving grandchild could keep the stdio pipes (and thus 'close') open forever: do not hang on it.
     child.on('exit', () => { if (stopped !== undefined) void killed.then(() => setTimeout(() => { finish(); reject(stopped); }, 5000).unref()); });
   });
@@ -266,6 +342,7 @@ export interface LemoUpstreamVideoOptions {
   filmDir: string;
   outPath: string;
   fps: number;
+  captions?: 0 | 1;
   workers?: number;
   width: number;
   height: number;
@@ -330,6 +407,10 @@ async function moveFile(from: string, to: string) {
 async function runVideoMjs(options: LemoUpstreamVideoOptions, script: string, workers: number, outPath: string): Promise<LemoUpstreamVideoResult> {
   const log = options.logPath ? createWriteStream(options.logPath, { flags: 'a' }) : undefined;
   const args = [script, resolve(options.filmDir), '--fps', String(options.fps), '--workers', String(workers), '--out', outPath, '--size', `${options.width}x${options.height}`];
+  if (options.captions !== undefined) {
+    if (options.captions !== 0 && options.captions !== 1) throw new Error('LEMO_VIDEO_CAPTION_MODE');
+    args.push('--q', `captions=${options.captions}`);
+  }
   log?.write(`$ ${options.runtime.nodePath} ${args.join(' ')}\n`);
   const started = Date.now();
   let result: ProcessResult;
@@ -691,4 +772,6 @@ export async function lemoFilmGrain(filmDir: string): Promise<number> {
   return 2;
 }
 
-export const lemoUpstreamVideoInternals = { runProcess, tail };
+/** Shared process primitives for faithful upstream still/video entrypoints. */
+export const lemoUpstreamVideoInternals = { runProcess, tail, reclaimDeadStage };
+export { runProcess };

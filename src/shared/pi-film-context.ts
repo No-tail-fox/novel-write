@@ -44,6 +44,8 @@ export function buildPiGlobalPlan(document: EditorialCollagePipelineData, durati
     segmentCount,
     segmentRule: 'Ordered contiguous narration windows. Preserve wording, facts and meaning. Use prior handoff for continuity; final clock and audio are host-owned.',
     data: document.productionRun?.settings.data ?? [],
+    narrationEnabled: document.productionRun?.settings.narration !== false,
+    captionMode: policy.captionMode,
     archives: document.productionRun?.settings.archives.map(({ assetVersionId, source, description, license }) => ({ assetVersionId, source, description, license })) ?? [],
   };
   return boundedJson(plan, 12_000, 'PI_CONTEXT_GLOBAL_PLAN_TOO_LARGE');
@@ -51,7 +53,7 @@ export function buildPiGlobalPlan(document: EditorialCollagePipelineData, durati
 
 /** A bounded prompt: global summary plus only the current narration window and previous handoff. */
 export function buildPiSegmentPrompt(input: {
-  globalPlan: string; narration: string; segment: number; segmentCount: number; previousSummary?: string;
+  globalPlan: string; narration: string; segment: number; segmentCount: number; previousSummary?: string; narrationEnabled?: boolean; captionMode?: 'film' | 'host';
 }): string {
   const summary = input.previousSummary?.trim() ?? '';
   if (summary.length > MAX_SUMMARY_CHARS) throw new Error('PI_CONTEXT_SUMMARY_TOO_LARGE');
@@ -60,9 +62,18 @@ export function buildPiSegmentPrompt(input: {
   }
   const prompt = [
     'GLOBAL FILM PLAN (same across all segments):', input.globalPlan,
-    `CURRENT NARRATION WINDOW ${input.segment}/${input.segmentCount}:`, input.narration,
+    input.narrationEnabled === false ? `SOURCE TEXT WINDOW ${input.segment}/${input.segmentCount} (NO NARRATION AUDIO):\n${input.narration}\nUse only for meaning; the host supplies no spoken narration.` : `CURRENT NARRATION WINDOW ${input.segment}/${input.segmentCount}:\n${input.narration}`,
+    input.captionMode === 'film'
+      ? 'Narration captions are authored in film code from exact host cues when present; do not assume host caption overlays.'
+      : input.narrationEnabled === false
+        ? 'Narration is disabled. Source text is context, not a host caption cue or speech timing. Host overlays only cues that exist in material/narration/cues.json; do not invent or duplicate captions.'
+        : 'The host overlays exact original-text cues from material/narration/cues.json. Do not write duplicate subtitles or invent dialogue.',
+    input.narrationEnabled === false && input.captionMode === 'host'
+      ? 'Source text is not captioned by the host when there are no narration cues. Preserve any explicitly requested explanatory visual copy in the film; visual titles and labels are separate.'
+      : 'Keep visual titles and labels distinct from spoken narration and timed caption cues.',
+    'Visual text such as titles, labels, signs and explanatory copy remains film-authored and distinct from spoken narration and host captions.',
     summary ? `PREVIOUS SEGMENT HANDOFF (advisory):\n${summary}` : 'PREVIOUS SEGMENT HANDOFF: none; establish the film opening.',
-    'CONTINUITY CONTRACT: keep typography, palette, title grammar, sound palette and transition motif consistent. Do not repeat prior narration, alter facts, or author outside this window. Read the host narration cue file only when exact timing is needed.',
+    'CONTINUITY CONTRACT: keep typography, palette, title grammar, sound palette and transition motif consistent. Do not repeat prior source content, alter facts, or author outside this window. Read material/narration/cues.json only when speech timing is needed.',
   ].join('\n\n');
   if (prompt.length > 20_000) throw new Error('PI_CONTEXT_PROMPT_TOO_LARGE');
   return prompt;

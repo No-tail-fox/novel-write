@@ -111,6 +111,18 @@ describe('native upstream Agent', () => {
   it('does not mutate library files', async () => {
     expect(() => parseLemoAgentAction('```json\n{"tool":"write_file","scope":"library","path":"DIRECTOR.md"}\n```\n```md\nchanged\n```')).toThrow();
   });
+  it('accepts one leading bare action behind a preamble sentence or a stray closing fence', () => {
+    const read = '{"tool":"read_file","scope":"library","path":"DIRECTOR.md"}';
+    expect(parseLemoAgentAction(read)).toMatchObject({ tool: 'read_file', path: 'DIRECTOR.md' });
+    expect(parseLemoAgentAction(read + '\n```')).toMatchObject({ tool: 'read_file', path: 'DIRECTOR.md' });
+    expect(parseLemoAgentAction("I'll read the director guidance first.\n\n" + read + '\n```')).toMatchObject({ tool: 'read_file', path: 'DIRECTOR.md' });
+    // A bare header still needs its own source fence, exactly like the fenced-header form.
+    expect(parseLemoAgentAction('{"tool":"write_file","path":"index.html"}\n```html\n<div>原创新片</div>\n```')).toMatchObject({ tool: 'write_file', path: 'index.html', body: '<div>原创新片</div>\n' });
+    expect(() => parseLemoAgentAction('{"tool":"write_file","path":"index.html"}')).toThrow(/LEMO_AGENT_BODY/);
+  });
+  it('still rejects a reply that carries two actions', () => {
+    expect(() => parseLemoAgentAction('{"tool":"review_frames"}\n{"tool":"finish","notes":"已检查三张实际样帧，主体构图清晰、镜头有变化、文字未遮挡，未发现空白或裁切。"}')).toThrow(/Unexpected non-whitespace|LEMO_AGENT/u);
+  });
   it('never applies truncated source, saves the full receipt, and asks for a smaller module', async () => {
     const { options, model } = await fixture([]);
     model.mockResolvedValueOnce({ text: write('index.html', 'incomplete'), raw: 'raw', requestId: 'r', finishReason: 'length' });

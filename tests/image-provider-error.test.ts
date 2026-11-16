@@ -4,6 +4,15 @@ import { formatOpenAiImageProviderError } from '@shared/openai-image';
 import { isDefinitiveImageProviderFailure, isImageResultUnknown } from '@shared/image-provider-error';
 
 describe('image provider error presentation', () => {
+  it('explains a generation request incorrectly rejected as missing an edit target', () => {
+    const detail='The user asked to edit or restore a specific existing image, but there is no usable image target in the conversation.';
+    const message=formatOpenAiImageProviderError({status:400,bodyText:detail,model:'gpt-image-2',operation:'generation'});
+    expect(message).toContain('当前请求是从零生成图片');
+    expect(message).toContain('关闭自动生图');
+    expect(message).toContain('请勿直接重复提交');
+    expect(isDefinitiveImageProviderFailure(message)).toBe(true);
+    expect(formatOpenAiImageProviderError({status:400,bodyText:detail,model:'gpt-image-2',operation:'edit'})).not.toContain('当前请求是从零生成图片');
+  });
   it.each([
     // U-2: when a host is known the summary names it and the system code.
     ['连接 api.example 超时（UND_ERR_CONNECT_TIMEOUT）', '与 api.example 服务连接超时（UND_ERR_CONNECT_TIMEOUT）'],
@@ -74,6 +83,10 @@ describe('image provider error presentation', () => {
   });
 
   it.each([
+    ['Image provider API error (404): Invalid URL (POST /v1/v1/images/generations)', true],
+    ['Image provider edit API error (404): Invalid URL (POST /v1/v1/images/edits)', true],
+    ['Image provider async submit error (404): Invalid URL (POST /v1/v1/images/generations)', true],
+    ['Image provider async poll error (404): task not found', false],
     ['Image provider API error (400): generation did not complete', true],
     ['Image provider edit API error (422): invalid input', true],
     ['Image provider async submit error (429): rate limited', true],

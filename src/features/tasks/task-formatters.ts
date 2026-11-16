@@ -89,6 +89,62 @@ export function trimForPreview(value: string, limit: number): string {
   return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
 }
 
+const decorativePromptPrefix = /^(style|style baseline|风格|风格基线|样式|模板)\s*baseline?\s*[:：\-—|]?\s*/i;
+const unbalancedTail = /[（(【\[]\s*[^）)】\]]*$/;
+const decorativePromptSuffixes = [
+  /^(archival|archive|归档|历史版本|命名|name)\b.*$/i,
+  /[（(【\[][^）)】\]]*(?:归档|archival|archive|命名|历史)[^）)】\]]*[）)】\]]/gi,
+  /^(归档|历史版本|命名)[^]*$/i,
+];
+
+function stripDecorativeTail(segment: string): string {
+  let value = segment.replace(unbalancedTail, '').trim();
+  for (let index = 0; index < 4 && value; index += 1) {
+    const next = decorativePromptSuffixes.reduce((current, pattern) => current.replace(pattern, '').trim(), value);
+    if (next === value) break;
+    value = next || value;
+  }
+  return value.replace(unbalancedTail, '').trim();
+}
+
+function hasContent(value: string): boolean {
+  return value.replace(/[\s\p{P}]/gu, '').length >= 2;
+}
+
+/**
+ * Pull a human-meaningful label out of a generation prompt.
+ *
+ * Image generation stores the whole prompt on the record, and long style-baseline prompts all
+ * open with the same boilerplate ("style baseline ... archival name"). Truncating from the front
+ * makes every tile indistinguishable, so drop the boilerplate and prefer the first segment that
+ * still carries distinctive wording.
+ */
+export function summarizePrompt(prompt: string, limit = 60): string {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const segments = normalized.split(/[。\n；;|]+/).map((segment) => segment.trim()).filter(Boolean);
+  const candidates = segments
+    .map((segment) => segment.replace(decorativePromptPrefix, '').trim())
+    .map((segment) => ({ raw: segment, cleaned: stripDecorativeTail(segment) }))
+    .filter(({ cleaned }) => hasContent(cleaned));
+  const distinctive = candidates.find(({ raw, cleaned }) => cleaned !== raw && hasContent(cleaned));
+  const candidate = (distinctive ?? candidates[0])?.cleaned ?? stripDecorativeTail(normalized) ?? normalized;
+  return trimForPreview(candidate || normalized, limit);
+}
+
+export function formatRelativeTime(value: string, now = Date.now()): string {
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return '';
+  const minutes = Math.floor(Math.max(0, now - time) / 60_000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return formatDate(value).slice(0, 10);
+}
+
 export function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;

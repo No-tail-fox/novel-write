@@ -4,8 +4,9 @@ vi.mock('react', async (importOriginal) => ({
   ...await importOriginal<typeof import('react')>(),
   useState: (initial: unknown) => [initial, vi.fn()],
   useEffect: vi.fn(),
+  useRef: (initial: unknown) => ({ current: initial }),
 }));
-vi.mock('../src/ui', () => ({ Button: 'button', CheckboxField: 'checkbox', SelectField: 'select', TextAreaField: 'textarea', TextField: 'input', Toolbar: 'toolbar' }));
+vi.mock('../src/ui', () => ({ Button: 'button', Dialog: 'dialog', CheckboxField: 'checkbox', SelectField: 'select', TextAreaField: 'textarea', TextField: 'input', Toolbar: 'toolbar' }));
 import { DirectorSubtitleInspector, type DirectorSubtitleInspectorProps } from '../src/features/director-desk/DirectorSubtitleInspector';
 
 function props(overrides: Partial<DirectorSubtitleInspectorProps> = {}): DirectorSubtitleInspectorProps {

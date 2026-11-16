@@ -16,8 +16,10 @@ describe('unified StoryDream task system', () => {
 
     expect(routes).toContain('navigate={navigate}');
     expect(page).toContain('<TaskCreationTypePicker');
-    expect(page).toContain("activeType=\"smart-video\"");
-    for (const type of ['smart-video', 'vox', 'motion-comic', 'html-video', 'music-mv']) {
+    expect(page).not.toContain('activeType="smart-video"');
+    expect(page).toContain('navigate(taskCreationTarget(type))');
+    expect(routes).toContain("activeView === 'short-video' ? <ShortVideoPage initialChoosingType={false}");
+    for (const type of ['smart-video', 'vox', 'template-animation', 'motion-comic', 'html-video', 'music-mv']) {
       expect(picker).toContain(`id: '${type}'`);
     }
     expect(picker).toContain("taskCreationTarget(type.id)");
@@ -58,11 +60,15 @@ describe('unified StoryDream task system', () => {
       expect(page).not.toContain("onBack={() => navigate?.('new-task')}");
       expect(page).toContain("returnView = 'history'");
       expect(page).not.toContain('onReturnTasks={() => navigate?.(returnView)}');
-      expect(page).toContain('onBackToTasks={() => navigate?.(returnView)}');
     }
+    expect(editorial).toContain('onBackToTasks={() => navigate?.(returnView)}');
+    expect(comic).toContain('onBackToTasks={backWithinProject}');
+    expect(comic).toContain('if (scriptDraftGuardRef.current?.() === false) return;');
+    expect(comic).toContain('const target = motionComicBackTarget(workflowStage);');
+    expect(comic).toContain('onBack={() => navigate?.(returnView)}');
   });
 
-  it('enters immersive mode only for a real Director Desk workspace', async () => {
+  it('keeps comic navigation in the shell and enters immersive mode only for the editorial desk', async () => {
     const [workspace, css] = await Promise.all([
       source('src/features/director-desk/DirectorDeskWorkspace.tsx'),
       source('src/styles/features/director-desk.css'),
@@ -72,7 +78,7 @@ describe('unified StoryDream task system', () => {
     expect(workspace).toContain("backToTasksLabel = '返回全部任务'");
     expect(workspace).toContain('label={backToTasksLabel}');
     expect(css).toContain(".app-shell[data-shell-view='editorial-collage']:has(.director-desk)");
-    expect(css).toContain(".app-shell[data-shell-view='motion-comic']:has(.director-desk)");
+    expect(css).not.toContain(".app-shell[data-shell-view='motion-comic']:has(.director-desk)");
     expect(css).not.toContain(".app-shell[data-shell-view='editorial-collage'] > .window-line");
     expect(css).not.toContain(".app-shell[data-shell-view='motion-comic'] > .window-line");
   });

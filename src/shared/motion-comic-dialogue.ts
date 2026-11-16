@@ -43,6 +43,17 @@ export function motionComicDialogueInputMatches(document: MotionComicPipelineDat
   } catch { return false; }
 }
 
+/** Advance only inputs unchanged before an internal timing fit; preserve evidence of real edits. */
+export function refreshMotionComicDialogueInputsAfterTiming(
+  before: MotionComicPipelineData,
+  after: MotionComicPipelineData,
+  inputs: readonly MotionComicDialogueInput[],
+): MotionComicDialogueInput[] {
+  return inputs.map((input) => motionComicDialogueInputMatches(before, input)
+    ? motionComicDialogueInput(after, input.shotId, input.cueId, input.defaults)
+    : input);
+}
+
 /** Changing a series voice invalidates affected speech, not unrelated dialogue. */
 export function updateMotionComicCharacterVoice(document: MotionComicPipelineData, characterId: string, update: {
   voiceProvider: 'volcengine' | 'minimax'; voiceId?: string; voiceSpeed?: number;

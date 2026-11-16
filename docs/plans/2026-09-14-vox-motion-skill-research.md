@@ -24,13 +24,13 @@ Vox 风格没有唯一技术实现；核对的开源项目主要采用两条路�
 
 | 环节 | 现状 | 证据 |
 |---|---|---|
-| 分镜初始化 | 创建背景、主体、标签 3 层，但默认都为无资产的 SVG 占位；默认本地关键帧策略 | [editorial-collage.ts](/I:/opc/src/shared/editorial-collage.ts:473) |
-| 镜头生图 | generateShot 调用一次 generateImageLab | [EditorialCollagePage.tsx](/I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx:694) |
-| 绑定结果 | 一张生成图只绑定第一个 generated-image 或视觉层；默认是 background | [director-generation.ts](/I:/opc/src/features/director-desk/director-generation.ts:472) |
-| 构造渲染场景 | source 为 svg 且没有资产的层被直接跳过；只要剩下一层仍可继续 | [director-render.ts](/I:/opc/src/shared/director-render.ts:567) |
-| 实际捕帧 | 按帧 seek、capturePage、编码；已有时间轴驱动能力 | [html-video-renderer.ts](/I:/opc/electron/html-video-renderer.ts:114) |
-| AI 视频分支 | living-poster 已实现独立视频生成入口，并要求成功的 image-to-video 任务和视频资产 | [EditorialCollagePage.tsx](/I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx:826)、[director-render.ts](/I:/opc/src/shared/director-render.ts:536) |
-| 混合分支 | hybrid 尚未完成，当前导出会明确报错 | [director-render.ts](/I:/opc/src/shared/director-render.ts:531) |
+| 分镜初始化 | 创建背景、主体、标签 3 层，但默认都为无资产的 SVG 占位；默认本地关键帧策略 | [editorial-collage.ts](/I:/项目/story-dream/src/shared/editorial-collage.ts:473) |
+| 镜头生图 | generateShot 调用一次 generateImageLab | [EditorialCollagePage.tsx](/I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx:694) |
+| 绑定结果 | 一张生成图只绑定第一个 generated-image 或视觉层；默认是 background | [director-generation.ts](/I:/项目/story-dream/src/features/director-desk/director-generation.ts:472) |
+| 构造渲染场景 | source 为 svg 且没有资产的层被直接跳过；只要剩下一层仍可继续 | [director-render.ts](/I:/项目/story-dream/src/shared/director-render.ts:567) |
+| 实际捕帧 | 按帧 seek、capturePage、编码；已有时间轴驱动能力 | [html-video-renderer.ts](/I:/项目/story-dream/electron/html-video-renderer.ts:114) |
+| AI 视频分支 | living-poster 已实现独立视频生成入口，并要求成功的 image-to-video 任务和视频资产 | [EditorialCollagePage.tsx](/I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx:826)、[director-render.ts](/I:/项目/story-dream/src/shared/director-render.ts:536) |
+| 混合分支 | hybrid 尚未完成，当前导出会明确报错 | [director-render.ts](/I:/项目/story-dream/src/shared/director-render.ts:531) |
 
 因此，主要问题是素材生成、逐层绑定与镜头动作设计不足。仅增大缩放幅度或在图片提示词里加入“动态”无法让扁平图片中的对象独立运动。也不能据此把问题归因于 MP4 编码器或捕帧没有推进。
 

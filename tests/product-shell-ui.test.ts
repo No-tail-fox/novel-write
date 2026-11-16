@@ -1175,6 +1175,7 @@ describe('product shell ui', () => {
       'projects',
       'conversation-workbench',
       'new-task',
+      'short-video',
       'hot-board',
       'book-selection',
       'benchmark',
@@ -1201,7 +1202,7 @@ describe('product shell ui', () => {
       'account',
       'activation',
     ]);
-    expect(new Set(routedViews).size).toBe(26);
+    expect(new Set(routedViews).size).toBe(27);
   });
 
   it('adds a standalone voice lab for provider voice previews and history playback', async () => {

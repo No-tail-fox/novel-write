@@ -1,0 +1,127 @@
+.comic-asset-gallery {
+  min-width: 0;
+  color: var(--shell-text);
+}
+
+.comic-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 208px), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.comic-gallery-item { min-width: 0; }
+
+.comic-gallery-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--shell-border);
+  border-radius: 10px;
+  background: var(--shell-surface);
+  color: var(--shell-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.comic-gallery-card:hover,
+.comic-gallery-add:hover {
+  border-color: var(--shell-accent);
+  background: var(--shell-surface-raised);
+}
+
+.comic-gallery-card:active { background: var(--shell-surface-raised); }
+
+.comic-gallery-card:focus-visible,
+.comic-gallery-add:focus-visible {
+  outline: 2px solid var(--shell-focus);
+  outline-offset: 2px;
+}
+
+.comic-gallery-preview {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--shell-bg);
+}
+
+.comic-gallery-preview img { width: 100%; height: 100%; object-fit: cover; }
+
+.comic-gallery-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+  color: var(--shell-muted);
+  text-align: center;
+}
+
+.comic-gallery-placeholder strong { font-size: 14px; font-weight: 500; }
+.comic-gallery-placeholder small { font-size: 12px; line-height: 1.5; }
+
+.comic-gallery-body { display: grid; gap: 8px; width: 100%; padding: 10px 4px 6px; }
+.comic-gallery-name { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.comic-gallery-name strong { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.comic-gallery-name svg { flex-shrink: 0; margin-top: 4px; color: var(--shell-muted); }
+.comic-gallery-looks { color: var(--shell-muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.comic-gallery-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--shell-muted); font-size: 12px; line-height: 1.5; }
+.comic-gallery-status { display: inline-flex; align-items: center; gap: 4px; }
+.comic-gallery-status svg { flex-shrink: 0; }
+.comic-gallery-status.is-ready { color: var(--shell-text); }
+
+.comic-gallery-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; gap: 12px; padding: 32px 20px; text-align: center; border: 1px dashed var(--shell-border); border-radius: 10px; }
+.comic-gallery-empty > svg { color: var(--shell-muted); }
+.comic-gallery-empty p { max-width: 42ch; margin: 0; color: var(--shell-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.comic-gallery-add { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; border: 1px solid var(--shell-border); border-radius: 6px; background: var(--shell-surface); color: var(--shell-text); font: inherit; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  .comic-gallery-card, .comic-gallery-add-card { transition: none; }
+}
+
+/* Hierarchy pass (plate 06): image-led cards on a raised surface, name + status chip,
+   quiet metadata, explicit open affordance, and a dashed add card as the last tile. */
+.comic-gallery-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr)); gap: 16px; padding: 0; }
+.comic-asset-gallery .comic-gallery-card { padding: 0; background: var(--shell-surface-raised); box-shadow: 0 1px 0 rgb(0 0 0 / 0.25); }
+.comic-asset-gallery .comic-gallery-card:hover { border-color: color-mix(in srgb, var(--shell-accent) 70%, var(--shell-border)); }
+.comic-gallery-preview { aspect-ratio: 4 / 3; border-radius: 0; border-bottom: 1px solid var(--shell-border); background: linear-gradient(160deg, var(--shell-surface) 0%, var(--shell-bg) 100%); }
+.comic-gallery-placeholder svg { opacity: 0.7; }
+.comic-gallery-body { gap: 6px; padding: 14px 16px 14px; }
+.comic-gallery-name { align-items: center; }
+.comic-gallery-name strong { font-size: 17px; font-weight: 650; line-height: 1.4; }
+.comic-gallery-chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 5px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--shell-muted); background: var(--shell-surface); border: 1px solid var(--shell-border); }
+.comic-gallery-chip[data-tone='ok'] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.comic-gallery-chip[data-tone='warn'] { color: var(--reel-amber); border-color: color-mix(in srgb, var(--reel-amber) 45%, transparent); background: color-mix(in srgb, var(--reel-amber) 12%, transparent); }
+.comic-gallery-chip[data-tone='danger'] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.comic-gallery-looks { font-size: 13px; }
+.comic-gallery-meta { align-items: center; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--shell-border); }
+.comic-gallery-open { display: inline-flex; align-items: center; gap: 4px; color: var(--shell-text); font-weight: 600; }
+.comic-asset-gallery .comic-asset-gallery .comic-gallery-card:hover .comic-gallery-open { color: var(--shell-accent-strong); }
+.comic-asset-gallery .comic-gallery-add-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; min-height: 280px; padding: 24px; border: 1px dashed var(--shell-border); border-radius: 10px; background: transparent; color: var(--shell-muted); font: inherit; text-align: center; cursor: pointer; transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease; }
+.comic-asset-gallery .comic-gallery-add-card svg { color: var(--shell-accent-strong); }
+.comic-asset-gallery .comic-gallery-add-card strong { color: var(--shell-text); font-size: 15px; font-weight: 650; }
+.comic-asset-gallery .comic-gallery-add-card small { max-width: 22ch; font-size: 12px; line-height: 1.6; }
+.comic-asset-gallery .comic-gallery-add-card:hover { border-color: var(--shell-accent); background: color-mix(in srgb, var(--shell-accent) 5%, transparent); }
+.comic-asset-gallery .comic-gallery-add-card:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 2px; }
+
+/* Page heading above the gallery: title scale, count badge, single primary action. */
+[data-motion-comic-series-bible] .director-series-editor[data-asset-display='gallery'] { display: flex; flex-direction: column; gap: 14px; }
+[data-motion-comic-series-bible] .director-series-section-heading.comic-asset-page-heading { padding-block: 2px 4px; background: transparent; position: static; }
+[data-motion-comic-series-bible] .comic-asset-page-heading h2 { display: inline-flex; align-items: center; gap: 10px; margin: 0; font-size: 20px; font-weight: 650; line-height: 1.3; }
+[data-motion-comic-series-bible] .comic-asset-page-heading small { color: var(--shell-muted); font-size: 12px; }
+.comic-asset-page-count { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 7px; border-radius: 11px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--shell-muted); background: var(--shell-surface-raised); border: 1px solid var(--shell-border); }
+.comic-asset-provider-note { display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 12px; border-radius: 6px; border-inline-start: 3px solid var(--reel-amber); background: color-mix(in srgb, var(--reel-amber) 8%, transparent); color: var(--shell-text); font-size: 12px; }
+.comic-asset-provider-note svg { flex-shrink: 0; color: var(--reel-amber); }
+
+[data-motion-comic-series-bible] .comic-asset-page-heading > div { display: grid; gap: 4px; }

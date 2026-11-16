@@ -1,6 +1,7 @@
 import { AppError, describeErrorCause, isCancellation, normalizeAppError } from './app-error';
 import { classifyProviderFailure } from './provider-failure';
 import { buildDirectorCopyAssistRequest } from './director-copy-assist';
+import { codeVideoCondenseInstructions } from './code-video-source-plan';
 import { EDITORIAL_WRITING_STYLES } from './editorial-writing-styles';
 import { workflowPrompt } from './workflow-prompt-runtime';
 import type { ConfiguredTextLlm } from './llm-provider';
@@ -40,12 +41,15 @@ export interface StoryboundAiCreationSystemPromptInput {
   trackTag: string;
   useAiKnowledge: boolean;
   hasReferenceMaterials: boolean;
+  /** Explicit length the copy must reach; omitted when the caller has no length contract. */
+  targetLength?: number;
 }
 
 export interface StoryboundAiCreationUserPromptInput {
   keyword: string;
   extraRequirements?: string;
   intent?: ResearchCopyComposeInput['intent'];
+  targetLength?: number;
 }
 
 export interface StoryboundTrackInfo {
@@ -115,12 +119,20 @@ export function buildStoryboundAiCreationSystemPrompt(input: StoryboundAiCreatio
     '【硬约束】',
     '- 输出**仅文案正文**，不要任何解释、说明、问候语',
     '- 不要使用 emoji 表情符号',
+    ...(input.targetLength ? [`- ${copyLengthContract(input.targetLength)}`] : []),
     `- 不要出现"参考资料""根据上述""综合以上"等元描述${noReferenceExtra}`,
   ].join('\n'), { input_trackName: (input.trackName), input_trackTag: (input.trackTag), strategy: (strategy), value4: (buildCopywritingGuidance(input.trackName, input.channel ?? 'shared')), noReferenceExtra: (noReferenceExtra) }, input.channel ?? 'shared');
 }
 
+/** A length goal is only actionable when the model is told the floor and how to reach it honestly. */
+function copyLengthContract(targetLength: number): string {
+  const minimum = Math.max(100, Math.round(targetLength * 0.9));
+  return `全文字数不少于 ${minimum} 字，目标约 ${targetLength} 字；初稿不足时先核对字数，再用素材中的具体事实、细节、因果和例证补足，不得用重复句、空泛排比或元描述凑字数`;
+}
+
 export function buildStoryboundAiCreationUserPrompt(input: StoryboundAiCreationUserPromptInput, materials: StoryboundReferenceMaterial[]): string {
   const blocks = [`【关键词】${input.keyword.trim()}`];
+  if (input.targetLength) blocks.push(`【字数要求】${copyLengthContract(input.targetLength)}。`);
   const extraRequirements = (input.extraRequirements ?? '').trim();
   if (extraRequirements) {
     blocks.push(`【用户额外要求】\n${extraRequirements}`);
@@ -744,7 +756,13 @@ export function normalizeResearchCopyError(error: unknown): AppError {
 }
 
 export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: ResearchCopyComposeInput): Promise<ResearchCopyComposeResult> {
-  if (input.directorCopyAssist) input = buildDirectorCopyAssistRequest(input.directorCopyAssist);
+  const condense = input.codeVideoCondense;
+  if (condense) {
+    const instructions = codeVideoCondenseInstructions(condense.targetDurationSeconds);
+    if (!input.projectId || !input.selectedSources.some(source => source.content?.trim())) throw new Error('CODE_VIDEO_CONDENSE_SOURCE_REQUIRED');
+    input = { ...input, directorCopyAssist: undefined, targetLength: undefined, writingStyleId: undefined, intent: 'refine', useBuiltinKnowledge: false,
+      extraRequirements: `${instructions}\n只输出可直接配音的正文，不写标题、标签或说明。` };
+  } else if (input.directorCopyAssist) input = buildDirectorCopyAssistRequest(input.directorCopyAssist);
   const selectedSources = input.selectedSources
     .filter((source) => compactText(source.content || source.snippet || '').trim())
     .slice(0, 10);
@@ -753,12 +771,14 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
     throw new Error('请至少提供一个网页来源，或启用 AI 内置知识补全。');
   }
   const track = resolveStoryboundTrackInfo(input.track);
+  const targetRange = targetWordCountRange(input.targetLength);
   const system = buildStoryboundAiCreationSystemPrompt({
     channel: input.channel,
     trackName: track.trackName,
     trackTag: track.trackTag,
     useAiKnowledge: input.useBuiltinKnowledge,
     hasReferenceMaterials,
+    targetLength: targetRange?.target,
   });
   const user = buildStoryboundAiCreationUserPrompt(
     {
@@ -770,6 +790,7 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
           workflowPrompt(`writing-style:${style.id}`, style.guidance, {}, input.channel ?? 'editorial-collage')), input.extraRequirements),
       ].filter(Boolean).join('\n'),
       intent: input.intent,
+      targetLength: targetRange?.target,
     },
     selectedSources,
   );
@@ -779,7 +800,7 @@ export async function composeCopyFromSources(llm: ConfiguredTextLlm, input: Rese
     temperature: STORYBOUND_AI_CREATION_TEMPERATURE,
     maxTokens: STORYBOUND_AI_CREATION_MAX_TOKENS,
     timeoutMs: storyboundAiCreationTimeoutMs(user.length),
-    maxRetries: STORYBOUND_AI_CREATION_MAX_RETRIES,
+    maxRetries: condense ? 0 : STORYBOUND_AI_CREATION_MAX_RETRIES,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },

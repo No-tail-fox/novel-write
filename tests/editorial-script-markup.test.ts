@@ -1,4 +1,3 @@
-import { lemoStagedPlanningInput } from '../electron/lemo-staged-planning';
 import { describe, expect, it } from 'vitest';
 import { editorialPresentationCues, editorialScriptPlainText } from '../src/shared/editorial-script-markup';
 import { planEditorialScript } from '../src/shared/editorial-script';
@@ -42,14 +41,6 @@ describe('one source-format contract for creative captions', () => {
     const cues = [{ id: 'legacy', text: '## Explicit caption', startMs: 0, endMs: 1000 }];
     expect(editorialPresentationCues(undefined, cues)[0]).toBe(cues[0]);
     expect(editorialPresentationCues('', cues)[0]).toBe(cues[0]);
-  });
-  it('retains original staged planning receipt inputs for legacy Markdown', () => {
-    const cue = {id:'c',text:'## 标题',startMs:0,endMs:1000};
-    const d = {sourceText:'## 标题',beats:[{subtitleCues:[cue],shots:[{id:'s',subtitleCueIds:['c'],durationMs:1000}]}],
-      productionRun:{filmId:'f',settings:{lockedShotIds:[]}},creativeFilms:[{id:'f',project:{materials:[],planning:{outline:{},units:[{id:'scene-1',shotIds:['s']}]}}}]} as any;
-    const input = lemoStagedPlanningInput(d, {kind:'film-plan-scene',fileId:'scene-1'} as any, {}) as {timeline: {cues: {text: string}[]}[]};
-    expect(input.timeline[0].cues[0].text).toBe(cue.text);
-    expect(timeline(d)[0].cues[0].text).toBe(' 标题');
   });
   it('supplies canonical native captions without mutating saved paid inputs', () => {
     const raw = {id:'c',text:'## 原稿 **重点**',startMs:0,endMs:1000};

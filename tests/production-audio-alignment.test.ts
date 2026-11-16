@@ -28,6 +28,20 @@ describe('production narration alignment evidence', () => {
     expect(evidence.samples[0].actualDurationMs).toBeUndefined();
   });
 
+  it('does not measure native mixed speech from container or clipped playback duration', () => {
+    const evidence = measureProductionNarrationAlignment([
+      { id: 'spoken-native', durationMs: 9_000, subtitleCues: [{ text: '这一次，我一定会守约。', startMs: 3278, endMs: 5723 }], audioAssetVersionIds: ['native-video'], audioDurationsMs: [9_000], speechTimingUnavailable: true },
+      { id: 'action-native', durationMs: 6_000, subtitleCues: [], audioAssetVersionIds: ['action-video'], speechTimingUnavailable: true },
+    ], new Map([['native-video', { durationMs: 9_420 }], ['action-video', { durationMs: 6_580 }]]));
+    expect(evidence.status).toBe('pending');
+    expect(evidence.samples[0]).toMatchObject({ status: 'unavailable', plannedDurationMs: 2445, audioAssetVersionIds: ['native-video'], detail: expect.stringContaining('请人工核对') });
+    expect(evidence.samples[0].actualDurationMs).toBeUndefined();
+    expect(evidence.samples[0].actualCharactersPerSecond).toBeUndefined();
+    expect(evidence.samples[0].deltaMs).toBeUndefined();
+    expect(evidence.samples[1].status).toBe('not-applicable');
+    expect(productionNarrationAlignmentEvidenceSchema.parse(evidence)).toEqual(evidence);
+  });
+
   it('marks a materially different recording as a manual mismatch', () => {
     const evidence = measureProductionNarrationAlignment([
       { id: 'shot-1', durationMs: 2_000, subtitleCues: [{ text: '一段需要复核的旁白', startMs: 0, endMs: 1_000 }], audioAssetVersionIds: ['voice-1'] },

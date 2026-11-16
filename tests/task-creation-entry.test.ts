@@ -14,17 +14,17 @@ describe('new project entry selection', () => {
   it('retains explicit selection and route mappings for existing callers', () => {
     const html = renderToStaticMarkup(createElement(TaskCreationTypePicker, { activeType: 'smart-video', navigate: vi.fn() }));
     expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
-    expect(taskCreationTarget('smart-video')).toBe('new-task');
+    expect(taskCreationTarget('smart-video')).toBe('short-video');
     expect(taskCreationTarget('vox')).toBe('editorial-collage');
     expect(taskCreationTarget('music-mv')).toBe('music-mv');
   });
   it('keeps the compact workbench appearance without short-video actions in the entry', async () => {
     const source = await readFile(new URL('../src/features/tasks/NewTaskPage.tsx', import.meta.url), 'utf8');
     const entry = source.slice(source.indexOf('  if (choosingType) {'), source.indexOf('  return (', source.indexOf('  if (choosingType) {') + 30));
-    expect(entry).toContain('new-task-stage-tabs');
+    expect(entry).toContain('creation-entry-status');
     expect(entry).toContain('new-task-workbench');
     expect(entry).toContain('new-task-summary new-task-entry-guide');
-    expect(entry).not.toContain('CreationPageHeader');
+    expect(entry).toContain('CreationPageHeader');
     expect(entry).not.toContain('activeType="smart-video"');
     expect(entry).not.toContain('创建并开始生成');
   });

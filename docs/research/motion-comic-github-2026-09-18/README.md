@@ -22,10 +22,10 @@
 
 本地定位：
 
-- [固定首集模板](/I:/opc/src/shared/motion-comic.ts:514)、[创建入口](/I:/opc/src/shared/storage.ts:2588)、[续集复制](/I:/opc/src/shared/motion-comic.ts:676)。
-- [参考图生成](/I:/opc/src/features/motion-comic/MotionComicPage.tsx:704)、[seed 仅进入提示词](/I:/opc/src/features/motion-comic/motion-comic-consistency.ts:83)。
-- [仅 VOX 可生成视频的限制](/I:/opc/electron/main.ts:2827)、[漫剧单图层渲染](/I:/opc/src/shared/director-render.ts:644)。
-- [对白输入](/I:/opc/src/shared/motion-comic-dialogue.ts:18)、[配音生成与回写](/I:/opc/src/features/director-desk/director-generation.ts:713)、[批量队列](/I:/opc/src/features/director-desk/director-batch.ts:95)。
+- [固定首集模板](/I:/项目/story-dream/src/shared/motion-comic.ts:514)、[创建入口](/I:/项目/story-dream/src/shared/storage.ts:2588)、[续集复制](/I:/项目/story-dream/src/shared/motion-comic.ts:676)。
+- [参考图生成](/I:/项目/story-dream/src/features/motion-comic/MotionComicPage.tsx:704)、[seed 仅进入提示词](/I:/项目/story-dream/src/features/motion-comic/motion-comic-consistency.ts:83)。
+- [仅 VOX 可生成视频的限制](/I:/项目/story-dream/electron/main.ts:2827)、[漫剧单图层渲染](/I:/项目/story-dream/src/shared/director-render.ts:644)。
+- [对白输入](/I:/项目/story-dream/src/shared/motion-comic-dialogue.ts:18)、[配音生成与回写](/I:/项目/story-dream/src/features/director-desk/director-generation.ts:713)、[批量队列](/I:/项目/story-dream/src/features/director-desk/director-batch.ts:95)。
 
 ## 2. 高星同类应用与工作流
 
@@ -48,7 +48,7 @@
 - [ArcReel LICENSE](https://github.com/ArcReel/ArcReel/blob/200674feb06a9954a49a05181912bc0b06dcc16e/LICENSE) 与 [NOTICE](https://github.com/ArcReel/ArcReel/blob/200674feb06a9954a49a05181912bc0b06dcc16e/NOTICE)：采用 AGPL-3.0，网络服务修改版涉及对应源码提供义务；NOTICE 还要求修改版界面保留指定署名与仓库链接。StoryDream 只记录其公开工作流事实并独立实现，不复制其源码、提示词或 UI。
 - [BigBanana LICENSE](https://github.com/shuyu-labs/BigBanana-AI-Director/blob/ca3da0a430a6cd3c38b31d503596cc9b30a3db37/LICENSE)：实际英文正文为 `BigBanana Community License 1.0`，声明不是 OSI 开源许可，未经书面授权禁止商业活动、付费服务、SaaS/OEM/白标及企业内部生产使用。README 底部仍写 CC BY-NC-SA 4.0，与 LICENSE 不一致；接入判断以仓库 LICENSE 原文为准。
 
-各应用的逐模块证据见 [app-repos.md](/I:/opc/docs/research/motion-comic-github-2026-09-18/app-repos.md)。其中 Toonflow/Jellyfish 已读代码证明任务提交、轮询与状态记录，但不足以证明重启后不会重复付费；waoowaoo 的 checkpoint/attempt 设计更完整，也不能据此推断每个供应商接口都支持幂等提交。ArcReel 与 Huobao 的 Agent/状态设计也只作为实现对照；BigBanana 当前没有可核查的产品源码。
+各应用的逐模块证据见 [app-repos.md](/I:/项目/story-dream/docs/research/motion-comic-github-2026-09-18/app-repos.md)。其中 Toonflow/Jellyfish 已读代码证明任务提交、轮询与状态记录，但不足以证明重启后不会重复付费；waoowaoo 的 checkpoint/attempt 设计更完整，也不能据此推断每个供应商接口都支持幂等提交。ArcReel 与 Huobao 的 Agent/状态设计也只作为实现对照；BigBanana 当前没有可核查的产品源码。
 
 检索还找到 AIComicBuilder（1,872 星，API 标记 Apache-2.0）、LocalMiniDrama（1,745 星，API 标记 MIT）。本轮未完成这两者源码与许可全文审计，因此不把它们列为已确认可直接复制的来源。漫画翻译、追番、短视频剪辑等高星但不同任务的项目已排除。
 
@@ -100,10 +100,10 @@
 
 来源：Jellyfish 的镜头上下文、参考帧准备度检查；复用 StoryDream 已有视频 provider、任务及渲染器。
 
-- 扩展 [视频 IPC](/I:/opc/electron/main.ts:2827) 的漫剧分支，使用 `episodeId + shotId + 输入指纹` 标识请求，接通页面视频回调。
-- 调用 [现有视频 provider](/I:/opc/src/shared/video-provider.ts:56)，传首帧、动作、运镜、时长；只有模型声明支持才传尾帧/音频/多参考图。无鉴权本地服务需明确的本地 provider 类型，现有 API key 必填判断也要调整。
+- 扩展 [视频 IPC](/I:/项目/story-dream/electron/main.ts:2827) 的漫剧分支，使用 `episodeId + shotId + 输入指纹` 标识请求，接通页面视频回调。
+- 调用 [现有视频 provider](/I:/项目/story-dream/src/shared/video-provider.ts:56)，传首帧、动作、运镜、时长；只有模型声明支持才传尾帧/音频/多参考图。无鉴权本地服务需明确的本地 provider 类型，现有 API key 必填判断也要调整。
 - 新增/明确选中的视频资产版本，持久化远端任务 ID、状态及过期输入；提交状态不明先查询，避免重复付费生成。
-- 修改 [漫剧渲染分支](/I:/opc/src/shared/director-render.ts:644)，真实消费选中的视频资产；只有生成按钮没有渲染接线不算完成。
+- 修改 [漫剧渲染分支](/I:/项目/story-dream/src/shared/director-render.ts:644)，真实消费选中的视频资产；只有生成按钮没有渲染接线不算完成。
 - 保留静帧运镜作为可选择的制作方式；视频任务失败不能被标成“视频生成成功”。
 
 Jellyfish 对应源码：[参考帧/任务/模型准备检查](https://github.com/Forget-C/Jellyfish/blob/a9678194ddf2d9be3ccbe78d4287d87d5089e123/backend/app/services/studio/shot_video_readiness.py)、[动作节拍/前后镜/构图/朝向提示词包](https://github.com/Forget-C/Jellyfish/blob/a9678194ddf2d9be3ccbe78d4287d87d5089e123/backend/app/services/studio/shot_video_prompt_pack.py)。这些服务依赖其 SQLAlchemy 数据模型，应提取纯业务逻辑并映射到现有文档，不引入整套数据库。

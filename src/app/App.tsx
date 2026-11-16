@@ -12,6 +12,7 @@ import { advanceHistoryFamilyEpochs, allHistoryFamilies, bootstrapToState, captu
 import { makeLazyFallbackApi } from './lazy-browser-fallback';
 import type { RendererAppState as AppState } from "./route-types";
 import { AppRoutes } from './AppRoutes';
+import type { ProjectFilterRequest } from '../features/projects/ProjectHomePage';
 import { AppShell } from './AppShell';
 import { DatabaseRecoveryNotice, acknowledgeDatabaseRecovery, pendingDatabaseRecovery } from './DatabaseRecoveryNotice';
 import { taskWorkspaceView, workspaceReturnViewForNavigation } from './navigation';
@@ -96,6 +97,7 @@ function AppWorkspace() {
   }, []);
   const [activeView, setActiveView] = useState<ShellView>('new-task');
   const [newProjectEntryRevision, setNewProjectEntryRevision] = useState(0);
+  const [projectFilterRequest, setProjectFilterRequest] = useState<ProjectFilterRequest>();
   const [bootstrapReady, setBootstrapReady] = useState(false);
   const bootstrapReadyRef = useRef(false);
   const [settingsEntry, setSettingsEntry] = useState<{ section: SettingsSection; returnView: ShellView; taskId?: string; taskReturnView: ShellView } | null>(null);
@@ -697,6 +699,22 @@ function AppWorkspace() {
     void navigation.requestLeave(() => navigateNow(view));
   }
 
+  function navigateFromShell(view: ShellView) {
+    if (view !== 'motion-comic' && view !== 'projects') {
+      navigate(view);
+      return;
+    }
+    void navigation.requestLeave(() => {
+      startTransition(() => {
+        setProjectFilterRequest((current) => ({
+          taskType: view === 'motion-comic' ? 'motion-comic' : 'all',
+          revision: (current?.revision ?? 0) + 1,
+        }));
+        navigateNow('projects');
+      });
+    });
+  }
+
   function navigateNow(view: ShellView) {
     const from = activeViewRef.current;
     activeViewRef.current = view;
@@ -828,7 +846,7 @@ function AppWorkspace() {
         busy={shellAction.busy}
         feedback={shellAction.feedback}
         notice={databaseRecovery ? <DatabaseRecoveryNotice event={databaseRecovery} onDismiss={() => { acknowledgeDatabaseRecovery(databaseRecovery); setDatabaseRecovery(null); }} /> : null}
-        navigate={navigate}
+        navigate={navigateFromShell}
         openTaskDetail={openTaskDetail}
         minimizeWindow={minimizeWindow}
         toggleMaximizeWindow={toggleMaximizeWindow}
@@ -846,6 +864,7 @@ function AppWorkspace() {
           {bootstrapReady ? <AppRoutes
             activeView={activeView}
             newProjectEntryRevision={newProjectEntryRevision}
+            projectFilterRequest={projectFilterRequest}
             api={api}
             state={state}
             selectedTask={selectedTask}

@@ -1,3 +1,4 @@
+import type { MotionComicVideoRecoveryInput, MotionComicVideoRecoveryResult } from './motion-comic-video-recovery';
 import type { ArtifactStorageLocation } from './artifact-storage';
 import type { VoxAnimationPayload, VoxGenerateRequest, VoxCompileResult, VoxSavedTemplate } from './vox-animation';
 import type { VoxProductionStart, VoxProductionControl, VoxProductionRun } from './vox-production';
@@ -106,6 +107,7 @@ import type { MotionComicCreateInput, MotionComicSaveInput } from './motion-comi
 import type { MotionComicEpisodePlanInput, MotionComicEpisodePlanResult } from './motion-comic-episode-planning';
 import type { MotionComicApplyPlanInput, MotionComicPlanInput, MotionComicPlanResponse } from './motion-comic-planning';
 import type { MotionComicScriptSnapshot, MotionComicScriptEnqueueInput, MotionComicScriptControlInput, MotionComicScriptEditInput, MotionComicScriptApproveInput, MotionComicScriptRevisionInput, MotionComicScriptApplyStoryboardInput } from './motion-comic-script-batch';
+import type { MotionComicScriptProposeInput, MotionComicScriptAdoptInput, MotionComicScriptRevertInput } from './motion-comic-script-proposal';
 import type { DirectorGenerateShotVideoRequest, DirectorGenerateShotVideoResult, DirectorRenderRequest, DirectorRenderResult, DirectorSubtitleRecheckRequest, DirectorSubtitleRecheckResult, DirectorMediaRecheckRequest, DirectorMediaRecheckResult } from './director-render';
 import type { DirectorQualityArtifactRequest, DirectorQualityArtifactResult } from './director-render';
 import type { CreateDirectorBatchInput, DirectorBatchRecord, DirectorBatchStatus, UpdateDirectorBatchInput } from './director-batch-persistence';
@@ -201,6 +203,7 @@ export const INVOKE_CHANNELS = Object.freeze([
   'research:web-search',
   'vox:runtime', 'vox:compile', 'vox:generate', 'vox:cancel', 'vox:asset', 'vox:templates-list', 'vox:templates-save', 'vox:templates-delete', 'director:cancel-render',
   'vox:export-shot',
+  'motion-comic:export-render',
   'research:compose-copy',
   'hotboard:fetch',
   'hotboard:read-source',
@@ -249,8 +252,13 @@ export const INVOKE_CHANNELS = Object.freeze([
   'editorial-collage:save',
   'vox-production:start',
   'vox-production:control',
+  'vox-production:agent-activity',
+  'vox-production:pi-activity',
   'director:generate-shot-video',
+  'director:resume-shot-video',
+  'motion-comic:recover-video-submission',
   'motion-comic:create',
+  'motion-comic:import-character-voice-sample',
   'motion-comic:save',
   'motion-comic:plan-episodes',
   'motion-comic:plan',
@@ -259,6 +267,11 @@ export const INVOKE_CHANNELS = Object.freeze([
   'motion-comic:scripts-enqueue',
   'motion-comic:scripts-control',
   'motion-comic:scripts-edit',
+  'motion-comic:assets-extract',
+  'motion-comic:assets-extraction-apply',
+  'motion-comic:scripts-propose',
+  'motion-comic:scripts-adopt',
+  'motion-comic:scripts-revert',
   'motion-comic:scripts-approve',
   'motion-comic:scripts-storyboard',
   'motion-comic:scripts-apply-storyboard',
@@ -266,6 +279,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'director:recheck-subtitles',
   'director:recheck-media',
   'director:review-artifact',
+  'motion-comic:reference-batch-submit',
+  'motion-comic:reference-batch-control',
   'director:batch-create',
   'director:batch-get',
   'director:batch-list',
@@ -328,6 +343,8 @@ export const INVOKE_CHANNELS = Object.freeze([
   'task:final-film-gate',
   'asset:read-data-url',
   'local-image:select',
+  'local-images:select',
+  'file:sha256',
   'pixelle:catalog',
   'local-video:select',
   'short-video-materials:select',
@@ -467,6 +484,7 @@ export type StoryDreamApi = {
   deleteVoxTemplate: (id: string) => Promise<VoxSavedTemplate[]>;
   cancelDirectorRender: (id: string) => Promise<void>;
   exportVoxAnimationShot: (input: {id:string;shotId:string;expectedUpdatedAt:string}) => Promise<boolean>;
+  exportMotionComicRender: (input: { taskId: string; assetVersionId: string }) => Promise<boolean>;
   composeResearchCopy: (input: ResearchCopyComposeInput) => Promise<ResearchCopyComposeResult>;
   fetchHotBoard: (input?: HotBoardArchiveRequest) => Promise<HotBoardArchiveResult>;
   readHotBoardSource: (input: HotBoardSourceContentInput) => Promise<HotBoardSourceContent>;
@@ -498,9 +516,15 @@ export type StoryDreamApi = {
   saveEditorialCollage: (input: EditorialCollageSaveInput) => Promise<AppMutationResult | null>;
   startVoxProduction: (input: VoxProductionStart) => Promise<VoxProductionRun>;
   controlVoxProduction: (input: VoxProductionControl) => Promise<VoxProductionRun>;
+  /** Read-only Lemo Agent process view (per-turn summaries from the run journal); null when unavailable. */
+  getVoxAgentActivity: (input: { id: string; runId: string }) => Promise<import('./lemo-agent-activity').LemoAgentActivity | null>;
+  getVoxPiActivity: (input: { id: string; runId: string }) => Promise<import('./creative-animation/pi-activity').PiLiveActivity | null>;
   generateDirectorShotVideo: (input: DirectorGenerateShotVideoRequest) => Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }>;
+  resumeDirectorShotVideo: (input: DirectorGenerateShotVideoRequest) => Promise<{ result: DirectorGenerateShotVideoResult; mutation: AppMutationResult | null }>;
+  recoverMotionComicVideoSubmission: (input: MotionComicVideoRecoveryInput) => Promise<MotionComicVideoRecoveryResult>;
   createMotionComic: (input: MotionComicCreateInput) => Promise<AppMutationResult | null>;
   saveMotionComic: (input: MotionComicSaveInput) => Promise<AppMutationResult | null>;
+  importCharacterVoiceSample: (input: import('./character-voice-sample').ImportCharacterVoiceSampleInput) => Promise<AppMutationResult | null>;
   planMotionComicEpisodes: (input: MotionComicEpisodePlanInput) => Promise<MotionComicEpisodePlanResult>;
   planMotionComic: (input: MotionComicPlanInput) => Promise<MotionComicPlanResponse>;
   applyMotionComicPlan: (input: MotionComicApplyPlanInput) => Promise<AppMutationResult | null>;
@@ -508,6 +532,11 @@ export type StoryDreamApi = {
   enqueueMotionComicScripts: (input: MotionComicScriptEnqueueInput) => Promise<MotionComicScriptSnapshot>;
   controlMotionComicScripts: (input: MotionComicScriptControlInput) => Promise<MotionComicScriptSnapshot>;
   editMotionComicScript: (input: MotionComicScriptEditInput) => Promise<MotionComicScriptSnapshot>;
+  proposeMotionComicAssetExtraction: (input: import('./motion-comic-asset-extraction').MotionComicAssetExtractInput) => Promise<MotionComicScriptSnapshot>;
+  applyMotionComicAssetExtraction: (input: import('./motion-comic-asset-extraction').MotionComicAssetExtractionApplyInput) => Promise<MotionComicScriptSnapshot>;
+  proposeMotionComicScriptChange: (input: MotionComicScriptProposeInput) => Promise<MotionComicScriptSnapshot>;
+  adoptMotionComicScriptChange: (input: MotionComicScriptAdoptInput) => Promise<MotionComicScriptSnapshot>;
+  revertMotionComicScriptChange: (input: MotionComicScriptRevertInput) => Promise<MotionComicScriptSnapshot>;
   approveMotionComicScripts: (input: MotionComicScriptApproveInput) => Promise<MotionComicScriptSnapshot>;
   storyboardMotionComicScript: (input: MotionComicScriptRevisionInput) => Promise<MotionComicScriptSnapshot>;
   applyMotionComicScriptStoryboard: (input: MotionComicScriptApplyStoryboardInput) => Promise<AppMutationResult | null>;
@@ -515,6 +544,8 @@ export type StoryDreamApi = {
   recheckDirectorSubtitles: (input: DirectorSubtitleRecheckRequest) => Promise<DirectorSubtitleRecheckResult>;
   recheckDirectorMedia: (input: DirectorMediaRecheckRequest) => Promise<DirectorMediaRecheckResult>;
   reviewDirectorArtifact: (input: DirectorQualityArtifactRequest) => Promise<DirectorQualityArtifactResult>;
+  submitMotionComicReferenceBatch: (input: import('./reference-batch').ReferenceBatchSubmitInput) => Promise<DirectorBatchRecord>;
+  controlMotionComicReferenceBatch: (input: import('./reference-batch').ReferenceBatchControlInput) => Promise<DirectorBatchRecord>;
   createDirectorBatch: (input: CreateDirectorBatchInput) => Promise<DirectorBatchRecord>;
   getDirectorBatch: (id: string) => Promise<DirectorBatchRecord | null>;
   listDirectorBatches: (options?: { projectId?: string; episodeId?: string | null; statuses?: readonly DirectorBatchStatus[] }) => Promise<DirectorBatchRecord[]>;
@@ -571,6 +602,10 @@ export type StoryDreamApi = {
   getFinalFilmGate: (input: { id: string; episodeId?: string }) => Promise<import('./final-film-gate-view').FinalFilmGateView | null>;
   readAssetDataUrl: (path: string) => Promise<string>;
   selectLocalImage: (purpose?: 'video-reference') => Promise<string | null>;
+  /** Multi-select picker for reference images; returns [] when the user cancels. */
+  selectLocalReferenceImages: () => Promise<string[]>;
+  /** SHA-256 of any managed or local file, computed in the main process. */
+  sha256File: (path: string) => Promise<string>;
   getPixelleCatalog: () => Promise<import('./pixelle').PixelleCatalog>;
   selectLocalVideo: () => Promise<string | null>;
   selectShortVideoMaterials: () => Promise<string[]>;

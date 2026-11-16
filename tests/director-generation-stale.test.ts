@@ -122,7 +122,7 @@ describe('director generation input ownership', () => {
     const input = editorialVoiceInput(document, shotId, defaults);
     const edited = structuredClone(document);
     if (change === 'text') edited.beats[0].subtitleCues[0].text = 'A replacement narration.';
-    if (change === 'voice') Object.assign(edited.beats[0].shots[0], { voiceId: 'voice-new', voiceLabel: 'New voice' });
+    if (change === 'voice') Object.assign(edited.beats[0].shots[0], { voiceId: 'voice-new', voiceProvider: defaults.provider, voiceLabel: 'New voice' });
     if (change === 'speed') edited.beats[0].shots[0].voiceSpeed = 1.5;
     if (change === 'selection') edited.beats[0].shots[0].voiceAssetVersionId = 'manual-audio';
     const next = applyEditorialVoiceRecord(edited, shotId, voiceRecord(input), 'tts-model', input);

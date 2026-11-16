@@ -179,8 +179,11 @@ describe('editorial collage workbench', () => {
     // Image provider switching is offered only when the page wires a handler.
     expect(fieldControl(directorDeskMarkup({ mode: 'motion-comic', onProviderProfileChange: () => {} }), '图片生成服务')).toBeDefined();
     expect(fieldControl(directorDeskMarkup({ mode: 'motion-comic' }), '图片生成服务')).toBeUndefined();
-    // Core desk surfaces: filmstrip, asset grid, generation queue, project switcher and both searches.
-    expect(comic).toContain('class="director-filmstrip"');
+    // Comic uses the editable multitrack timeline; VOX's process outline shows current shot content.
+    expect(comic).toContain('class="director-multitrack" aria-label="多轨时间线"');
+    expect(comic).not.toContain('class="director-filmstrip"');
+    expect(voxPreview).toContain('class="vox-shot-content" aria-label="当前镜头内容"');
+    expect(fieldControl(voxPreview, '画面描述')).toBeDefined();
     expect(comic).toContain('class="director-asset-grid');
     expect(comic).toMatch(/<section class="director-queue-panel" aria-label="生成队列">/u);
     expect(markupButtons(comic).some((button) => openingTag(button).includes('director-project-menu') && button.includes('拉萨旧城的回声'))).toBe(true);
@@ -227,5 +230,27 @@ describe('editorial collage workbench', () => {
     expect(css).toContain('.director-queue-panel');
     expect(css).toContain('.director-copy-assist');
     expect(shellCss).toContain(":not(:has(.director-desk)) .content:has(.page-head .local-note)");
+  });
+
+  it('keeps an unknown paid-request warning visible in the action bar without opening the dialog', () => {
+    const noop = () => {};
+    const base = { running: false, summary: '3/9 步', label: '查看失败与恢复', disabled: false, onAction: noop, onPause: noop, onCancel: noop, onSettings: noop, onDetails: noop };
+    const warning = '有请求结果未知，可能已计费，系统不会自动重发。';
+    const withAlert = directorDeskMarkup({ production: { ...base, alert: warning } });
+    expect(withAlert).toContain('data-production-alert="true"');
+    expect(withAlert).toContain(warning);
+    expect(withAlert).toMatch(/<span[^>]*role="alert"[^>]*data-production-alert="true"/u);
+    const withoutAlert = directorDeskMarkup({ production: base });
+    expect(withoutAlert).not.toContain('data-production-alert');
+    expect(withoutAlert).not.toContain(warning);
+  });
+
+  it('wires the persistent warning to the same unknown-result condition as the recovery button', async () => {
+    const page = await source('src/features/editorial-collage/EditorialCollagePage.tsx');
+    expect(page).toContain('alert: productionUnknown ?');
+    expect(page).toContain('可能已计费');
+    expect(page).toContain('不会自动重发');
+    expect(page).toContain("label: productionUnknown ? '查看失败与恢复'");
+    expect(page).toContain('onAction: () => productionUnknown ? setProductionDetailsOpen(true)');
   });
 });

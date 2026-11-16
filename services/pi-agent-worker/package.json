@@ -1,0 +1,14 @@
+{
+  "name": "@storydream/pi-agent-worker",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "scripts": {
+    "build": "node build.mjs",
+    "smoke": "node ../../scripts/smoke-pi-agent.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@sinclair/typebox": "0.34.52"
+  }
+}

@@ -43,7 +43,8 @@ function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number):
   const id = profile.id?.trim() || buildLlmProfileId(merged, index);
   const protocol = resolveLlmProtocol(merged);
   const fallbackModels = normalizeFallbackModels(String(merged.model ?? ''), merged.fallbackModels);
-  const { fallbackModels: _ignored, ...rest } = merged;
+  const { fallbackModels: _ignored, imageInputTokenLimit: rawImageLimit, ...rest } = merged;
+  const imageInputTokenLimit = Number(rawImageLimit);
   return {
     ...rest,
     ...(fallbackModels.length ? { fallbackModels } : {}),
@@ -53,6 +54,7 @@ function normalizeLlmProfile(profile: Partial<AppConfig['llm']>, index: number):
     protocol,
     enabled: Boolean(profile.enabled),
     timeoutMs: normalizePositiveNumber(merged.timeoutMs, defaultConfig.llm.timeoutMs ?? 120000),
+    ...(Number.isSafeInteger(imageInputTokenLimit) && imageInputTokenLimit > 0 ? { imageInputTokenLimit } : {}),
     requestParamsJson: normalizeJsonText(merged.requestParamsJson, defaultConfig.llm.requestParamsJson ?? '{}'),
   };
 }

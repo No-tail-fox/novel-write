@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronUp, Flag, MessageSquare, Play, Plus, Sparkles, Trash2, Upload, Volume2, WandSparkles } from 'lucide-react';
 import type { ProductionSubtitleCue } from '../../shared/production-workflow';
 import { LEMO_FOLLOW_STYLE_SUBTITLES } from '../../shared/creative-animation/native-film';
@@ -16,7 +16,7 @@ import {
   BubblePositionPresetKey,
   resolvePresetFromPosition,
 } from '../../shared/motion-comic-dialogue';
-import { Button, CheckboxField, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
+import { Button, CheckboxField, Dialog, SelectField, TextAreaField, TextField, Toolbar } from '../../ui';
 
 export interface DirectorSubtitleCue extends ProductionSubtitleCue {
   characterId?: string;
@@ -35,6 +35,7 @@ export type DirectorSubtitlePatch = Partial<Pick<
 
 export interface DirectorSubtitleInspectorProps {
   cues: readonly DirectorSubtitleCue[];
+  shotId?: string;
   focusCueId?: string;
   shotStartMs: number;
   durationMs: number;
@@ -51,7 +52,7 @@ export interface DirectorSubtitleInspectorProps {
   onAdd: () => void;
   onRemove: (id: string) => void;
   onAlign: (id: string) => void;
-  onBatchApplyCues?: (cues: DirectorSubtitleCue[], mode: 'replace' | 'append') => void;
+  onBatchApplyCues?: (cues: DirectorSubtitleCue[], mode: 'replace' | 'append') => void | Promise<void>;
   /** Import a local JSON/SRT/VTT transcript with explicit word/segment clocks. */
   onImportTimestamps?: (id: string) => void;
   onSeek: (timeMs: number) => void;
@@ -80,6 +81,11 @@ function getBorderColor(cue: DirectorSubtitleCue) {
 
 export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps) {
   const [error, setError] = useState('');
+  const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const applyLock = useRef(false);
+  const applyUnavailableReason = !props.onBatchApplyCues ? '当前工作流尚未接入对白批量应用；提取结果可预览，原有对白不会更改。' : '';
+  const applyDisabled = props.busy || applying || Boolean(applyUnavailableReason);
   const [extractorOpen, setExtractorOpen] = useState(false);
   const [scriptInput, setScriptInput] = useState(props.shotPrompt || '');
   const [extractedPreview, setExtractedPreview] = useState<ExtractedDialogueItem[] | null>(null);
@@ -108,38 +114,39 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
     setError('');
   };
 
-  const handleApplyExtracted = (mode: 'replace' | 'append') => {
-    if (!extractedPreview || extractedPreview.length === 0) return;
-    const timed = distributeDialogueTiming(extractedPreview, props.shotStartMs, props.durationMs);
-    const newCues: DirectorSubtitleCue[] = timed.map((item, idx) => ({
-      id: `cue-gen-${Date.now()}-${idx}`,
-      shotId: props.cues[0]?.shotId || '',
-      text: item.text,
-      startMs: item.startMs,
-      endMs: item.endMs,
-      characterId: item.characterId,
-      speakerName: item.speakerName,
-      speakerRole: item.speakerRole,
-      bubbleStyle: item.bubbleStyle,
-      // bubblePosition not extracted directly
-      bubblePosition: undefined,
-      emotion: item.emotion,
-    }));
+  const handleApplyExtracted = async (mode: 'replace' | 'append') => {
+    if (applyDisabled || applyLock.current || !props.onBatchApplyCues || !extractedPreview?.length) return;
+    applyLock.current = true;
+    setApplying(true);
+    try {
+      const timed = distributeDialogueTiming(extractedPreview, props.shotStartMs, props.durationMs);
+      const newCues: DirectorSubtitleCue[] = timed.map((item, idx) => ({
+        id: `cue-gen-${Date.now()}-${idx}`,
+        shotId: props.shotId || props.cues[0]?.shotId || '',
+        text: item.text,
+        startMs: item.startMs,
+        endMs: item.endMs,
+        characterId: item.characterId,
+        speakerName: item.speakerName,
+        speakerRole: item.speakerRole,
+        bubbleStyle: item.bubbleStyle,
+        // bubblePosition not extracted directly
+        bubblePosition: undefined,
+        emotion: item.emotion,
+      }));
 
-    if (props.onBatchApplyCues) {
-      props.onBatchApplyCues(newCues, mode);
-    } else {
-      // Fallback: 如果没有传 onBatchApplyCues，逐句应用
-      if (mode === 'replace') {
-        props.cues.forEach((c) => props.onRemove(c.id));
-      }
-      newCues.forEach((c) => {
-        props.onAdd();
-      });
+      await props.onBatchApplyCues(newCues, mode);
+      setError('');
+      setExtractedPreview(null);
+      setExtractorOpen(false);
+      setReplaceConfirmOpen(false);
+    } catch (cause) {
+      setReplaceConfirmOpen(false);
+      setError(`对白应用失败，提取结果已保留，可重试：${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      applyLock.current = false;
+      setApplying(false);
     }
-
-    setExtractedPreview(null);
-    setExtractorOpen(false);
   };
 
   // 统计角色数与配音覆盖
@@ -260,10 +267,10 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                <Button density="compact" variant="secondary" onClick={() => handleApplyExtracted('replace')}>
+                <Button density="compact" variant="secondary" disabled={applyDisabled} title={applyUnavailableReason || undefined} onClick={() => props.cues.length ? setReplaceConfirmOpen(true) : void handleApplyExtracted('replace')}>
                   替换当前所有对白
                 </Button>
-                <Button density="compact" variant="subtle" onClick={() => handleApplyExtracted('append')}>
+                <Button density="compact" variant="subtle" disabled={applyDisabled} title={applyUnavailableReason || undefined} onClick={() => void handleApplyExtracted('append')}>
                   追加到末尾
                 </Button>
               </div>
@@ -271,6 +278,15 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
           )}
         </div>
       )}
+
+      {extractorOpen && applyUnavailableReason ? <div className="director-inspector-note is-warning" role="status">{applyUnavailableReason}</div> : null}
+      {applying ? <div className="director-inspector-note" role="status">正在应用对白…</div> : null}
+      <Dialog open={replaceConfirmOpen} title="替换当前镜头对白" onOpenChange={(open) => { if (!applying) setReplaceConfirmOpen(open); }} actions={<>
+        <Button disabled={applying} onClick={() => setReplaceConfirmOpen(false)}>取消</Button>
+        <Button variant="primary" disabled={applyDisabled} onClick={() => void handleApplyExtracted('replace')}>确认替换</Button>
+      </>}>
+        <p>将用提取的 {extractedPreview?.length ?? 0} 句对白替换当前 {props.cues.length} 句对白。原对白的配音和逐词对齐将失效，需要重新生成或对齐。</p>
+      </Dialog>
 
       {/* 连续多角色对白流卡片列表 */}
       <div className="director-dialogue-stream" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -508,7 +524,7 @@ export function DirectorSubtitleInspector(props: DirectorSubtitleInspectorProps)
       />
       <div className="director-inspector-note">
         <Flag size={14} />
-        <span>{props.nativeCaptions ? '跟随风格时，字幕的字体、位置与动效由所选风格决定；手动选择的样式会作为全片创作要求。' : '漫画气泡浮层直接悬浮于画布上方；底部字幕适用于旁白或传统字幕。修改台词文本后可重新生成专属音色配音。'}</span>
+        <span>{props.nativeCaptions ? '字幕字体、位置与动效由所选风格决定；手动选择会作为全片要求。' : '漫画气泡浮层叠加在画布上方；底部字幕用于旁白或传统字幕。'}</span>
       </div>
     </section>
   );

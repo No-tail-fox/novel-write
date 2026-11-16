@@ -1,0 +1,123 @@
+/* Lemo native Agent process view, shown inside the director preview surface while a whole-film project authors. */
+.lemo-agent-workbench {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  color: var(--media-text);
+  background: var(--media-bg);
+  font-size: var(--sd-text-caption);
+  container-type: inline-size;
+}
+.lemo-agent-workbench__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--media-border);
+}
+.lemo-agent-workbench__header strong { font-size: 13px; white-space: nowrap; }
+.lemo-agent-workbench__header small {
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--media-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lemo-agent-workbench__state { white-space: nowrap; color: var(--media-muted); }
+.lemo-agent-workbench__state[data-tone='active'] { color: var(--shell-accent-strong); }
+.lemo-agent-workbench__state[data-tone='ok'] { color: var(--ok); }
+.lemo-agent-workbench__state[data-tone='danger'] { color: var(--danger); }
+
+.lemo-agent-workbench__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(220px, 1fr);
+  min-height: 0;
+}
+.lemo-agent-workbench__stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  border-right: 1px solid var(--media-border);
+}
+.lemo-agent-workbench__frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--media-surface);
+}
+.lemo-agent-workbench__frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lemo-agent-workbench__placeholder {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 300px;
+  padding: 12px;
+  color: var(--media-muted);
+  text-align: center;
+}
+.lemo-agent-workbench__placeholder span { color: var(--media-text); }
+.lemo-agent-workbench__thumbs { display: flex; gap: 6px; min-width: 0; }
+.lemo-agent-workbench__thumb.sd-button { min-width: 0; height: 40px; padding: 2px; flex: 0 1 72px; }
+.lemo-agent-workbench__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lemo-agent-workbench__thumb[aria-pressed='true'] { outline: 2px solid var(--shell-accent); outline-offset: -2px; }
+.lemo-agent-workbench__stage figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--media-muted); }
+.lemo-agent-workbench__stage figcaption [data-ok='true'] { color: var(--ok); }
+.lemo-agent-workbench__stage figcaption [data-ok='false'] { color: var(--warn); }
+
+.lemo-agent-workbench__turns {
+  min-height: 0;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.lemo-agent-workbench__turns li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--media-border) 55%, transparent);
+}
+.lemo-agent-workbench__turns li > svg { margin-top: 2px; color: var(--media-muted); }
+.lemo-agent-workbench__turns li > div { display: grid; gap: 2px; min-width: 0; }
+.lemo-agent-workbench__turns strong { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.lemo-agent-workbench__turns small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--media-muted);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.lemo-agent-workbench__target { color: var(--media-muted); font-weight: 400; }
+.lemo-agent-workbench__turns li[data-state='pending'] > svg { color: var(--shell-accent-strong); }
+.lemo-agent-workbench__turns li[data-state='rejected'] > svg { color: var(--warn); }
+.lemo-agent-workbench__turns li[data-tool='finish'][data-state='ok'] > svg { color: var(--ok); }
+.lemo-agent-workbench__turns li[aria-current='true'] { background: var(--shell-selected); }
+.lemo-agent-workbench__turns li[data-state='empty'] { grid-template-columns: minmax(0, 1fr); }
+.lemo-agent-workbench__turns li[data-state='notice'] { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.lemo-agent-workbench__turns li[data-state='notice'] > svg { color: var(--warn); }
+.lemo-agent-workbench__turns li[data-state='notice'] strong { white-space: normal; }
+.lemo-agent-workbench__turns li[data-state='notice'] small { -webkit-line-clamp: 3; }
+.lemo-agent-workbench__spin { animation: lemo-agent-spin 1s linear infinite; }
+@keyframes lemo-agent-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lemo-agent-workbench__spin { animation: none; } }
+
+/* Narrow preview surfaces: keep the side-by-side split but drop the thumbnail strip; only very narrow ones stack. */
+@container (max-width: 600px) {
+  .lemo-agent-workbench__body { grid-template-columns: minmax(0, 1.2fr) minmax(180px, 1fr); }
+  .lemo-agent-workbench__thumbs { display: none; }
+  .lemo-agent-workbench__header small { display: none; }
+}
+@container (max-width: 400px) {
+  .lemo-agent-workbench__body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .lemo-agent-workbench__stage { border-right: 0; border-bottom: 1px solid var(--media-border); }
+}

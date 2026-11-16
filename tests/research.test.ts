@@ -695,6 +695,27 @@ describe('AI source research', () => {
     expect(requests[0].messages[1].content).toContain('Verified facts.');
   });
 
+  it('condenses an explicit source without retries or generic word-count constraints', async () => {
+    const requests: LlmTextRequest[] = [];
+    await composeCopyFromSources(mockConfiguredTextLlm(async request => { requests.push(request); return { text: 'Reviewed summary.', raw: 'Reviewed summary.', requestId: 'condense-1' }; }), {
+      projectId: 'project-1', codeVideoCondense: { targetDurationSeconds: 30 }, keyword: 'Source title', extraRequirements: 'untrusted client text',
+      selectedSources: [{ source: 'user-draft', title: 'Original', content: 'Original factual narration.' }], useBuiltinKnowledge: true, targetLength: 120,
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].maxRetries).toBe(0);
+    expect(requests[0].messages[0].content).toContain('严格基于用户提供的参考素材');
+    expect(requests[0].messages[1].content).toContain('目标 30 秒');
+    expect(requests[0].messages[1].content).toContain('Original factual narration.');
+    expect(requests[0].messages[1].content).not.toContain('untrusted client text');
+    expect(requests[0].messages[1].content).not.toContain('120');
+  });
+  it('rejects invalid condense duration before calling the model', async () => {
+    let requests = 0;
+    const llm = mockConfiguredTextLlm(async () => { requests++; return { text: 'unused', raw: '', requestId: null }; });
+    await expect(composeCopyFromSources(llm, { projectId: 'p', codeVideoCondense: { targetDurationSeconds: 1 }, keyword: 'x', extraRequirements: '', selectedSources: [{ source: 'draft', title: 't', content: 'long enough original' }], useBuiltinKnowledge: false })).rejects.toThrow();
+    expect(requests).toBe(0);
+  });
+
   it('rejects empty sources unless built-in knowledge is explicitly enabled', async () => {
     const llm = mockConfiguredTextLlm(async () => ({ text: 'unused', raw: 'unused', requestId: null }));
     await expect(composeCopyFromSources(llm, {

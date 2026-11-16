@@ -111,13 +111,14 @@ args = [item for path in inputs for item in ['-i', os.path.relpath(path)]]
 args += ['-filter_complex', graph, '-map', '[vout]', '-map', '[aout]', os.path.relpath(output)]
 original_args = args[:]
 scripts = []
+filter_option = context['file_filter_option'](complex_graph=True)
 def capture(command, cwd=None):
     actual = [Path(cwd, command[i+1]).resolve() for i, value in enumerate(command[:-1]) if value == '-i']
     assert actual == inputs
     for path in actual:
         assert path.read_text(encoding='utf-8') == str(path)
     assert Path(command[-1]) == output
-    script_path = Path(command[command.index('-filter_complex_script')+1])
+    script_path = Path(command[command.index(filter_option)+1])
     assert script_path.read_text(encoding='utf-8') == graph
     assert '-filter_complex' not in command
     scripts.append(script_path)

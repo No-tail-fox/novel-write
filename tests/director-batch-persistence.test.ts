@@ -27,6 +27,21 @@ function input(overrides: Partial<CreateDirectorBatchInput> = {}): CreateDirecto
 }
 
 describe('director batch persistence', () => {
+  it('retains reference intent and request identity when restart resets running status', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'storydream-reference-recovery-'));
+    const file = join(dir, 'app.db');
+    try {
+      const db = await FileDatabase.open(file);
+      const seed = input({ status: 'running', episodeId: null });
+      seed.plan = { ...seed.plan, purpose: 'reference-generation', schemaVersion: 1, selectionMode: 'selected', shots: [] };
+      seed.nodes = [{ ...seed.nodes[0], shotId: undefined, status: 'running', reference: { target: { kind: 'prop', id: 'prop-1' }, requestId: 'original-request', attempt: 1, submissionState: 'submitted', applyState: 'pending', inputSnapshot: { prompt: 'frozen', ratio: '1:1', style: 'reference' }, inputFingerprint: 'frozen-input', configurationFingerprint: 'nonsecret-model', referenceFiles: [], provider: { profileId: 'image', provider: 'gpt_image', connected: true, supportsReferenceImages: true, maxReferenceImages: 10, label: 'fake', model: 'fake', resolution: '2K', quality: 'high' } } }];
+      const saved = await db.createDirectorBatch(seed); await db.close();
+      const restarted = await FileDatabase.open(file);
+      const restored = await restarted.getDirectorBatch(saved.id);
+      expect(restored).toMatchObject({ status: 'paused', plan: { purpose: 'reference-generation' }, nodes: [{ status: 'pending', reference: { requestId: 'original-request', submissionState: 'submitted', inputSnapshot: { prompt: 'frozen' }, target: { kind: 'prop', id: 'prop-1' } } }] });
+      await restarted.close();
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it('persists the plan, target, dependencies and control intents across restart', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'storydream-director-batch-'));
     const file = join(dir, 'app.db');

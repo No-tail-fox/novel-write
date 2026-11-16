@@ -10,10 +10,10 @@
 
 | 任务 | 当前代码事实 | 当前状态及剩余工作 |
 | --- | --- | --- |
-| R01 未保存内容保护 | 已新增 [workspace-navigation.tsx](I:/opc/src/app/workspace-navigation.tsx) 与 [workspace-draft.ts](I:/opc/src/app/workspace-draft.ts)；全局离页、关闭、导演项目、HTML 场景，以及设置、MV、配音、对标备注、模板等已出现接线；顶栏改为“工作区状态已同步” | 实施中。需完成所有退出路径、保存失败、创建期间继续输入、关闭重启和双尺寸生产 Electron 验收，不能直接勾选完成 |
+| R01 未保存内容保护 | 已新增 [workspace-navigation.tsx](I:/项目/story-dream/src/app/workspace-navigation.tsx) 与 [workspace-draft.ts](I:/项目/story-dream/src/app/workspace-draft.ts)；全局离页、关闭、导演项目、HTML 场景，以及设置、MV、配音、对标备注、模板等已出现接线；顶栏改为“工作区状态已同步” | 实施中。需完成所有退出路径、保存失败、创建期间继续输入、关闭重启和双尺寸生产 Electron 验收，不能直接勾选完成 |
 | R02 异步对象保护 | 两导演页保存/渲染回读已使用项目 ID 与提交对象检查，保留后续编辑；HTML 场景保存也增加请求保护 | 部分实现。仍需核查生成资产合并、项目/集/场景/输入版本归属及乱序响应；原 D02/D03 的无保护描述属于初次基线 |
 | R03 设置/模板加载保存 | 设置有 draftRevision 检查；两模板页有详情代次、保存基线和延迟保存保留新编辑的逻辑 | 部分实现。模板组件报告有 12 个行为检查且 runtimeErrors 为空；尚缺完整应用、密钥输入、启用/测试等组合验证 |
-| R10 模板复制 | [DraftTemplatesPage.tsx:191](I:/opc/src/features/templates/DraftTemplatesPage.tsx:191) 已优先复制当前 draft，而非重新取旧数据库版本 | 修复已写入，待专项验证复制内容、切换保护与新副本持久化；现有 12 项组件报告不包含复制用例 |
+| R10 模板复制 | [DraftTemplatesPage.tsx:191](I:/项目/story-dream/src/features/templates/DraftTemplatesPage.tsx:191) 已优先复制当前 draft，而非重新取旧数据库版本 | 修复已写入，待专项验证复制内容、切换保护与新副本持久化；现有 12 项组件报告不包含复制用例 |
 | R04 成片版本与集归属 | 已增加 episodeId/renderFingerprint；两导演页只选当前输入指纹；渲染完成会回读最新文档并保留过期历史 | 领域、CAS/并发和生产页面操作验收完成；旧历史项目迁移仍需单独抽样 |
 | R05 时间线 | 已建立 episode shot 顺序投影；新增/删除/重排/改时长统一重建 clips、字幕 cue、逐词 token 与音频边界 | 领域、持久化、渲染顺序及双尺寸页面操作验收完成；旧历史项目迁移仍需单独抽样 |
 | U01 空项目真实性 | 导演台已移除 defaultAssets、createQueue 和无资产时的示例缩略图；空素材与空队列显示明确空态 | 首轮代码修复完成；仍需生产 Electron 双尺寸回归，检查其他入口是否仍注入样例数据 |
@@ -73,9 +73,9 @@ StoryDream 的三条主要创作流程已有真实实现，问题已从早期的
 | 核心代码审计详情 | [core-audit.md](E:/StoryDream-QA/reassessment-20260906/core-audit.md)，含 C01-C08 触发路径与行证据 |
 | 辅助页面代码审计详情 | [secondary-pages-source-audit.md](E:/StoryDream-QA/product-review-20260906/secondary-pages-source-audit.md)，含 SEC-01 至 SEC-12 |
 | 最近声音功能验收 | [report.json](E:/StoryDream-QA/director-sound/results/report.json)，09-06 15:23:57 passed，零收费调用、零 runtimeErrors |
-| 整体视觉门 | [design-qa.md](I:/opc/design-qa.md)，最终仍为 blocked |
-| 原始设计目标 | [director-desk.png](I:/opc/.artifacts/product-design-rework/director-desk.png)，实际为 1440x1024 |
-| 历史开源对照 | [project-comparison-report.md](I:/opc/.artifacts/project-audit-2026-08-31/project-comparison-report.md)，作为需求来源，非本轮重新联网核验 |
+| 整体视觉门 | [design-qa.md](I:/项目/story-dream/design-qa.md)，最终仍为 blocked |
+| 原始设计目标 | [director-desk.png](I:/项目/story-dream/.artifacts/product-design-rework/director-desk.png)，实际为 1440x1024 |
+| 历史开源对照 | [project-comparison-report.md](I:/项目/story-dream/.artifacts/project-audit-2026-08-31/project-comparison-report.md)，作为需求来源，非本轮重新联网核验 |
 
 初次账户/激活失败是 QA 定位器把多个同路由按钮同时选中；补充脚本已限定侧栏导航并成功捕获。不得把该脚本问题计为软件页面故障，也不得把第一份报告单独当作全路由通过。
 
@@ -128,24 +128,24 @@ StoryDream 的三条主要创作流程已有真实实现，问题已从早期的
 
 | 编号 | 问题与影响 | 证据级别与位置 | 对应任务 |
 | --- | --- | --- | --- |
-| D01 | 切路由、项目或场景会丢未保存内容；全局保存提示未覆盖这些稿件 | MV 标题切页实际复现；[App.tsx:564](I:/opc/src/app/App.tsx:564)、[AppRoutes.tsx:103](I:/opc/src/app/AppRoutes.tsx:103)、[AppShell.tsx:213](I:/opc/src/app/AppShell.tsx:213) | R01 |
-| D02 | VOX 保存、视频完成及两导演页成片完成后的旧响应无条件替换当前文档 | 代码确认；[EditorialCollagePage.tsx:349](I:/opc/src/features/editorial-collage/EditorialCollagePage.tsx:349)、[MotionComicPage.tsx:644](I:/opc/src/features/motion-comic/MotionComicPage.tsx:644) | R02 |
-| D03 | HTML 场景 A 保存回包可回填当前场景 B 的编辑器；AI 旧文案响应可替换新主题/粘贴稿 | 代码确认；[HtmlVideoAuthoringWorkspace.tsx:251](I:/opc/src/features/html-video/HtmlVideoAuthoringWorkspace.tsx:251)、[HtmlVideoPage.tsx:451](I:/opc/src/features/html-video/HtmlVideoPage.tsx:451) | R01-R02 |
-| D04 | 设置保存中的新输入，以及模板详情慢加载期间的新输入，会被旧数据覆盖 | 代码确认；[SettingsPage.tsx:88](I:/opc/src/features/settings/SettingsPage.tsx:88)、[DraftTemplatesPage.tsx:244](I:/opc/src/features/templates/DraftTemplatesPage.tsx:244)、[PromptTemplatesPage.tsx:51](I:/opc/src/features/templates/PromptTemplatesPage.tsx:51) | R03 |
-| D05 | 改画面、字幕、画幅等未统一使旧成片失效；漫剧各集共用最后一个 selected 成片 | 代码确认；两页 `outputAsset`、[MotionComicPage.tsx:105](I:/opc/src/features/motion-comic/MotionComicPage.tsx:105)、[main.ts:2776](I:/opc/electron/main.ts:2776) | R04 |
-| D06 | 第一场新增镜头在页面排第三，timeline 却追加到全片末尾；字幕/声音错位 | 领域实际复现：播放起点 12000ms，字幕起点 40000ms，验证器仍返回空；[motion-comic.ts:771](I:/opc/src/shared/motion-comic.ts:771) | R05 |
-| D07 | 已有成功图片 job 时，再次生成的 local running 被旧 job 遮住，按钮可能重复提交 | 代码确认；[DirectorDeskWorkspace.tsx:447](I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:447)、同文件 `startGeneration` | R06 |
-| D08 | 导演批次、绘图批次由页面内存或循环驱动；切页后可继续请求，重进却失去控制 | 代码确认；[DirectorDeskWorkspace.tsx:422](I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:422)、[ImageLabPage.tsx:158](I:/opc/src/features/labs/ImageLabPage.tsx:158) | R07 |
-| D09 | 全局队列 loadedEvents 覆盖实时事件；换任务期间可能显示旧任务日志；导演任务进度套普通七阶段 | 代码确认；[QueuePage.tsx:35](I:/opc/src/features/tasks/QueuePage.tsx:35)、[task-progress.ts:70](I:/opc/src/shared/task-progress.ts:70) | R08 |
-| D10 | 人物素材删除无确认/撤销且递归删除目录；切人物失败或导入延迟可显示错属图片 | 代码确认，未对真实素材执行删除；[PersonAssetsPage.tsx:127](I:/opc/src/features/labs/PersonAssetsPage.tsx:127)、[person-assets.ts:90](I:/opc/src/shared/person-assets.ts:90) | R09 |
-| D11 | 模板编辑器“复制”读数据库旧版本，忽略当前可见未保存编辑 | 代码确认；[DraftTemplatesPage.tsx:163](I:/opc/src/features/templates/DraftTemplatesPage.tsx:163) | R10 |
-| D12 | 音乐 MV 允许没有主歌曲就创建任务，但 runner 必然拒绝；BGM 不能替代该输入 | 代码确认；[MusicMvPage.tsx:63](I:/opc/src/features/music-mv/MusicMvPage.tsx:63)、[runner.ts:1960](I:/opc/src/shared/runner.ts:1960) | R11 |
-| D13 | 空项目显示不相关示例照片、固定封面、默认素材和三条“生成队列” | 本轮截图与代码双证据；[DirectorDeskWorkspace.tsx:435](I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:435)、同文件 `createQueue`；两页 thumbnail fallback | U01 |
-| D14 | 核心状态/胶片文字大量为 9-11px；紧凑窗口检查器与队列挤压画布，声音表单很长 | 本轮截图及 [director-desk.css:347](I:/opc/src/styles/features/director-desk.css:347)、同文件字体定义 | U02 |
-| D15 | 素材展示 `visibleAssets.slice(0, 9)`，没有同区分页/展开；新资产可能不在首九张 | 代码确认；[DirectorDeskWorkspace.tsx:952](I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:952) | U03 |
-| D16 | “配音”下拉只有一个选项并有默认名人音色标签；与字幕页真实音色选项不统一 | 代码及截图；[DirectorDeskWorkspace.tsx:1200](I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:1200) | U04 |
-| D17 | 版权“查看详情”只是切到一致性页签；审片完成只是由成片存在推导 | 代码确认；[DirectorDeskWorkspace.tsx:968](I:/opc/src/features/director-desk/DirectorDeskWorkspace.tsx:968)、两页 completedStages | U01、F02、A03 |
-| D18 | MV 三种节奏模式在有真实歌曲时使用同一时间分配；无时间戳歌词仅等分 | 代码确认；[runner.ts:1932](I:/opc/src/shared/runner.ts:1932) | F10 |
+| D01 | 切路由、项目或场景会丢未保存内容；全局保存提示未覆盖这些稿件 | MV 标题切页实际复现；[App.tsx:564](I:/项目/story-dream/src/app/App.tsx:564)、[AppRoutes.tsx:103](I:/项目/story-dream/src/app/AppRoutes.tsx:103)、[AppShell.tsx:213](I:/项目/story-dream/src/app/AppShell.tsx:213) | R01 |
+| D02 | VOX 保存、视频完成及两导演页成片完成后的旧响应无条件替换当前文档 | 代码确认；[EditorialCollagePage.tsx:349](I:/项目/story-dream/src/features/editorial-collage/EditorialCollagePage.tsx:349)、[MotionComicPage.tsx:644](I:/项目/story-dream/src/features/motion-comic/MotionComicPage.tsx:644) | R02 |
+| D03 | HTML 场景 A 保存回包可回填当前场景 B 的编辑器；AI 旧文案响应可替换新主题/粘贴稿 | 代码确认；[HtmlVideoAuthoringWorkspace.tsx:251](I:/项目/story-dream/src/features/html-video/HtmlVideoAuthoringWorkspace.tsx:251)、[HtmlVideoPage.tsx:451](I:/项目/story-dream/src/features/html-video/HtmlVideoPage.tsx:451) | R01-R02 |
+| D04 | 设置保存中的新输入，以及模板详情慢加载期间的新输入，会被旧数据覆盖 | 代码确认；[SettingsPage.tsx:88](I:/项目/story-dream/src/features/settings/SettingsPage.tsx:88)、[DraftTemplatesPage.tsx:244](I:/项目/story-dream/src/features/templates/DraftTemplatesPage.tsx:244)、[PromptTemplatesPage.tsx:51](I:/项目/story-dream/src/features/templates/PromptTemplatesPage.tsx:51) | R03 |
+| D05 | 改画面、字幕、画幅等未统一使旧成片失效；漫剧各集共用最后一个 selected 成片 | 代码确认；两页 `outputAsset`、[MotionComicPage.tsx:105](I:/项目/story-dream/src/features/motion-comic/MotionComicPage.tsx:105)、[main.ts:2776](I:/项目/story-dream/electron/main.ts:2776) | R04 |
+| D06 | 第一场新增镜头在页面排第三，timeline 却追加到全片末尾；字幕/声音错位 | 领域实际复现：播放起点 12000ms，字幕起点 40000ms，验证器仍返回空；[motion-comic.ts:771](I:/项目/story-dream/src/shared/motion-comic.ts:771) | R05 |
+| D07 | 已有成功图片 job 时，再次生成的 local running 被旧 job 遮住，按钮可能重复提交 | 代码确认；[DirectorDeskWorkspace.tsx:447](I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:447)、同文件 `startGeneration` | R06 |
+| D08 | 导演批次、绘图批次由页面内存或循环驱动；切页后可继续请求，重进却失去控制 | 代码确认；[DirectorDeskWorkspace.tsx:422](I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:422)、[ImageLabPage.tsx:158](I:/项目/story-dream/src/features/labs/ImageLabPage.tsx:158) | R07 |
+| D09 | 全局队列 loadedEvents 覆盖实时事件；换任务期间可能显示旧任务日志；导演任务进度套普通七阶段 | 代码确认；[QueuePage.tsx:35](I:/项目/story-dream/src/features/tasks/QueuePage.tsx:35)、[task-progress.ts:70](I:/项目/story-dream/src/shared/task-progress.ts:70) | R08 |
+| D10 | 人物素材删除无确认/撤销且递归删除目录；切人物失败或导入延迟可显示错属图片 | 代码确认，未对真实素材执行删除；[PersonAssetsPage.tsx:127](I:/项目/story-dream/src/features/labs/PersonAssetsPage.tsx:127)、[person-assets.ts:90](I:/项目/story-dream/src/shared/person-assets.ts:90) | R09 |
+| D11 | 模板编辑器“复制”读数据库旧版本，忽略当前可见未保存编辑 | 代码确认；[DraftTemplatesPage.tsx:163](I:/项目/story-dream/src/features/templates/DraftTemplatesPage.tsx:163) | R10 |
+| D12 | 音乐 MV 允许没有主歌曲就创建任务，但 runner 必然拒绝；BGM 不能替代该输入 | 代码确认；[MusicMvPage.tsx:63](I:/项目/story-dream/src/features/music-mv/MusicMvPage.tsx:63)、[runner.ts:1960](I:/项目/story-dream/src/shared/runner.ts:1960) | R11 |
+| D13 | 空项目显示不相关示例照片、固定封面、默认素材和三条“生成队列” | 本轮截图与代码双证据；[DirectorDeskWorkspace.tsx:435](I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:435)、同文件 `createQueue`；两页 thumbnail fallback | U01 |
+| D14 | 核心状态/胶片文字大量为 9-11px；紧凑窗口检查器与队列挤压画布，声音表单很长 | 本轮截图及 [director-desk.css:347](I:/项目/story-dream/src/styles/features/director-desk.css:347)、同文件字体定义 | U02 |
+| D15 | 素材展示 `visibleAssets.slice(0, 9)`，没有同区分页/展开；新资产可能不在首九张 | 代码确认；[DirectorDeskWorkspace.tsx:952](I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:952) | U03 |
+| D16 | “配音”下拉只有一个选项并有默认名人音色标签；与字幕页真实音色选项不统一 | 代码及截图；[DirectorDeskWorkspace.tsx:1200](I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:1200) | U04 |
+| D17 | 版权“查看详情”只是切到一致性页签；审片完成只是由成片存在推导 | 代码确认；[DirectorDeskWorkspace.tsx:968](I:/项目/story-dream/src/features/director-desk/DirectorDeskWorkspace.tsx:968)、两页 completedStages | U01、F02、A03 |
+| D18 | MV 三种节奏模式在有真实歌曲时使用同一时间分配；无时间戳歌词仅等分 | 代码确认；[runner.ts:1932](I:/项目/story-dream/src/shared/runner.ts:1932) | F10 |
 
 ### 5.1 需要精确限定的事实
 
@@ -166,7 +166,7 @@ StoryDream 的三条主要创作流程已有真实实现，问题已从早期的
 | 智能成片新建 | 类型选择、三步创建、摘要齐全；紧凑首屏被类型和标题区域占去较多高度；默认示例文案直接填入 | U05；常用参数优先、深层参数渐进展开；初始示例与用户稿区分；保留创建/保存草稿路径 | [新建](E:/StoryDream-QA/current-audit/new-task-1040x720.png) |
 | 自动化队列 | 列表与事件上下分区清晰，但事件选择和更新逻辑不可靠；空态占据大块灰区 | R07-R08；任务可选、日志实时、跨工作流进度准确；合理缩减空态 | [队列](E:/StoryDream-QA/current-audit/queue-1040x720.png) |
 | 历史任务 | 归档/收藏/搜索/分页已存在；空态和页头较疏；需和导演真实状态统一 | R08、U06；明确任务类型、当前阶段、最后有效产物；验证长标题/大历史 | [历史](E:/StoryDream-QA/current-audit/history-1536x1024.png) |
-| 任务详情 | 有步骤、产物预览、重跑、诊断和交付入口；本轮未建立普通任务详情新截图 | Q01；补待审批、运行、失败、取消、成片/草稿缺失状态；不凭源码称全部 UI 通过 | [TaskDetailPage.tsx](I:/opc/src/features/tasks/TaskDetailPage.tsx) |
+| 任务详情 | 有步骤、产物预览、重跑、诊断和交付入口；本轮未建立普通任务详情新截图 | Q01；补待审批、运行、失败、取消、成片/草稿缺失状态；不凭源码称全部 UI 通过 | [TaskDetailPage.tsx](I:/项目/story-dream/src/features/tasks/TaskDetailPage.tsx) |
 | VOX 创建 | 已有三步与服务预检；紧凑布局中摘要仍占较宽区域，主要输入与下一步分散在长滚动中；起步结构固定 | U05、F03；将时长/结构成为可编辑任务目标，保持摘要和必需动作可达 | [创建](E:/StoryDream-QA/current-audit/editorial-collage-1040x720.png) |
 | VOX 导演台 | 三栏、预览、胶片、素材、检查器、队列俱全；空项目示例素材强烈误导；小字密集；真实音色入口分裂 | U01-U04；真实空态、准确 job 状态、检查器层级与素材全量访问 | [工作台](E:/StoryDream-QA/current-audit/editorial-collage-workspace-1536x1024.png) |
 | AI 漫剧创建 | 三场六镜首集骨架、主角和服务项已具备；创建完成不表示参考图准备完整 | F06；创建后直接进入缺项清单与系列设定，不提前给一致性完成暗示 | [创建](E:/StoryDream-QA/current-audit/motion-comic-1536x1024.png) |

@@ -188,14 +188,22 @@ async function generateVideo(
   const customParams = parseRequestParams(provider.requestParamsJson);
   const references = request.referenceImages ?? (request.referenceImagePaths ?? []).map((path) => ({ path, kind: 'style' as const, description: '' }));
   const family = videoModelLimits(provider).family;
-  const getezoRelay = isGetezoRelayVideoApi(provider);
-  const generatedBody: Record<string, unknown> = getezoRelay
+  const h3PromptContent = customParams.storydream_protocol === 'h3-prompt-content';
+  if (h3PromptContent && family !== 'h3') {
+    throw new Error('VIDEO_PROVIDER_PROTOCOL_UNSUPPORTED: h3-prompt-content 协议仅适用于 H3 模型。');
+  }
+  const getezoRelay = !h3PromptContent && isGetezoRelayVideoApi(provider);
+  const generatedBody: Record<string, unknown> = h3PromptContent
+    ? await multimodalVideoBody(provider, request, prompt, durationSec, references)
+    : getezoRelay
     ? { model: provider.model, prompt: guidedReferencePrompt(prompt, references, request, provider), duration: durationSec, resolution: getezoRelayResolution(provider, request) }
     : isGeekAiVideoApi(provider)
     ? await geekAiVideoBody(provider, request, prompt, durationSec, references)
     : family !== 'generic'
     ? await multimodalVideoBody(provider, request, prompt, durationSec, references)
     : await legacyVideoBody(provider, request, prompt, durationSec, references);
+  if (h3PromptContent) generatedBody.prompt = guidedReferencePrompt(prompt, references, request, provider);
+  delete customParams.storydream_protocol;
   const body: Record<string, unknown> = { ...customParams, ...generatedBody };
   if (family === 'h3' && Buffer.byteLength(JSON.stringify(body), 'utf8') > 64 * 1024 * 1024) {
     throw new Error('VIDEO_PROVIDER_REFERENCE_INVALID: H3 请求体不能超过 64 MB，请减少参考素材大小或使用素材地址。');
@@ -447,7 +455,9 @@ async function requestJsonWithRetries(
       const parsed = text ? JSON.parse(text) as unknown : {};
       if (!response.ok) {
         const detail = responseError(parsed) || `${response.status} ${response.statusText}`;
-        const error = new Error(`VIDEO_PROVIDER_HTTP_ERROR: ${detail}`);
+        // Preserve transport status for callers deciding whether submission was rejected
+        // or remains uncertain. Human-readable provider details alone are insufficient.
+        const error = Object.assign(new Error(`VIDEO_PROVIDER_HTTP_ERROR: HTTP ${response.status}: ${detail}`), { status: response.status });
         if (response.status !== 429 && response.status < 500) throw error;
         lastError = error;
       } else {
@@ -581,7 +591,8 @@ async function imageDataUrl(path: string): Promise<string> {
 /** Getezo's priced H3 relay variants use indexed multipart references, not the native H3 content schema. */
 function isGetezoRelayVideoApi(provider: VideoProviderConfig): boolean {
   try {
-    return ['getezo.com', 'video.getezo.com', '1.cnmz.de'].includes(new URL(provider.baseUrl).hostname)
+    const explicit = parseRequestParams(provider.requestParamsJson).storydream_protocol;
+    return (explicit === 'getezo-relay' || ['getezo.com', 'video.getezo.com', '1.cnmz.de'].includes(new URL(provider.baseUrl).hostname))
       && /^(?:minimax_h3_768p-15s|minimax_h3_1080p-10s|minimax_h3_736p-12s)$/u.test(provider.model)
       && /\/videos\/?$/u.test(provider.submitPath);
   } catch { return false; }
@@ -720,7 +731,7 @@ function guidedReferencePrompt(prompt: string, references: VideoReferenceImage[]
   const token = (type: 'Image' | 'Video' | 'Audio', index: number) => isGeekAiVideoApi(provider)
     ? `@${type === 'Image' ? '图' : type === 'Video' ? '视频' : '音频'}${index + 1}`
     : videoReferenceToken(provider, type, index);
-  const guidance = references.map((reference, index) => `${token('Image', index)} 用于${kinds[reference.kind]}${reference.description ? `：${reference.description}` : ''}。`);
+  const guidance = references.map((reference, index) => `参考图${index + 1}（${token('Image', index)}）用于${kinds[reference.kind]}${reference.description ? `：${reference.description}` : ''}。`);
   (request.referenceVideoPaths ?? []).forEach((_path, index) => guidance.push(`${token('Video', index)} 的动作、运镜或节奏，以正文描述为准。`));
   (request.referenceAudioPaths ?? []).forEach((_path, index) => guidance.push(`${token('Audio', index)} 的声音、节奏或氛围，以正文描述为准。`));
   return guidance.length ? `${prompt}\n\n参考素材关系：\n${guidance.join('\n')}` : prompt;

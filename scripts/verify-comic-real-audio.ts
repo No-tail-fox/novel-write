@@ -1,0 +1,13 @@
+import { build } from 'esbuild';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { writeStoryboundSidecarScript } from '../src/shared/storybound-sidecar';
+const directory = resolve('.artifacts/comic-real-audio');
+await mkdir(directory, { recursive: true });
+await build({ entryPoints: ['tests/motion-comic-real-audio.harness.tsx'], outfile: `${directory}/harness.js`, bundle: true, platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' } });
+await writeFile(`${directory}/index.html`, '<!doctype html><meta charset="utf-8"><div id="root"></div><script src="/harness.js"></script>', 'utf8');
+const sidecar = await writeStoryboundSidecarScript(directory);
+const result = spawnSync(resolve('vendor/python/python.exe'), [resolve('tests/motion-comic-real-audio.browser.py'), directory, sidecar], { stdio: 'inherit', timeout: 120000 });
+if (result.error) throw result.error;
+process.exitCode = result.status ?? 1;

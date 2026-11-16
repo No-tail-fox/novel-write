@@ -241,7 +241,7 @@ async function generateJimengImages(input: {
     throwIfAborted(input.signal);
     const taskId = await submitJimengTask({ ...input, prompt, size });
     const bytes = await pollJimengResult({ ...input, taskId });
-    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
+    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}${generatedImageExtension(bytes)}`);
     await writeFile(path, bytes);
     assets.push({ sceneId: scene.id, path });
   }
@@ -396,7 +396,7 @@ async function generateOpenAiCompatibleImages(input: {
     // A later recovery downloads this result or polls the saved task; it cannot POST.
     await saveReceipt({ image: { ...(image.b64_json ? { b64_json: image.b64_json } : {}), ...(image.url ? { url: image.url } : {}) } });
     const bytes = await extractImageBytes(body, input.signal, input.proxyUrl);
-    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}.png`);
+    const path = join(outputDir, `${String(scene.id).padStart(3, '0')}${generatedImageExtension(bytes)}`);
     await writeFile(path, bytes);
     assets.push({ sceneId: scene.id, path });
   }
@@ -933,6 +933,17 @@ function sceneAssetForTurn(sceneId: number, path: string, turn: TtsTurn): SceneA
     ...(turn.turnIndex ? { turnIndex: turn.turnIndex } : {}),
     ...(turn.speaker ? { text: turn.text } : {}),
   };
+}
+
+/** Trust the received format, not the URL suffix or the requested output format. */
+function generatedImageExtension(bytes: Buffer): '.png' | '.jpg' | '.webp' | '.gif' {
+  if (bytes.length >= 24 && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a'
+    && bytes.subarray(12, 16).toString('ascii') === 'IHDR') return '.png';
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return '.jpg';
+  if (bytes.length >= 20 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
+    && ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.toString('ascii', 12, 16)) && bytes.readUInt32LE(4) + 8 === bytes.length) return '.webp';
+  if (bytes.length >= 13 && ['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6))) return '.gif';
+  throw new Error('IMAGE_PROVIDER_RESULT_INVALID: 图片服务返回的内容不是受支持的 PNG、JPEG、WebP 或 GIF 图片；请核对原请求，请勿直接重复生成。');
 }
 
 async function extractImageBytes(body: { data?: Array<{ b64_json?: string; url?: string }> }, signal?: AbortSignal, proxyUrl?: string): Promise<Buffer> {

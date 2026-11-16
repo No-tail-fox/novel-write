@@ -26,15 +26,25 @@ export async function readRendererSources(): Promise<RendererSources> {
     .filter((path) => /^src\/.*\.tsx?$/.test(path))
     .sort(comparePaths);
   const entries = await Promise.all(
-    paths.map(async (path) => [path, await readFile(resolve(projectRoot, ...path.split('/')), 'utf8')] as const),
+    paths.map(async (path) => {
+      try {
+        return [path, await readFile(resolve(projectRoot, ...path.split('/')), 'utf8')] as const;
+      } catch (error) {
+        // git --cached also lists files deleted in the working tree. Inspect the
+        // current tree; reachableFrom still rejects imports of missing modules.
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw error;
+      }
+    }),
   );
-  const sources = new Map(entries);
+  const presentEntries = entries.filter((entry) => entry !== null);
+  const sources = new Map(presentEntries);
   // One immutable source snapshot: parse shared dependencies once across routes.
   const importsCache = new Map<string, readonly string[]>();
   const reachableCache = new Map<string, ReadonlyMap<string, string>>();
 
   return {
-    all: entries.map(([, source]) => source).join('\n'),
+    all: presentEntries.map(([, source]) => source).join('\n'),
     file(path) {
       return sources.get(normalizeRendererPath(path)) ?? null;
     },

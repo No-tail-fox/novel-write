@@ -4,6 +4,7 @@ import type { StoryDreamApi } from '../../shared/storydream-api';
 import type { LibraryAssetSummary, LibraryKind, LibrarySource } from '../../shared/asset-library';
 import type { ImageLabSummary } from '../../shared/types';
 import { Button, Dialog, Tabs } from '../../ui';
+import { formatRelativeTime, summarizePrompt } from '../tasks/task-formatters';
 import { LibraryBrowser, LibraryImage } from './LibraryBrowser';
 
 export interface LibrarySelection {
@@ -56,8 +57,14 @@ export function LibraryPicker({ api, kind, title, actionLabel, onClose, onChoose
   return <Dialog open title={title} onOpenChange={(open) => { if (!open && !submitting.current) onClose(); }} actions={<><Button disabled={busy} onClick={onClose}>取消</Button><Button variant="primary" icon={busy ? <Loader2 size={15} className="spin" /> : <Check size={15} />} disabled={busy || (tab === 'library' ? !selected : !recentId)} onClick={() => void choose()}>{busy ? '采用中' : actionLabel}</Button></>}>
     <div className="library-picker" data-library-picker>
       {kind === 'image' ? <Tabs label="图片来源" value={tab} onChange={(value) => { if (!busy) { setTab(value); setError(''); } }} items={[{ value: 'library', label: '素材库' }, { value: 'recent', label: '最近生成' }]} /> : null}
-      {tab === 'library' ? <LibraryBrowser api={api} kind={kind} selectedId={selected?.id || ''} onSelect={setSelected} disabled={busy} /> : <div className="library-recent">
-        {loading ? <p role="status">正在读取生成记录…</p> : !recent.length ? <p>暂无生成图片</p> : recent.map((record) => <article className="library-card" data-selected={record.id === recentId} key={record.id}><LibraryImage api={api} path={record.imagePath} title={record.promptPreview} /><Button className="library-card-select" variant="subtle" aria-pressed={record.id === recentId} disabled={busy} onClick={() => setRecentId(record.id)}><strong>{record.promptPreview}</strong></Button></article>)}
+      {tab === 'library' ? <LibraryBrowser api={api} kind={kind} selectedId={selected?.id || ''} onSelect={setSelected} disabled={busy} /> : <div className="library-recent" aria-busy={loading}>
+        {loading ? <p className="library-empty" role="status"><Loader2 size={18} className="spin" />正在读取生成记录…</p> : !recent.length ? <p className="library-empty">暂无生成图片</p> : recent.map((record) => <article className="library-card" data-selected={record.id === recentId} key={record.id}>
+          <LibraryImage api={api} path={record.imagePath} title={summarizePrompt(record.promptPreview) || '未命名生成图'} />
+          <Button className="library-card-select" variant="subtle" aria-pressed={record.id === recentId} disabled={busy} title={record.promptPreview} onClick={() => setRecentId(record.id)}>
+            <strong>{summarizePrompt(record.promptPreview) || '未命名生成图'}</strong>
+            <span><span>{record.style || '图片'}{record.ratio ? ` · ${record.ratio}` : ''} · {formatRelativeTime(record.createdAt)}</span></span>
+          </Button>
+        </article>)}
         {error ? <Button disabled={busy || loading} onClick={() => setRetry((value) => value + 1)}>重新读取</Button> : null}
       </div>}
       {selected && tab === 'library' ? <p className="library-selection-note">已选：{selected.title}</p> : null}

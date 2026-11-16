@@ -20,6 +20,13 @@ describe('preview-first director workspace', () => {
     expect(directorPhaseComplete(directorPhases[3], ['审片', '导出'])).toBe(true);
   });
 
+  it('keeps the export workspace out of legacy header grid rows', async () => {
+    const css = await readFile(new URL('../src/styles/features/motion-comic.css', import.meta.url), 'utf8');
+    expect(css).toContain("[data-workspace-layout='preview-first']:not([data-motion-comic-timeline-layout]):not(:has(.director-phase-bar))");
+    const source = await readFile(new URL('../src/features/director-desk/DirectorDeskWorkspace.tsx', import.meta.url), 'utf8');
+    expect(source).toContain('{!motionComicTimelineLayout ? <header className="director-desk-header">');
+  });
+
   it('keeps canonical selection, real media and compact pane escape routes', async () => {
     const source = await readFile(new URL('../src/features/director-desk/DirectorDeskWorkspace.tsx', import.meta.url), 'utf8');
     expect(source).toContain("data-workspace-layout={processOutline ? 'process-outline' : 'preview-first'}");

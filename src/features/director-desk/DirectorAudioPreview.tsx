@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { productionAudioClipGainAtTime, type ProductionAudioFadeEnvelope } from '../../shared/production-audio';
+import { productionAudioClipGainAtTime, type ProductionAudioFadeEnvelope, type ProductionAudioTrackType } from '../../shared/production-audio';
 
 export interface DirectorPreviewAudioClip {
   id: string;
   assetVersionId?: string;
+  /** Authored track classification, when available from the persisted timeline. */
+  trackType?: ProductionAudioTrackType | 'native';
   url: string;
   /** Project-global milliseconds, matching persisted timeline clips. */
   startMs: number;

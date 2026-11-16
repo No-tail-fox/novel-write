@@ -15,11 +15,14 @@ export function countVisibleCharacters(value: string): number {
   return value.replace(/\s+/g, '').length;
 }
 
+/** Upper bound for a single piece of copy; 120 minutes of narration still fits below it. */
+export const TARGET_LENGTH_MAX = 100_000;
+
 export function normalizeTargetLength(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
-  return Math.min(5000, Math.max(100, Math.round(parsed)));
+  return Math.min(TARGET_LENGTH_MAX, Math.max(100, Math.round(parsed)));
 }
 
 export function targetWordCountRange(targetLength: unknown, sourceText = ''): TargetWordCountRange | null {

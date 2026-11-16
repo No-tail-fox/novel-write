@@ -20,7 +20,7 @@ import { useAsyncAction } from "../../ui/async-action";
 import { FormField as Field } from "../../components/FormField";
 import { SegmentedControl as Segmented } from "../../components/SegmentedControl";
 import { ToggleField } from "../../components/ToggleField";
-import { Button, SelectField, SwitchField, Tabs, TextField } from '../../ui';
+import { Button, CheckboxField, SelectField, SwitchField, Tabs, TextField } from '../../ui';
 import { RangeField } from "../../components/RangeField";
 import { AsyncActionFeedback as InlineActionFeedback } from "../../components/AsyncActionFeedback";
 import type { ApplyMutationResult, RendererAppState as AppState } from "../../app/route-types";
@@ -648,6 +648,13 @@ export function SettingsPage({ api, state, applyState, synchronizeThemeState, na
               <ConfigInput label="最高分辨率" value={selectedVideoProvider.maxResolution} onChange={(value) => updateSelectedVideoProvider({ maxResolution: value })} />
               <ConfigInput label="许可证说明" value={selectedVideoProvider.license} onChange={(value) => updateSelectedVideoProvider({ license: value })} />
               <ConfigInput label="附加请求参数（JSON）" value={selectedVideoProvider.requestParamsJson} onChange={(value) => updateSelectedVideoProvider({ requestParamsJson: value })} />
+              <CheckboxField label="使用 Getezo MiniMax H3 relay 视频协议" checked={selectedVideoProvider.requestParamsJson.includes('"storydream_protocol":"getezo-relay"')} onChange={(_, data) => {
+                let requestParams: Record<string, unknown> = {};
+                try { const parsed = JSON.parse(selectedVideoProvider.requestParamsJson || '{}'); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) requestParams = parsed; } catch { /* Preserve invalid drafts for validation feedback. */ }
+                if (data.checked) requestParams.storydream_protocol = 'getezo-relay';
+                else delete requestParams.storydream_protocol;
+                updateSelectedVideoProvider({ requestParamsJson: JSON.stringify(requestParams, null, 2) });
+              }} />
               <Field label="能力声明">
                 <div className="settings-inline-actions">
                   {([

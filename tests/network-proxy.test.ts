@@ -303,7 +303,7 @@ describe('config proxyUrl reaches provider requests (G-5)', () => {
     const seen: Array<Dispatcher | undefined> = [];
     const fake = vi.fn(async (_url: string, init?: RequestInit & { dispatcher?: Dispatcher }) => {
       seen.push(init?.dispatcher);
-      return new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('img').toString('base64') }] }), { status: 200 });
+      return new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=' }] }), { status: 200 });
     });
     const dir = await mkdtemp(join(tmpdir(), 'storydream-proxy-image-'));
     try {
@@ -311,7 +311,7 @@ describe('config proxyUrl reaches provider requests (G-5)', () => {
       const gpt: AppConfig = { ...defaultConfig, imageProvider: 'gpt_image',
         gptImage: { ...defaultConfig.gptImage, apiKey: 'k', baseUrl: 'https://image.example', proxyUrl: 'http://127.0.0.1:7892' } };
       const assets = await createConfiguredImageGenerator(gpt, dir)([scene], [prompt], task);
-      expect(await readFile(assets[0].path, 'utf8')).toBe('img');
+      expect((await readFile(assets[0].path)).toString('base64')).toBe('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=');
       expect(proxyUriOf(seen[0])).toBe('http://127.0.0.1:7892/');
 
       const custom: AppConfig = { ...defaultConfig, imageProvider: 'custom',

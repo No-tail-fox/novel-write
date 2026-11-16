@@ -1,0 +1,43 @@
+.comic-reference-batch { min-width: 0; color: var(--shell-text); }
+.comic-reference-batch p { margin: 8px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.comic-reference-batch .sd-toolbar { flex-wrap: wrap; gap: 8px; }
+.comic-reference-batch__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; }
+.comic-reference-batch__spacer { flex: 1 1 auto; }
+.comic-reference-batch__live { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 10px; border: 1px solid var(--shell-border); border-inline-start: 3px solid var(--shell-accent); border-radius: 6px; background: var(--shell-surface); font-size: 12px; font-weight: 600; }
+.comic-reference-batch__live svg { flex-shrink: 0; color: var(--shell-accent-strong); }
+.comic-reference-batch__live > span { white-space: nowrap; }
+.comic-reference-batch__live small { color: var(--shell-muted); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.comic-reference-batch__dialog { width: min(680px, calc(100vw - 32px)); }
+.comic-reference-batch__hint { color: var(--shell-muted); font-size: 13px; line-height: 1.6; }
+.comic-reference-batch__choices { display: grid; gap: 16px; margin: 16px 0; }
+.comic-reference-batch__choices fieldset { min-width: 0; margin: 0; padding: 8px 12px; border: 1px solid var(--shell-border); border-radius: 8px; }
+.comic-reference-batch__choices legend { padding: 0 4px; font-weight: 600; }
+.comic-reference-batch__choices label { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; cursor: pointer; }
+.comic-reference-batch__choices input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--shell-accent); }
+.comic-reference-batch__choices input:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 3px; }
+.comic-reference-batch__choices span { min-width: 0; overflow-wrap: anywhere; }
+.comic-reference-batch__choices small { display: block; margin-top: 4px; color: var(--shell-muted); font-size: 13px; }
+.comic-reference-batch__choices fieldset:disabled label { cursor: default; opacity: .6; }
+.comic-reference-batch__history { margin-top: 8px; }
+.comic-reference-batch__history summary { padding: 12px 0; cursor: pointer; }
+.comic-reference-batch__history summary:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 2px; }
+.comic-reference-batch__record { display: grid; gap: 8px; margin: 8px 0; padding: 16px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface); }
+.comic-reference-batch__record > small { color: var(--shell-muted); overflow-wrap: anywhere; }
+.comic-reference-batch__record ul { display: grid; gap: 8px; padding: 0; margin: 4px 0; list-style: none; }
+.comic-reference-batch__record li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 8px 0; border-bottom: 1px solid var(--shell-border); overflow-wrap: anywhere; }
+.comic-reference-batch__record li small { width: 100%; color: var(--shell-muted); }
+/* Episode-scope missing-asset batch: one bordered strip instead of loose items. */
+.comic-reference-batch--episode { margin: 12px 24px 0; padding: 8px 12px; border: 1px solid var(--shell-border); border-radius: 8px; background: var(--shell-surface); }
+.comic-reference-batch--episode { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px; }
+.comic-reference-batch--episode .comic-reference-batch__bar { order: 2; flex: 0 0 auto; justify-content: flex-end; }
+.comic-reference-batch--episode .comic-reference-batch__spacer { display: none; }
+.comic-reference-batch--episode > p { order: 3; flex: 1 0 100%; }
+.comic-reference-batch--episode .comic-reference-batch__history { order: 1; flex: 1 1 0; min-width: 0; margin-top: 0; }
+.comic-reference-batch--episode .comic-reference-batch__history[open] { flex-basis: 100%; order: 4; }
+.comic-reference-batch--episode .comic-reference-batch__history summary { padding: 6px 0; font-size: 12px; color: var(--shell-muted); }
+.comic-reference-batch--episode .comic-reference-batch__history[open] summary { color: var(--shell-text); }
+@media (max-width: 480px) {
+  .comic-reference-batch--episode { margin-inline: 12px; }
+  .comic-reference-batch__record { padding: 12px; }
+  .comic-reference-batch__record li { flex-direction: column; }
+}

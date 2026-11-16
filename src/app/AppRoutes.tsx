@@ -6,6 +6,7 @@ import { routeComponents } from './route-registry';
 import type { ApplyMutationResult, RendererAppState as AppState } from './route-types';
 import type { SettingsSection } from '../features/settings/SettingsPage';
 import { createProjectHomeSession } from '../features/projects/project-home-session';
+import type { ProjectFilterRequest } from '../features/projects/ProjectHomePage';
 import type { MusicMvHandoff } from '../features/music-mv/music-mv-handoff';
 import type { VideoModelPreset } from '../shared/video-models';
 
@@ -13,6 +14,7 @@ const {
   'projects': ProjectHomePage,
   'conversation-workbench': ConversationWorkbenchPage,
   'new-task': NewTaskPage,
+  'short-video': ShortVideoPage,
   'hot-board': HotBoardPage,
   'queue': QueuePage,
   'history': HistoryPage,
@@ -40,6 +42,7 @@ const {
 export function AppRoutes({
   activeView,
   newProjectEntryRevision,
+  projectFilterRequest,
   api,
   state,
   selectedTask,
@@ -69,6 +72,7 @@ export function AppRoutes({
 }: {
   activeView: ShellView;
   newProjectEntryRevision?: number;
+  projectFilterRequest?: ProjectFilterRequest;
   api: StoryDreamApi;
   state: AppState;
   selectedTask: Task | null;
@@ -105,6 +109,7 @@ export function AppRoutes({
         <ProjectHomePage
           config={state.config}
           session={projectHomeSession}
+          projectFilterRequest={projectFilterRequest}
           api={api}
           applyState={applyState}
           openTaskDetail={(taskId) => openTaskDetail(taskId, 'projects')}
@@ -115,6 +120,7 @@ export function AppRoutes({
       ) : null}
       {activeView === 'conversation-workbench' ? <ConversationWorkbenchPage api={api} state={state} /> : null}
       {activeView === 'new-task' ? <NewTaskPage entryRevision={newProjectEntryRevision} api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, 'projects')} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
+      {activeView === 'short-video' ? <ShortVideoPage initialChoosingType={false} api={api} state={state} applyState={applyState} openTaskDetail={(taskId) => openTaskDetail(taskId, 'short-video')} isBrowserPreview={isBrowserPreview} navigate={navigate} /> : null}
       {activeView === 'hot-board' ? <HotBoardPage api={api} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}
       {activeView === 'book-selection' ? <BookSelectionPage api={api} navigate={navigate} /> : null}
       {activeView === 'benchmark' ? <BenchmarkImportPage api={api} applyState={applyState} openTaskDetail={openTaskDetail} navigate={navigate} isBrowserPreview={isBrowserPreview} /> : null}

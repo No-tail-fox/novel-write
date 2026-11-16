@@ -53,7 +53,8 @@ export function splitMotionComicProductionUnits(document:MotionComicPipelineData
   dialogueCues:owner.dialogueCues.map(cue=>{const shot=shots.find(s=>s.dialogueCueIds.includes(cue.id));return shot?{...cue,shotId:shot.id}:cue;}),
   timeline:{...owner.timeline,
    clips:owner.timeline.clips.flatMap(clip=>clip.shotId===shotId?units.map((u,i)=>({...clip,id:`clip-${shots[i].id}`,shotId:shots[i].id,startMs:start+u.startMs,durationMs:u.endMs-u.startMs,subtitleCueIds:u.cueIds,assetVersionIds:clip.assetVersionIds.filter(id=>id===shots[i].firstFrameAssetVersionId||id===shots[i].lastFrameAssetVersionId)})):clip),
-   audioClips:[...(owner.timeline.audioClips??[]).filter(c=>c.shotId!==shotId),...units.flatMap((u,i)=>audio.flatMap(clip=>{const sliced=sliceProductionAudioClip(clip,start+u.startMs,start+u.endMs,start+source.durationMs);return sliced?[{...sliced,id:`${clip.id}-unit-${i+1}`,shotId:shots[i].id}]:[];}))],
+   // Whole clips retain their identity (including dialogue-clip-${cue.id}); only actual slices need new IDs.
+   audioClips:[...(owner.timeline.audioClips??[]).filter(c=>c.shotId!==shotId),...units.flatMap((u,i)=>audio.flatMap(clip=>{const sliced=sliceProductionAudioClip(clip,start+u.startMs,start+u.endMs,start+source.durationMs);return sliced?[{...sliced,id:sliced.startMs===clip.startMs&&sliced.durationMs===clip.durationMs?clip.id:`${clip.id}-unit-${i+1}`,shotId:shots[i].id}]:[];}))],
   },
  };
  return {...base,updatedAt:document.updatedAt,stage:'shot-board',qualityReports:base.qualityReports.filter(r=>r.episodeId!==owner.id),assets:base.assets.map(a=>a.assetId==='director-final-video'&&a.episodeId===owner.id?{...a,selected:false,pinned:false}:a),episodes:base.episodes.map(e=>e.id===owner.id?rebuildMotionComicEpisode(nextEpisode):e)};

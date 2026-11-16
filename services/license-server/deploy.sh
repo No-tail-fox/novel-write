@@ -5,7 +5,7 @@ umask 077
 [[ ${EUID} -eq 0 ]] || { echo 'Run as root.' >&2; exit 1; }
 [[ $# -ge 1 && $# -le 2 ]] || { echo 'Usage: bash deploy.sh PUBLIC_IP [PORT]' >&2; exit 1; }
 public_ip=$1
-public_port=${2:-443}
+public_port=${2:-18443}
 bundle=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 code=/opt/storydream-license
 data=/var/lib/storydream-license
@@ -66,7 +66,7 @@ install -m 0644 "$bundle/admin-dist/index.html" "$code/admin-dist/index.html"
 install -m 0644 "$bundle/admin-dist/admin.js" "$code/admin-dist/admin.js"
 install -m 0644 "$bundle/admin-dist/admin.css" "$code/admin-dist/admin.css"
 install -m 0644 "$bundle/storydream-license.service" "$unit"
-sed -i "s/--port 443$/--port $public_port/" "$unit"
+sed -i "s/--port [0-9][0-9]*$/--port $public_port/" "$unit"
 install -m 0755 "$bundle/licensectl" "$wrapper"
 if [[ ! -e $data/secrets.json ]]; then
   storydream-license init --host "$public_ip" --port "$public_port" >/dev/null

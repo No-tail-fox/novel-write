@@ -17,6 +17,12 @@ const hash = (value: string | Buffer) => createHash('sha256').update(value).dige
 const textFile = /\.(?:html|m?js|css|json|md|txt|svg)$/i;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_PROJECT_BYTES = 16 * 1024 * 1024;
+/**
+ * A turn that writes a whole film page can be a single large reply; providers that stream nothing until the
+ * reply is complete need more than a few minutes. Timing out costs a paid request whose result is unknown,
+ * so the budget is generous and a stalled provider still ends the turn with a reconcilable receipt.
+ */
+const LEMO_AGENT_TURN_TIMEOUT_MS = 600_000;
 interface Turn { index: number; reply: string; observation: string; tool: string; modelRequestId: string | null }
 interface Journal { version: 1; contextHash: string; film: LemoUpstreamFilm; turns: Turn[] }
 export interface LemoAgentContext {
@@ -53,6 +59,11 @@ export interface LemoAgentOptions {
   skipUnknownImage?: boolean;
   /** Per-run turn limit (bounded; default LEMO_AGENT_MAX_TURNS). Not part of the context hash. */
   maxTurns?: number;
+  /**
+   * Per-turn request timeout. A first `write_file` of a full film page is a large single response, so the
+   * default leaves room for slow providers that emit nothing until the reply is complete.
+   */
+  turnTimeoutMs?: number;
   /** L-4 cost budget / estimate (U-5 price table). Not part of the context hash and never shown to the model. */
   cost?: LemoAgentCostControl;
 }
@@ -394,7 +405,7 @@ export async function stepLemoUpstreamAgent(options: LemoAgentOptions): Promise<
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new LemoAgentUnknownRequestError(); throw error; }
     try {
       response = await options.model({ step: index, name: 'Lemo 原生 Agent', messages, signal: options.signal,
-        stream: true, captureIncomplete: true, defaultMaxTokens: 16384, maxRetries: 0, timeoutMs: 240000 });
+        stream: true, captureIncomplete: true, defaultMaxTokens: 16384, maxRetries: 0, timeoutMs: options.turnTimeoutMs ?? LEMO_AGENT_TURN_TIMEOUT_MS });
     } catch (error) {
       if (wasGenerationNotSubmitted(error)) {
         await atomic(join(turnDir, 'rejected.json'), { requestId: options.requestId, reason: 'local-authorization-before-dispatch' });

@@ -107,7 +107,7 @@ export function creativeStyle(slug: string | undefined): CreativeStyleEntry | un
 Motion grammar: ${motionDirection}` } };
 }
 export function resolveCreativeStyle(styleId: string | undefined, presetId: string) {
-  return creativeStyle(!styleId || styleId === 'auto' ? presetId === 'data-map' ? 'dataviz' : presetId === 'archival-story' ? 'archive-lighttable' : 'halftone-dossier' : styleId);
+  return creativeStyle(!styleId || styleId === 'auto' ? presetId === 'data-map' ? 'dataviz' : presetId === 'archival-story' ? 'archive-lighttable' : 'brick-toy' : styleId);
 }
 /** Lemo route accepts any complete library or OPUSCAR 98 style; the template route needs a host adapter. */
 export function creativeStyleSupportsMode(style: CreativeStyleEntry | undefined, mode: 'template' | 'ai-code'): boolean {

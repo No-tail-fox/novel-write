@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { appendMotionComicEpisode, createMotionComicDraft, createMotionComicStarterProject, parseMotionComicPipelineData } from '../src/shared/motion-comic';
-import { prepareMotionComicDialogueForRender, fitMotionComicDialogueTiming, motionComicDialogueInput, motionComicDialogueInputMatches, updateMotionComicCharacterVoice } from '../src/shared/motion-comic-dialogue';
+import { prepareMotionComicDialogueForRender, fitMotionComicDialogueTiming, motionComicDialogueInput, motionComicDialogueInputMatches, refreshMotionComicDialogueInputsAfterTiming, updateMotionComicCharacterVoice } from '../src/shared/motion-comic-dialogue';
 import { applyMotionComicVoiceRecord } from '../src/features/director-desk/director-generation';
 import { updateDirectorSubtitleCue } from '../src/shared/director-subtitles';
 import type { VoiceLabRecord } from '../src/shared/types';
@@ -87,6 +87,26 @@ describe('independent motion comic dialogue', () => {
     expect(next.episodes[0].timeline.audioClips?.find(clip => clip.id === `dialogue-clip-${cues[0].id}`)).toMatchObject({ durationMs: 3624, sourceDurationMs: 3624 });
     expect(next.episodes[0].scenes[0].shots[0].durationMs).toBe(7000);
     expect(fitMotionComicDialogueTiming(next, shot.id)).toEqual(next);
+  });
+
+  it('continues captured batch inputs after internal timing fits while rejecting actual edits', () => {
+    const { document, shot, cues } = fixture();
+    shot.durationMs = 7000;
+    document.episodes[0].timeline.clips.find(clip => clip.shotId === shot.id)!.durationMs = 7000;
+    Object.assign(cues[0], { startMs: 629, endMs: 3518 });
+    Object.assign(cues[1], { startMs: 4148, endMs: 6371 });
+    const inputs = cues.map(cue => motionComicDialogueInput(document, shot.id, cue.id, defaults));
+    const next = applyMotionComicVoiceRecord(document, shot.id, record(inputs[0]), 'm', cues[0].id, inputs[0], 3624);
+    expect(next.episodes[0].dialogueCues[0].voiceAssetVersionId).toBe(`voice-asset-${inputs[0].cueId}`);
+    expect(motionComicDialogueInputMatches(next, inputs[0])).toBe(false);
+    const refreshed = refreshMotionComicDialogueInputsAfterTiming(document, next, inputs.slice(1));
+    expect(motionComicDialogueInputMatches(next, refreshed[0])).toBe(true);
+    const completed = applyMotionComicVoiceRecord(next, shot.id, record(refreshed[0]), 'm', cues[1].id, refreshed[0], 2040);
+    expect(completed.episodes[0].dialogueCues.filter(cue => cue.shotId === shot.id).every(cue => cue.voiceAssetVersionId)).toBe(true);
+    const edited = updateDirectorSubtitleCue(document, shot.id, cues[1].id, { text: '生成期间用户修改的对白' });
+    const editedNext = applyMotionComicVoiceRecord(edited, shot.id, record(inputs[0]), 'm', cues[0].id, inputs[0], 3624);
+    const stale = refreshMotionComicDialogueInputsAfterTiming(edited, editedNext, inputs.slice(1));
+    expect(motionComicDialogueInputMatches(editedNext, stale[0])).toBe(false);
   });
 
   it('keeps the original timing when complete recordings cannot fit the shot', () => {

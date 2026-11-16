@@ -128,7 +128,7 @@ function SemanticScene({payload,frame}:{payload:VoxAnimationPayload;frame:number
 
 export function VoxComposition(payload:VoxAnimationPayload){const frame=useCurrentFrame(),config=useVideoConfig();const {animation}=payload,p=animation.template.props,id=animation.template.id;const w=1000,h=config.height/config.width*w;const images=p.assetIds.flatMap(id=>payload.assets.find(a=>a.id===id&&a.kind==='image')?.url??[]),audio=payload.assets.find(a=>a.id===p.audioAssetId)?.url;
   if(animation.creativeStyle?.composition==='scene')return <CreativeScene payload={payload} frame={frame}/>;
-  if(payload.semanticLayers?.length)return <SemanticScene payload={payload} frame={frame}/>;
+  if(animation.creativeStyle?.composition!=='template'&&payload.semanticLayers?.length)return <SemanticScene payload={payload} frame={frame}/>;
   if(shotcraftRecipe(id))return <ShotcraftComposition payload={payload} frame={frame} durationInFrames={config.durationInFrames}/>;
   const stageTop=noHeadingFor(id)?50:Math.max(105,Math.min(220,Math.ceil(p.title.length/17)*62));
   const stageHeight=h-stageTop-Math.max(110,h*(p.source?.24:.19)),portrait=h>w;

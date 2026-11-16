@@ -1,7 +1,7 @@
 import { narrationSpeechText } from '../../shared/narration-speech-text';
 import { activeImageProfileId, activeTtsProfileId, normalizedImageProfiles, normalizedTtsProfiles } from '../../shared/provider-profile-utils';
 import type { SecretStatus } from '../../shared/config-secrets';
-import { rebuildEditorialTimeline, type EditorialCollagePipelineData } from '../../shared/editorial-collage';
+import { editorialShotVoiceProvider, rebuildEditorialTimeline, type EditorialCollagePipelineData } from '../../shared/editorial-collage';
 import { joinEditorialNarration } from '../../shared/editorial-script';
 import { createEditorialMotionLayers, editorialLayerPrompt } from '../../shared/editorial-motion';
 import { editorialKeyframeAssetId, editorialNeedsLayerUpgrade } from '../../shared/editorial-media';
@@ -482,12 +482,13 @@ export function editorialVoiceInput(document: EditorialCollagePipelineData, shot
     : [shot];
   const cueIds = group.flatMap(s => s.subtitleCueIds);
   const cues = cueIds.flatMap(id => document.beats.flatMap(b => b.subtitleCues).find(c => c.id === id) ?? []);
+  const useSelectedVoice = !!shot.voiceId && editorialShotVoiceProvider(document, shot) === defaults.provider;
   return {
     projectId: document.id, beatId: beat!.id, shotId,
     text: narrationSpeechText(joinEditorialNarration(cues.map((cue) => cue.text))),
     cueIds,
-    provider: defaults.provider, voiceId: shot.voiceId || defaults.voiceId,
-    voiceLabel: shot.voiceLabel || defaults.voiceLabel, speed: shot.voiceSpeed ?? defaults.speed,
+    provider: defaults.provider, voiceId: useSelectedVoice ? shot.voiceId! : defaults.voiceId,
+    voiceLabel: useSelectedVoice ? shot.voiceLabel || shot.voiceId! : defaults.voiceLabel, speed: shot.voiceSpeed ?? defaults.speed,
     selectedAssetId: shot.voiceAssetVersionId,
     defaults: { provider: defaults.provider, voiceId: defaults.voiceId, voiceLabel: defaults.voiceLabel, speed: defaults.speed },
   };
@@ -735,6 +736,7 @@ export function applyEditorialVoiceRecord(
       shots: beat.shots.map((shot) => group.has(shot.id) && generated ? {
         ...shot,
         voiceId: record.voiceId,
+        voiceProvider: record.provider === 'minimax' || record.provider === 'volcengine' ? record.provider : undefined,
         voiceLabel: record.voiceLabel,
         voiceSpeed: record.speed,
         voiceAssetVersionId: generated?.id ?? shot.voiceAssetVersionId,

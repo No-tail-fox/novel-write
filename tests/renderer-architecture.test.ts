@@ -217,7 +217,7 @@ describe('renderer application ownership architecture', () => {
   it('owns one new-task action and every sidebar entry with four generation workbenches', async () => {
     const navigation = await import('../src/app/navigation');
     expect(navigation.newTaskPrimaryAction.view).toBe('new-task');
-    const sidebarViews = ['projects', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv',
+    const sidebarViews = ['projects', 'short-video', 'editorial-collage', 'template-animation', 'motion-comic', 'html-video', 'music-mv',
       'person-assets', 'copy-studio', 'conversation-workbench', 'image-lab', 'voice-lab', 'video-lab', 'music-lab',
       'hot-board', 'benchmark', 'book-selection', 'viral-analyzer', 'prompt-templates', 'draft-templates',
       'queue', 'history', 'settings', 'account', 'activation'];

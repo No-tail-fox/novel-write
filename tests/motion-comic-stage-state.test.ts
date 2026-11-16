@@ -81,6 +81,14 @@ describe('motion comic active-episode stage state', () => {
     expect(resolveMotionComicStageState(document, new Set(), false).assets.ready).toBe(true);
     expect(resolveMotionComicStageState(document, new Set(), false).storyboard.ready).toBe(false);
   });
+  it('allows shot editing before references are generated without marking images complete', () => {
+    const document = twoEpisodeFixture();
+    document.assets = [];
+    const stages = resolveMotionComicStageState(document, new Set(), false);
+    expect(stages.storyboard.ready).toBe(true);
+    expect(stages.storyboard.complete).toBe(false);
+    expect(stages.video.ready).toBe(true);
+  });
   it('does not let an unfinished sibling episode block the current episode', () => {
     const document = twoEpisodeFixture();
     const current = resolveMotionComicActiveEpisodeReadiness(document);
@@ -117,9 +125,23 @@ describe('motion comic active-episode stage state', () => {
     expect(stages.video.ready).toBe(true);
     expect(stages.video.complete).toBe(false);
     expect(stages.audio.ready).toBe(true);
-    expect(stages.export.ready).toBe(false);
+    expect(stages.export.ready).toBe(true);
+    expect(stages.export.complete).toBe(false);
+    expect(stages.export.detail).toContain('素材待补齐');
     shots[0].firstFrameAssetVersionId = undefined;
-    expect(resolveMotionComicStageState(document, new Set(), false).video.ready).toBe(false);
+    expect(resolveMotionComicStageState(document, new Set(), false).video.ready).toBe(true);
+  });
+
+  it('counts generated remote video as storyboard completion even without optional keyframes', () => {
+    const document = twoEpisodeFixture();
+    const shots = document.episodes[0].scenes.flatMap((scene) => scene.shots);
+    for (const shot of shots) shot.firstFrameAssetVersionId = undefined;
+    const readiness = resolveMotionComicActiveEpisodeReadiness(document);
+    const stages = resolveMotionComicStageState(document, new Set(), false);
+    expect(readiness.storyboardReadyCount).toBe(shots.length);
+    expect(readiness.storyboardComplete).toBe(true);
+    expect(stages.storyboard.complete).toBe(true);
+    expect(stages.storyboard.detail).toBe(`${shots.length}/${shots.length} 远程视频已就绪`);
   });
 
   it('requires a usable video asset and its authoritative completed shot job', () => {
@@ -165,6 +187,9 @@ describe('motion comic active-episode stage state', () => {
       generationComplete: true,
     });
     expect(resolveMotionComicStageState(document, new Set(), false).audio.ready).toBe(true);
+    for (const shot of shots) shot.videoProduction = { version: 1, referenceMode: 'references', audioMode: 'native' };
+    document.assets = document.assets.filter(asset => asset.kind !== 'audio');
+    expect(resolveMotionComicActiveEpisodeReadiness(document).audioComplete).toBe(false);
 
     const firstFrame = document.assets.find((asset) => asset.id === shots[0].firstFrameAssetVersionId)!;
     firstFrame.localPath = '   ';

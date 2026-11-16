@@ -36,6 +36,29 @@ function deferred<T>() {
 }
 
 describe('history page store', () => {
+  it('resets pagination on sorting while preserving filters and rejecting stale responses', async () => {
+    const controller = createHistoryPageRequestController<'task', Item>('task');
+    const filters = { family: 'task' as const, filter: 'archived' as const, taskType: 'story' as const,
+      favorite: true, query: '标题', statuses: ['completed' as const], limit: 2 };
+    controller.activate(filters, 0);
+    await controller.load(async () => page('task', [item('first')], 'page-two', 4), () => false);
+    controller.next();
+    const late = deferred<HistoryPage<'task', Item>>();
+    const pending = controller.load(() => late.promise, () => false);
+    controller.activate({ ...filters, sort: 'title' }, 0);
+    expect(controller.current()).toMatchObject({ cursor: null, hasPrevious: false, request: { ...filters, sort: 'title' } });
+    const loader = vi.fn(async (_request: unknown) => page('task', [item('sorted')], null, 4));
+    await controller.load(loader, () => false);
+    expect(loader.mock.calls[0]?.[0]).toMatchObject({ ...filters, sort: 'title', cursor: null });
+    late.resolve(page('task', [item('stale')]));
+    await pending;
+    expect(controller.current().page?.items).toEqual([item('sorted')]);
+    controller.activate({ ...filters, sort: 'newest' }, 0);
+    const key = controller.current().key;
+    expect(controller.activate(filters, 0)).toBe(false);
+    expect(controller.current().key).toBe(key);
+  });
+
   it('canonicalizes task conditions while keeping the cursor outside the stable request key', () => {
     const store = createHistoryPageStore<'task', Item>('task');
     const request = store.begin({

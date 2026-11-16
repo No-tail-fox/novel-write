@@ -884,7 +884,7 @@ describe('electron ipc contract', () => {
     const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
     const preload = await readFile(new URL('../electron/preload.ts', import.meta.url), 'utf8');
     const apiContract = await readFile(new URL('../src/shared/storydream-api.ts', import.meta.url), 'utf8');
-    const handler = main.slice(main.indexOf("trustedHandle('image-lab:generate'"), main.indexOf("trustedHandle('image-lab:add-record'"));
+    const handler = handlerSource(main, 'image-lab:generate');
 
     expect(main).toContain('generateImageLabRecord');
     expect(handler).toContain('imageLabWorkDir');
@@ -892,6 +892,26 @@ describe('electron ipc contract', () => {
     expect(preload).toContain('generateImageLab');
     expect(preload).toContain('image-lab:generate');
     expect(apiContract).toContain('generateImageLab: (input: ImageLabGenerateInput) => Promise<AppMutationResult | null>');
+  });
+
+  it('follows delegating handlers into the helper that owns the contract', async () => {
+    const main = await readFile(new URL('../electron/main.ts', import.meta.url), 'utf8');
+    // `image-lab:generate` delegates to a helper shared with the reference-batch runner. These
+    // guarantees live in the helper now, so the slice must follow the delegation — otherwise the
+    // contract silently stops covering the code the moment it moves.
+    const handler = handlerSource(main, 'image-lab:generate');
+    expect(handler).toContain('generateManagedImageLabRecord(input)');
+    expect(handler).toContain('async function generateManagedImageLabRecord');
+    expect(handler, 'helper body is included past its parameter list').toContain('imageLabWorkDir');
+    const reservation = handler.indexOf("reserveActive('image-lab', id)");
+    expect(reservation, 'reserves the active id before any provider work').toBeGreaterThan(-1);
+    expect(reservation).toBeLessThan(handler.indexOf('await getDb()'));
+    expect(handler).toContain('finally');
+    expect(handler).toContain('activityReservation.release()');
+
+    // A handler that still owns its body is returned verbatim, so no existing slice changes.
+    const inline = handlerSource(main, 'task:archive');
+    expect(inline).not.toContain('async function generateManagedImageLabRecord');
   });
 
   it('routes voice lab preview generation through the configured TTS provider', async () => {
@@ -1245,7 +1265,75 @@ function handlerSource(source: string, channel: string): string {
   const start = source.indexOf(`trustedHandle('${channel}'`);
   const end = source.indexOf('\ntrustedHandle(', start + 1);
   if (start < 0) throw new Error(`Missing trusted IPC handler: ${channel}`);
-  return source.slice(start, end < 0 ? source.length : end);
+  const handler = source.slice(start, end < 0 ? source.length : end);
+  const forwarded = forwardedHandlerTargets(handler);
+  if (!forwarded.length) return handler;
+  // A handler may be a thin delegation (`async (_event, input) => (await helper(input)).patch`)
+  // after its body moves into a named function so other callers can reuse it. The contract
+  // assertions describe that body, so follow the delegation instead of silently matching
+  // nothing. Without this the checks fail only because the code moved, not because it regressed.
+  return [handler, ...forwarded.map(name => functionSource(source, name, channel))].join('\n');
+}
+
+/**
+ * Names of same-file functions a *delegating* handler forwards to.
+ *
+ * A delegating handler is one whose whole body is a single expression delegating to a named
+ * function, optionally awaited and optionally followed by a member access or `as` cast — e.g.
+ * `async (_event, input) => (await helper(input)).patch`. Handlers that still own their
+ * implementation never match, so their slices are byte-for-byte unchanged.
+ */
+function forwardedHandlerTargets(handler: string): string[] {
+  // Strip the wrapper down to the arrow body: `trustedHandle('chan', async (…) => BODY);`
+  const arrow = handler.indexOf('=>');
+  if (arrow < 0) return [];
+  // Trim the trailing `);` of the trustedHandle(...) call, then any statement semicolon.
+  let body = handler.slice(arrow + 2).trim();
+  while (body.endsWith(';')) body = body.slice(0, -1).trim();
+  if (body.endsWith(')') && handler.trimEnd().endsWith(');')) body = body.slice(0, -1).trim();
+  // A delegation body is a single call expression, so it must not contain statement separators.
+  if (!body || /;\s*\S/.test(body) || body.startsWith('{')) return [];
+  // Collapse the optional wrapping parens/await and trailing `.member` or `as T` chain.
+  const delegation = /^\(?\s*(?:await\s+)?([A-Za-z_$][\w$]*)\s*\([\s\S]*\)\s*\)?\s*(?:\.[A-Za-z_$][\w$]*)?\s*(?:as\s+[^;]+)?$/;
+  const name = delegation.exec(body)?.[1];
+  if (!name || SHELL_CALLS.has(name)) return [];
+  return [name];
+}
+
+const SHELL_CALLS = new Set([
+  'publishStatePatch', 'getDb', 'getConfigService', 'requireDesktopGeneration', 'randomUUID',
+  'resolve', 'require', 'String', 'Number', 'Boolean', 'JSON', 'Object', 'Array', 'Error', 'Promise',
+]);
+
+/** Full source of a top-level `function name(...)` / `async function name(...)` declaration. */
+function functionSource(source: string, name: string, channel: string): string {
+  const declaration = new RegExp(`^(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`, 'm');
+  const match = declaration.exec(source);
+  if (!match) throw new Error(`Missing helper ${name}() forwarded from ${channel}`);
+  // Walk the parameter list first: its type annotation may itself contain braces
+  // (`options: { reuseExisting?: boolean } = {}`), which would otherwise be mistaken for the body.
+  const paramsOpen = match.index + match[0].length - 1;
+  let depth = 0;
+  let paramsClose = -1;
+  for (let index = paramsOpen; index < source.length; index += 1) {
+    if (source[index] === '(') depth += 1;
+    else if (source[index] === ')') {
+      depth -= 1;
+      if (depth === 0) { paramsClose = index; break; }
+    }
+  }
+  if (paramsClose < 0) throw new Error(`Malformed helper ${name}() forwarded from ${channel}`);
+  const bodyOpen = source.indexOf('{', paramsClose);
+  if (bodyOpen < 0) throw new Error(`Malformed helper ${name}() forwarded from ${channel}`);
+  depth = 0;
+  for (let index = bodyOpen; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    else if (source[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(match.index, index + 1);
+    }
+  }
+  throw new Error(`Unterminated helper ${name}() forwarded from ${channel}`);
 }
 
 // O-5: helpers split out of main.ts live in sibling electron modules; source contracts read main.ts plus those modules.

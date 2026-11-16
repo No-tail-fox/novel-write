@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Database, SqlValue } from 'sql.js';
 import { parseMotionComicPipelineData, type MotionComicPipelineData } from './motion-comic';
 import { assertMotionComicScriptAssets, confirmMotionComicScriptAssets, motionComicScriptAssetIds } from './motion-comic-script-assets';
-import { splitMotionComicSource, validateMotionComicScriptDraft, collectMotionComicPlanAdjustments, plannedMotionComicSourceEpisodeIds } from './motion-comic-planning';
+import { motionComicScriptDraftSchema, splitMotionComicSource, validateMotionComicScriptDraft, collectMotionComicPlanAdjustments, plannedMotionComicSourceEpisodeIds } from './motion-comic-planning';
 import {
   MOTION_COMIC_SCRIPT_PROMPT_VERSION, assertMotionComicScriptTransition,
   motionComicScriptTaskSchema, motionComicScriptCandidateSchema, motionComicScriptApprovalSchema,
@@ -13,6 +13,10 @@ import {
   motionComicScriptRevisionSchema, motionComicScriptStoryboardCandidateSchema,
   type MotionComicScriptRevisionInput, type MotionComicScriptStoryboard,
 } from './motion-comic-script-batch';
+
+import { applyMotionComicScriptProposal, motionComicScriptProposalSchema, motionComicScriptOriginalSchema, motionComicScriptProposeSchema, motionComicScriptAdoptSchema, motionComicScriptRevertSchema, type MotionComicScriptRevertInput, type MotionComicScriptProposal, type MotionComicScriptProposeInput, type MotionComicScriptAdoptInput } from './motion-comic-script-proposal';
+
+import { motionComicAssetExtractSchema, motionComicAssetExtractionApplySchema, motionComicAssetExtractionCandidateSchema, validateAssetExtractionOutput, applyAssetExtractionSelections, type MotionComicAssetExtractInput, type MotionComicAssetExtractionApplyInput, type MotionComicAssetExtractionCandidate } from './motion-comic-asset-extraction';
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const now = () => new Date().toISOString();
@@ -37,7 +41,19 @@ export class MotionComicScriptStore {
       CREATE TABLE IF NOT EXISTS motion_comic_script_approvals (project_id TEXT NOT NULL, source_episode_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(project_id, source_episode_id));
       CREATE TABLE IF NOT EXISTS motion_comic_script_controls (project_id TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0);`);
     db.run('CREATE TABLE IF NOT EXISTS motion_comic_script_storyboards (task_id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    db.run(`CREATE TABLE IF NOT EXISTS motion_comic_script_originals (task_id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS motion_comic_script_proposals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, task_id TEXT NOT NULL, request_id TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(project_id, request_id));
+      CREATE INDEX IF NOT EXISTS idx_comic_proposals_project ON motion_comic_script_proposals(project_id);`);
+    db.run('CREATE TABLE IF NOT EXISTS motion_comic_asset_extractions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, request_id TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(project_id, request_id))');
     const store = new MotionComicScriptStore(() => db, async (mutation) => mutation());
+    for (const row of store.rows('SELECT data FROM motion_comic_asset_extractions')) {
+      const candidate = motionComicAssetExtractionCandidateSchema.parse(JSON.parse(String(row.data)));
+      if (candidate.status === 'running') store.putAssetExtraction({ ...candidate, status: 'unknown', dispatchState: 'unknown', error: '上次请求执行结果未知；没有可查询回执，不会自动重放。', updatedAt: now() });
+    }
+    for (const row of store.rows('SELECT data FROM motion_comic_script_proposals')) {
+      const proposal = motionComicScriptProposalSchema.parse(JSON.parse(String(row.data)));
+      if (proposal.status === 'running') store.putProposal({ ...proposal, status: 'failed', error: '上次执行中断；不会自动重提，请使用新请求生成。' });
+    }
     for (const row of store.rows('SELECT data FROM motion_comic_script_tasks')) {
       const task = motionComicScriptTaskSchema.parse(JSON.parse(String(row.data)));
       if (task.status === 'running') store.putTask({ ...task, status: 'queued', error: '上次执行中断，等待后台恢复。', updatedAt: now() });
@@ -66,12 +82,106 @@ export class MotionComicScriptStore {
   private snapshotNow(id: string): MotionComicScriptSnapshot {
     this.project(id);
     return {
+      assetExtractions: this.rows('SELECT data FROM motion_comic_asset_extractions WHERE project_id = ? ORDER BY rowid', [id]).map(row => motionComicAssetExtractionCandidateSchema.parse(JSON.parse(String(row.data)))),
+      originals: this.rows('SELECT c.data FROM motion_comic_script_originals c JOIN motion_comic_script_tasks t ON t.id = c.task_id WHERE t.project_id = ?', [id]).map(row => motionComicScriptOriginalSchema.parse(JSON.parse(String(row.data)))),
+      proposals: this.rows('SELECT data FROM motion_comic_script_proposals WHERE project_id = ? ORDER BY rowid', [id]).map(row => motionComicScriptProposalSchema.parse(JSON.parse(String(row.data)))),
       projectId: id, paused: Boolean(this.rows('SELECT paused FROM motion_comic_script_controls WHERE project_id = ?', [id])[0]?.paused),
       tasks: this.rows('SELECT data FROM motion_comic_script_tasks WHERE project_id = ? ORDER BY rowid', [id]).map((row) => motionComicScriptTaskSchema.parse(JSON.parse(String(row.data)))),
       candidates: this.rows('SELECT c.data FROM motion_comic_script_candidates c JOIN motion_comic_script_tasks t ON t.id = c.task_id WHERE t.project_id = ?', [id]).map((row) => motionComicScriptCandidateSchema.parse(JSON.parse(String(row.data)))),
       approvals: this.rows('SELECT data FROM motion_comic_script_approvals WHERE project_id = ?', [id]).map((row) => motionComicScriptApprovalSchema.parse(JSON.parse(String(row.data)))),
       storyboards: this.rows('SELECT c.data FROM motion_comic_script_storyboards c JOIN motion_comic_script_tasks t ON t.id = c.task_id WHERE t.project_id = ?', [id]).map((row) => motionComicScriptStoryboardCandidateSchema.parse(JSON.parse(String(row.data)))),
     };
+  }
+
+  private putAssetExtraction(value: MotionComicAssetExtractionCandidate): void {
+    const item = motionComicAssetExtractionCandidateSchema.parse(value);
+    this.database().run('INSERT INTO motion_comic_asset_extractions(id, project_id, request_id, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data', [item.id, item.projectId, item.requestId, JSON.stringify(item)]);
+  }
+
+  private assetExtractionContext(document: MotionComicPipelineData, sourceEpisodeId: string) {
+    const source = document.sourceDocument?.episodes.find(item => item.id === sourceEpisodeId);
+    if (!source?.sourceText.trim()) throw new Error('ASSET_EXTRACTION_SOURCE_REQUIRED');
+    const definitions = {
+      characters: document.characters.map(item => ({ id: item.id, name: item.name, aliases: item.aliases, role: item.role, identityPrompt: item.identityPrompt, personality: item.personality, voiceNotes: item.voiceNotes, looks: item.looks.map(look => ({ id: look.id, label: look.label, appearancePrompt: look.appearancePrompt, wardrobe: look.wardrobe, continuityNotes: look.continuityNotes })) })),
+      sceneAssets: document.sceneAssets.map(item => ({ id: item.id, label: item.label, description: item.description, prompt: item.prompt, continuityNotes: item.continuityNotes })),
+      props: document.props.map(item => ({ id: item.id, label: item.label, description: item.description, prompt: item.prompt })),
+    };
+    return { sourceText: source.sourceText, definitions, sourceFingerprint: hash(source), projectFingerprint: hash(definitions) };
+  }
+
+  beginAssetExtraction(raw: MotionComicAssetExtractInput, config: { provider: string; model: string }) {
+    const input = motionComicAssetExtractSchema.parse(raw);
+    return this.commitProject(input.id, () => {
+      const document = this.project(input.id);
+      const requestFingerprint = hash(input);
+      const previous = this.snapshotNow(input.id).assetExtractions?.find(item => item.requestId === input.requestId);
+      if (previous) {
+        if (previous.requestFingerprint !== requestFingerprint) throw new Error('ASSET_EXTRACTION_REQUEST_CONFLICT');
+        return { claimed: false as const, candidate: previous };
+      }
+      if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE');
+      if (this.snapshotNow(input.id).tasks.some(task => task.status === 'running' || task.status === 'queued' || task.storyboardStatus === 'running')) throw new Error('ASSET_EXTRACTION_PROJECT_BUSY');
+      const context = this.assetExtractionContext(document, input.sourceEpisodeId);
+      const candidate: MotionComicAssetExtractionCandidate = { id: randomUUID(), projectId: input.id, sourceEpisodeId: input.sourceEpisodeId, category: input.category, requestId: input.requestId, requestFingerprint,
+        sourceFingerprint: context.sourceFingerprint, projectFingerprint: context.projectFingerprint,
+        inputFingerprint: hash({ source: context.sourceFingerprint, project: context.projectFingerprint, category: input.category, ...config, prompt: 'category-v1' }),
+        revision: 1, status: 'running', dispatchState: 'prepared', provider: config.provider, model: config.model, createdAt: now(), updatedAt: now() };
+      this.putAssetExtraction(candidate);
+      return { claimed: true as const, candidate, context };
+    });
+  }
+
+  markAssetExtractionDispatched(id: string, candidateId: string) {
+    return this.commitProject(id, () => {
+      const candidate = this.snapshotNow(id).assetExtractions?.find(item => item.id === candidateId);
+      if (!candidate || candidate.status !== 'running' || candidate.dispatchState !== 'prepared') throw new Error('ASSET_EXTRACTION_NOT_DISPATCHABLE');
+      this.putAssetExtraction({ ...candidate, dispatchState: 'dispatched', updatedAt: now() });
+    });
+  }
+
+  finishAssetExtraction(id: string, candidateId: string, output?: unknown, error?: string, unknown = false) {
+    return this.commitProject(id, () => {
+      const candidate = this.snapshotNow(id).assetExtractions?.find(item => item.id === candidateId);
+      if (!candidate || candidate.status !== 'running') return this.snapshotNow(id);
+      if (error) this.putAssetExtraction({ ...candidate, ...(output === undefined ? {} : { output: validateAssetExtractionOutput(candidate.category, output) }), status: unknown ? 'unknown' : 'failed', dispatchState: unknown ? 'unknown' : 'settled', error: error.slice(0, 8000), updatedAt: now() });
+      else {
+        const parsed = validateAssetExtractionOutput(candidate.category, output);
+        let stale = true;
+        try {
+          const context = this.assetExtractionContext(this.project(id), candidate.sourceEpisodeId);
+          stale = context.sourceFingerprint !== candidate.sourceFingerprint || context.projectFingerprint !== candidate.projectFingerprint;
+        } catch { /* A removed source retains the response as stale evidence. */ }
+        this.putAssetExtraction({ ...candidate, output: parsed, status: stale ? 'stale' : 'ready', dispatchState: 'settled', updatedAt: now() });
+      }
+      return this.snapshotNow(id);
+    });
+  }
+
+  applyAssetExtraction(raw: MotionComicAssetExtractionApplyInput) {
+    const input = motionComicAssetExtractionApplySchema.parse(raw);
+    return this.commitProject(input.id, () => {
+      const candidate = this.snapshotNow(input.id).assetExtractions?.find(item => item.id === input.candidateId);
+      if (!candidate || candidate.revision !== input.revision || candidate.inputFingerprint !== input.inputFingerprint) throw new Error('ASSET_EXTRACTION_REVISION');
+      if (candidate.status === 'applied') return this.snapshotNow(input.id);
+      if (candidate.status !== 'ready') throw new Error('ASSET_EXTRACTION_NOT_READY');
+      if (this.snapshotNow(input.id).tasks.some(task => task.status === 'running' || task.status === 'queued' || task.storyboardStatus === 'running')) throw new Error('ASSET_EXTRACTION_PROJECT_BUSY');
+      const document = this.project(input.id);
+      if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE');
+      let inputChanged = true;
+      try {
+        const context = this.assetExtractionContext(document, candidate.sourceEpisodeId);
+        inputChanged = context.sourceFingerprint !== candidate.sourceFingerprint || context.projectFingerprint !== candidate.projectFingerprint;
+      } catch { /* Missing source invalidates the candidate without modifying the project. */ }
+      if (inputChanged) {
+        this.putAssetExtraction({ ...candidate, status: 'stale', error: 'ASSET_EXTRACTION_INPUT_CHANGED: 源分集或项目资产定义已变化，请重新提取候选。', updatedAt: now() });
+        return this.snapshotNow(input.id);
+      }
+      const next = applyAssetExtractionSelections(document, candidate, input.selections, randomUUID);
+      next.updatedAt = new Date(Math.max(Date.now(), Date.parse(document.updatedAt) + 1)).toISOString();
+      this.database().run('UPDATE tasks SET pipeline_data = ? WHERE id = ?', [JSON.stringify(next), input.id]);
+      this.putAssetExtraction({ ...candidate, status: 'applied', updatedAt: now() });
+      return this.snapshotNow(input.id);
+    });
   }
 
   async pendingProjects(): Promise<string[]> {
@@ -106,7 +216,7 @@ export class MotionComicScriptStore {
     const ids = task.bibleAssetIds ?? this.bibleAssetIds(document);
     const { characterIds: _characters, sceneAssetIds: _scenes, propAssetIds: _props, ...series } = document.series;
     const seriesBibleVersion = hash({ series,
-      characters: document.characters.filter((item) => ids.characters.includes(item.id)).map(({ voiceProvider: _provider, voiceId: _voice, voiceSpeed: _speed, looks, ...character }) => ({ ...character, looks: looks.filter((look) => !ids.looks || ids.looks.includes(look.id)).map(({ referenceAssetVersionIds: _refs, pinned: _pinned, ...look }) => look) })),
+      characters: document.characters.filter((item) => ids.characters.includes(item.id)).map(({ voiceProvider: _provider, voiceId: _voice, voiceSpeed: _speed, voiceSampleAssetVersionId: _sample, looks, ...character }) => ({ ...character, looks: looks.filter((look) => !ids.looks || ids.looks.includes(look.id)).map(({ referenceAssetVersionIds: _refs, pinned: _pinned, ...look }) => look) })),
       sceneAssets: document.sceneAssets.filter((item) => ids.sceneAssets.includes(item.id)).map(({ referenceAssetVersionIds: _refs, ...item }) => item),
       props: document.props.filter((item) => ids.props.includes(item.id)).map(({ referenceAssetVersionIds: _refs, ...item }) => item) });
     const inputFingerprint = hash({ source: episodes[index], seriesBibleVersion, previousStateVersion,
@@ -181,6 +291,8 @@ export class MotionComicScriptStore {
         this.putTask({ ...current, status: 'stale', error: '生成期间输入或前情发生变化，请重新提交。', updatedAt: now() }); return;
       }
       const revision = current.outputRevision + 1;
+      const original = motionComicScriptOriginalSchema.parse({ taskId: current.id, outputRevision: revision, script: result.script, createdAt: now(), provenance: 'first-model-finish' });
+      this.database().run('INSERT OR IGNORE INTO motion_comic_script_originals(task_id, data) VALUES (?, ?)', [current.id, JSON.stringify(original)]);
       this.putCandidate({ script: result.script, adjustments: result.adjustments, issues: result.issues, taskId: current.id, outputRevision: revision, origin: 'model', createdAt: now() });
       this.putTask({ ...current, outputRevision: revision, status: result.issues.length ? 'review' : 'script-ready', progress: 100, checkpoint: 'validate', updatedAt: now() });
       this.invalidate(task.projectId);
@@ -221,12 +333,130 @@ export class MotionComicScriptStore {
       const legacyApproval = task?.status === 'approved' && snapshot.approvals.some((item) => item.taskId === task.id && !item.assetsConfirmedAt);
       if (!task || !candidate || task.outputRevision !== input.outputRevision || (!['script-ready', 'review'].includes(task.status) && !legacyApproval)) throw new Error('MOTION_COMIC_SCRIPT_REVISION: 剧本版本已变化。');
       const source = document.sourceDocument!.episodes.find((item) => item.id === task.sourceEpisodeId)!;
-      const issues = validateMotionComicScriptDraft(input.script, splitMotionComicSource(source.sourceText), document);
+      const issues = validateMotionComicScriptDraft(input.script, splitMotionComicSource(source.sourceText), document, task.instructions);
       this.putCandidate({ ...candidate, script: input.script, outputRevision: candidate.outputRevision + 1, issues, origin: 'human', createdAt: now(),
         adjustments: [...candidate.adjustments, ...collectMotionComicPlanAdjustments(candidate.script, input.script, 'script').map((item) => ({ ...item, kind: 'manual' as const }))] });
       this.putTask({ ...task, status: 'review', outputRevision: candidate.outputRevision + 1, updatedAt: now() });
       if (legacyApproval) this.database().run('DELETE FROM motion_comic_script_storyboards WHERE task_id = ?', [task.id]);
       this.invalidate(input.id);
+      return this.snapshotNow(input.id);
+    });
+  }
+
+  private putProposal(value: MotionComicScriptProposal): void {
+    const p = motionComicScriptProposalSchema.parse(value);
+    this.database().run('INSERT INTO motion_comic_script_proposals(id, project_id, task_id, request_id, data) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data', [p.id, p.projectId, p.taskId, p.requestId, JSON.stringify(p)]);
+  }
+
+  private proposalBaseline(input: { id: string; taskId: string; outputRevision: number; expectedUpdatedAt: string }) {
+    const document = this.project(input.id);
+    if (document.updatedAt !== input.expectedUpdatedAt) throw new Error('MOTION_COMIC_STALE_WRITE: 项目已变化。');
+    const snapshot = this.snapshotNow(input.id);
+    const task = snapshot.tasks.find(t => t.id === input.taskId);
+    const candidate = snapshot.candidates.find(c => c.taskId === input.taskId);
+    const approval = snapshot.approvals.find(a => a.taskId === input.taskId);
+    if (!task || !candidate || task.outputRevision !== input.outputRevision || candidate.outputRevision !== input.outputRevision
+      || (!['script-ready', 'review'].includes(task.status) && !(task.status === 'approved' && approval && !approval.assetsConfirmedAt))
+      || this.dependencies(document, task, snapshot).inputFingerprint !== task.inputFingerprint) throw new Error('SCRIPT_PROPOSAL_STALE: 剧本基准已变化。');
+    if (approval?.assetsConfirmedAt || plannedMotionComicSourceEpisodeIds(document).has(task.sourceEpisodeId)) throw new Error('MOTION_COMIC_SCRIPT_PROTECTED: 已确认资产或已进入制作的剧本不可修改。');
+    return { document, snapshot, task, candidate };
+  }
+
+  beginProposal(raw: MotionComicScriptProposeInput, config: { provider: string; model: string }) {
+    const input = motionComicScriptProposeSchema.parse(raw);
+    return this.commitProject(input.id, () => {
+      const existing = this.snapshotNow(input.id).proposals!.find(p => p.requestId === input.requestId);
+      if (existing) {
+        if (existing.requestFingerprint !== hash(input)) throw new Error('SCRIPT_PROPOSAL_REQUEST_CONFLICT: 请求编号已用于不同参数。');
+        return { proposal: existing, claimed: false, script: undefined };
+      }
+      const { task, candidate } = this.proposalBaseline(input);
+      const scenes = candidate.script.scenes.filter(s => s.key === input.sceneKey);
+      const beats = scenes.flatMap(s => s.beats.filter(b => b.key === input.beatKey));
+      if (scenes.length !== 1 || beats.length !== 1) throw new Error('SCRIPT_PROPOSAL_TARGET_CHANGED: 目标必须是唯一稳定段落。');
+      const proposal = motionComicScriptProposalSchema.parse({ id: randomUUID(), projectId: input.id, taskId: task.id,
+        baseRevision: input.outputRevision, inputFingerprint: task.inputFingerprint, baseProjectUpdatedAt: input.expectedUpdatedAt,
+        baseScriptHash: hash(candidate.script), sceneKey: input.sceneKey, beatKey: input.beatKey, originalText: beats[0].text,
+        instruction: input.instruction, requestId: input.requestId, requestFingerprint: hash(input), status: 'running',
+        provider: config.provider, model: config.model, promptVersion: 'single-beat-text-v1', createdAt: now() });
+      this.putProposal(proposal);
+      return { proposal, claimed: true, script: structuredClone(candidate.script) };
+    });
+  }
+
+  finishProposal(projectId: string, proposalId: string, proposedText?: string, error?: string): Promise<MotionComicScriptSnapshot> {
+    return this.commitProject(projectId, () => {
+      const p = this.snapshotNow(projectId).proposals!.find(p => p.id === proposalId);
+      if (!p || (p.status !== 'running' && !(p.status === 'stale' && p.proposedText === undefined && p.error === undefined))) return this.snapshotNow(projectId);
+      let next: MotionComicScriptProposal = { ...p, proposedText, status: error ? 'failed' : 'ready', error: error?.slice(0, 8000) };
+      try {
+        const { document, task, candidate } = this.proposalBaseline({ id: projectId, taskId: p.taskId, outputRevision: p.baseRevision, expectedUpdatedAt: p.baseProjectUpdatedAt });
+        if (hash(candidate.script) !== p.baseScriptHash || task.inputFingerprint !== p.inputFingerprint) throw new Error('SCRIPT_PROPOSAL_STALE');
+        if (!error) {
+          const script = applyMotionComicScriptProposal(candidate.script, next, { projectId, taskId: task.id, revision: task.outputRevision, inputFingerprint: task.inputFingerprint });
+          const source = document.sourceDocument!.episodes.find(s => s.id === task.sourceEpisodeId)!;
+          if (validateMotionComicScriptDraft(script, splitMotionComicSource(source.sourceText), document, task.instructions).length) next = { ...next, status: 'failed', error: 'MOTION_COMIC_SCRIPT_INVALID: 修改后的剧本未通过校验。' };
+        }
+      } catch (failure) {
+        next = { ...next, status: 'stale', error: failure instanceof Error ? failure.message.slice(0, 8000) : 'SCRIPT_PROPOSAL_STALE' };
+      }
+      this.putProposal(next);
+      return this.snapshotNow(projectId);
+    });
+  }
+
+  adoptProposal(raw: MotionComicScriptAdoptInput): Promise<MotionComicScriptSnapshot> {
+    const input = motionComicScriptAdoptSchema.parse(raw);
+    return this.commitProject(input.id, () => {
+      const { document, snapshot, task, candidate } = this.proposalBaseline(input);
+      const p = snapshot.proposals!.find(p => p.id === input.proposalId);
+      if (!p || p.baseProjectUpdatedAt !== input.expectedUpdatedAt || hash(candidate.script) !== p.baseScriptHash) throw new Error('SCRIPT_PROPOSAL_STALE: 候选基准已变化。');
+      const script = applyMotionComicScriptProposal(candidate.script, p, { projectId: input.id, taskId: task.id, revision: task.outputRevision, inputFingerprint: task.inputFingerprint });
+      const source = document.sourceDocument!.episodes.find(s => s.id === task.sourceEpisodeId)!;
+      const issues = validateMotionComicScriptDraft(script, splitMotionComicSource(source.sourceText), document, task.instructions);
+      if (issues.length) throw new Error('MOTION_COMIC_SCRIPT_INVALID: 修改后的剧本未通过校验。');
+      const revision = task.outputRevision + 1;
+      // origin=human means an explicit user adoption; AI provenance is retained in the proposal ledger.
+      this.putCandidate({ ...candidate, script, issues, outputRevision: revision, origin: 'human', createdAt: now() });
+      this.putTask({ ...task, outputRevision: revision, status: 'review', updatedAt: now() });
+      this.putProposal({ ...p, status: 'applied', appliedRevision: revision, appliedScriptHash: hash(script) });
+      this.invalidateProposalChange(input.id, snapshot, task, p, p.baseRevision);
+      return this.snapshotNow(input.id);
+    });
+  }
+
+  private invalidateProposalChange(id: string, snapshot: MotionComicScriptSnapshot, task: MotionComicScriptTask, proposal: MotionComicScriptProposal, baseRevision: number): void {
+    const approval = snapshot.approvals.find(a => a.taskId === task.id);
+    if (approval) this.database().run('UPDATE motion_comic_script_approvals SET data = ? WHERE project_id = ? AND source_episode_id = ?', [JSON.stringify({ ...approval, stale: true }), id, task.sourceEpisodeId]);
+    for (const other of snapshot.proposals ?? []) if (other.id !== proposal.id && other.taskId === task.id && other.baseRevision === baseRevision && ['ready', 'running'].includes(other.status)) this.putProposal({ ...other, status: 'stale' });
+    this.database().run('DELETE FROM motion_comic_script_storyboards WHERE task_id = ?', [task.id]);
+    this.invalidate(id);
+  }
+
+  revertProposal(raw: MotionComicScriptRevertInput): Promise<MotionComicScriptSnapshot> {
+    const input = motionComicScriptRevertSchema.parse(raw);
+    return this.commitProject(input.id, () => {
+      const { document, snapshot, task, candidate } = this.proposalBaseline(input);
+      const p = snapshot.proposals!.find(p => p.id === input.proposalId && p.taskId === task.id && p.projectId === input.id);
+      if (!p || p.status !== 'applied' || p.revertedRevision !== undefined) throw new Error('SCRIPT_PROPOSAL_NOT_APPLIED: 候选未采用或已撤销。');
+      if (!p.appliedScriptHash) throw new Error('SCRIPT_PROPOSAL_REVERT_UNAVAILABLE: 历史候选缺少采用后全文基准，无法安全撤销。');
+      if (p.appliedRevision !== candidate.outputRevision || p.inputFingerprint !== task.inputFingerprint || hash(candidate.script) !== p.appliedScriptHash) {
+        throw new Error('SCRIPT_PROPOSAL_STALE: 采用后剧本已变化，无法撤销。');
+      }
+      const scenes = candidate.script.scenes.filter(s => s.key === p.sceneKey);
+      const beats = scenes.flatMap(s => s.beats.filter(b => b.key === p.beatKey));
+      if (scenes.length !== 1 || beats.length !== 1 || beats[0].text !== p.proposedText) throw new Error('SCRIPT_PROPOSAL_TARGET_CHANGED: 目标段落已变化，无法撤销。');
+      const next = structuredClone(candidate.script);
+      next.scenes.find(s => s.key === p.sceneKey)!.beats.find(b => b.key === p.beatKey)!.text = p.originalText;
+      const script = motionComicScriptDraftSchema.parse(next);
+      const source = document.sourceDocument!.episodes.find(s => s.id === task.sourceEpisodeId)!;
+      const issues = validateMotionComicScriptDraft(script, splitMotionComicSource(source.sourceText), document, task.instructions);
+      if (issues.length) throw new Error('MOTION_COMIC_SCRIPT_INVALID: 撤销后的剧本未通过校验。');
+      const revision = candidate.outputRevision + 1;
+      this.putCandidate({ ...candidate, script, issues, outputRevision: revision, origin: 'human', createdAt: now() });
+      this.putTask({ ...task, outputRevision: revision, status: 'review', updatedAt: now() });
+      this.putProposal({ ...p, status: 'reverted', revertedRevision: revision });
+      this.invalidateProposalChange(input.id, snapshot, task, p, candidate.outputRevision);
       return this.snapshotNow(input.id);
     });
   }
@@ -246,10 +476,10 @@ export class MotionComicScriptStore {
           || !['script-ready', 'review', 'approved'].includes(task.status) || (task.status === 'approved' && snapshot.approvals.some((item) => item.taskId === task.id && item.assetsConfirmedAt))) throw new Error('MOTION_COMIC_SCRIPT_REVISION: 待批准版本已变化，请刷新。');
         seen.add(task.sourceEpisodeId);
         const source = document.sourceDocument!.episodes.find((item) => item.id === task.sourceEpisodeId)!;
-        if (validateMotionComicScriptDraft(candidate.script, splitMotionComicSource(source.sourceText), document).length) throw new Error('MOTION_COMIC_SCRIPT_INVALID: 剧本仍有校验问题。');
+        if (validateMotionComicScriptDraft(candidate.script, splitMotionComicSource(source.sourceText), document, task.instructions).length) throw new Error('MOTION_COMIC_SCRIPT_INVALID: 剧本仍有校验问题。');
         if (plannedMotionComicSourceEpisodeIds(document).has(source.id)) throw new Error('MOTION_COMIC_SCRIPT_PROTECTED: 本集已有分镜，不覆盖现有制作。');
         const confirmed = confirmMotionComicScriptAssets(document, candidate.script, randomUUID);
-        if (validateMotionComicScriptDraft(confirmed.script, splitMotionComicSource(source.sourceText), confirmed.document).length) throw new Error('MOTION_COMIC_ASSET_BINDING: 本集存在重复资产，请核对人物、地点、道具及造型的归属。');
+        if (validateMotionComicScriptDraft(confirmed.script, splitMotionComicSource(source.sourceText), confirmed.document, task.instructions).length) throw new Error('MOTION_COMIC_ASSET_BINDING: 本集存在重复资产，请核对人物、地点、道具及造型的归属。');
         document = confirmed.document;
         const ids = motionComicScriptAssetIds(confirmed.script);
         const originalIds = task.bibleAssetIds ?? this.bibleAssetIds(document);
@@ -341,6 +571,13 @@ export class MotionComicScriptStore {
       const approval = snapshot.approvals.find((item) => item.taskId === task.id);
       if (approval) this.database().run('UPDATE motion_comic_script_approvals SET data = ? WHERE project_id = ? AND source_episode_id = ?', [JSON.stringify({ ...approval, stale: true }), id, task.sourceEpisodeId]);
     }
+    for (const proposal of snapshot.proposals ?? []) {
+      if (proposal.status !== 'ready') continue;
+      try {
+        const { task, candidate } = this.proposalBaseline({ id, taskId: proposal.taskId, outputRevision: proposal.baseRevision, expectedUpdatedAt: proposal.baseProjectUpdatedAt });
+        if (task.inputFingerprint !== proposal.inputFingerprint || hash(candidate.script) !== proposal.baseScriptHash) throw new Error('SCRIPT_PROPOSAL_STALE');
+      } catch { this.putProposal({ ...proposal, status: 'stale' }); }
+    }
   }
 
   async refresh(id: string): Promise<MotionComicScriptSnapshot> {
@@ -351,7 +588,14 @@ export class MotionComicScriptStore {
       if (!['script-ready', 'review', 'approved'].includes(task.status)) return false;
       try { return this.dependencies(document, task, snapshot).inputFingerprint !== task.inputFingerprint; } catch { return true; }
     });
-    if (!changed) return snapshot;
+    const proposalChanged = (snapshot.proposals ?? []).some(p => {
+      if (p.status !== 'ready') return false;
+      try {
+        const { task, candidate } = this.proposalBaseline({ id, taskId: p.taskId, outputRevision: p.baseRevision, expectedUpdatedAt: p.baseProjectUpdatedAt });
+        return task.inputFingerprint !== p.inputFingerprint || hash(candidate.script) !== p.baseScriptHash;
+      } catch { return true; }
+    });
+    if (!changed && !proposalChanged) return snapshot;
     return this.commitProject(id, () => { this.invalidate(id); return this.snapshotNow(id); });
   }
 }
